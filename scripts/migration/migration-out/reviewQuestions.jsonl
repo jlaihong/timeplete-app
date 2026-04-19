@@ -1,0 +1,131 @@
+{"legacyId":"8d7012fa-da36-409c-b48f-60527684ef73","userId":"e8a1a380-e091-706c-35b9-e83de42c67d3","questionText":"Anecdotes","frequency":"DAILY","orderIndex":1,"archived":false}
+{"legacyId":"3034a8d3-d8e6-4298-b351-dc5748d52b59","userId":"e8a1a380-e091-706c-35b9-e83de42c67d3","questionText":"Wins","frequency":"DAILY","orderIndex":2,"archived":false}
+{"legacyId":"080ded35-7a07-40c5-ae3d-241a71aa287a","userId":"e8a1a380-e091-706c-35b9-e83de42c67d3","questionText":"Improvements","frequency":"DAILY","orderIndex":3,"archived":false}
+{"legacyId":"95cec576-1705-4186-a957-0bf22b281c19","userId":"e8a1a380-e091-706c-35b9-e83de42c67d3","questionText":"Anecdotes","frequency":"MONTHLY","orderIndex":0,"archived":false}
+{"legacyId":"8d193f20-c31e-41eb-a3ef-04c21fdde3ef","userId":"e8a1a380-e091-706c-35b9-e83de42c67d3","questionText":"Wins","frequency":"MONTHLY","orderIndex":1,"archived":false}
+{"legacyId":"f23282ff-fec8-4525-8215-8f2c37542967","userId":"e8a1a380-e091-706c-35b9-e83de42c67d3","questionText":"Review","frequency":"DAILY","orderIndex":0,"archived":true}
+{"legacyId":"237b5202-accd-4031-a004-56fc01dca98d","userId":"e8a1a380-e091-706c-35b9-e83de42c67d3","questionText":"Anecdotes","frequency":"WEEKLY","orderIndex":1,"archived":false}
+{"legacyId":"3a9f925c-2752-404e-9a6c-643f409a4c60","userId":"e8a1a380-e091-706c-35b9-e83de42c67d3","questionText":"Wins","frequency":"WEEKLY","orderIndex":2,"archived":false}
+{"legacyId":"279a6abe-3a79-4976-b34f-ee4e0bd86dc0","userId":"e8a1a380-e091-706c-35b9-e83de42c67d3","questionText":"Improvements","frequency":"WEEKLY","orderIndex":3,"archived":false}
+{"legacyId":"2db66a92-7b50-4922-bf10-3405b704741b","userId":"e8a1a380-e091-706c-35b9-e83de42c67d3","questionText":"Review","frequency":"WEEKLY","orderIndex":0,"archived":true}
+{"legacyId":"ea01c36b-1c78-4ecf-a4ee-9e56e398652a","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Anecdotes","frequency":"DAILY","orderIndex":0,"archived":false}
+{"legacyId":"e3628ba4-1111-48bb-b13f-d1872c3145b5","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Wins","frequency":"DAILY","orderIndex":1,"archived":false}
+{"legacyId":"cda2ad9a-418c-4744-af22-317150317766","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Improvements to make","frequency":"DAILY","orderIndex":2,"archived":false}
+{"legacyId":"c4d50cca-3a06-45da-9a55-3034c4e6c04a","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Anecdotes","frequency":"WEEKLY","orderIndex":0,"archived":false}
+{"legacyId":"a9b44289-b57f-4a58-837d-24439c12fcea","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Wins","frequency":"WEEKLY","orderIndex":1,"archived":false}
+{"legacyId":"3ee7acaa-497c-4f19-b1df-2879054141c8","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Improvements to make","frequency":"WEEKLY","orderIndex":2,"archived":false}
+{"legacyId":"3a40cdcc-77fb-417a-b14d-3ea5a0ba7b60","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Anecdotes","frequency":"MONTHLY","orderIndex":0,"archived":false}
+{"legacyId":"2b252091-7576-4816-aa45-deea817bf4ca","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Wins","frequency":"MONTHLY","orderIndex":1,"archived":false}
+{"legacyId":"4e1e8e06-7d75-4af8-a5da-d0bc51e6c80a","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Improvements to make","frequency":"MONTHLY","orderIndex":2,"archived":false}
+{"legacyId":"1d1f89d1-7430-4cc5-a0f9-1fcdabdf01ff","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Anecdotes","frequency":"YEARLY","orderIndex":0,"archived":false}
+{"legacyId":"8b63f2ba-a577-4f58-be17-c36802d3f1b0","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Wins","frequency":"YEARLY","orderIndex":1,"archived":false}
+{"legacyId":"234eae3e-766c-4c11-a046-492c536a3541","userId":"08a1c340-50d1-707d-0cc4-49498ba9fdb7","questionText":"Improvements to make","frequency":"YEARLY","orderIndex":2,"archived":false}
+{"legacyId":"78221c9a-e5ac-475c-8f5e-b5158e9ae414","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Anecdotes","frequency":"DAILY","orderIndex":0,"archived":false}
+{"legacyId":"60c0de51-61fd-4aec-9594-62ca4e6eab6f","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Wins","frequency":"DAILY","orderIndex":1,"archived":false}
+{"legacyId":"74c85b1f-0034-49a4-aa5b-5a95ffaec7d3","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Improvements to make","frequency":"DAILY","orderIndex":2,"archived":false}
+{"legacyId":"eb60af21-16b3-4051-85dc-7d8340667a74","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Anecdotes","frequency":"WEEKLY","orderIndex":0,"archived":false}
+{"legacyId":"605fb473-8ed3-4381-8be3-5dc383fc7d45","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Wins","frequency":"WEEKLY","orderIndex":1,"archived":false}
+{"legacyId":"2f9ec3e2-ec85-4ca9-8434-123a29a4363d","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Improvements to make","frequency":"WEEKLY","orderIndex":2,"archived":false}
+{"legacyId":"564bafda-ea58-4969-a4d4-91c4b6a44729","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Anecdotes","frequency":"MONTHLY","orderIndex":0,"archived":false}
+{"legacyId":"11c17903-2829-478f-8881-79b9ca3a8e7d","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Wins","frequency":"MONTHLY","orderIndex":1,"archived":false}
+{"legacyId":"bc91e133-7123-4c9e-93d2-b5cdbc3480d7","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Improvements to make","frequency":"MONTHLY","orderIndex":2,"archived":false}
+{"legacyId":"65789b7e-4705-4f8a-bfac-4d965981337b","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Anecdotes","frequency":"YEARLY","orderIndex":0,"archived":false}
+{"legacyId":"d486b24f-56fe-4112-9cf0-2245bb94b8f3","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Wins","frequency":"YEARLY","orderIndex":1,"archived":false}
+{"legacyId":"162bfe03-499c-47ca-a28a-fdb0e68758b1","userId":"e891b390-b091-7076-4d1c-242fc0399661","questionText":"Improvements to make","frequency":"YEARLY","orderIndex":2,"archived":false}
+{"legacyId":"f9805225-68e5-4ff9-8906-ab92d8e82cea","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Anecdotes","frequency":"DAILY","orderIndex":0,"archived":false}
+{"legacyId":"3238787a-bfab-43f3-89ee-417a85571115","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Wins","frequency":"DAILY","orderIndex":1,"archived":false}
+{"legacyId":"da0b73f1-8dd2-4b0c-89a0-96e0813eafcb","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Improvements to make","frequency":"DAILY","orderIndex":2,"archived":false}
+{"legacyId":"66162b29-4c23-4c7e-a2c6-8c0383e2970e","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Anecdotes","frequency":"WEEKLY","orderIndex":0,"archived":false}
+{"legacyId":"148c1640-356a-4388-8a88-36749a4f4cdf","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Wins","frequency":"WEEKLY","orderIndex":1,"archived":false}
+{"legacyId":"00cdd49d-01da-492b-af1a-329b2ed1de50","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Improvements to make","frequency":"WEEKLY","orderIndex":2,"archived":false}
+{"legacyId":"0120a072-c57d-4dd2-86df-db2beea61589","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Anecdotes","frequency":"MONTHLY","orderIndex":0,"archived":false}
+{"legacyId":"d09fd05e-581b-439a-9056-b2354fcdcae2","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Wins","frequency":"MONTHLY","orderIndex":1,"archived":false}
+{"legacyId":"ff87f04c-fd97-4591-8bdc-1a71bd5e80b8","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Improvements to make","frequency":"MONTHLY","orderIndex":2,"archived":false}
+{"legacyId":"6f87c201-b0ea-4570-8737-7c15e6dfd9de","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Anecdotes","frequency":"YEARLY","orderIndex":0,"archived":false}
+{"legacyId":"259c8e8c-d896-46e2-a82e-941023b7cc39","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Wins","frequency":"YEARLY","orderIndex":1,"archived":false}
+{"legacyId":"d5148882-7620-4348-860d-05cda0694742","userId":"f85193e0-2021-701f-41ab-4bb116d3649f","questionText":"Improvements to make","frequency":"YEARLY","orderIndex":2,"archived":false}
+{"legacyId":"ef7d7c64-c00e-4305-9d27-64f6a2e94e86","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Anecdotes","frequency":"DAILY","orderIndex":0,"archived":false}
+{"legacyId":"a76d8f16-06b2-4d02-8c00-5763da324d00","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Wins","frequency":"DAILY","orderIndex":1,"archived":false}
+{"legacyId":"e282e353-953e-4f18-933e-d94e9e8a0ccf","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Improvements to make","frequency":"DAILY","orderIndex":2,"archived":false}
+{"legacyId":"2d6989f5-45c3-446a-a5a5-cbc980e7ce8e","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Anecdotes","frequency":"WEEKLY","orderIndex":0,"archived":false}
+{"legacyId":"e1f4793d-f40f-49f3-961c-a6985d93cd65","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Wins","frequency":"WEEKLY","orderIndex":1,"archived":false}
+{"legacyId":"2b196017-1f91-4bec-8a34-ab493850690d","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Improvements to make","frequency":"WEEKLY","orderIndex":2,"archived":false}
+{"legacyId":"20f0dcf4-b85f-4445-a319-54905e5f1fc3","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Anecdotes","frequency":"MONTHLY","orderIndex":0,"archived":false}
+{"legacyId":"398d746c-affe-4897-a2bb-18349074b2e3","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Wins","frequency":"MONTHLY","orderIndex":1,"archived":false}
+{"legacyId":"045ff5fc-9652-474b-864f-688850d3c57c","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Improvements to make","frequency":"MONTHLY","orderIndex":2,"archived":false}
+{"legacyId":"fcc32383-9c44-48cf-84a7-8a0444b6d9dd","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Anecdotes","frequency":"YEARLY","orderIndex":0,"archived":false}
+{"legacyId":"b53c967b-abe3-424e-9894-498178ee5f81","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Wins","frequency":"YEARLY","orderIndex":1,"archived":false}
+{"legacyId":"22d673c4-216d-42a8-b12d-90dc1c46acf7","userId":"a841f370-60c1-70e0-5b4f-10b6109ff3dc","questionText":"Improvements to make","frequency":"YEARLY","orderIndex":2,"archived":false}
+{"legacyId":"462fd3b3-fc9c-4309-b8fa-551538edb533","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Anecdotes","frequency":"DAILY","orderIndex":0,"archived":false}
+{"legacyId":"9617958e-3c99-43f4-826e-71f70f6ef4ab","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Wins","frequency":"DAILY","orderIndex":1,"archived":false}
+{"legacyId":"b8a041b2-05b8-41aa-9d98-4b20c99f2540","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Improvements to make","frequency":"DAILY","orderIndex":2,"archived":false}
+{"legacyId":"07d17ce7-62ab-4ffe-9aa0-c649c2e50f14","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Anecdotes","frequency":"WEEKLY","orderIndex":0,"archived":false}
+{"legacyId":"6ac4f4ac-2f98-4f8e-b910-453d0ec89344","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Wins","frequency":"WEEKLY","orderIndex":1,"archived":false}
+{"legacyId":"4046ab95-e305-4eb2-830c-d21180ca1781","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Improvements to make","frequency":"WEEKLY","orderIndex":2,"archived":false}
+{"legacyId":"d2b274a4-39f8-42ec-b9b2-929ab6c2fddf","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Anecdotes","frequency":"MONTHLY","orderIndex":0,"archived":false}
+{"legacyId":"dd135d90-647e-4147-851b-7f75bab3b3c0","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Wins","frequency":"MONTHLY","orderIndex":1,"archived":false}
+{"legacyId":"2268eb94-b720-4f77-96fb-0f238b02f7b3","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Improvements to make","frequency":"MONTHLY","orderIndex":2,"archived":false}
+{"legacyId":"88c26227-d3ac-40ea-9e5f-d2eecae99887","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Anecdotes","frequency":"YEARLY","orderIndex":0,"archived":false}
+{"legacyId":"3fb6cf62-4f9f-48a5-a2c6-73bddbacd4b9","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Wins","frequency":"YEARLY","orderIndex":1,"archived":false}
+{"legacyId":"4fe2a96c-5c82-4bea-94b2-6e6245c9eb36","userId":"0871b360-30c1-70df-9526-8a2391df52b6","questionText":"Improvements to make","frequency":"YEARLY","orderIndex":2,"archived":false}
+{"legacyId":"ed4f8888-5d71-4a1d-be85-ac052ae0e22f","userId":"e8a1a380-e091-706c-35b9-e83de42c67d3","questionText":"Improvements","frequency":"MONTHLY","orderIndex":2,"archived":false}
+{"legacyId":"dea64a2f-d805-40c0-8cfb-dcc5708aae7f","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Anecdotes","frequency":"DAILY","orderIndex":0,"archived":false}
+{"legacyId":"fac1ed9d-8458-45f5-9552-7e33c7444c4c","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Wins","frequency":"DAILY","orderIndex":1,"archived":false}
+{"legacyId":"fac2078c-4c06-4304-9620-7d9b944948c3","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Improvements to make","frequency":"DAILY","orderIndex":2,"archived":false}
+{"legacyId":"20d1c9c8-878b-41e9-8cbe-bd6228731673","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Anecdotes","frequency":"WEEKLY","orderIndex":0,"archived":false}
+{"legacyId":"c662d75e-e634-42cb-a395-e8d499c321d7","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Wins","frequency":"WEEKLY","orderIndex":1,"archived":false}
+{"legacyId":"d9c04034-9a4e-438e-b005-0f3b97beeb1c","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Improvements to make","frequency":"WEEKLY","orderIndex":2,"archived":false}
+{"legacyId":"721c087a-051b-433b-a178-e8392c71bf93","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Anecdotes","frequency":"MONTHLY","orderIndex":0,"archived":false}
+{"legacyId":"bc30fc61-9b65-4cb6-9e32-e20c139e22bf","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Wins","frequency":"MONTHLY","orderIndex":1,"archived":false}
+{"legacyId":"941812cb-87f8-4a38-86a1-6425ad60d1c4","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Improvements to make","frequency":"MONTHLY","orderIndex":2,"archived":false}
+{"legacyId":"034c3f20-fbf5-4c09-9c62-25b4a7dd17c6","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Anecdotes","frequency":"YEARLY","orderIndex":0,"archived":false}
+{"legacyId":"9d24031c-b97e-4389-8b48-8d1827d97d19","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Wins","frequency":"YEARLY","orderIndex":1,"archived":false}
+{"legacyId":"b4f91212-99d6-404a-baad-d794e8743122","userId":"88f1a350-a0d1-7029-f12c-9418afc92ce7","questionText":"Improvements to make","frequency":"YEARLY","orderIndex":2,"archived":false}
+{"legacyId":"da4af4bc-38bf-462f-98cc-90d51189a4c6","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Anecdotes","frequency":"DAILY","orderIndex":0,"archived":false}
+{"legacyId":"2d896753-da6e-4f5c-91ec-177c657dfa5b","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Wins","frequency":"DAILY","orderIndex":1,"archived":false}
+{"legacyId":"c1cd5185-d2f6-45bf-b30e-356e78029b66","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Improvements to make","frequency":"DAILY","orderIndex":2,"archived":false}
+{"legacyId":"69941aaf-a5b5-44a1-ba5e-83916f2934c9","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Anecdotes","frequency":"WEEKLY","orderIndex":0,"archived":false}
+{"legacyId":"6120dd78-c334-41db-a06c-eeec48e9621d","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Wins","frequency":"WEEKLY","orderIndex":1,"archived":false}
+{"legacyId":"f0a112d4-babf-412e-b08d-8ab022400fc1","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Improvements to make","frequency":"WEEKLY","orderIndex":2,"archived":false}
+{"legacyId":"a696f8dc-4dc4-4637-ab2d-7a0ac23af05e","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Anecdotes","frequency":"MONTHLY","orderIndex":0,"archived":false}
+{"legacyId":"c944b7de-0b9d-4a05-b1e5-ad16c60c1786","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Wins","frequency":"MONTHLY","orderIndex":1,"archived":false}
+{"legacyId":"e3e93aad-7dbb-4c3b-a4eb-e99af828eb47","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Improvements to make","frequency":"MONTHLY","orderIndex":2,"archived":false}
+{"legacyId":"98cdbb87-efe1-4344-b523-1626e803921a","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Anecdotes","frequency":"YEARLY","orderIndex":0,"archived":false}
+{"legacyId":"b8ec6f93-a9b1-4e38-a871-4ea399efd1e4","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Wins","frequency":"YEARLY","orderIndex":1,"archived":false}
+{"legacyId":"91fd4c6b-a138-4a28-a367-bb6bb8b8947f","userId":"38b193a0-9081-70f2-839b-a8ff94572019","questionText":"Improvements to make","frequency":"YEARLY","orderIndex":2,"archived":false}
+{"legacyId":"a510dcf1-e8d6-4c38-a62b-3bd4eded323d","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Anecdotes","frequency":"DAILY","orderIndex":0,"archived":false}
+{"legacyId":"35e2e04d-b151-4de3-8a45-96926ff74472","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Wins","frequency":"DAILY","orderIndex":1,"archived":false}
+{"legacyId":"5f57dca9-adda-4619-ada5-4b00d2906701","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Improvements to make","frequency":"DAILY","orderIndex":2,"archived":false}
+{"legacyId":"74a18bfa-ed2e-41e2-885f-d21dce105278","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Anecdotes","frequency":"WEEKLY","orderIndex":0,"archived":false}
+{"legacyId":"5c5cde1b-8b6a-42a1-8336-4f060ecd1cd4","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Wins","frequency":"WEEKLY","orderIndex":1,"archived":false}
+{"legacyId":"bdfb0fcb-f843-49a8-9747-dbd2c6ce85a3","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Improvements to make","frequency":"WEEKLY","orderIndex":2,"archived":false}
+{"legacyId":"b96af8e4-84df-4626-a820-3f523943842b","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Anecdotes","frequency":"MONTHLY","orderIndex":0,"archived":false}
+{"legacyId":"0952a3ca-0f00-491f-bb50-b27176543575","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Wins","frequency":"MONTHLY","orderIndex":1,"archived":false}
+{"legacyId":"a2e3de64-719d-48e7-93f2-794bfe68a311","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Improvements to make","frequency":"MONTHLY","orderIndex":2,"archived":false}
+{"legacyId":"22e9e6c5-be9a-4a94-9a06-b840289ae3be","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Anecdotes","frequency":"YEARLY","orderIndex":0,"archived":false}
+{"legacyId":"814334d0-2229-498d-9941-16c9c1e52e43","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Wins","frequency":"YEARLY","orderIndex":1,"archived":false}
+{"legacyId":"e3c45dc8-b942-4f8d-9e94-28ff34e27a50","userId":"a8911320-30b1-70f0-6fd5-60551665e421","questionText":"Improvements to make","frequency":"YEARLY","orderIndex":2,"archived":false}
+{"legacyId":"089e5c16-aede-4653-8f5e-d277b9986038","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Anecdotes","frequency":"DAILY","orderIndex":0,"archived":false}
+{"legacyId":"8945d004-56b4-4b8b-af4e-1bbb2de4d8ec","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Wins","frequency":"DAILY","orderIndex":1,"archived":false}
+{"legacyId":"da0ec250-bb90-461c-b967-b5769d51d602","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Improvements to make","frequency":"DAILY","orderIndex":2,"archived":false}
+{"legacyId":"89f53bff-e3c3-4bf6-88e4-4c91939b9b07","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Anecdotes","frequency":"WEEKLY","orderIndex":0,"archived":false}
+{"legacyId":"52cca04e-a78a-4d8d-bbd4-c8b81d08e13c","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Wins","frequency":"WEEKLY","orderIndex":1,"archived":false}
+{"legacyId":"4161aebd-2564-40e4-8325-8eafab0c2199","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Improvements to make","frequency":"WEEKLY","orderIndex":2,"archived":false}
+{"legacyId":"978b0169-d48e-4eac-ac9e-01e4cf754043","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Anecdotes","frequency":"MONTHLY","orderIndex":0,"archived":false}
+{"legacyId":"6362d472-e597-48c0-8c0c-fd0de23e7264","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Wins","frequency":"MONTHLY","orderIndex":1,"archived":false}
+{"legacyId":"cf78331c-7ce0-4aa2-a38c-edfaf0b88ff4","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Improvements to make","frequency":"MONTHLY","orderIndex":2,"archived":false}
+{"legacyId":"40733509-11ae-47f3-9c1e-b0e0e355b2b8","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Anecdotes","frequency":"YEARLY","orderIndex":0,"archived":false}
+{"legacyId":"f157c852-76e2-4b93-a50a-5e635fab7447","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Wins","frequency":"YEARLY","orderIndex":1,"archived":false}
+{"legacyId":"ec011d20-253c-4ca7-b934-58becb53a027","userId":"58b1c320-50e1-7026-cf4f-70ca27ba5187","questionText":"Improvements to make","frequency":"YEARLY","orderIndex":2,"archived":false}
+{"legacyId":"7e5e11a0-070d-4ace-837b-7b9ed41aa177","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Anecdotes","frequency":"DAILY","orderIndex":0,"archived":false}
+{"legacyId":"26febcbb-94cb-4647-b6fc-bf451716f12d","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Wins","frequency":"DAILY","orderIndex":1,"archived":false}
+{"legacyId":"5a139315-b5a0-45ba-b3bb-c1c0d5cf577c","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Improvements to make","frequency":"DAILY","orderIndex":2,"archived":false}
+{"legacyId":"159822e2-0020-4ebe-a6ad-0008210ee590","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Anecdotes","frequency":"WEEKLY","orderIndex":0,"archived":false}
+{"legacyId":"3cb80579-cdb6-4c95-9ea8-7c769ab6b422","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Wins","frequency":"WEEKLY","orderIndex":1,"archived":false}
+{"legacyId":"befb2ace-f2b9-446b-8b8f-31e08bd80cea","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Improvements to make","frequency":"WEEKLY","orderIndex":2,"archived":false}
+{"legacyId":"85d632c5-d0b5-4ad1-b019-dd30bb9f0686","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Anecdotes","frequency":"MONTHLY","orderIndex":0,"archived":false}
+{"legacyId":"3fd7126c-384d-44ef-8889-d4a1c36c40a8","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Wins","frequency":"MONTHLY","orderIndex":1,"archived":false}
+{"legacyId":"4545a241-7d41-436a-9be0-0bd54b6c98b5","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Improvements to make","frequency":"MONTHLY","orderIndex":2,"archived":false}
+{"legacyId":"a1ae4a11-33bf-4e68-9631-ea7f3e0373c2","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Anecdotes","frequency":"YEARLY","orderIndex":0,"archived":false}
+{"legacyId":"2a991048-d88e-4a10-a6ea-c80ddb443d26","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Wins","frequency":"YEARLY","orderIndex":1,"archived":false}
+{"legacyId":"b3470ec3-e787-4a41-bdd4-bf31848a7dab","userId":"98f16370-b091-7039-09b5-feb79944dac7","questionText":"Improvements to make","frequency":"YEARLY","orderIndex":2,"archived":false}

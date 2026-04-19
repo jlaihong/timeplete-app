@@ -1,13 +1,19 @@
 import React from "react";
-import { View, StyleSheet, Platform, ViewStyle } from "react-native";
-import { Colors } from "../../constants/colors";
+import { View, StyleSheet, ViewStyle, StyleProp } from "react-native";
+import { panelStyle, panelPadding } from "../../theme/panels";
 
 interface CardProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   padded?: boolean;
 }
 
+/**
+ * Shared elevated panel — the React-Native-Web equivalent of
+ * productivity-one's default `<mat-card>`. Uses the canonical
+ * `panelStyle` from `theme/panels.ts` (surface-container-low + 12px
+ * radius + level1 shadow, NO border).
+ */
 export function Card({ children, style, padded = true }: CardProps) {
   return (
     <View style={[styles.card, padded && styles.padded, style]}>
@@ -17,23 +23,6 @@ export function Card({ children, style, padded = true }: CardProps) {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    elevation: 2,
-    ...Platform.select({
-      web: { boxShadow: "0 1px 3px rgba(0,0,0,0.05)" } as any,
-      default: {
-        shadowColor: Colors.black,
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 3,
-      },
-    }),
-  },
-  padded: {
-    padding: 16,
-  },
+  card: panelStyle,
+  padded: { padding: panelPadding },
 });

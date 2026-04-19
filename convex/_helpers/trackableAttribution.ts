@@ -1,0 +1,139 @@
+/**
+ * Shared trackable-attribution helpers — Convex port of productivity-one's
+ * `time-window-attribution.utils.ts` and `TrackableTimeWindowGrouper`.
+ *
+ * The single source of truth for: "which trackable does this time window
+ * contribute to?". Every analytics surface that aggregates time per trackable
+ * MUST use these helpers so totals stay consistent across screens.
+ *
+ * The resolution order matches productivity-one exactly:
+ *
+ *   1. window.trackableId is set                → that trackable
+ *   2. window.taskId is set AND task.trackableId → task.trackableId
+ *   3. window.taskId is set AND task.listId AND list → trackable link →
+ *      list's trackableId
+ *
+ * Each window matches at most ONE trackable (early-return), so summing per
+ * trackable across all windows never double-counts.
+ */
+import { Doc, Id } from "../_generated/dataModel";
+
+export type TaskInfo = {
+  trackableId?: Id<"trackables"> | null;
+  listId?: Id<"lists"> | null;
+};
+
+/**
+ * Build a Map<listId, trackableId> from the listTrackableLinks table rows.
+ * The caller is responsible for fetching the rows (typically via the
+ * `by_user` index).
+ */
+export function buildListIdToTrackableId(
+  links: Array<Pick<Doc<"listTrackableLinks">, "listId" | "trackableId">>
+): Map<string, Id<"trackables">> {
+  const m = new Map<string, Id<"trackables">>();
+  for (const link of links) {
+    m.set(link.listId, link.trackableId);
+  }
+  return m;
+}
+
+/**
+ * Build a Map<taskId, TaskInfo> from task documents. Only the fields needed
+ * for attribution are kept to keep the map cheap to pass around.
+ */
+export function buildTaskInfoMap(
+  tasks: Array<Doc<"tasks">>
+): Map<string, TaskInfo> {
+  const m = new Map<string, TaskInfo>();
+  for (const t of tasks) {
+    m.set(t._id, {
+      trackableId: t.trackableId ?? null,
+      listId: t.listId ?? null,
+    });
+  }
+  return m;
+}
+
+/**
+ * Returns the trackable a time window should be attributed to (or `null`
+ * if it isn't attributable to any trackable).
+ *
+ * IMPORTANT: this is the canonical resolver. Do not re-implement this logic
+ * inline anywhere — call this function. The order matters because:
+ *
+ *  - We snapshot trackableId on the window at log time so historical time
+ *    stays with the trackable the user was working on (productivity-one
+ *    parity, see Scenario 2 in the user spec).
+ *  - For windows that lack a snapshot (legacy / external imports / manual
+ *    entries) we fall back to the task's CURRENT trackable / list link.
+ */
+export function resolveAttributedTrackableId(
+  tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId">,
+  taskInfoMap: Map<string, TaskInfo>,
+  listIdToTrackableId: Map<string, Id<"trackables">>
+): Id<"trackables"> | null {
+  if (tw.trackableId) return tw.trackableId;
+  if (!tw.taskId) return null;
+  const taskInfo = taskInfoMap.get(tw.taskId);
+  if (!taskInfo) return null;
+  if (taskInfo.trackableId) return taskInfo.trackableId;
+  if (taskInfo.listId) {
+    return listIdToTrackableId.get(taskInfo.listId) ?? null;
+  }
+  return null;
+}
+
+/**
+ * Predicate: does this window count toward `trackableId`'s totals?
+ * Equivalent to `resolveAttributedTrackableId(...) === trackableId` but
+ * slightly cheaper because we can short-circuit on the trackableId check.
+ */
+export function timeWindowAttributedToTrackable(
+  tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId">,
+  trackableId: Id<"trackables">,
+  taskInfoMap: Map<string, TaskInfo>,
+  listIdToTrackableId: Map<string, Id<"trackables">>
+): boolean {
+  if (tw.trackableId === trackableId) return true;
+  if (!tw.taskId) return false;
+  const taskInfo = taskInfoMap.get(tw.taskId);
+  if (!taskInfo) return false;
+  if (taskInfo.trackableId === trackableId) return true;
+  if (
+    taskInfo.listId &&
+    listIdToTrackableId.get(taskInfo.listId) === trackableId
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Snapshot resolver used at WRITE time when creating/updating a time window
+ * from a task. Returns the trackableId we should stamp on the window.
+ *
+ * This mirrors `task.store.timer.facade.ts:startTaskTimer` — the trackable
+ * is resolved from `task.trackableId` first, then from the task's list
+ * via `listTrackableLinks`. The result is persisted on the window so that
+ * later reassigning the task to a different trackable does not retroactively
+ * move historical time.
+ */
+export type ResolveOpts = {
+  /** task document (or just its attribution-relevant fields) */
+  task: TaskInfo | null | undefined;
+  /** map listId → trackableId (build with `buildListIdToTrackableId`) */
+  listIdToTrackableId: Map<string, Id<"trackables">>;
+};
+
+export function resolveSnapshotTrackableIdForTask(
+  opts: ResolveOpts
+): Id<"trackables"> | undefined {
+  const { task, listIdToTrackableId } = opts;
+  if (!task) return undefined;
+  if (task.trackableId) return task.trackableId;
+  if (task.listId) {
+    return listIdToTrackableId.get(task.listId) ?? undefined;
+  }
+  return undefined;
+}

@@ -27,10 +27,39 @@ export const store = mutation({
 
     if (existing) return existing._id;
 
+    // Migration adoption: if a row was pre-created by the productivity-app
+    // -> Convex migration (it has a `legacy:<uuid>` placeholder
+    // tokenIdentifier and the user's real email), claim it on first login
+    // by patching the tokenIdentifier to the real one. This wires the
+    // migrated user to all their pre-imported data without creating a
+    // duplicate `users` row, an extra Inbox list, or duplicate default
+    // review questions.
+    const email = identity.email ?? "";
+    if (email) {
+      const legacyMatch = await ctx.db
+        .query("users")
+        .withIndex("by_email", (q) => q.eq("email", email))
+        .filter((q) =>
+          q.and(
+            q.neq(q.field("tokenIdentifier"), identity.tokenIdentifier),
+            q.gte(q.field("tokenIdentifier"), "legacy:"),
+            q.lt(q.field("tokenIdentifier"), "legacy:\uffff")
+          )
+        )
+        .first();
+      if (legacyMatch) {
+        await ctx.db.patch(legacyMatch._id, {
+          tokenIdentifier: identity.tokenIdentifier,
+          name: identity.name ?? legacyMatch.name,
+        });
+        return legacyMatch._id;
+      }
+    }
+
     const userId = await ctx.db.insert("users", {
       tokenIdentifier: identity.tokenIdentifier,
       name: identity.name ?? "Anonymous",
-      email: identity.email ?? "",
+      email,
       isApproved: true,
     });
 

@@ -44,9 +44,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   input: {
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.outlineVariant,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,

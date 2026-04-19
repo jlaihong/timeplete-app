@@ -1,0 +1,74 @@
+import React from "react";
+import { View, Text, StyleSheet, ViewStyle, StyleProp } from "react-native";
+import { Colors } from "../../../../constants/colors";
+
+interface ProgressBarWithTextProps {
+  numerator: number;
+  denominator: number;
+  colour: string;
+  /** Optional formatter for both numerator and denominator. */
+  format?: (n: number) => string;
+  style?: StyleProp<ViewStyle>;
+}
+
+/**
+ * Mirror of productivity-one's `<app-progress-bar-with-text>` — a label row
+ * showing "<n>/<d>" above a coloured horizontal bar.
+ *
+ * `progress-bar-with-text.html` (productivity-one):
+ *   <span class="mb-0.5">{{ formattedNumerator() }}/{{ formattedDenominator() }}</span>
+ *   <mat-progress-bar [value]="progressValue()" />
+ */
+export function ProgressBarWithText({
+  numerator,
+  denominator,
+  colour,
+  format,
+  style,
+}: ProgressBarWithTextProps) {
+  const fmt = format ?? defaultFormat;
+  const safeDenom = denominator || 1;
+  const pct = Math.min(100, Math.max(0, (numerator / safeDenom) * 100));
+  return (
+    <View style={[styles.container, style]}>
+      <Text style={styles.label}>
+        {fmt(numerator)}/{fmt(denominator)}
+      </Text>
+      <View style={styles.track}>
+        <View
+          style={[
+            styles.fill,
+            { width: `${pct}%`, backgroundColor: colour },
+          ]}
+        />
+      </View>
+    </View>
+  );
+}
+
+function defaultFormat(n: number): string {
+  // 1 decimal, trailing ".0" stripped — matches productivity-one's
+  // `formatNumber()` helper inside ProgressBarWithText.
+  const rounded = Math.round(n * 10) / 10;
+  const str = rounded.toFixed(1);
+  return str.endsWith(".0") ? str.slice(0, -2) : str;
+}
+
+const styles = StyleSheet.create({
+  container: { width: "100%" },
+  label: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  track: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.surfaceVariant,
+    overflow: "hidden",
+  },
+  fill: {
+    height: 6,
+    borderRadius: 3,
+  },
+});

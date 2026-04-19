@@ -4,8 +4,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../../constants/colors";
 import { TouchableOpacity, Platform } from "react-native";
 import { DrawerActions, useNavigation } from "@react-navigation/native";
+import { useIsDesktop } from "../../../hooks/useIsDesktop";
 
 export default function TabsLayout() {
+  const isDesktop = useIsDesktop();
   const navigation = useNavigation();
 
   const headerLeft = () => (
@@ -22,18 +24,30 @@ export default function TabsLayout() {
       screenOptions={{
         tabBarActiveTintColor: Colors.tab.active,
         tabBarInactiveTintColor: Colors.tab.inactive,
-        tabBarStyle: {
-          backgroundColor: Colors.surface,
-          borderTopColor: Colors.borderLight,
-          height: Platform.OS === "ios" ? 88 : 64,
-          paddingBottom: Platform.OS === "ios" ? 28 : 8,
-          paddingTop: 8,
-        },
-        headerStyle: { backgroundColor: Colors.surface },
+        tabBarStyle: isDesktop
+          ? { display: "none" }
+          : {
+              backgroundColor: Colors.surfaceContainer,
+              borderTopColor: Colors.outlineVariant,
+              height: Platform.OS === "ios" ? 88 : 64,
+              paddingBottom: Platform.OS === "ios" ? 28 : 8,
+              paddingTop: 8,
+            },
+        headerShown: !isDesktop,
+        headerStyle: { backgroundColor: Colors.surfaceContainer },
         headerTintColor: Colors.text,
-        headerLeft,
+        ...(isDesktop ? {} : { headerLeft }),
       }}
     >
+      <Tabs.Screen
+        name="goals"
+        options={{
+          title: "Trackables",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="trophy-outline" size={size} color={color} />
+          ),
+        }}
+      />
       <Tabs.Screen
         name="index"
         options={{
@@ -53,15 +67,6 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="goals"
-        options={{
-          title: "Goals",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="trophy-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="analytics"
         options={{
           title: "Analytics",
@@ -73,10 +78,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="reviews"
         options={{
-          title: "Reviews",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="journal-outline" size={size} color={color} />
-          ),
+          href: null,
         }}
       />
     </Tabs>

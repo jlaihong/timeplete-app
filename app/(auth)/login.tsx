@@ -9,17 +9,25 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { Link, router } from "expo-router";
+import { useConvex } from "convex/react";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Card } from "../../components/ui/Card";
 import { Colors } from "../../constants/colors";
 import { authClient } from "../../lib/auth-client";
+import { api } from "../../convex/_generated/api";
+import {
+  authenticateAgainstCognito,
+  rehashOnConvex,
+} from "../../lib/cognitoMigration";
 
 export default function LoginScreen() {
+  const convex = useConvex();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -28,13 +36,64 @@ export default function LoginScreen() {
     }
     setLoading(true);
     setError("");
+    setStatusMessage("");
+    const normalizedEmail = email.trim().toLowerCase();
     try {
       const { error: authError } = await authClient.signIn.email({
-        email,
+        email: normalizedEmail,
         password,
       });
-      if (authError) {
-        setError(authError.message ?? "Login failed");
+      if (!authError) {
+        router.replace("/(app)/(tabs)");
+        return;
+      }
+
+      // Better Auth rejected the password. The user may be a legacy
+      // Cognito user whose Better Auth account still has the
+      // `MIGRATE:cognito:<email>` sentinel password. Probe Convex; if
+      // they're in that state, run the SRP fallback and retry.
+      const needsMigration = await convex.query(
+        api.auth.needsCognitoMigration,
+        { email: normalizedEmail },
+      );
+      if (!needsMigration) {
+        setError(authError.message ?? "Invalid email or password");
+        return;
+      }
+
+      setStatusMessage("Migrating your account from the previous app…");
+      let cognitoIdToken: string;
+      try {
+        cognitoIdToken = await authenticateAgainstCognito(
+          normalizedEmail,
+          password,
+        );
+      } catch (cognitoErr) {
+        const msg =
+          cognitoErr instanceof Error
+            ? cognitoErr.message
+            : "Cognito sign-in failed";
+        setError(`Old password didn't work: ${msg}`);
+        return;
+      }
+
+      try {
+        await rehashOnConvex(normalizedEmail, password, cognitoIdToken);
+      } catch (bridgeErr) {
+        const msg =
+          bridgeErr instanceof Error
+            ? bridgeErr.message
+            : "Migration bridge failed";
+        setError(`Migration failed: ${msg}`);
+        return;
+      }
+
+      const { error: retryError } = await authClient.signIn.email({
+        email: normalizedEmail,
+        password,
+      });
+      if (retryError) {
+        setError(retryError.message ?? "Login failed after migration");
         return;
       }
       router.replace("/(app)/(tabs)");
@@ -42,6 +101,7 @@ export default function LoginScreen() {
       setError(e.message ?? "Login failed");
     } finally {
       setLoading(false);
+      setStatusMessage("");
     }
   };
 
@@ -81,6 +141,9 @@ export default function LoginScreen() {
             secureTextEntry
           />
 
+          {statusMessage ? (
+            <Text style={styles.status}>{statusMessage}</Text>
+          ) : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <Button
@@ -138,6 +201,12 @@ const styles = StyleSheet.create({
     color: Colors.error,
     fontSize: 14,
     marginBottom: 16,
+    textAlign: "center",
+  },
+  status: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    marginBottom: 12,
     textAlign: "center",
   },
   button: { marginTop: 8 },

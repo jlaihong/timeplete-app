@@ -1,6 +1,10 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser } from "./_helpers/auth";
+import {
+  buildListIdToTrackableId,
+  resolveSnapshotTrackableIdForTask,
+} from "./_helpers/trackableAttribution";
 
 export const get = query({
   args: {},
@@ -114,6 +118,25 @@ async function finalizeTimer(
     const hours = String(now.getHours()).padStart(2, "0");
     const mins = String(now.getMinutes()).padStart(2, "0");
 
+    // Snapshot the resolved trackableId onto the window so reassigning the
+    // task later does not retroactively move historical time. Mirrors
+    // productivity-one's `task.store.timer.facade.ts:startTaskTimer`.
+    let snapshotTrackableId: any = timer.trackableId;
+    if (timer.taskId && !snapshotTrackableId) {
+      const task = await ctx.db.get(timer.taskId);
+      const links = await ctx.db
+        .query("listTrackableLinks")
+        .withIndex("by_user", (q: any) => q.eq("userId", timer.userId))
+        .collect();
+      const listIdToTrackableId = buildListIdToTrackableId(links);
+      snapshotTrackableId = resolveSnapshotTrackableIdForTask({
+        task: task
+          ? { trackableId: task.trackableId, listId: task.listId }
+          : null,
+        listIdToTrackableId,
+      });
+    }
+
     await ctx.db.insert("timeWindows", {
       startTimeHHMM: `${hours}:${mins}`,
       startDayYYYYMMDD: day,
@@ -122,10 +145,21 @@ async function finalizeTimer(
       budgetType: "ACTUAL" as const,
       activityType: timer.taskId ? ("TASK" as const) : ("TRACKABLE" as const),
       taskId: timer.taskId,
-      trackableId: timer.trackableId,
+      trackableId: snapshotTrackableId,
       timeZone: timer.timeZone,
       isRecurringInstance: false,
+      source: "timer" as const,
     });
+
+    if (timer.taskId) {
+      const task = await ctx.db.get(timer.taskId);
+      if (task) {
+        await ctx.db.patch(timer.taskId, {
+          timeSpentInSecondsUnallocated:
+            (task.timeSpentInSecondsUnallocated ?? 0) + elapsed,
+        });
+      }
+    }
   }
 
   await ctx.db.delete(timer._id);

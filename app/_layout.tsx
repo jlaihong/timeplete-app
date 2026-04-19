@@ -17,7 +17,7 @@ export default function RootLayout() {
     <StrictMode>
       <ConvexProvider client={convex}>
         <ConvexBetterAuthProvider client={convex} authClient={authClient}>
-          <StatusBar style="auto" />
+          <StatusBar style="light" />
           <Slot />
         </ConvexBetterAuthProvider>
       </ConvexProvider>

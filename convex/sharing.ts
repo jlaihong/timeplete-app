@@ -256,7 +256,7 @@ export const getCollaborators = query({
       .filter((q) => q.eq(q.field("status"), "ACCEPTED"))
       .collect();
 
-    const userIds = new Set<string>();
+    const userIds = new Set<Id<"users">>();
     for (const share of myShares) {
       const list = await ctx.db.get(share.listId);
       if (list) userIds.add(list.userId);
@@ -279,7 +279,7 @@ export const getCollaborators = query({
     const collaborators = [];
     for (const uid of Array.from(userIds)) {
       if (uid === user._id) continue;
-      const u = await ctx.db.get(uid as Id<"users">);
+      const u = await ctx.db.get(uid);
       if (u) collaborators.push({ id: u._id, name: u.name, email: u.email });
     }
 

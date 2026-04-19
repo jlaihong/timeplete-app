@@ -8,10 +8,14 @@
  * @module
  */
 
+import type * as _admin_cleanup from "../_admin/cleanup.js";
+import type * as _admin_cognitoBridge from "../_admin/cognitoBridge.js";
+import type * as _admin_import from "../_admin/import.js";
 import type * as _helpers_auth from "../_helpers/auth.js";
 import type * as _helpers_ordering from "../_helpers/ordering.js";
 import type * as _helpers_permissions from "../_helpers/permissions.js";
 import type * as _helpers_recurrence from "../_helpers/recurrence.js";
+import type * as _helpers_trackableAttribution from "../_helpers/trackableAttribution.js";
 import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
@@ -38,10 +42,14 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "_admin/cleanup": typeof _admin_cleanup;
+  "_admin/cognitoBridge": typeof _admin_cognitoBridge;
+  "_admin/import": typeof _admin_import;
   "_helpers/auth": typeof _helpers_auth;
   "_helpers/ordering": typeof _helpers_ordering;
   "_helpers/permissions": typeof _helpers_permissions;
   "_helpers/recurrence": typeof _helpers_recurrence;
+  "_helpers/trackableAttribution": typeof _helpers_trackableAttribution;
   analytics: typeof analytics;
   auth: typeof auth;
   http: typeof http;

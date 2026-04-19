@@ -125,7 +125,8 @@ export const upsert = mutation({
     id: v.optional(v.id("tasks")),
     name: v.string(),
     parentId: v.optional(v.id("tasks")),
-    dateCompleted: v.optional(v.string()),
+    // `undefined` (omitted) → leave unchanged; `null` → clear the field; string → set.
+    dateCompleted: v.optional(v.union(v.string(), v.null())),
     timeSpentInSecondsUnallocated: v.optional(v.number()),
     timeEstimatedInSecondsUnallocated: v.optional(v.number()),
     dueDateYYYYMMDD: v.optional(v.string()),
@@ -134,7 +135,8 @@ export const upsert = mutation({
     taskDayOrderIndex: v.optional(v.number()),
     sectionId: v.optional(v.id("listSections")),
     sectionOrderIndex: v.optional(v.number()),
-    trackableId: v.optional(v.id("trackables")),
+    // `undefined` (omitted) → leave unchanged; `null` → clear; id → set.
+    trackableId: v.optional(v.union(v.id("trackables"), v.null())),
     tagIds: v.optional(v.array(v.id("tags"))),
     assignedToUserId: v.optional(v.id("users")),
   },
@@ -147,7 +149,10 @@ export const upsert = mutation({
 
       const patch: Record<string, unknown> = {};
       if (args.name !== undefined) patch.name = args.name;
-      if (args.dateCompleted !== undefined) patch.dateCompleted = args.dateCompleted;
+      if (args.dateCompleted !== undefined) {
+        // `null` → clear the field on the document; string → set it.
+        patch.dateCompleted = args.dateCompleted ?? undefined;
+      }
       if (args.timeSpentInSecondsUnallocated !== undefined)
         patch.timeSpentInSecondsUnallocated = args.timeSpentInSecondsUnallocated;
       if (args.timeEstimatedInSecondsUnallocated !== undefined)
@@ -158,7 +163,9 @@ export const upsert = mutation({
       if (args.taskDayOrderIndex !== undefined) patch.taskDayOrderIndex = args.taskDayOrderIndex;
       if (args.sectionId !== undefined) patch.sectionId = args.sectionId;
       if (args.sectionOrderIndex !== undefined) patch.sectionOrderIndex = args.sectionOrderIndex;
-      if (args.trackableId !== undefined) patch.trackableId = args.trackableId;
+      if (args.trackableId !== undefined) {
+        patch.trackableId = args.trackableId ?? undefined;
+      }
       if (args.assignedToUserId !== undefined) patch.assignedToUserId = args.assignedToUserId;
 
       await ctx.db.patch(args.id, patch as any);
@@ -182,7 +189,7 @@ export const upsert = mutation({
     const taskId = await ctx.db.insert("tasks", {
       name: args.name,
       parentId: args.parentId,
-      dateCompleted: args.dateCompleted,
+      dateCompleted: args.dateCompleted ?? undefined,
       timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated ?? 0,
       timeEstimatedInSecondsUnallocated: args.timeEstimatedInSecondsUnallocated ?? 0,
       dueDateYYYYMMDD: args.dueDateYYYYMMDD,
@@ -191,7 +198,7 @@ export const upsert = mutation({
       taskDayOrderIndex: args.taskDayOrderIndex ?? 0,
       sectionId: args.sectionId,
       sectionOrderIndex: args.sectionOrderIndex ?? 0,
-      trackableId: args.trackableId,
+      trackableId: args.trackableId ?? undefined,
       isRecurringInstance: false,
       userId: user._id,
       createdBy: user._id,
@@ -289,10 +296,44 @@ export const moveBetweenDays = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+
+    const fromTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_user_day", (q) =>
+        q.eq("userId", user._id).eq("taskDay", args.fromDay)
+      )
+      .collect();
+    const fromSorted = fromTasks
+      .filter((t) => t._id !== args.taskId)
+      .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex);
+    for (let i = 0; i < fromSorted.length; i++) {
+      if (fromSorted[i].taskDayOrderIndex !== i) {
+        await ctx.db.patch(fromSorted[i]._id, { taskDayOrderIndex: i });
+      }
+    }
+
+    const toTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_user_day", (q) =>
+        q.eq("userId", user._id).eq("taskDay", args.toDay)
+      )
+      .collect();
+    const toSorted = toTasks
+      .filter((t) => t._id !== args.taskId)
+      .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex);
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+    toSorted.splice(args.newOrderIndex, 0, task);
+
     await ctx.db.patch(args.taskId, {
       taskDay: args.toDay,
       taskDayOrderIndex: args.newOrderIndex,
     });
+    for (let i = 0; i < toSorted.length; i++) {
+      if (toSorted[i]._id !== args.taskId && toSorted[i].taskDayOrderIndex !== i) {
+        await ctx.db.patch(toSorted[i]._id, { taskDayOrderIndex: i });
+      }
+    }
   },
 });
 
@@ -350,8 +391,122 @@ export const setTimeSpent = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+
     await ctx.db.patch(args.taskId, {
       timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated,
     });
+
+    /**
+     * Reconcile time windows so manual edits are visible to ALL analytics
+     * surfaces (productivity-one parity: trackable totals are window-driven,
+     * never field-driven).
+     *
+     * Strategy: maintain at most ONE `source: "manual"` window per task. Its
+     * duration absorbs the difference between the user-entered total and the
+     * sum of timer/calendar windows for that task. If the user manually
+     * lowers the total below what timers logged, we clamp the manual window
+     * to 0 (we never destroy timer-recorded work).
+     */
+    const allWindows = await ctx.db
+      .query("timeWindows")
+      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+      .collect();
+
+    const manualWindows = allWindows.filter((w) => w.source === "manual");
+    const nonManualSum = allWindows
+      .filter((w) => w.source !== "manual")
+      .reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
+
+    const desiredManualSeconds = Math.max(
+      0,
+      args.timeSpentInSecondsUnallocated - nonManualSum
+    );
+
+    if (desiredManualSeconds === 0) {
+      for (const w of manualWindows) await ctx.db.delete(w._id);
+      return;
+    }
+
+    if (manualWindows.length > 0) {
+      // Keep the first manual window, fold any extras into it (defensive).
+      const [primary, ...extras] = manualWindows;
+      for (const e of extras) await ctx.db.delete(e._id);
+      await ctx.db.patch(primary._id, {
+        durationSeconds: desiredManualSeconds,
+      });
+      return;
+    }
+
+    // No manual window yet → create one for the task's day (or today).
+    const day =
+      task.taskDay ??
+      (() => {
+        const now = new Date();
+        return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+      })();
+    const tz = "UTC";
+
+    // Intentionally leave trackableId unset on the manual window. Manual
+    // entries represent the user editing the task's total time, not work
+    // logged at a specific moment, so they should follow the task's CURRENT
+    // trackable (resolved at query time via `resolveAttributedTrackableId`)
+    // rather than carry a frozen snapshot.
+    await ctx.db.insert("timeWindows", {
+      startTimeHHMM: "00:00",
+      startDayYYYYMMDD: day,
+      durationSeconds: desiredManualSeconds,
+      userId: user._id,
+      budgetType: "ACTUAL" as const,
+      activityType: "TASK" as const,
+      taskId: args.taskId,
+      timeZone: tz,
+      isRecurringInstance: false,
+      source: "manual" as const,
+    });
+  },
+});
+
+export const getTimeTracked = query({
+  args: { taskId: v.id("tasks") },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const windows = await ctx.db
+      .query("timeWindows")
+      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+      .collect();
+
+    const actualWindows = windows.filter(
+      (w) => w.budgetType === "ACTUAL" && w.activityType === "TASK"
+    );
+
+    const totalSeconds = actualWindows.reduce(
+      (sum, w) => sum + w.durationSeconds,
+      0
+    );
+
+    const byDay = new Map<string, typeof actualWindows>();
+    for (const w of actualWindows) {
+      const day = w.startDayYYYYMMDD;
+      if (!byDay.has(day)) byDay.set(day, []);
+      byDay.get(day)!.push(w);
+    }
+
+    const sessions = Array.from(byDay.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([day, dayWindows]) => ({
+        day,
+        totalSeconds: dayWindows.reduce((s, w) => s + w.durationSeconds, 0),
+        windows: dayWindows
+          .sort((a, b) => a.startTimeHHMM.localeCompare(b.startTimeHHMM))
+          .map((w) => ({
+            id: w._id,
+            startTime: w.startTimeHHMM,
+            durationSeconds: w.durationSeconds,
+          })),
+      }));
+
+    return { totalSeconds, sessions };
   },
 });

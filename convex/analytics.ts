@@ -1,6 +1,11 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser } from "./_helpers/auth";
+import {
+  buildListIdToTrackableId,
+  buildTaskInfoMap,
+  timeWindowAttributedToTrackable,
+} from "./_helpers/trackableAttribution";
 
 export const getTimeBreakdown = query({
   args: {
@@ -54,12 +59,30 @@ export const getTimeBreakdown = query({
       .collect();
     const trackableMap = new Map(trackables.map((t) => [t._id, t]));
 
+    // Surface the list→trackable join so the client can run the SAME union
+    // attribution as `getGoalDetails` / `getProgressionStats`. Without this,
+    // any client-side per-trackable aggregation would silently miss
+    // task-linked time that flows through a list.
+    const links = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const listIdToTrackableId: Record<string, string> = {};
+    for (const link of links) {
+      listIdToTrackableId[link.listId] = link.trackableId;
+    }
+
     return {
       timeWindows: allWindows,
       tasks: Object.fromEntries(taskMap),
       tags: Object.fromEntries(tagMap),
       lists: Object.fromEntries(listMap),
       trackables: Object.fromEntries(trackableMap),
+      listIdToTrackableId,
+      // Surface the window so the client can guard against stale data
+      // when the user switches tab/date faster than the query resolves.
+      windowStart: args.startDay,
+      windowEnd: args.endDay,
     };
   },
 });
@@ -76,14 +99,41 @@ export const getProgressionStats = query({
     const user = await requireApprovedUser(ctx);
     const results: Record<string, any> = {};
 
+    // Pre-load attribution maps once (same approach as `getGoalDetails`).
+    const userTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const taskInfoMap = buildTaskInfoMap(userTasks);
+
+    const userLinks = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const listIdToTrackableId = buildListIdToTrackableId(userLinks);
+
+    const allUserWindows = await ctx.db
+      .query("timeWindows")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const actualWindows = allUserWindows.filter(
+      (w) => w.budgetType === "ACTUAL"
+    );
+
     for (const trackableId of args.trackableIds) {
       const trackable = await ctx.db.get(trackableId);
       if (!trackable) continue;
 
-      const timeWindows = await ctx.db
-        .query("timeWindows")
-        .withIndex("by_trackable", (q) => q.eq("trackableId", trackableId))
-        .collect();
+      // Union attribution — same formula as `getGoalDetails` so totals
+      // displayed on the trackable card and in analytics never disagree.
+      const attributedWindows = actualWindows.filter((w) =>
+        timeWindowAttributedToTrackable(
+          w,
+          trackableId,
+          taskInfoMap,
+          listIdToTrackableId
+        )
+      );
 
       const trackerEntries = await ctx.db
         .query("trackerEntries")
@@ -96,15 +146,16 @@ export const getProgressionStats = query({
         .collect();
 
       results[trackableId] = {
-        totalTimeSeconds: timeWindows
-          .filter((w) => w.budgetType === "ACTUAL")
-          .reduce((s, w) => s + w.durationSeconds, 0),
+        totalTimeSeconds: attributedWindows.reduce(
+          (s, w) => s + w.durationSeconds,
+          0
+        ),
         totalCount: trackerEntries.reduce(
           (s, e) => s + (e.countValue ?? 0),
           0
         ),
         daysCompleted: trackableDays.filter((d) => d.numCompleted > 0).length,
-        calendarEvents: timeWindows.length,
+        calendarEvents: attributedWindows.length,
       };
     }
 

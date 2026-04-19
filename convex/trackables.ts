@@ -1,6 +1,11 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser } from "./_helpers/auth";
+import {
+  buildListIdToTrackableId,
+  buildTaskInfoMap,
+  timeWindowAttributedToTrackable,
+} from "./_helpers/trackableAttribution";
 
 export const search = query({
   args: { archived: v.optional(v.boolean()) },
@@ -220,11 +225,82 @@ export const remove = mutation({
   },
 });
 
+/** Add `days` to an 8-char YYYYMMDD string, returning another YYYYMMDD. */
+function addDaysYYYYMMDD(yyyymmdd: string, days: number): string {
+  const y = parseInt(yyyymmdd.substring(0, 4));
+  const m = parseInt(yyyymmdd.substring(4, 6)) - 1;
+  const d = parseInt(yyyymmdd.substring(6, 8));
+  const date = new Date(y, m, d);
+  date.setDate(date.getDate() + days);
+  const yy = date.getFullYear().toString();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yy}${mm}${dd}`;
+}
+
+function diffDaysYYYYMMDD(start: string, end: string): number {
+  const sy = parseInt(start.substring(0, 4));
+  const sm = parseInt(start.substring(4, 6)) - 1;
+  const sd = parseInt(start.substring(6, 8));
+  const ey = parseInt(end.substring(0, 4));
+  const em = parseInt(end.substring(4, 6)) - 1;
+  const ed = parseInt(end.substring(6, 8));
+  const a = new Date(sy, sm, sd).getTime();
+  const b = new Date(ey, em, ed).getTime();
+  return Math.round((b - a) / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Names of tasks the user marked complete on `dayYYYYMMDD` that attribute to
+ * `trackableId` (via the same resolution chain as `timeWindowAttributedToTrackable`:
+ * direct `task.trackableId`, else `task.listId` → `listTrackableLinks`).
+ *
+ * Mirror of productivity-one's `getCompletedTaskNames(dayYYYYMMDD)` helper
+ * inside `goal-widget.ts` and `day-of-week-completion-widget.ts`. Used by
+ * `TrackPeriodicDialog` (display) and `TrackCountDialog` (display + saved
+ * count is reduced by `completedTaskNames.length` so we don't double-count
+ * tasks that already auto-credit the trackable).
+ */
+export const getCompletedTaskNamesForDay = query({
+  args: {
+    trackableId: v.id("trackables"),
+    dayYYYYMMDD: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+
+    const links = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const listIdToTrackableId = buildListIdToTrackableId(links);
+
+    return tasks
+      .filter((t) => t.dateCompleted === args.dayYYYYMMDD)
+      .filter((t) => {
+        if (t.trackableId === args.trackableId) return true;
+        if (t.listId && listIdToTrackableId.get(t.listId) === args.trackableId)
+          return true;
+        return false;
+      })
+      .map((t) => t.name);
+  },
+});
+
 export const getGoalDetails = query({
   args: {
     activeOffset: v.optional(v.number()),
     archivedOffset: v.optional(v.number()),
     limit: v.optional(v.number()),
+    /** YYYYMMDD (no dashes). Required for today / weekly stats. */
+    today: v.optional(v.string()),
+    /** YYYYMMDD of Monday this week. Required for weekly stats. */
+    weekStart: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
@@ -245,18 +321,60 @@ export const getGoalDetails = query({
       .sort((a, b) => a.orderIndex - b.orderIndex)
       .slice(args.archivedOffset ?? 0, (args.archivedOffset ?? 0) + lim);
 
+    const userTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const taskInfoMap = buildTaskInfoMap(userTasks);
+
+    const userLinks = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const listIdToTrackableId = buildListIdToTrackableId(userLinks);
+
+    const allUserWindows = await ctx.db
+      .query("timeWindows")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const actualWindows = allUserWindows.filter(
+      (w) => w.budgetType === "ACTUAL"
+    );
+
+    // Pre-fetch trackableDays / trackerEntries for all trackables so we
+    // don't N+1 inside the loop.
+    const allDays = await ctx.db
+      .query("trackableDays")
+      .withIndex("by_user_trackable", (q) => q.eq("userId", user._id))
+      .collect();
+    const daysByTrackable = new Map<string, typeof allDays>();
+    for (const d of allDays) {
+      const arr = daysByTrackable.get(d.trackableId) ?? [];
+      arr.push(d);
+      daysByTrackable.set(d.trackableId, arr);
+    }
+
+    // Build the 7 day strings of the current week (Mon-Sun) when we have a
+    // weekStart. Widgets use this to render the day-of-week pill even when
+    // there is no row in trackableDays for a given day.
+    const weekDays: string[] = [];
+    if (args.weekStart) {
+      for (let i = 0; i < 7; i++) {
+        weekDays.push(addDaysYYYYMMDD(args.weekStart, i));
+      }
+    }
+    const weekEnd = weekDays.length === 7 ? weekDays[6] : undefined;
+
     const result = [];
     for (const trackable of [...active, ...archived]) {
-      const timeWindows = await ctx.db
-        .query("timeWindows")
-        .withIndex("by_trackable", (q) =>
-          q.eq("trackableId", trackable._id)
+      const attributedWindows = actualWindows.filter((w) =>
+        timeWindowAttributedToTrackable(
+          w,
+          trackable._id,
+          taskInfoMap,
+          listIdToTrackableId
         )
-        .collect();
-
-      const totalSeconds = timeWindows
-        .filter((w) => w.budgetType === "ACTUAL")
-        .reduce((sum, w) => sum + w.durationSeconds, 0);
+      );
 
       const trackerEntries = await ctx.db
         .query("trackerEntries")
@@ -265,17 +383,138 @@ export const getGoalDetails = query({
         )
         .collect();
 
-      const totalCount = trackerEntries.reduce(
+      const totalEntryCount = trackerEntries.reduce(
         (sum, e) => sum + (e.countValue ?? 0),
         0
       );
+
+      // Time totals fold in `trackerEntries.durationSeconds` for TRACKER
+      // trackables. Mirrors productivity-one: the REST backend's
+      // `search-time-windows` endpoint synthesises TimeWindow-shaped
+      // rows from each TrackerEntry that has a duration, so home and
+      // analytics widgets see manual tracker time alongside timer
+      // sessions. Without this, "Add progress → 1h 37m" silently
+      // disappears from every time stat (#bugfix).
+      const trackerEntrySecondsTotal =
+        trackable.trackableType === "TRACKER"
+          ? trackerEntries.reduce(
+              (sum, e) => sum + (e.durationSeconds ?? 0),
+              0
+            )
+          : 0;
+      const totalSeconds =
+        attributedWindows.reduce((sum, w) => sum + w.durationSeconds, 0) +
+        trackerEntrySecondsTotal;
+
+      const trackableDays = daysByTrackable.get(trackable._id) ?? [];
+      const totalDayCount = trackableDays.reduce(
+        (s, d) => s + d.numCompleted,
+        0
+      );
+
+      // Weekly day-completion strip — empty entries when no row exists for
+      // a day. Always 7 elements when weekStart was provided.
+      const weeklyDayCompletion = weekDays.map((day) => {
+        const row = trackableDays.find((d) => d.dayYYYYMMDD === day);
+        return {
+          dayYYYYMMDD: day,
+          numCompleted: row?.numCompleted ?? 0,
+          comments: row?.comments ?? "",
+        };
+      });
+      const currentWeekCompletedDays = weeklyDayCompletion.filter(
+        (d) => d.numCompleted > 0
+      ).length;
+
+      // Weekly seconds — only meaningful when weekStart is supplied.
+      // Includes manual tracker entry time for TRACKER trackables (see
+      // note on `totalSeconds` above).
+      const weeklySeconds =
+        weekDays.length === 7 && weekEnd
+          ? attributedWindows
+              .filter(
+                (w) =>
+                  w.startDayYYYYMMDD >= weekDays[0] &&
+                  w.startDayYYYYMMDD <= weekEnd
+              )
+              .reduce((s, w) => s + w.durationSeconds, 0) +
+            (trackable.trackableType === "TRACKER"
+              ? trackerEntries
+                  .filter(
+                    (e) =>
+                      e.dayYYYYMMDD >= weekDays[0] &&
+                      e.dayYYYYMMDD <= weekEnd
+                  )
+                  .reduce((s, e) => s + (e.durationSeconds ?? 0), 0)
+              : 0)
+          : 0;
+
+      // Today values — only computed when caller passed `today`.
+      const todaySeconds = args.today
+        ? attributedWindows
+            .filter((w) => w.startDayYYYYMMDD === args.today)
+            .reduce((s, w) => s + w.durationSeconds, 0) +
+          (trackable.trackableType === "TRACKER"
+            ? trackerEntries
+                .filter((e) => e.dayYYYYMMDD === args.today)
+                .reduce((s, e) => s + (e.durationSeconds ?? 0), 0)
+            : 0)
+        : 0;
+
+      const todayDayCount = args.today
+        ? trackableDays
+            .filter((d) => d.dayYYYYMMDD === args.today)
+            .reduce((s, d) => s + d.numCompleted, 0)
+        : 0;
+
+      const todayEntryCount = args.today
+        ? trackerEntries
+            .filter((e) => e.dayYYYYMMDD === args.today)
+            .reduce((s, e) => s + (e.countValue ?? 0), 0)
+        : 0;
+
+      // Daily averages — windowed from the trackable's start to today,
+      // clamped to at least 1 day so we never divide by zero.
+      let dailyTimeAverageSeconds = 0;
+      let dailyCountAverage = 0;
+      if (args.today) {
+        const elapsedDays = Math.max(
+          1,
+          diffDaysYYYYMMDD(trackable.startDayYYYYMMDD, args.today) + 1
+        );
+        dailyTimeAverageSeconds = totalSeconds / elapsedDays;
+        // Use entry-count for trackers, day-count otherwise.
+        const totalCountForAvg =
+          trackable.trackableType === "TRACKER"
+            ? totalEntryCount
+            : totalDayCount;
+        dailyCountAverage = totalCountForAvg / elapsedDays;
+      }
+
+      // `totalCount` is the user-facing "lifetime count":
+      //   - TRACKER: sum of trackerEntries.countValue
+      //   - everything else: sum of trackableDays.numCompleted
+      const totalCount =
+        trackable.trackableType === "TRACKER"
+          ? totalEntryCount
+          : totalDayCount;
 
       result.push({
         ...trackable,
         totalTimeSeconds: totalSeconds,
         totalCount,
-        calendarCount: timeWindows.length,
+        totalEntryCount,
+        totalDayCount,
+        calendarCount: attributedWindows.length,
         trackerEntryCount: trackerEntries.length,
+        weeklyDayCompletion,
+        currentWeekCompletedDays,
+        weeklySeconds,
+        todaySeconds,
+        todayDayCount,
+        todayEntryCount,
+        dailyTimeAverageSeconds,
+        dailyCountAverage,
       });
     }
 
@@ -287,3 +526,279 @@ export const getGoalDetails = query({
     };
   },
 });
+
+/* ──────────────────────────────────────────────────────────────────── *
+ * Analytics-series query — per-day buckets per trackable for an
+ * arbitrary window. Used ONLY by the Analytics page's analytics-
+ * specific widgets (line charts, weekly pills, etc.).
+ *
+ * Aggregation logic is intentionally identical to `getGoalDetails`
+ * (same union attribution via `timeWindowAttributedToTrackable`,
+ * same trackableDays / trackerEntries handling). The Analytics widgets
+ * therefore can never disagree with the home-page widgets on shared
+ * data (e.g. "today's count" must match for both UIs).
+ *
+ * Returns:
+ *   {
+ *     trackables: Array<{
+ *       _id, name, colour, trackableType, frequency, targets…,
+ *       days: Array<{ day, secondsAttributed, daysCompleted,
+ *                     trackerCount, trackerSeconds }>,
+ *       sumInWindow:   { secondsAttributed, daysCompleted,
+ *                        trackerCount, trackerSeconds, calendarEvents },
+ *       totalBeforePeriod: same shape (state at `windowStart - 1`),
+ *       weeklyAverage:  count avg per week (used by COUPLE_DAYS_A_WEEK,
+ *                       COUPLE_MINUTES_A_WEEK, NUMBER, TRACKER count),
+ *       monthlyAverage: avg per month,
+ *       yearlyAverage:  avg per year,
+ *       dailyTimeAverageSeconds, dailyCountAverage,
+ *     }>
+ *   }
+ * ──────────────────────────────────────────────────────────────────── */
+export const getTrackableAnalyticsSeries = query({
+  args: {
+    windowStart: v.string(),
+    windowEnd: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+
+    const trackables = await ctx.db
+      .query("trackables")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+
+    const userTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const taskInfoMap = buildTaskInfoMap(userTasks);
+
+    const userLinks = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const listIdToTrackableId = buildListIdToTrackableId(userLinks);
+
+    const allWindows = await ctx.db
+      .query("timeWindows")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const actualWindows = allWindows.filter(
+      (w) => w.budgetType === "ACTUAL"
+    );
+
+    const allDays = await ctx.db
+      .query("trackableDays")
+      .withIndex("by_user_trackable", (q) => q.eq("userId", user._id))
+      .collect();
+    const daysByTrackable = new Map<string, typeof allDays>();
+    for (const d of allDays) {
+      const arr = daysByTrackable.get(d.trackableId) ?? [];
+      arr.push(d);
+      daysByTrackable.set(d.trackableId, arr);
+    }
+
+    const allTrackerEntries = await ctx.db
+      .query("trackerEntries")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const trackerByTrackable = new Map<string, typeof allTrackerEntries>();
+    for (const e of allTrackerEntries) {
+      const arr = trackerByTrackable.get(e.trackableId) ?? [];
+      arr.push(e);
+      trackerByTrackable.set(e.trackableId, arr);
+    }
+
+    // Build the window's day list once.
+    const windowDays: string[] = [];
+    {
+      const span = diffDaysYYYYMMDD(args.windowStart, args.windowEnd);
+      for (let i = 0; i <= span; i++) {
+        windowDays.push(addDaysYYYYMMDD(args.windowStart, i));
+      }
+    }
+
+    const result = trackables
+      .filter((t) => !t.archived)
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+      .map((trackable) => {
+        const attributedWindows = actualWindows.filter((w) =>
+          timeWindowAttributedToTrackable(
+            w,
+            trackable._id,
+            taskInfoMap,
+            listIdToTrackableId
+          )
+        );
+
+        const tDays = daysByTrackable.get(trackable._id) ?? [];
+        const tEntries = trackerByTrackable.get(trackable._id) ?? [];
+
+        const isTracker = trackable.trackableType === "TRACKER";
+
+        // Per-day buckets within the window.
+        //
+        // For TRACKER trackables `secondsAttributed` includes BOTH the
+        // attributed timer windows AND `trackerEntries.durationSeconds`
+        // logged via the "Add progress" dialog. Mirrors P1's
+        // `search-time-windows` merge so home + analytics widgets agree
+        // on how much time was spent (#bugfix).
+        //
+        // `trackerSeconds` is kept separate for callers that want the
+        // raw entry-only number (currently unused — every widget uses
+        // `secondsAttributed`).
+        const days = windowDays.map((day) => {
+          const winSeconds = attributedWindows
+            .filter((w) => w.startDayYYYYMMDD === day)
+            .reduce((s, w) => s + w.durationSeconds, 0);
+          const daysCompleted = tDays
+            .filter((d) => d.dayYYYYMMDD === day)
+            .reduce((s, d) => s + d.numCompleted, 0);
+          const trackerCount = tEntries
+            .filter((e) => e.dayYYYYMMDD === day)
+            .reduce((s, e) => s + (e.countValue ?? 0), 0);
+          const trackerSeconds = tEntries
+            .filter((e) => e.dayYYYYMMDD === day)
+            .reduce((s, e) => s + (e.durationSeconds ?? 0), 0);
+          return {
+            day,
+            secondsAttributed: winSeconds + (isTracker ? trackerSeconds : 0),
+            daysCompleted,
+            trackerCount,
+            trackerSeconds,
+          };
+        });
+
+        const sumInWindow = {
+          secondsAttributed: days.reduce(
+            (s, d) => s + d.secondsAttributed,
+            0
+          ),
+          daysCompleted: days.reduce((s, d) => s + d.daysCompleted, 0),
+          trackerCount: days.reduce((s, d) => s + d.trackerCount, 0),
+          trackerSeconds: days.reduce((s, d) => s + d.trackerSeconds, 0),
+          calendarEvents: attributedWindows.filter(
+            (w) =>
+              w.startDayYYYYMMDD >= args.windowStart &&
+              w.startDayYYYYMMDD <= args.windowEnd
+          ).length,
+        };
+
+        // "Before period" baseline — state at `windowStart - 1`, used by
+        // monthly/yearly cumulative line charts. Same TRACKER fold as
+        // `secondsAttributed` so cumulative chart bases line up.
+        const beforeEntrySeconds = tEntries
+          .filter((e) => e.dayYYYYMMDD < args.windowStart)
+          .reduce((s, e) => s + (e.durationSeconds ?? 0), 0);
+        const totalBeforePeriod = {
+          secondsAttributed:
+            attributedWindows
+              .filter((w) => w.startDayYYYYMMDD < args.windowStart)
+              .reduce((s, w) => s + w.durationSeconds, 0) +
+            (isTracker ? beforeEntrySeconds : 0),
+          daysCompleted: tDays
+            .filter((d) => d.dayYYYYMMDD < args.windowStart)
+            .reduce((s, d) => s + d.numCompleted, 0),
+          trackerCount: tEntries
+            .filter((e) => e.dayYYYYMMDD < args.windowStart)
+            .reduce((s, e) => s + (e.countValue ?? 0), 0),
+          trackerSeconds: beforeEntrySeconds,
+        };
+
+        // Lifetime averages (per week / month / year). Computed from the
+        // trackable's start day to today so they're stable regardless of
+        // the analytics window the user is viewing — same numbers shown
+        // on whatever tab/date.
+        const today = todayYYYYMMDD();
+        const elapsedDays = Math.max(
+          1,
+          diffDaysYYYYMMDD(trackable.startDayYYYYMMDD, today) + 1
+        );
+        const lifetimeEntrySeconds = tEntries.reduce(
+          (s, e) => s + (e.durationSeconds ?? 0),
+          0
+        );
+        // Same TRACKER fold as everywhere else — analytics totals must
+        // match home `goal.totalTimeSeconds`.
+        const totalSeconds =
+          attributedWindows.reduce((s, w) => s + w.durationSeconds, 0) +
+          (isTracker ? lifetimeEntrySeconds : 0);
+        const totalDayCount = tDays.reduce((s, d) => s + d.numCompleted, 0);
+        const totalEntryCount = tEntries.reduce(
+          (s, e) => s + (e.countValue ?? 0),
+          0
+        );
+        const totalEntrySeconds = tEntries.reduce(
+          (s, e) => s + (e.durationSeconds ?? 0),
+          0
+        );
+
+        const dailyTimeAverageSeconds = totalSeconds / elapsedDays;
+        const dailyCountAverage =
+          (trackable.trackableType === "TRACKER"
+            ? totalEntryCount
+            : totalDayCount) / elapsedDays;
+        const weeklyAverage =
+          (trackable.trackableType === "TRACKER"
+            ? totalEntryCount
+            : totalDayCount) / Math.max(1, elapsedDays / 7);
+        const monthlyAverage =
+          (trackable.trackableType === "TRACKER"
+            ? totalEntryCount
+            : totalDayCount) / Math.max(1, elapsedDays / 30);
+        const yearlyAverage =
+          (trackable.trackableType === "TRACKER"
+            ? totalEntryCount
+            : totalDayCount) / Math.max(1, elapsedDays / 365);
+        const weeklyTimeAverageSeconds =
+          totalSeconds / Math.max(1, elapsedDays / 7);
+
+        return {
+          _id: trackable._id,
+          name: trackable.name,
+          colour: trackable.colour,
+          trackableType: trackable.trackableType,
+          frequency: trackable.frequency,
+          targetNumberOfDaysAWeek: trackable.targetNumberOfDaysAWeek,
+          targetNumberOfMinutesAWeek: trackable.targetNumberOfMinutesAWeek,
+          targetCount: trackable.targetCount,
+          targetNumberOfHours: trackable.targetNumberOfHours,
+          trackTime: trackable.trackTime,
+          trackCount: trackable.trackCount,
+          isCumulative: trackable.isCumulative,
+          isRatingTracker: trackable.isRatingTracker,
+          startDayYYYYMMDD: trackable.startDayYYYYMMDD,
+          endDayYYYYMMDD: trackable.endDayYYYYMMDD,
+          days,
+          sumInWindow,
+          totalBeforePeriod,
+          weeklyAverage,
+          monthlyAverage,
+          yearlyAverage,
+          dailyTimeAverageSeconds,
+          dailyCountAverage,
+          weeklyTimeAverageSeconds,
+          // Surface lifetime totals so widgets can show "Total: …" rows
+          // without a second trip.
+          lifetime: {
+            totalSeconds,
+            totalDayCount,
+            totalEntryCount,
+            totalEntrySeconds,
+          },
+        };
+      });
+
+    return {
+      windowStart: args.windowStart,
+      windowEnd: args.windowEnd,
+      trackables: result,
+    };
+  },
+});
+
+function todayYYYYMMDD(): string {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}

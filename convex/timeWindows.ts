@@ -1,6 +1,10 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser } from "./_helpers/auth";
+import {
+  buildListIdToTrackableId,
+  resolveSnapshotTrackableIdForTask,
+} from "./_helpers/trackableAttribution";
 
 export const search = query({
   args: {
@@ -62,9 +66,36 @@ export const upsert = mutation({
     comments: v.optional(v.string()),
     tagIds: v.optional(v.array(v.id("tags"))),
     timeZone: v.string(),
+    source: v.optional(
+      v.union(
+        v.literal("timer"),
+        v.literal("manual"),
+        v.literal("calendar"),
+        v.literal("tracker_entry")
+      )
+    ),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+
+    // Auto-snapshot the resolved trackableId when a task window is created
+    // without one (e.g. CalendarView drag-drop). This keeps trackable totals
+    // in sync without requiring every call site to resolve the link itself.
+    let resolvedTrackableId = args.trackableId;
+    if (!resolvedTrackableId && args.taskId) {
+      const task = await ctx.db.get(args.taskId);
+      const links = await ctx.db
+        .query("listTrackableLinks")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect();
+      const listIdToTrackableId = buildListIdToTrackableId(links);
+      resolvedTrackableId = resolveSnapshotTrackableIdForTask({
+        task: task
+          ? { trackableId: task.trackableId, listId: task.listId }
+          : null,
+        listIdToTrackableId,
+      });
+    }
 
     if (args.id) {
       const existing = await ctx.db.get(args.id);
@@ -76,11 +107,12 @@ export const upsert = mutation({
         budgetType: args.budgetType,
         activityType: args.activityType,
         taskId: args.taskId,
-        trackableId: args.trackableId,
+        trackableId: resolvedTrackableId,
         title: args.title,
         comments: args.comments,
         tagIds: args.tagIds,
         timeZone: args.timeZone,
+        source: args.source ?? existing.source,
       });
       return args.id;
     }
@@ -93,12 +125,13 @@ export const upsert = mutation({
       budgetType: args.budgetType,
       activityType: args.activityType,
       taskId: args.taskId,
-      trackableId: args.trackableId,
+      trackableId: resolvedTrackableId,
       title: args.title,
       comments: args.comments,
       tagIds: args.tagIds,
       timeZone: args.timeZone,
       isRecurringInstance: false,
+      source: args.source,
     });
   },
 });
