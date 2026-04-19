@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
   },
   note: {
     fontSize: 13,
-    color: Colors.textSecondary,
+    color: Colors.textTertiary,
     fontStyle: "italic",
     marginBottom: 20,
   },

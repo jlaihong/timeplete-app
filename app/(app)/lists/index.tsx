@@ -5,38 +5,30 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Alert,
 } from "react-native";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useConvexAuth } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { Doc, Id } from "../../../convex/_generated/dataModel";
 import { Colors } from "../../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { Card } from "../../../components/ui/Card";
-import { Button } from "../../../components/ui/Button";
-import { Input } from "../../../components/ui/Input";
-import { ColorPicker } from "../../../components/ui/ColorPicker";
 import { EmptyState } from "../../../components/ui/EmptyState";
+import { ListDialog } from "../../../components/lists/ListDialog";
 import { Stack, router } from "expo-router";
 
+type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
+
 export default function ListsScreen() {
-  const lists = useQuery(api.lists.search);
-  const upsertList = useMutation(api.lists.upsert);
-  const removeList = useMutation(api.lists.remove);
+  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
+  const canQueryLists = !authLoading && isAuthenticated;
+  const lists = useQuery(api.lists.search, canQueryLists ? {} : "skip");
   const [showArchived, setShowArchived] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newColour, setNewColour] = useState("#4A90D9");
+  // `null` = closed, `"new"` = create mode, otherwise the list being edited.
+  const [dialogState, setDialogState] = useState<null | "new" | ListDoc>(null);
 
   const filteredLists = lists
     ?.filter((l) => (showArchived ? l.archived : !l.archived))
     .sort((a, b) => a.orderIndex - b.orderIndex);
-
-  const handleCreate = async () => {
-    if (!newName.trim()) return;
-    await upsertList({ name: newName.trim(), colour: newColour });
-    setNewName("");
-    setCreating(false);
-  };
 
   return (
     <View style={styles.container}>
@@ -61,30 +53,6 @@ export default function ListsScreen() {
         </TouchableOpacity>
       </View>
 
-      {creating && (
-        <Card style={styles.createCard}>
-          <Input
-            label="List Name"
-            value={newName}
-            onChangeText={setNewName}
-            placeholder="New list name"
-          />
-          <Text style={styles.colorLabel}>Color</Text>
-          <ColorPicker
-            selectedColor={newColour}
-            onColorSelect={setNewColour}
-          />
-          <View style={styles.createActions}>
-            <Button
-              title="Cancel"
-              variant="outline"
-              onPress={() => setCreating(false)}
-            />
-            <Button title="Create" onPress={handleCreate} />
-          </View>
-        </Card>
-      )}
-
       {!filteredLists ? (
         <Text style={styles.loading}>Loading...</Text>
       ) : filteredLists.length === 0 ? (
@@ -95,28 +63,53 @@ export default function ListsScreen() {
           keyExtractor={(item) => item._id}
           renderItem={({ item }) => (
             <Card style={styles.listCard} padded={false}>
-              <TouchableOpacity
-                style={styles.listRow}
-                onPress={() => router.push(`/(app)/lists/${item._id}`)}
-              >
-                <View
-                  style={[styles.listDot, { backgroundColor: item.colour }]}
-                />
-                <View style={styles.listInfo}>
-                  <Text style={styles.listName}>{item.name}</Text>
-                  {item.isInbox && (
-                    <Text style={styles.badge}>Inbox</Text>
-                  )}
-                  {item.isGoalList && (
-                    <Text style={styles.badge}>Goal</Text>
-                  )}
-                </View>
-                <Ionicons
-                  name="chevron-forward"
-                  size={18}
-                  color={Colors.textTertiary}
-                />
-              </TouchableOpacity>
+              <View style={styles.listRow}>
+                <TouchableOpacity
+                  style={styles.listRowLeft}
+                  onPress={() => router.push(`/(app)/lists/${item._id}`)}
+                >
+                  <View
+                    style={[styles.listDot, { backgroundColor: item.colour }]}
+                  />
+                  <View style={styles.listInfo}>
+                    <Text style={styles.listName}>{item.name}</Text>
+                    {item.isInbox && (
+                      <Text style={styles.badge}>Inbox</Text>
+                    )}
+                    {item.isGoalList && (
+                      <Text style={styles.badge}>Goal</Text>
+                    )}
+                    {!!item.trackableId && !item.isGoalList && (
+                      <Text style={styles.badge}>Linked</Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+                {/* Goal-backed lists are managed from the trackable, not here. */}
+                {!item.isGoalList && (
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={() => setDialogState(item)}
+                    accessibilityLabel={`Edit list ${item.name}`}
+                  >
+                    <Ionicons
+                      name="settings-outline"
+                      size={18}
+                      color={Colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.openButton}
+                  onPress={() => router.push(`/(app)/lists/${item._id}`)}
+                  accessibilityLabel={`Open list ${item.name}`}
+                >
+                  <Ionicons
+                    name="chevron-forward"
+                    size={18}
+                    color={Colors.textTertiary}
+                  />
+                </TouchableOpacity>
+              </View>
             </Card>
           )}
           contentContainerStyle={styles.listContent}
@@ -125,10 +118,17 @@ export default function ListsScreen() {
 
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => setCreating(true)}
+        onPress={() => setDialogState("new")}
       >
         <Ionicons name="add" size={28} color={Colors.white} />
       </TouchableOpacity>
+
+      {dialogState && (
+        <ListDialog
+          list={dialogState === "new" ? null : dialogState}
+          onClose={() => setDialogState(null)}
+        />
+      )}
     </View>
   );
 }
@@ -151,26 +151,29 @@ const styles = StyleSheet.create({
   activeTab: { backgroundColor: Colors.primary },
   tabText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
   activeTabText: { color: Colors.white },
-  createCard: { marginHorizontal: 16, marginBottom: 16 },
-  colorLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  createActions: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 16,
-    justifyContent: "flex-end",
-  },
   listContent: { padding: 16, paddingBottom: 80 },
   listCard: { marginBottom: 6 },
   listRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 14,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+  },
+  listRowLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
+    paddingVertical: 10,
+    paddingLeft: 8,
+  },
+  editButton: {
+    padding: 10,
+    borderRadius: 6,
+  },
+  openButton: {
+    padding: 10,
+    borderRadius: 6,
   },
   listDot: { width: 14, height: 14, borderRadius: 7 },
   listInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },

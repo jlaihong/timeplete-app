@@ -54,7 +54,7 @@ export function Button({
     >
       {loading ? (
         <ActivityIndicator
-          color={variant === "primary" ? Colors.white : Colors.primary}
+          color={variant === "primary" ? Colors.onPrimary : Colors.primary}
           size="small"
         />
       ) : (
@@ -78,20 +78,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   primary: { backgroundColor: Colors.primary },
-  secondary: { backgroundColor: Colors.surfaceVariant },
+  secondary: { backgroundColor: Colors.surfaceContainerHigh },
   outline: {
     backgroundColor: Colors.transparent,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: Colors.outline,
   },
   ghost: { backgroundColor: Colors.transparent },
-  danger: { backgroundColor: Colors.error },
+  danger: { backgroundColor: Colors.errorContainer },
   disabled: { opacity: 0.5 },
   text: { fontSize: 16, fontWeight: "600" },
-  primaryText: { color: Colors.white } as TextStyle,
+  primaryText: { color: Colors.onPrimary } as TextStyle,
   secondaryText: { color: Colors.text } as TextStyle,
   outlineText: { color: Colors.text } as TextStyle,
   ghostText: { color: Colors.primary } as TextStyle,
-  dangerText: { color: Colors.white } as TextStyle,
+  dangerText: { color: Colors.error } as TextStyle,
   disabledText: { opacity: 0.5 },
 });

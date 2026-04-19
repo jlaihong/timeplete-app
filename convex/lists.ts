@@ -1,6 +1,65 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
 import { requireApprovedUser } from "./_helpers/auth";
+
+/**
+ * Set/clear the bidirectional link between a list and a trackable.
+ *
+ * Mirrors productivity-one's `list-dialog → "Linked Trackable"` semantics:
+ * a list has at most one linked trackable, and a trackable has at most one
+ * linked list. Whenever the link changes we keep `listTrackableLinks` and
+ * `trackable.listId` in sync, and clear out any conflicting prior link so
+ * we never end up with two lists fighting over the same trackable (or vice
+ * versa).
+ */
+async function setListTrackableLink(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  listId: Id<"lists">,
+  newTrackableId: Id<"trackables"> | null,
+): Promise<void> {
+  const existingByList = await ctx.db
+    .query("listTrackableLinks")
+    .withIndex("by_list", (q) => q.eq("listId", listId))
+    .unique();
+
+  // No-op fast path: link already matches the requested state.
+  if ((existingByList?.trackableId ?? null) === newTrackableId) return;
+
+  if (existingByList) {
+    const oldTrackable = await ctx.db.get(existingByList.trackableId);
+    // Only clear the trackable's listId pointer if it was actually pointing
+    // at *this* list (it could have been re-linked elsewhere already).
+    if (oldTrackable && oldTrackable.userId === userId && oldTrackable.listId === listId) {
+      await ctx.db.patch(existingByList.trackableId, { listId: undefined });
+    }
+    await ctx.db.delete(existingByList._id);
+  }
+
+  if (newTrackableId) {
+    const newTrackable = await ctx.db.get(newTrackableId);
+    if (!newTrackable || newTrackable.userId !== userId) {
+      throw new Error("Trackable not found");
+    }
+
+    // Steal the trackable away from any list that currently owns it.
+    const existingByTrackable = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", newTrackableId))
+      .unique();
+    if (existingByTrackable) {
+      await ctx.db.delete(existingByTrackable._id);
+    }
+
+    await ctx.db.insert("listTrackableLinks", {
+      listId,
+      trackableId: newTrackableId,
+      userId,
+    });
+    await ctx.db.patch(newTrackableId, { listId });
+  }
+}
 
 export const search = query({
   args: {},
@@ -38,7 +97,10 @@ export const upsert = mutation({
     colour: v.string(),
     archived: v.optional(v.boolean()),
     showInSidebar: v.optional(v.boolean()),
-    trackableId: v.optional(v.id("trackables")),
+    // null  = explicitly clear the linked trackable
+    // undefined = leave the link untouched (used when callers don't
+    //             render the picker, e.g. an `archive` toggle)
+    trackableId: v.optional(v.union(v.id("trackables"), v.null())),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
@@ -53,6 +115,9 @@ export const upsert = mutation({
         archived: args.archived ?? existing.archived,
         showInSidebar: args.showInSidebar ?? existing.showInSidebar,
       });
+      if (args.trackableId !== undefined) {
+        await setListTrackableLink(ctx, user._id, args.id, args.trackableId);
+      }
       return args.id;
     }
 
@@ -84,11 +149,7 @@ export const upsert = mutation({
     });
 
     if (args.trackableId) {
-      await ctx.db.insert("listTrackableLinks", {
-        listId,
-        trackableId: args.trackableId,
-        userId: user._id,
-      });
+      await setListTrackableLink(ctx, user._id, listId, args.trackableId);
     }
 
     return listId;
