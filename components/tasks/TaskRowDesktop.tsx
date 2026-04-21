@@ -55,7 +55,14 @@ export interface TaskRowDesktopProps {
   onSetTimeSpent?: (taskId: Id<"tasks">, newSeconds: number) => void;
   /** Called on right-click (web). Receives task id and the (clientX, clientY) of the event. */
   onRequestContextMenu?: (taskId: Id<"tasks">, x: number, y: number) => void;
-  /** Drag handle props (e.g. dnd-kit listeners + attributes). Spread onto the root pressable. */
+  /**
+   * dnd-kit drag activator props (`{...attributes, ...listeners}`) spread
+   * onto the outer `<View>`. Whole-card drag — no separate handle.
+   *
+   * RN-Web's prop allowlist forwards `onPointerDown`, `onKeyDown`, `role`,
+   * `tabIndex`, and all `aria-*`, which is exactly what dnd-kit returns,
+   * so spreading these on a `<View>` works at runtime.
+   */
   dragHandleProps?: Record<string, unknown>;
 }
 
@@ -124,6 +131,26 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
       cb?.();
     };
 
+    /* ─── Whole-card drag ─────────────────────────────────────────────────
+     * Drag is handled entirely by dnd-kit (PointerSensor) via `dragHandleProps`
+     * spread onto the outer `<View>`. There is NO grip and NO HTML5 native
+     * drag — the previous HTML5 hybrid was removed because:
+     *   1. RN-Web's `View` strips `draggable` / `onDragStart` (prop allowlist),
+     *      so HTML5 drag only worked when we wrapped in a raw `<div>`.
+     *   2. With both systems live on the same node the browser's HTML5 drag
+     *      always wins the activation race against `PointerSensor`, silently
+     *      breaking sortable reorder.
+     * One drag system, one DndContext (lifted to DesktopHome) → reorder and
+     * calendar drop both work via the same gesture.
+     */
+    // RN-Web forwards `onContextMenu` to the DOM at runtime (see
+    // `react-native-web/dist/modules/forwardedProps`), but the TS types
+    // don't expose it. Bundle it with `dragHandleProps` via a single
+    // spread cast through `any`.
+    const webOnlyProps = isWeb
+      ? ({ onContextMenu: handleContextMenu } as Record<string, unknown>)
+      : null;
+
     return (
       <View
         ref={ref as any}
@@ -131,9 +158,9 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
           styles.cardWrap,
           isDragging && styles.cardWrapDragging,
           isOverlay && styles.cardWrapOverlay,
+          isWeb && (styles.cardWrapWebGrab as any),
         ]}
-        // @ts-expect-error web-only DOM event
-        onContextMenu={isWeb ? handleContextMenu : undefined}
+        {...(webOnlyProps ?? {})}
         {...(dragHandleProps ?? {})}
       >
         <Pressable
@@ -282,11 +309,16 @@ const styles = StyleSheet.create({
         userSelect: "none",
         WebkitUserSelect: "none",
         WebkitTouchCallout: "none",
-        cursor: "grab",
       } as any,
       default: {},
     }),
   },
+  // Visual affordance: the whole card is the drag source. Cursor flips to
+  // `grabbing` while dnd-kit's PointerSensor is active (handled globally
+  // by dnd-kit's overlay); `grab` here is the resting hint.
+  cardWrapWebGrab: {
+    cursor: "grab",
+  } as any,
   cardWrapDragging: {
     opacity: 0.4,
   },

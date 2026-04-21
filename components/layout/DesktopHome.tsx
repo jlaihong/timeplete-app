@@ -12,6 +12,7 @@ import { TrackableDialogHost } from "../trackables/widgets/TrackableDialogHost";
 import type { LogRequest } from "../trackables/widgets/types";
 import { todayYYYYMMDD } from "../../lib/dates";
 import { Id } from "../../convex/_generated/dataModel";
+import { HomeDndProvider } from "../dnd/HomeDndProvider";
 
 export function DesktopHome() {
   const [showAddTask, setShowAddTask] = useState(false);
@@ -32,36 +33,41 @@ export function DesktopHome() {
     <View style={styles.container}>
       {/* Single continuous surface — sections are separated by spacing/typography,
           not borders or per-section backgrounds. See Req 1 in HOME-REQUIREMENTS. */}
-      <View style={styles.columns}>
-        <View style={styles.sideColumn}>
-          <TrackableList
-            title="Trackables"
-            onRequestAddTrackable={() => setShowAddTrackable(true)}
-            onRequestLog={setLogRequest}
-          />
-        </View>
+      {/* HomeDndProvider hosts the single shared dnd-kit context so that
+          intra-list reorder (DesktopTaskList) and cross-container drop
+          (CalendarView) are unified under one DndContext / DragOverlay. */}
+      <HomeDndProvider>
+        <View style={styles.columns}>
+          <View style={styles.sideColumn}>
+            <TrackableList
+              title="Trackables"
+              onRequestAddTrackable={() => setShowAddTrackable(true)}
+              onRequestLog={setLogRequest}
+            />
+          </View>
 
-        <View style={styles.centerColumn}>
-          <DesktopTaskList
-            title="Tasks"
-            onAddTask={(day) => {
-              setAddTaskDay(day);
-              setShowAddTask(true);
-            }}
-            onSelectTask={setSelectedTaskId}
-          />
-        </View>
+          <View style={styles.centerColumn}>
+            <DesktopTaskList
+              title="Tasks"
+              onAddTask={(day) => {
+                setAddTaskDay(day);
+                setShowAddTask(true);
+              }}
+              onSelectTask={setSelectedTaskId}
+            />
+          </View>
 
-        <View style={styles.sideColumn}>
-          <CalendarView
-            title="Calendar"
-            onAddEvent={(day) => {
-              setEventDay(day);
-              setShowEventDialog(true);
-            }}
-          />
+          <View style={styles.sideColumn}>
+            <CalendarView
+              title="Calendar"
+              onAddEvent={(day) => {
+                setEventDay(day);
+                setShowEventDialog(true);
+              }}
+            />
+          </View>
         </View>
-      </View>
+      </HomeDndProvider>
 
       {showAddTask && (
         <AddTaskSheet
