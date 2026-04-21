@@ -4,8 +4,11 @@ import type { Id } from "./_generated/dataModel";
 import { requireApprovedUser } from "./_helpers/auth";
 import {
   buildListIdToTrackableId,
+  buildTaskInfoMap,
+  resolveAttributedTrackableId,
   resolveSnapshotTrackableIdForTask,
 } from "./_helpers/trackableAttribution";
+import { deriveEventColors } from "./_helpers/eventColors";
 
 export const search = query({
   args: {
@@ -47,51 +50,157 @@ export const search = query({
       return true;
     });
 
-    // Enrich display title from the linked task / trackable so the calendar
-    // shows the current name (matches productivity-one, where the interactive
-    // calendar event factory reads task.name / trackable.name at render time
-    // rather than duplicating it into the time window). Also fixes migration
-    // rows written without a `title` — without this they would render as
-    // "TASK" / "TRACKABLE" (the activity type literal).
+    // Enrich display title + colours from the linked task / trackable / list
+    // so the calendar matches productivity-one without the client needing
+    // to load every list and trackable separately.
     //
-    // Batched via `Promise.all` + a per-window id collection so we only
-    // issue one get per unique task/trackable even when the same is
-    // scheduled multiple times in the range.
+    // Source-of-truth mapping (`interactive-calendar-event-factory.service.ts:73-155`):
+    //
+    //   • Background (`displayColor`) = trackable.colour ?? list.colour ?? default
+    //   • Left stripe (`secondaryColor`) = list.colour, only when BOTH a
+    //     trackable colour AND a list colour exist and they differ
+    //   • Title = task.name / trackable.name / persisted title fallback
+    //
+    // The Convex query is the right home for this because:
+    //   1. CalendarView already subscribes to it on every reactive change,
+    //      so colour updates flow through the existing subscription with no
+    //      extra round-trips.
+    //   2. Server-side enrichment avoids loading ALL lists/trackables on
+    //      the client just to look up a per-event colour.
+    //   3. It guarantees the server-stored display colour (used by the
+    //      drag preview during creation) cannot drift from what the
+    //      saved event later renders.
+    //
+    // Batched via `Promise.all` + per-window id sets so each unique task /
+    // trackable / list is fetched at most once even when the same entity
+    // is scheduled many times in the range.
     const taskIds = new Set<string>();
     const trackableIds = new Set<string>();
     for (const w of filtered) {
       if (w.activityType === "TASK" && w.taskId) taskIds.add(w.taskId);
       if (w.activityType === "TRACKABLE" && w.trackableId)
         trackableIds.add(w.trackableId);
+      // EVENT activity type carries no task/trackable, so it always
+      // falls through to DEFAULT_EVENT_COLOR.
     }
 
-    const [taskEntries, trackableEntries] = await Promise.all([
+    const [taskDocs, trackableDocsFromWindows, links] = await Promise.all([
       Promise.all(
-        Array.from(taskIds).map(async (id) => {
-          const t = await ctx.db.get(id as Id<"tasks">);
-          return [id, t?.name ?? null] as const;
-        })
+        Array.from(taskIds).map((id) => ctx.db.get(id as Id<"tasks">))
       ),
       Promise.all(
-        Array.from(trackableIds).map(async (id) => {
-          const t = await ctx.db.get(id as Id<"trackables">);
-          return [id, t?.name ?? null] as const;
-        })
+        Array.from(trackableIds).map((id) =>
+          ctx.db.get(id as Id<"trackables">)
+        )
       ),
+      // listTrackableLinks is needed so a task with no direct trackable
+      // but with a list that's linked to a trackable still inherits the
+      // trackable colour (matches `resolveAttributedTrackableId`).
+      ctx.db
+        .query("listTrackableLinks")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect(),
     ]);
-    const taskNames = new Map(taskEntries);
-    const trackableNames = new Map(trackableEntries);
+
+    const tasksById = new Map<string, NonNullable<typeof taskDocs[number]>>();
+    const listIds = new Set<string>();
+    for (const t of taskDocs) {
+      if (!t) continue;
+      tasksById.set(t._id, t);
+      if (t.listId) listIds.add(t.listId);
+    }
+
+    const listDocs = await Promise.all(
+      Array.from(listIds).map((id) => ctx.db.get(id as Id<"lists">))
+    );
+    const listsById = new Map<string, NonNullable<typeof listDocs[number]>>();
+    for (const l of listDocs) {
+      if (l) listsById.set(l._id, l);
+    }
+
+    // Resolve trackables: anything referenced directly on a window PLUS
+    // anything attributable to a window via task → list → trackable so the
+    // colour rule sees the same trackable the analytics aggregation does.
+    const listIdToTrackableId = buildListIdToTrackableId(links);
+    const taskInfoMap = buildTaskInfoMap(
+      Array.from(tasksById.values())
+    );
+
+    const allTrackableIds = new Set<string>(trackableIds);
+    for (const w of filtered) {
+      if (w.activityType !== "TASK") continue;
+      const resolved = resolveAttributedTrackableId(
+        { trackableId: w.trackableId, taskId: w.taskId },
+        taskInfoMap,
+        listIdToTrackableId
+      );
+      if (resolved) allTrackableIds.add(resolved);
+    }
+
+    const trackableDocs = await Promise.all(
+      // Some trackables may have been already fetched in
+      // `trackableDocsFromWindows`, but Convex caches gets within a single
+      // handler so re-issuing them is cheap and keeps the code simple.
+      Array.from(allTrackableIds).map((id) =>
+        ctx.db.get(id as Id<"trackables">)
+      )
+    );
+    const trackablesById = new Map<
+      string,
+      NonNullable<typeof trackableDocs[number]>
+    >();
+    for (const t of trackableDocs) {
+      if (t) trackablesById.set(t._id, t);
+    }
+    // Also fold in the windows-pass results so we don't lose entities
+    // that didn't make the resolved-set (defensive: should be a no-op).
+    for (const t of trackableDocsFromWindows) {
+      if (t) trackablesById.set(t._id, t);
+    }
 
     return filtered.map((w) => {
       let displayTitle = w.title ?? undefined;
-      if (w.activityType === "TASK" && w.taskId) {
-        // Always prefer the live task name so renames propagate. Fall back
-        // to the persisted title if the task has been deleted.
-        displayTitle = taskNames.get(w.taskId) ?? displayTitle;
+      let trackableColour: string | undefined;
+      let listColour: string | undefined;
+
+      if (w.activityType === "EVENT") {
+        // EVENT: no trackable / no list → default colour, persisted title.
+        // (P1: title falls back to "Event" when missing — keep behaviour
+        // here so the client renders a non-empty label even for legacy
+        // rows.)
+        if (!displayTitle) displayTitle = "Event";
       } else if (w.activityType === "TRACKABLE" && w.trackableId) {
-        displayTitle = trackableNames.get(w.trackableId) ?? displayTitle;
+        const trackable = trackablesById.get(w.trackableId);
+        if (trackable?.name) displayTitle = trackable.name;
+        trackableColour = trackable?.colour;
+      } else if (w.activityType === "TASK") {
+        const task = w.taskId ? tasksById.get(w.taskId) : undefined;
+        if (task?.name) displayTitle = task.name;
+
+        const resolvedTrackableId = resolveAttributedTrackableId(
+          { trackableId: w.trackableId, taskId: w.taskId },
+          taskInfoMap,
+          listIdToTrackableId
+        );
+        trackableColour = resolvedTrackableId
+          ? trackablesById.get(resolvedTrackableId)?.colour
+          : undefined;
+        listColour = task?.listId
+          ? listsById.get(task.listId)?.colour
+          : undefined;
       }
-      return { ...w, title: displayTitle };
+
+      const { displayColor, secondaryColor } = deriveEventColors(
+        trackableColour,
+        listColour
+      );
+
+      return {
+        ...w,
+        title: displayTitle,
+        displayColor,
+        secondaryColor,
+      };
     });
   },
 });
