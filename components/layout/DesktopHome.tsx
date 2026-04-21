@@ -30,6 +30,8 @@ export function DesktopHome() {
 
   return (
     <View style={styles.container}>
+      {/* Single continuous surface — sections are separated by spacing/typography,
+          not borders or per-section backgrounds. See Req 1 in HOME-REQUIREMENTS. */}
       <View style={styles.columns}>
         <View style={styles.sideColumn}>
           <TrackableList
@@ -38,8 +40,6 @@ export function DesktopHome() {
             onRequestLog={setLogRequest}
           />
         </View>
-
-        <View style={styles.separator} />
 
         <View style={styles.centerColumn}>
           <DesktopTaskList
@@ -51,8 +51,6 @@ export function DesktopHome() {
             onSelectTask={setSelectedTaskId}
           />
         </View>
-
-        <View style={styles.separator} />
 
         <View style={styles.sideColumn}>
           <CalendarView
@@ -101,7 +99,8 @@ export function DesktopHome() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   columns: { flex: 1, flexDirection: "row" },
-  sideColumn: { flex: 1 },
-  centerColumn: { flex: 1.5 },
-  separator: { width: 1, backgroundColor: Colors.outlineVariant },
+  // Spacing between sections — replaces the previous 1px vertical dividers.
+  // Background is uniform across all columns so the page reads as one surface.
+  sideColumn: { flex: 1, paddingHorizontal: 8 },
+  centerColumn: { flex: 1.5, paddingHorizontal: 8 },
 });

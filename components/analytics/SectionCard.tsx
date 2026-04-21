@@ -22,14 +22,12 @@ export function SectionCard({
   );
 }
 
+/* Flattened: no per-card border/background/padding. The analytics
+ * page reads as one continuous list of sections divided only by the
+ * title row + spacing. */
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.surfaceContainer,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-    padding: 12,
-    marginBottom: 12,
+    marginBottom: 24,
   },
   header: {
     flexDirection: "row",

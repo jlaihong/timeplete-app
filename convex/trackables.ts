@@ -2,8 +2,11 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser } from "./_helpers/auth";
 import {
+  buildCompletedTaskCountsByTrackableDay,
   buildListIdToTrackableId,
   buildTaskInfoMap,
+  getCompletedTaskCount,
+  sumCompletedTaskCounts,
   timeWindowAttributedToTrackable,
 } from "./_helpers/trackableAttribution";
 
@@ -333,6 +336,16 @@ export const getGoalDetails = query({
       .collect();
     const listIdToTrackableId = buildListIdToTrackableId(userLinks);
 
+    // Per-(trackable, day) attributed task completion counts. See
+    // `getTrackableAnalyticsSeries` for the full rationale; the
+    // short version is that P1 counts a task-completion as "1
+    // completed day" toward the trackable, and our migration
+    // doesn't fold those into `trackableDays.numCompleted`.
+    const taskCountsByTrackableDay = buildCompletedTaskCountsByTrackableDay(
+      userTasks,
+      listIdToTrackableId
+    );
+
     const allUserWindows = await ctx.db
       .query("timeWindows")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
@@ -407,18 +420,33 @@ export const getGoalDetails = query({
         trackerEntrySecondsTotal;
 
       const trackableDays = daysByTrackable.get(trackable._id) ?? [];
-      const totalDayCount = trackableDays.reduce(
-        (s, d) => s + d.numCompleted,
-        0
+      // Lifetime count = stored manual numCompleted + lifetime
+      // attributed task completions. Mirrors P1.
+      const lifetimeTaskDayCount = sumCompletedTaskCounts(
+        taskCountsByTrackableDay,
+        trackable._id,
+        null,
+        null
       );
+      const totalDayCount =
+        trackableDays.reduce((s, d) => s + d.numCompleted, 0) +
+        lifetimeTaskDayCount;
 
       // Weekly day-completion strip — empty entries when no row exists for
-      // a day. Always 7 elements when weekStart was provided.
+      // a day. Always 7 elements when weekStart was provided. Each cell's
+      // `numCompleted` is augmented with attributed task completions for
+      // that day (so a "days a week" goal driven by task completion shows
+      // the right pill).
       const weeklyDayCompletion = weekDays.map((day) => {
         const row = trackableDays.find((d) => d.dayYYYYMMDD === day);
+        const taskCount = getCompletedTaskCount(
+          taskCountsByTrackableDay,
+          trackable._id,
+          day
+        );
         return {
           dayYYYYMMDD: day,
-          numCompleted: row?.numCompleted ?? 0,
+          numCompleted: (row?.numCompleted ?? 0) + taskCount,
           comments: row?.comments ?? "",
         };
       });
@@ -464,7 +492,12 @@ export const getGoalDetails = query({
       const todayDayCount = args.today
         ? trackableDays
             .filter((d) => d.dayYYYYMMDD === args.today)
-            .reduce((s, d) => s + d.numCompleted, 0)
+            .reduce((s, d) => s + d.numCompleted, 0) +
+          getCompletedTaskCount(
+            taskCountsByTrackableDay,
+            trackable._id,
+            args.today
+          )
         : 0;
 
       const todayEntryCount = args.today
@@ -580,6 +613,16 @@ export const getTrackableAnalyticsSeries = query({
       .collect();
     const listIdToTrackableId = buildListIdToTrackableId(userLinks);
 
+    // Per-(trackable, day) count of attributed task completions.
+    // Mirrors P1's `TrackableDay.completedTaskNames.length` augment
+    // — without it, "days a week" trackables driven entirely by
+    // task completion show 0/N. See helper docstring for the full
+    // rationale.
+    const taskCountsByTrackableDay = buildCompletedTaskCountsByTrackableDay(
+      userTasks,
+      listIdToTrackableId
+    );
+
     const allWindows = await ctx.db
       .query("timeWindows")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
@@ -652,9 +695,18 @@ export const getTrackableAnalyticsSeries = query({
           const winSeconds = attributedWindows
             .filter((w) => w.startDayYYYYMMDD === day)
             .reduce((s, w) => s + w.durationSeconds, 0);
-          const daysCompleted = tDays
+          // `daysCompleted` = stored `trackableDays.numCompleted` for
+          // the day + the count of tasks attributed to this trackable
+          // marked complete that day. Mirrors P1 — see helper docstring.
+          const storedDayCount = tDays
             .filter((d) => d.dayYYYYMMDD === day)
             .reduce((s, d) => s + d.numCompleted, 0);
+          const taskDayCount = getCompletedTaskCount(
+            taskCountsByTrackableDay,
+            trackable._id,
+            day
+          );
+          const daysCompleted = storedDayCount + taskDayCount;
           const trackerCount = tEntries
             .filter((e) => e.dayYYYYMMDD === day)
             .reduce((s, e) => s + (e.countValue ?? 0), 0);
@@ -691,15 +743,25 @@ export const getTrackableAnalyticsSeries = query({
         const beforeEntrySeconds = tEntries
           .filter((e) => e.dayYYYYMMDD < args.windowStart)
           .reduce((s, e) => s + (e.durationSeconds ?? 0), 0);
+        // `daysCompleted` baseline includes task completions before
+        // the window — same augment as the per-day calc above.
+        const beforeWindowEnd = addDaysYYYYMMDD(args.windowStart, -1);
+        const taskDaysBefore = sumCompletedTaskCounts(
+          taskCountsByTrackableDay,
+          trackable._id,
+          null,
+          beforeWindowEnd
+        );
         const totalBeforePeriod = {
           secondsAttributed:
             attributedWindows
               .filter((w) => w.startDayYYYYMMDD < args.windowStart)
               .reduce((s, w) => s + w.durationSeconds, 0) +
             (isTracker ? beforeEntrySeconds : 0),
-          daysCompleted: tDays
-            .filter((d) => d.dayYYYYMMDD < args.windowStart)
-            .reduce((s, d) => s + d.numCompleted, 0),
+          daysCompleted:
+            tDays
+              .filter((d) => d.dayYYYYMMDD < args.windowStart)
+              .reduce((s, d) => s + d.numCompleted, 0) + taskDaysBefore,
           trackerCount: tEntries
             .filter((e) => e.dayYYYYMMDD < args.windowStart)
             .reduce((s, e) => s + (e.countValue ?? 0), 0),
@@ -724,7 +786,18 @@ export const getTrackableAnalyticsSeries = query({
         const totalSeconds =
           attributedWindows.reduce((s, w) => s + w.durationSeconds, 0) +
           (isTracker ? lifetimeEntrySeconds : 0);
-        const totalDayCount = tDays.reduce((s, d) => s + d.numCompleted, 0);
+        // Lifetime `totalDayCount` includes task completions, same
+        // augment as the per-day calc — keeps weekly/monthly/yearly
+        // averages on parity with P1's `getTrackableProgressionStats`
+        // which counts task-driven progress as completed days.
+        const lifetimeTaskDayCount = sumCompletedTaskCounts(
+          taskCountsByTrackableDay,
+          trackable._id,
+          null,
+          null
+        );
+        const totalDayCount =
+          tDays.reduce((s, d) => s + d.numCompleted, 0) + lifetimeTaskDayCount;
         const totalEntryCount = tEntries.reduce(
           (s, e) => s + (e.countValue ?? 0),
           0

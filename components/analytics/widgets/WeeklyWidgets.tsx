@@ -38,7 +38,10 @@ import type { AnalyticsWidgetProps } from "./types";
  * used minutes here — that was a unit bug.
  * ──────────────────────────────────────────────────────────────────── */
 
-const REQUIRED_LINE_COLOUR = "#9CA3AF";
+/* Required-progress dashed line colour. See note in
+ * `AnalyticsLineChartWidget.tsx` — the legend in `LineChart`
+ * carries the explicit meaning. */
+const REQUIRED_LINE_COLOUR = "#EF4444";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * AnalyticsWeeklyDaysAWeekWidget
@@ -112,6 +115,8 @@ export function AnalyticsWeeklyMinutesAWeekWidget({
       <LineChart
         series={series}
         xLabels={goal.days.map((d) => getDayOfWeekLetter(d.day))}
+        leftAxisLabel="Minutes"
+        formatLeftValue={(n) => Math.round(n).toString()}
       />
       <Text style={[styles.summary, met && { color: Colors.success }]}>
         {total.toFixed(0)} / {target}
@@ -163,6 +168,10 @@ export function AnalyticsWeeklyNumberWidget({ goal }: AnalyticsWidgetProps) {
       <LineChart
         series={series}
         xLabels={goal.days.map((d) => getDayOfWeekLetter(d.day))}
+        leftAxisLabel={isTime ? "Hours" : undefined}
+        formatLeftValue={(n) =>
+          isTime ? n.toFixed(1) : Math.round(n).toString()
+        }
       />
       <Text style={styles.summary}>
         + {isTime ? total.toFixed(1) : total.toFixed(0)}
@@ -251,7 +260,7 @@ export function AnalyticsWeeklyTrackerWidget({ goal }: AnalyticsWidgetProps) {
       if (required.length > 0) {
         series.push({
           name: "Required",
-          colour: countColour,
+          colour: REQUIRED_LINE_COLOUR,
           lineStyle: "dashed",
           data: required,
           axis: "left",
@@ -282,7 +291,7 @@ export function AnalyticsWeeklyTrackerWidget({ goal }: AnalyticsWidgetProps) {
       if (required.length > 0) {
         series.push({
           name: "Required",
-          colour: timeColour,
+          colour: REQUIRED_LINE_COLOUR,
           lineStyle: "dashed",
           data: required,
           axis: showBoth ? "right" : "left",
@@ -295,9 +304,15 @@ export function AnalyticsWeeklyTrackerWidget({ goal }: AnalyticsWidgetProps) {
     <AnalyticsTrackableCard goal={goal}>
       <LineChart
         series={series}
-        leftAxisLabel={showBoth ? "Count" : undefined}
+        leftAxisLabel={showBoth ? "Count" : showTime ? "Hours" : "Count"}
         rightAxisLabel={showBoth ? "Hours" : undefined}
         xLabels={goal.days.map((d) => getDayOfWeekLetter(d.day))}
+        formatLeftValue={
+          showBoth || !showTime
+            ? (n) => Math.round(n).toString()
+            : (n) => n.toFixed(1)
+        }
+        formatRightValue={(n) => n.toFixed(1)}
       />
       {showCount && (
         <View>
