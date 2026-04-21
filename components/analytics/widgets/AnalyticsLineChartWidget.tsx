@@ -56,7 +56,11 @@ interface ChartWidgetProps extends AnalyticsWidgetProps {
  *     `analytics-page-yearly.ts:438-447`.
  * ──────────────────────────────────────────────────────────────────── */
 
-const REQUIRED_LINE_COLOUR = "#9CA3AF";
+/* Required-progress dashed line colour — a vivid red so the goal line
+ * stands apart from any trackable's own colour and is unambiguously
+ * "the line you're trying to hit". A legend in `LineChart` explains
+ * the meaning so the colour isn't doing all the work alone. */
+const REQUIRED_LINE_COLOUR = "#EF4444";
 
 export function AnalyticsLineChartWidget({ goal, mode }: ChartWidgetProps) {
   const buckets = useMemo(
@@ -119,7 +123,7 @@ export function AnalyticsLineChartWidget({ goal, mode }: ChartWidgetProps) {
         if (required.length > 0) {
           series.push({
             name: "Required",
-            colour: countColour,
+            colour: REQUIRED_LINE_COLOUR,
             lineStyle: "dashed",
             data: required,
             axis: "left",
@@ -158,7 +162,7 @@ export function AnalyticsLineChartWidget({ goal, mode }: ChartWidgetProps) {
         if (required.length > 0) {
           series.push({
             name: "Required",
-            colour: timeColour,
+            colour: REQUIRED_LINE_COLOUR,
             lineStyle: "dashed",
             data: required,
             axis: showBoth ? "right" : "left",
@@ -257,6 +261,32 @@ export function AnalyticsLineChartWidget({ goal, mode }: ChartWidgetProps) {
       ? (goal.weeklyTimeAverageSeconds * (30 / 7)) / 3600
       : (goal.weeklyTimeAverageSeconds * (365 / 7)) / 3600;
 
+  // Axis units → tick/point label formatter. The left axis is in hours
+  // for: TIME_TRACK, MINUTES_A_WEEK, TRACKER+showTime+!showBoth. Else
+  // it's a count. The right axis is only used in TRACKER showBoth and
+  // is always hours. Unit suffix is intentionally NOT in the formatter
+  // — the axis label ("Hours" / "Count") above the chart already gives
+  // the unit, so "458.3" reads cleaner than "458.3h".
+  const leftAxisIsHours =
+    goal.trackableType === "TIME_TRACK" ||
+    goal.trackableType === "MINUTES_A_WEEK" ||
+    (isTracker && showTime && !showBoth);
+  const formatHours = (n: number) => n.toFixed(1);
+  const formatCount = (n: number) => Math.round(n).toString();
+  // For non-tracker single-axis charts there's no axis label today;
+  // add one so the user knows what the y-numbers mean now that the
+  // suffix is gone.
+  const leftAxisLabel = showBoth
+    ? "Count"
+    : leftAxisIsHours
+      ? "Hours"
+      : isTracker
+        ? "Count"
+        : goal.trackableType === "DAYS_A_WEEK" ||
+            goal.trackableType === "NUMBER"
+          ? "Count"
+          : "";
+
   return (
     <AnalyticsTrackableCard goal={goal}>
       <LineChart
@@ -267,8 +297,10 @@ export function AnalyticsLineChartWidget({ goal, mode }: ChartWidgetProps) {
             ? sparseDayLabels(buckets)
             : monthLabels(buckets)
         }
-        leftAxisLabel={showBoth ? "Count" : isTracker && showTime ? "Hours" : ""}
+        leftAxisLabel={leftAxisLabel}
         rightAxisLabel={showBoth ? "Hours" : ""}
+        formatLeftValue={leftAxisIsHours ? formatHours : formatCount}
+        formatRightValue={formatHours}
       />
 
       {/* Footer rows */}

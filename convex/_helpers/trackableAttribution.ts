@@ -137,3 +137,84 @@ export function resolveSnapshotTrackableIdForTask(
   }
   return undefined;
 }
+
+/**
+ * Pre-aggregates tasks the user marked complete into a
+ * `Map<trackableId, Map<dayYYYYMMDD, completedTaskCount>>`. Used by
+ * analytics + home queries to add task-driven progress to a
+ * trackable's per-day count, mirroring productivity-one's
+ * `TrackableDay.completedTaskNames.length` augmentation:
+ *
+ *  - In P1, `upsertTrackableDayCollection` (`goal.store.helpers.ts:88-108`)
+ *    stores `numCompleted = userInput + completedTaskNames.length`.
+ *    The "completed task names" list is whatever tasks attributed to
+ *    the trackable were marked complete that day.
+ *
+ *  - When importing supabase data we only carried the *manual*
+ *    `numCompleted`; task completions were never folded in. Without
+ *    this augmentation, "days a week" trackables whose progress
+ *    comes entirely from task completion read as 0.
+ *
+ * Attribution rule mirrors `resolveSnapshotTrackableIdForTask`:
+ * direct `task.trackableId` first, else `task.listId` →
+ * `listTrackableLinks` → `trackableId`.
+ *
+ * Tasks without `dateCompleted` or without an attributable trackable
+ * are excluded.
+ */
+export function buildCompletedTaskCountsByTrackableDay(
+  tasks: Array<Doc<"tasks">>,
+  listIdToTrackableId: Map<string, Id<"trackables">>
+): Map<string, Map<string, number>> {
+  const out = new Map<string, Map<string, number>>();
+  for (const task of tasks) {
+    if (!task.dateCompleted) continue;
+    const trackableId = resolveSnapshotTrackableIdForTask({
+      task: { trackableId: task.trackableId, listId: task.listId },
+      listIdToTrackableId,
+    });
+    if (!trackableId) continue;
+    let dayMap = out.get(trackableId);
+    if (!dayMap) {
+      dayMap = new Map<string, number>();
+      out.set(trackableId, dayMap);
+    }
+    dayMap.set(task.dateCompleted, (dayMap.get(task.dateCompleted) ?? 0) + 1);
+  }
+  return out;
+}
+
+/**
+ * Lookup helper — completed task count for a single
+ * (trackableId, day) pair from the map built above. Always returns
+ * a non-negative integer.
+ */
+export function getCompletedTaskCount(
+  taskCountsByTrackableDay: Map<string, Map<string, number>>,
+  trackableId: Id<"trackables">,
+  dayYYYYMMDD: string
+): number {
+  return taskCountsByTrackableDay.get(trackableId)?.get(dayYYYYMMDD) ?? 0;
+}
+
+/**
+ * Sum-helper — completed task count for a single trackable across a
+ * date range (inclusive). Pass `null` for either bound to treat that
+ * end as "no limit".
+ */
+export function sumCompletedTaskCounts(
+  taskCountsByTrackableDay: Map<string, Map<string, number>>,
+  trackableId: Id<"trackables">,
+  fromDayYYYYMMDD: string | null,
+  toDayYYYYMMDD: string | null
+): number {
+  const dayMap = taskCountsByTrackableDay.get(trackableId);
+  if (!dayMap) return 0;
+  let total = 0;
+  for (const [day, count] of dayMap) {
+    if (fromDayYYYYMMDD !== null && day < fromDayYYYYMMDD) continue;
+    if (toDayYYYYMMDD !== null && day > toDayYYYYMMDD) continue;
+    total += count;
+  }
+  return total;
+}

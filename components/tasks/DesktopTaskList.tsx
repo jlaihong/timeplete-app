@@ -199,14 +199,61 @@ export function DesktopTaskList({
   onSelectTask,
 }: DesktopTaskListProps) {
   const today = todayYYYYMMDD();
-  const [visibleDays, setVisibleDays] = useState(7);
-  const visibleEndDay = addDays(today, visibleDays - 1);
+  // Server-driven pagination. Initial render = today only (rangeEndDays=0).
+  // Each "Load More" click extends the window by 7 days into the future,
+  // triggering a fresh query – we never preload future days client-side.
+  const [rangeEndDays, setRangeEndDays] = useState(0);
+  const visibleEndDay = addDays(today, rangeEndDays);
 
-  const tasks = useQuery(api.tasks.search, { includeCompleted: true });
+  const tasks = useQuery(api.tasks.getHomeTasks, {
+    todayYYYYMMDD: today,
+    rangeEndYYYYMMDD: visibleEndDay,
+  });
   const tags = useQuery(api.tags.search, {});
   const lists = useQuery(api.lists.search, {});
   const trackables = useQuery(api.trackables.search, {});
-  const upsertTask = useMutation(api.tasks.upsert);
+  // Optimistic update: when `upsert` is called with an existing `id`, patch the
+  // matching task in every active `getHomeTasks` subscription synchronously so
+  // the UI updates in <1 frame. The server response will reconcile when it
+  // arrives. INSERT (no id) skips optimistic – the server has to assign the
+  // id, and create is rarely on the perceived-latency critical path.
+  const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
+    (localStore, args) => {
+      if (!args.id) return;
+      const queries = localStore.getAllQueries(api.tasks.getHomeTasks);
+      for (const q of queries) {
+        const value = q.value;
+        if (!value) continue;
+        const idx = value.findIndex((t) => t._id === args.id);
+        if (idx === -1) continue;
+
+        const existing = value[idx];
+        const patched = { ...existing };
+        if (args.name !== undefined) patched.name = args.name;
+        if (args.dateCompleted !== undefined) {
+          // null on the wire → clear the field on the doc
+          patched.dateCompleted = args.dateCompleted ?? undefined;
+        }
+        if (args.taskDay !== undefined) patched.taskDay = args.taskDay;
+        if (args.taskDayOrderIndex !== undefined) {
+          patched.taskDayOrderIndex = args.taskDayOrderIndex;
+        }
+        if (args.listId !== undefined) patched.listId = args.listId;
+        if (args.dueDateYYYYMMDD !== undefined) {
+          patched.dueDateYYYYMMDD = args.dueDateYYYYMMDD;
+        }
+        if (args.timeSpentInSecondsUnallocated !== undefined) {
+          patched.timeSpentInSecondsUnallocated =
+            args.timeSpentInSecondsUnallocated;
+        }
+        if (args.tagIds !== undefined) patched.tagIds = args.tagIds;
+
+        const next = [...value];
+        next[idx] = patched;
+        localStore.setQuery(api.tasks.getHomeTasks, q.args, next);
+      }
+    }
+  );
   const removeTask = useMutation(api.tasks.remove);
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
@@ -282,11 +329,17 @@ export function DesktopTaskList({
     return m;
   }, [trackables]);
 
-  /* Group tasks (server-authoritative) */
+  /* Group tasks (server-authoritative).
+   *
+   * Server already constrained the payload to:
+   *   - overdue (incomplete + non-recurring + taskDay < today)
+   *   - tasks scheduled in [today, visibleEndDay]
+   *   - tasks completed in [today, visibleEndDay]
+   * so we only need to bucket them, not filter for date range or recurrence.
+   */
   const serverGroups = useMemo(() => {
     if (!tasks) return [] as { id: string; tasks: TaskRowTask[] }[];
     const groups = new Map<string, TaskRowTask[]>();
-    let hasFuture = false;
 
     for (const task of tasks as any as TaskRowTask[]) {
       const day = task.taskDay;
@@ -297,16 +350,7 @@ export function DesktopTaskList({
         continue;
       }
 
-      if (day > visibleEndDay && !task.dateCompleted) {
-        hasFuture = true;
-        continue;
-      }
-
-      if (
-        !task.dateCompleted &&
-        isPast(day) &&
-        !isToday(day)
-      ) {
+      if (!task.dateCompleted && isPast(day) && !isToday(day)) {
         if (!groups.has(OVERDUE_GROUP_ID))
           groups.set(OVERDUE_GROUP_ID, []);
         groups.get(OVERDUE_GROUP_ID)!.push(task);
@@ -316,26 +360,14 @@ export function DesktopTaskList({
       }
     }
 
-    const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
-      if (a === OVERDUE_GROUP_ID) return -1;
-      if (b === OVERDUE_GROUP_ID) return 1;
-      if (a === UNSCHEDULED_GROUP_ID) return 1;
-      if (b === UNSCHEDULED_GROUP_ID) return -1;
-      return a.localeCompare(b);
-    });
+    // Always show every day in the visible window, even if empty,
+    // so users have an obvious target for adding/scheduling tasks.
+    for (let i = 0; i <= rangeEndDays; i++) {
+      const d = addDays(today, i);
+      if (!groups.has(d)) groups.set(d, []);
+    }
 
-    // Always show the visible day range (today..today+visibleDays-1) even when empty.
-    const requiredDays = new Set<string>();
-    for (let i = 0; i < visibleDays; i++) {
-      requiredDays.add(addDays(today, i));
-    }
-    for (const d of requiredDays) {
-      if (!groups.has(d)) {
-        groups.set(d, []);
-        sortedKeys.push(d);
-      }
-    }
-    sortedKeys.sort((a, b) => {
+    const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
       if (a === OVERDUE_GROUP_ID) return -1;
       if (b === OVERDUE_GROUP_ID) return 1;
       if (a === UNSCHEDULED_GROUP_ID) return 1;
@@ -348,7 +380,7 @@ export function DesktopTaskList({
      * incomplete tasks (0) sort before completed tasks (1); within each
      * partition we preserve the server's `taskDayOrderIndex`.
      */
-    const result = sortedKeys.map((id) => ({
+    return sortedKeys.map((id) => ({
       id,
       tasks: (groups.get(id) ?? []).sort((a, b) => {
         const aCompleted = a.dateCompleted ? 1 : 0;
@@ -357,9 +389,7 @@ export function DesktopTaskList({
         return (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0);
       }),
     }));
-
-    return result;
-  }, [tasks, visibleEndDay, today, visibleDays]);
+  }, [tasks, today, rangeEndDays]);
 
   /* Local optimistic state — mirrors serverGroups but is mutated during drag. */
   const [localGroups, setLocalGroups] = useState<
@@ -404,22 +434,46 @@ export function DesktopTaskList({
 
   /* ───── Mutations ───── */
   const toggleComplete = useCallback(
-    async (taskId: Id<"tasks">) => {
+    (taskId: Id<"tasks">) => {
       const task = (tasks as any as TaskRowTask[] | undefined)?.find(
         (t) => t._id === taskId
       );
       if (!task) return;
 
       const wasCompleted = !!task.dateCompleted;
-      if (!wasCompleted && timer.isRunning && timer.taskId === taskId) {
-        await timer.stop();
-      }
-      await upsertTask({
-        id: taskId,
-        name: task.name,
-        // `null` clears the field server-side; a string sets it to today.
-        dateCompleted: wasCompleted ? null : todayYYYYMMDD(),
-      });
+
+      // Diagnostic timing – remove or guard with a flag once verified.
+      // Logs the wall-clock time from click → optimistic patch returning
+      // synchronously vs the server-ack arriving later.
+      const t0 =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+
+      // Fire-and-forget. The optimistic update on `upsertTask` patches the
+      // local `getHomeTasks` cache synchronously, so React re-renders with
+      // the new state on the next frame – well before the server ack returns.
+      // We only `await` for error handling / logging, not to gate the UI.
+      void (async () => {
+        if (!wasCompleted && timer.isRunning && timer.taskId === taskId) {
+          await timer.stop();
+        }
+        await upsertTask({
+          id: taskId,
+          name: task.name,
+          // `null` clears the field server-side; a string sets it to today.
+          dateCompleted: wasCompleted ? null : todayYYYYMMDD(),
+        });
+        if (typeof __DEV__ !== "undefined" && __DEV__) {
+          const t1 =
+            typeof performance !== "undefined"
+              ? performance.now()
+              : Date.now();
+          // eslint-disable-next-line no-console
+          console.debug(
+            `[toggleComplete] server ack: ${(t1 - t0).toFixed(1)}ms ` +
+              `(UI updated optimistically at ~0ms)`
+          );
+        }
+      })();
     },
     [tasks, timer, upsertTask]
   );
@@ -715,8 +769,11 @@ export function DesktopTaskList({
     });
   }, []);
 
+  // "Load More" is server-driven: bumping `rangeEndDays` changes the args
+  // passed to `api.tasks.getHomeTasks`, which triggers a fresh server fetch.
+  // The client never holds days that haven't been requested.
   const handleLoadMore = useCallback(() => {
-    setVisibleDays((d) => d + LOAD_MORE_DAYS);
+    setRangeEndDays((d) => d + LOAD_MORE_DAYS);
   }, []);
 
   if (!tasks) {
@@ -976,15 +1033,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   loadingText: { color: Colors.textSecondary, fontSize: 16 },
+  // Flat header — no surface fill, no bottom rule. Section identity comes
+  // from the title typography + spacing (Req 1: single-surface layout).
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainer,
   },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
   headerAddBtn: {
@@ -993,9 +1049,6 @@ const styles = StyleSheet.create({
   filterBar: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainer,
   },
   filterRow: {
     flexDirection: "row",

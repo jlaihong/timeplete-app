@@ -3,7 +3,6 @@ import { View, Text, StyleSheet } from "react-native";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Colors } from "../../../constants/colors";
-import { todayYYYYMMDD } from "../../../lib/dates";
 import { SectionCard } from "../SectionCard";
 import { useAnalyticsState } from "../AnalyticsState";
 import { AnalyticsTrackableWidgetFactory } from "../widgets/AnalyticsTrackableWidgetFactory";
@@ -31,6 +30,10 @@ import { AnalyticsTrackableWidgetFactory } from "../widgets/AnalyticsTrackableWi
  * (`timeWindowAttributedToTrackable`, `buildTaskInfoMap`,
  * `buildListIdToTrackableId`) — the data layer is genuinely shared.
  * Only the presentation diverges.
+ *
+ * The visible date range is intentionally NOT rendered here — the
+ * analytics page already shows it in the date selector at the top,
+ * so repeating it inside this section would be visual noise.
  * ──────────────────────────────────────────────────────────────────── */
 
 export function TrackableProgressionSection() {
@@ -40,8 +43,6 @@ export function TrackableProgressionSection() {
     windowStart,
     windowEnd,
   });
-
-  const subtitle = subtitleForTab(selectedTab, windowStart, windowEnd);
 
   // Stale-data guard: if the cached payload is from a previous window,
   // hide it until the new one arrives. Prevents a brief flash of last
@@ -53,8 +54,6 @@ export function TrackableProgressionSection() {
 
   return (
     <SectionCard title="Trackable Progression">
-      <Text style={styles.subtitle}>{subtitle}</Text>
-
       {!fresh ? (
         <Text style={styles.empty}>Loading…</Text>
       ) : fresh.trackables.length === 0 ? (
@@ -78,37 +77,7 @@ export function TrackableProgressionSection() {
   );
 }
 
-function subtitleForTab(
-  tab: string,
-  windowStart: string,
-  windowEnd: string
-): string {
-  const today = todayYYYYMMDD();
-  const isCurrent = windowEnd >= today;
-  const fmt = (yyyymmdd: string) =>
-    `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
-  switch (tab) {
-    case "DAILY":
-      return isCurrent && windowStart === today
-        ? "Today"
-        : fmt(windowStart);
-    case "WEEKLY":
-      return `${fmt(windowStart)} → ${fmt(windowEnd)}`;
-    case "MONTHLY":
-      return `${windowStart.slice(0, 4)}-${windowStart.slice(4, 6)}`;
-    case "YEARLY":
-      return windowStart.slice(0, 4);
-    default:
-      return "";
-  }
-}
-
 const styles = StyleSheet.create({
-  subtitle: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginBottom: 8,
-  },
   empty: {
     fontSize: 13,
     color: Colors.textTertiary,

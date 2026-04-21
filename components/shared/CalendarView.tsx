@@ -332,15 +332,13 @@ function getEventColor(activityType: string) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+  // Flat header / nav / summary — no per-section fill or rule. (Req 1.)
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainer,
   },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
   dayNav: {
@@ -349,16 +347,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 12,
     gap: 16,
-    backgroundColor: Colors.surfaceContainer,
   },
   dayLabel: { fontSize: 16, fontWeight: "600", color: Colors.text },
   summary: {
     alignItems: "center",
     paddingBottom: 8,
     paddingTop: 4,
-    backgroundColor: Colors.surfaceContainer,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
   },
   summaryText: { fontSize: 13, color: Colors.textSecondary },
   timeline: { flex: 1 },

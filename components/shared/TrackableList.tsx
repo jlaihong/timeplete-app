@@ -206,15 +206,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   loadingText: { color: Colors.textSecondary },
+  // Flat header — no surface fill, no bottom rule. (Req 1: single-surface layout.)
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainer,
   },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
   tabs: {
@@ -222,9 +220,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 8,
-    backgroundColor: Colors.surfaceContainer,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
   },
   tab: {
     paddingVertical: 8,

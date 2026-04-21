@@ -65,6 +65,108 @@ export const search = query({
   },
 });
 
+/**
+ * Home-page task query.
+ *
+ * Returns ONLY:
+ *   1. Overdue tasks – incomplete, non-recurring, taskDay < today
+ *   2. Tasks scheduled in [today, rangeEndYYYYMMDD]
+ *      (plus any task completed in that range, so completions show up
+ *       even if the task was originally scheduled earlier).
+ *
+ * The recurring-instance exclusion lives here on the server (not in the UI)
+ * so the wire payload never contains recurring tasks for the Overdue group.
+ *
+ * "Load More" is server-driven: the client increments `rangeEndYYYYMMDD`
+ * by 7 days and re-issues the query. Each call returns the *full current
+ * window* (overdue + today..rangeEnd) – Convex re-uses cached results
+ * for windows that haven't changed.
+ */
+export const getHomeTasks = query({
+  args: {
+    todayYYYYMMDD: v.string(),
+    rangeEndYYYYMMDD: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const today = args.todayYYYYMMDD;
+    const rangeEnd =
+      args.rangeEndYYYYMMDD < today ? today : args.rangeEndYYYYMMDD;
+
+    // 1. Tasks scheduled in [today, rangeEnd].
+    const rangeTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_user_day", (q) =>
+        q.eq("userId", user._id).gte("taskDay", today).lte("taskDay", rangeEnd)
+      )
+      .collect();
+
+    // 2. Overdue tasks: taskDay < today, incomplete, not a recurring instance.
+    //    Index range scan limits us to past tasks for this user only;
+    //    the in-memory filter narrows further to incomplete + non-recurring.
+    const pastTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_user_day", (q) =>
+        q.eq("userId", user._id).lt("taskDay", today)
+      )
+      .collect();
+
+    const overdueTasks = pastTasks.filter(
+      (t) =>
+        t.taskDay !== undefined &&
+        !t.dateCompleted &&
+        !t.isRecurringInstance
+    );
+
+    // 3. Tasks completed inside [today, rangeEnd] but originally scheduled
+    //    before today – we want them to render in their completion-day
+    //    bucket (matching productivity-one's grouping). Pull from past
+    //    incomplete-task-set's complement: scan past tasks, keep ones whose
+    //    dateCompleted falls in window.
+    const completedInWindow = pastTasks.filter(
+      (t) =>
+        t.taskDay !== undefined &&
+        t.dateCompleted !== undefined &&
+        t.dateCompleted >= today &&
+        t.dateCompleted <= rangeEnd
+    );
+
+    // De-dupe by id – overdueTasks and rangeTasks should be disjoint, but
+    // completedInWindow can overlap with neither (different selectors).
+    const byId = new Map<string, (typeof rangeTasks)[number]>();
+    for (const t of overdueTasks) byId.set(t._id, t);
+    for (const t of rangeTasks) byId.set(t._id, t);
+    for (const t of completedInWindow) byId.set(t._id, t);
+    const tasks = Array.from(byId.values());
+
+    // Tag map – scoped to the tasks we're actually returning. The previous
+    // implementation collected the entire `taskTags` table on every refetch,
+    // which dominated the cost of post-mutation re-renders.
+    const tagMap = new Map<string, string[]>();
+    await Promise.all(
+      tasks.map(async (t) => {
+        const tts = await ctx.db
+          .query("taskTags")
+          .withIndex("by_task", (q) => q.eq("taskId", t._id))
+          .collect();
+        if (tts.length > 0) {
+          tagMap.set(
+            t._id,
+            tts.map((tt) => tt.tagId)
+          );
+        }
+      })
+    );
+
+    return tasks
+      .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex)
+      .map((t) => ({
+        ...t,
+        tagIds: tagMap.get(t._id) ?? [],
+      }));
+  },
+});
+
 export const searchWithCriteria = query({
   args: {
     dayRanges: v.array(
