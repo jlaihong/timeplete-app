@@ -1,5 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { requireApprovedUser } from "./_helpers/auth";
 import {
   buildListIdToTrackableId,
@@ -38,12 +39,59 @@ export const search = query({
         .collect();
     }
 
-    return windows.filter((w) => {
+    const filtered = windows.filter((w) => {
       if (args.startDay && w.startDayYYYYMMDD < args.startDay) return false;
       if (args.endDay && w.startDayYYYYMMDD > args.endDay) return false;
       if (args.budgetType && w.budgetType !== args.budgetType) return false;
       if (args.activityType && w.activityType !== args.activityType) return false;
       return true;
+    });
+
+    // Enrich display title from the linked task / trackable so the calendar
+    // shows the current name (matches productivity-one, where the interactive
+    // calendar event factory reads task.name / trackable.name at render time
+    // rather than duplicating it into the time window). Also fixes migration
+    // rows written without a `title` — without this they would render as
+    // "TASK" / "TRACKABLE" (the activity type literal).
+    //
+    // Batched via `Promise.all` + a per-window id collection so we only
+    // issue one get per unique task/trackable even when the same is
+    // scheduled multiple times in the range.
+    const taskIds = new Set<string>();
+    const trackableIds = new Set<string>();
+    for (const w of filtered) {
+      if (w.activityType === "TASK" && w.taskId) taskIds.add(w.taskId);
+      if (w.activityType === "TRACKABLE" && w.trackableId)
+        trackableIds.add(w.trackableId);
+    }
+
+    const [taskEntries, trackableEntries] = await Promise.all([
+      Promise.all(
+        Array.from(taskIds).map(async (id) => {
+          const t = await ctx.db.get(id as Id<"tasks">);
+          return [id, t?.name ?? null] as const;
+        })
+      ),
+      Promise.all(
+        Array.from(trackableIds).map(async (id) => {
+          const t = await ctx.db.get(id as Id<"trackables">);
+          return [id, t?.name ?? null] as const;
+        })
+      ),
+    ]);
+    const taskNames = new Map(taskEntries);
+    const trackableNames = new Map(trackableEntries);
+
+    return filtered.map((w) => {
+      let displayTitle = w.title ?? undefined;
+      if (w.activityType === "TASK" && w.taskId) {
+        // Always prefer the live task name so renames propagate. Fall back
+        // to the persisted title if the task has been deleted.
+        displayTitle = taskNames.get(w.taskId) ?? displayTitle;
+      } else if (w.activityType === "TRACKABLE" && w.trackableId) {
+        displayTitle = trackableNames.get(w.trackableId) ?? displayTitle;
+      }
+      return { ...w, title: displayTitle };
     });
   },
 });

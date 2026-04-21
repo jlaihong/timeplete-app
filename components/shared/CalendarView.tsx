@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import React, { useState, useMemo, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,13 @@ import {
   Platform,
 } from "react-native";
 import { useQuery, useMutation } from "convex/react";
+import {
+  useDndMonitor,
+  useDroppable,
+  DragMoveEvent,
+  DragEndEvent,
+  DragStartEvent,
+} from "@dnd-kit/core";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,18 +29,200 @@ import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useTimer } from "../../hooks/useTimer";
 import { Id } from "../../convex/_generated/dataModel";
 
-const isWeb = Platform.OS === "web";
-const DEFAULT_DROP_DURATION = 1800; // 30 min
+const DEFAULT_DROP_DURATION = 1800; // 30 min — matches productivity-one fallback
+const SNAP_MINUTES = 5; // matches productivity-one's `snapDuration: '00:05:00'`
+const MIN_DURATION_SECONDS = 60; // matches productivity-one floor
+const HOUR_DROPPABLE_PREFIX = "cal-hour-";
+
+interface DropPreview {
+  hour: number;
+  minute: number;
+  durationMinutes: number;
+  /** Colour derived in DesktopTaskList (trackable → list → default grey). */
+  color: string;
+  taskName: string;
+}
+
+interface ActiveTaskDrag {
+  taskId: string;
+  durationSec: number;
+  color: string;
+  taskName: string;
+}
+
+function snapMinute(rawMinute: number): number {
+  const clamped = Math.max(0, Math.min(59, rawMinute));
+  const snapped = Math.round(clamped / SNAP_MINUTES) * SNAP_MINUTES;
+  // Re-clamp because `Math.round(57/5)*5 = 55`, `Math.round(59/5)*5 = 60` etc.
+  return Math.min(55, Math.max(0, snapped));
+}
+
+function formatClockTime(hour: number, minute: number): string {
+  const period = hour < 12 ? "AM" : "PM";
+  const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  const mm = String(minute).padStart(2, "0");
+  return `${displayHour}:${mm} ${period}`;
+}
+
+/** Add minutes to a wall-clock and return the resulting hour/minute pair. */
+function addMinutes(
+  hour: number,
+  minute: number,
+  delta: number
+): { hour: number; minute: number } {
+  const total = hour * 60 + minute + delta;
+  const wrapped = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+  return { hour: Math.floor(wrapped / 60), minute: wrapped % 60 };
+}
+
+/** Lighten/darken a hex colour for the soft preview fill (≈14% alpha). */
+function withAlpha(hex: string, alphaHex: string): string {
+  // Accepts #RRGGBB; falls back to passed-through if parsing fails.
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+  return `${hex}${alphaHex}`;
+}
 
 interface CalendarViewProps {
   title?: string;
   onAddEvent?: (day: string) => void;
 }
 
+/* ─────────────────────────────  Hour Slot  ──────────────────────────────
+ * A single hour row. Registers itself as a `useDroppable` so dnd-kit's
+ * collision detection can route the cursor to it, and exposes its DOM
+ * node to the parent so the parent's `useDndMonitor` can compute the
+ * snapped minute from `getBoundingClientRect()` + the live pointer Y.
+ */
+interface HourSlotProps {
+  hour: number;
+  registerEl: (hour: number, node: HTMLElement | null) => void;
+  showPreview: boolean;
+  dropPreview: DropPreview | null;
+  hourWindows: any[];
+}
+
+function HourSlot({
+  hour,
+  registerEl,
+  showPreview,
+  dropPreview,
+  hourWindows,
+}: HourSlotProps) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `${HOUR_DROPPABLE_PREFIX}${hour}`,
+  });
+
+  const setRefs = useCallback(
+    (node: any) => {
+      // dnd-kit needs the DOM node for rect measurement; we also keep our
+      // own reference so the parent monitor can recompute on each frame.
+      setNodeRef(node ?? null);
+      registerEl(hour, (node as HTMLElement) ?? null);
+    },
+    [setNodeRef, registerEl, hour]
+  );
+
+  const previewEnd =
+    dropPreview &&
+    addMinutes(dropPreview.hour, dropPreview.minute, dropPreview.durationMinutes);
+
+  return (
+    <View
+      style={[
+        styles.hourRow,
+        (showPreview || isOver) && styles.hourRowDropTarget,
+      ]}
+      ref={setRefs as any}
+    >
+      <Text style={styles.hourLabel}>
+        {hour === 0
+          ? "12 AM"
+          : hour < 12
+            ? `${hour} AM`
+            : hour === 12
+              ? "12 PM"
+              : `${hour - 12} PM`}
+      </Text>
+      <View style={styles.hourContent}>
+        <View style={styles.hourLine} />
+        {showPreview && dropPreview && previewEnd && (
+          // Absolute-positioned ghost block at the snapped slot. Pointer
+          // events disabled so dnd-kit collision detection keeps targeting
+          // the underlying hour cell, not the ghost itself.
+          <View
+            pointerEvents="none"
+            style={[
+              styles.dropGhost,
+              {
+                top: dropPreview.minute,
+                height: Math.max(20, dropPreview.durationMinutes),
+                backgroundColor: withAlpha(dropPreview.color, "22"),
+                borderColor: dropPreview.color,
+              },
+            ]}
+          >
+            <Text
+              style={[styles.dropGhostText, { color: dropPreview.color }]}
+              numberOfLines={1}
+            >
+              {formatClockTime(dropPreview.hour, dropPreview.minute)}
+              {"  –  "}
+              {formatClockTime(previewEnd.hour, previewEnd.minute)}
+              {"  "}
+              <Text
+                style={[styles.dropGhostDuration, { color: dropPreview.color }]}
+              >
+                ({dropPreview.durationMinutes} min)
+              </Text>
+            </Text>
+            {dropPreview.taskName && (
+              <Text
+                style={[styles.dropGhostTitle, { color: dropPreview.color }]}
+                numberOfLines={1}
+              >
+                {dropPreview.taskName}
+              </Text>
+            )}
+          </View>
+        )}
+        {hourWindows.map((tw: any) => (
+          <Card
+            key={tw._id}
+            style={{
+              ...styles.eventCard,
+              ...getEventColor(tw.activityType),
+              ...(tw.isLive
+                ? {
+                    borderColor: Colors.success,
+                    borderWidth: 1,
+                  }
+                : {}),
+            }}
+          >
+            <Text style={styles.eventTime}>
+              {tw.startTimeHHMM} ({formatSecondsAsHM(tw.durationSeconds)})
+            </Text>
+            <Text style={styles.eventTitle} numberOfLines={1}>
+              {tw.title ?? tw.activityType}
+            </Text>
+            {tw.budgetType === "BUDGETED" && (
+              <Text style={styles.budgetBadge}>Budgeted</Text>
+            )}
+            {tw.isLive && <Text style={styles.liveBadge}>Live</Text>}
+          </Card>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
   const isDesktop = useIsDesktop();
   const [selectedDay, setSelectedDay] = useState(todayYYYYMMDD());
-  const [dropHour, setDropHour] = useState<number | null>(null);
+  // Live preview state populated on `dragover`. We deliberately keep this in
+  // a single component-local state so dragging only re-renders CalendarView,
+  // not the task list.
+  const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
 
   const timeWindows = useQuery(api.timeWindows.search, {
     startDay: selectedDay,
@@ -42,7 +231,62 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
   const upsertTimeWindow = useMutation(api.timeWindows.upsert);
   const timerHook = useTimer();
 
-  const timelineRef = useRef<ScrollView>(null);
+  /** DOM nodes for hour cells, keyed by hour. Captured by HourSlot via
+   *  the `registerHourEl` callback so we can compute pointer-relative
+   *  minute precision in the drag monitor below. */
+  const hourElsRef = useRef<Map<number, HTMLElement>>(new Map());
+  const registerHourEl = useCallback(
+    (hour: number, node: HTMLElement | null) => {
+      if (node) hourElsRef.current.set(hour, node);
+      else hourElsRef.current.delete(hour);
+    },
+    []
+  );
+
+  /** Active task being dragged (set on dragstart, cleared on dragend/cancel). */
+  const activeTaskRef = useRef<ActiveTaskDrag | null>(null);
+
+  /**
+   * Live pointer Y in viewport coords. Updated by a `window.pointermove`
+   * listener attached for the lifetime of the drag. Using dnd-kit's
+   * `event.delta.y + activatorEvent.clientY` gave ~1 hour snapping in
+   * practice because `delta.y` is measured post-activation-threshold and
+   * the derived Y drifted from the true pointer position; the result was
+   * that `relY` stayed near 0 for most of the hour cell and `snapMinute`
+   * kept returning `:00`. Reading `clientY` from a plain pointermove is
+   * authoritative and keeps the same coord space as `getBoundingClientRect`.
+   */
+  const pointerYRef = useRef<number>(0);
+  const pointerMoveListenerRef = useRef<
+    ((e: PointerEvent) => void) | null
+  >(null);
+
+  const attachPointerTracker = useCallback((initialY: number) => {
+    if (typeof window === "undefined") return;
+    pointerYRef.current = initialY;
+    if (pointerMoveListenerRef.current) {
+      window.removeEventListener(
+        "pointermove",
+        pointerMoveListenerRef.current
+      );
+    }
+    const onMove = (e: PointerEvent) => {
+      pointerYRef.current = e.clientY;
+    };
+    pointerMoveListenerRef.current = onMove;
+    window.addEventListener("pointermove", onMove, { passive: true });
+  }, []);
+
+  const detachPointerTracker = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (pointerMoveListenerRef.current) {
+      window.removeEventListener(
+        "pointermove",
+        pointerMoveListenerRef.current
+      );
+      pointerMoveListenerRef.current = null;
+    }
+  }, []);
 
   const sortedWindows = useMemo(() => {
     if (!timeWindows) return [];
@@ -60,101 +304,190 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
+  /**
+   * Persist a dropped task as a new TimeWindow. Always optimistic via Convex
+   * (the calendar `useQuery` re-renders the moment the mutation resolves).
+   * Each drop creates a NEW window — same task can be scheduled multiple
+   * times, matching productivity-one (each drop is a fresh `crypto.randomUUID()`).
+   */
   const handleTaskDrop = useCallback(
-    async (taskId: string, hour: number) => {
+    (
+      taskId: string,
+      hour: number,
+      minute: number,
+      durationSec: number,
+      taskName: string
+    ) => {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const startTime = `${String(hour).padStart(2, "0")}:00`;
+      const startTime = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 
-      await upsertTimeWindow({
+      // Persist `title` so the card shows the task name the moment the
+      // mutation commits, before the enriched `timeWindows.search` reply
+      // round-trips. The server-side enrichment (see `timeWindows.search`)
+      // also joins `task.name` on read, so we don't depend on this field
+      // staying in sync — it's just a display fallback for brand-new rows
+      // and for migration rows that pre-date the enrichment.
+      void upsertTimeWindow({
         startTimeHHMM: startTime,
         startDayYYYYMMDD: selectedDay,
-        durationSeconds: DEFAULT_DROP_DURATION,
+        durationSeconds: Math.max(MIN_DURATION_SECONDS, durationSec),
         budgetType: "ACTUAL",
         activityType: "TASK",
         taskId: taskId as Id<"tasks">,
+        title: taskName,
         timeZone: tz,
         source: "calendar",
       });
 
-      setDropHour(null);
+      setDropPreview(null);
     },
     [selectedDay, upsertTimeWindow]
   );
 
-  // Attach drop zone event listeners (web only)
-  useEffect(() => {
-    if (!isWeb || !timelineRef.current) return;
-    const el = timelineRef.current as unknown as HTMLElement;
-    if (!el || !el.addEventListener) return;
+  /* ─── dnd-kit drop integration ────────────────────────────────────────
+   * Each hour cell is a `useDroppable` (id `cal-hour-${hour}`). dnd-kit's
+   * collision detection in HomeDndProvider routes the cursor to the right
+   * one. We hook into the lifted DndContext via `useDndMonitor` to:
+   *   - capture the dragged task's color/duration on drag start
+   *   - compute the snapped minute from pointer Y relative to the hour
+   *     cell's getBoundingClientRect (recomputed every frame so timeline
+   *     scrolling doesn't drift)
+   *   - persist the time window on drop (calendar-only; the task list
+   *     bows out for `cal-hour-*` over-ids — see DesktopTaskList).
+   */
+  const computePreview = useCallback(
+    (
+      hour: number,
+      pointerY: number,
+      active: ActiveTaskDrag
+    ): DropPreview | null => {
+      const el = hourElsRef.current.get(hour);
+      if (!el) return null;
+      const rect = el.getBoundingClientRect();
+      const relY = pointerY - rect.top;
+      const rawMinute = Math.floor((relY / Math.max(1, rect.height)) * 60);
+      const minute = snapMinute(rawMinute);
+      return {
+        hour,
+        minute,
+        durationMinutes: Math.max(
+          MIN_DURATION_SECONDS / 60,
+          Math.round(active.durationSec / 60)
+        ),
+        color: active.color,
+        taskName: active.taskName,
+      };
+    },
+    []
+  );
 
-    const onDragOver = (e: DragEvent) => {
-      const hourEl = (e.target as HTMLElement).closest?.(
-        "[data-calendar-hour]"
-      ) as HTMLElement | null;
-      if (!hourEl) return;
+  const onDndDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const data = event.active.data.current as
+        | {
+            type?: string;
+            task?: { _id: string; name: string };
+            displayColor?: string;
+            durationSec?: number;
+          }
+        | undefined;
+      if (data?.type !== "task" || !data.task) return;
 
-      const hasTask =
-        e.dataTransfer?.types.includes("application/x-task") ||
-        e.dataTransfer?.types.includes("text/plain");
-      if (!hasTask) return;
+      activeTaskRef.current = {
+        taskId: String(data.task._id),
+        durationSec: data.durationSec ?? DEFAULT_DROP_DURATION,
+        color: data.displayColor ?? Colors.primary,
+        taskName: data.task.name,
+      };
 
-      e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-      setDropHour(parseInt(hourEl.dataset.calendarHour!, 10));
-    };
+      // Seed the tracker with the pointerdown position so the very first
+      // onDragMove has a valid reading, then let the window listener take
+      // over. `activatorEvent` is set to the native pointerdown event by
+      // PointerSensor (see @dnd-kit/core DndContext.useSensor).
+      const actEvt = event.activatorEvent as { clientY?: number } | undefined;
+      attachPointerTracker(
+        typeof actEvt?.clientY === "number" ? actEvt.clientY : 0
+      );
+    },
+    [attachPointerTracker]
+  );
 
-    const onDragLeave = (e: DragEvent) => {
-      const related = e.relatedTarget as HTMLElement | null;
-      if (!related || !el.contains(related)) {
-        setDropHour(null);
+  const onDndDragMove = useCallback(
+    (event: DragMoveEvent) => {
+      const active = activeTaskRef.current;
+      if (!active) return;
+      const overId = event.over?.id ? String(event.over.id) : "";
+      if (!overId.startsWith(HOUR_DROPPABLE_PREFIX)) {
+        if (dropPreview !== null) setDropPreview(null);
+        return;
       }
-    };
+      const hour = parseInt(overId.slice(HOUR_DROPPABLE_PREFIX.length), 10);
+      if (Number.isNaN(hour)) return;
+      const next = computePreview(hour, pointerYRef.current, active);
+      if (!next) return;
+      // Only re-render if the snapped slot actually changed → ~12 renders
+      // per hour traversed instead of one per pixel.
+      setDropPreview((prev) =>
+        prev &&
+        prev.hour === next.hour &&
+        prev.minute === next.minute &&
+        prev.durationMinutes === next.durationMinutes &&
+        prev.color === next.color
+          ? prev
+          : next
+      );
+    },
+    [computePreview, dropPreview]
+  );
 
-    const onDrop = (e: DragEvent) => {
-      e.preventDefault();
-      const hourEl = (e.target as HTMLElement).closest?.(
-        "[data-calendar-hour]"
-      ) as HTMLElement | null;
-      if (!hourEl) return;
+  const onDndDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const active = activeTaskRef.current;
+      activeTaskRef.current = null;
 
-      const hour = parseInt(hourEl.dataset.calendarHour!, 10);
-      let taskId: string | null = null;
-
-      const taskData = e.dataTransfer?.getData("application/x-task");
-      if (taskData) {
-        try {
-          const parsed = JSON.parse(taskData);
-          taskId = parsed.taskId;
-        } catch {
-          // ignore
-        }
+      const overId = event.over?.id ? String(event.over.id) : "";
+      if (!active || !overId.startsWith(HOUR_DROPPABLE_PREFIX)) {
+        detachPointerTracker();
+        setDropPreview(null);
+        return;
       }
-      if (!taskId) {
-        taskId = e.dataTransfer?.getData("text/plain") ?? null;
+      const hour = parseInt(overId.slice(HOUR_DROPPABLE_PREFIX.length), 10);
+      if (Number.isNaN(hour)) {
+        detachPointerTracker();
+        setDropPreview(null);
+        return;
       }
-
-      if (taskId) {
-        handleTaskDrop(taskId, hour);
+      // Recompute from the final pointer position rather than trusting
+      // `dropPreview` state (which can lag the last frame).
+      const final = computePreview(hour, pointerYRef.current, active);
+      detachPointerTracker();
+      if (!final) {
+        setDropPreview(null);
+        return;
       }
-      setDropHour(null);
-    };
+      handleTaskDrop(
+        active.taskId,
+        final.hour,
+        final.minute,
+        active.durationSec,
+        active.taskName
+      );
+    },
+    [computePreview, handleTaskDrop, detachPointerTracker]
+  );
 
-    el.addEventListener("dragover", onDragOver);
-    el.addEventListener("dragleave", onDragLeave);
-    el.addEventListener("drop", onDrop);
+  const onDndDragCancel = useCallback(() => {
+    activeTaskRef.current = null;
+    detachPointerTracker();
+    setDropPreview(null);
+  }, [detachPointerTracker]);
 
-    return () => {
-      el.removeEventListener("dragover", onDragOver);
-      el.removeEventListener("dragleave", onDragLeave);
-      el.removeEventListener("drop", onDrop);
-    };
-  }, [handleTaskDrop]);
-
-  const setHourAttrs = useCallback((node: any, hour: number) => {
-    if (!isWeb || !node) return;
-    const el = node as HTMLElement;
-    el.dataset.calendarHour = String(hour);
-  }, []);
+  useDndMonitor({
+    onDragStart: onDndDragStart,
+    onDragMove: onDndDragMove,
+    onDragEnd: onDndDragEnd,
+    onDragCancel: onDndDragCancel,
+  });
 
   // Synthesize a live timer block if timer is running
   const liveTimerWindow = useMemo(() => {
@@ -230,7 +563,6 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
       </View>
 
       <ScrollView
-        ref={timelineRef}
         style={styles.timeline}
         contentContainerStyle={styles.timelineContent}
       >
@@ -239,68 +571,16 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
           const hourWindows = allWindows.filter((w: any) =>
             w.startTimeHHMM.startsWith(hourStr)
           );
-          const isDropTarget = dropHour === hour;
-
+          const showPreview = dropPreview?.hour === hour;
           return (
-            <View
+            <HourSlot
               key={hour}
-              style={[styles.hourRow, isDropTarget && styles.hourRowDropTarget]}
-              ref={(node: any) => setHourAttrs(node, hour)}
-            >
-              <Text style={styles.hourLabel}>
-                {hour === 0
-                  ? "12 AM"
-                  : hour < 12
-                    ? `${hour} AM`
-                    : hour === 12
-                      ? "12 PM"
-                      : `${hour - 12} PM`}
-              </Text>
-              <View style={styles.hourContent}>
-                <View style={styles.hourLine} />
-                {isDropTarget && (
-                  <View style={styles.dropPreview}>
-                    <Ionicons
-                      name="add-circle"
-                      size={14}
-                      color={Colors.primary}
-                    />
-                    <Text style={styles.dropPreviewText}>
-                      Drop to create 30min block
-                    </Text>
-                  </View>
-                )}
-                {hourWindows.map((tw: any) => (
-                  <Card
-                    key={tw._id}
-                    style={{
-                      ...styles.eventCard,
-                      ...getEventColor(tw.activityType),
-                      ...(tw.isLive
-                        ? {
-                            borderColor: Colors.success,
-                            borderWidth: 1,
-                          }
-                        : {}),
-                    }}
-                  >
-                    <Text style={styles.eventTime}>
-                      {tw.startTimeHHMM} (
-                      {formatSecondsAsHM(tw.durationSeconds)})
-                    </Text>
-                    <Text style={styles.eventTitle} numberOfLines={1}>
-                      {tw.title ?? tw.activityType}
-                    </Text>
-                    {tw.budgetType === "BUDGETED" && (
-                      <Text style={styles.budgetBadge}>Budgeted</Text>
-                    )}
-                    {tw.isLive && (
-                      <Text style={styles.liveBadge}>Live</Text>
-                    )}
-                  </Card>
-                ))}
-              </View>
-            </View>
+              hour={hour}
+              registerEl={registerHourEl}
+              showPreview={showPreview}
+              dropPreview={showPreview ? dropPreview : null}
+              hourWindows={hourWindows}
+            />
           );
         })}
       </ScrollView>
@@ -376,25 +656,43 @@ const styles = StyleSheet.create({
     borderLeftColor: Colors.outlineVariant,
     paddingLeft: 12,
     paddingBottom: 4,
+    position: "relative",
   },
   hourLine: {
     height: 1,
     backgroundColor: Colors.outlineVariant,
     marginBottom: 4,
   },
-  dropPreview: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+  dropGhost: {
+    position: "absolute",
+    left: 12,
+    right: 4,
+    backgroundColor: Colors.primary + "22",
     borderWidth: 1,
     borderColor: Colors.primary,
     borderStyle: "dashed",
     borderRadius: 6,
-    marginBottom: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    justifyContent: "center",
+    zIndex: 5,
   },
-  dropPreviewText: { fontSize: 12, color: Colors.primary },
+  dropGhostText: {
+    fontSize: 12,
+    color: Colors.primary,
+    fontWeight: "600",
+  },
+  dropGhostDuration: {
+    fontSize: 11,
+    color: Colors.primary,
+    fontWeight: "400",
+  },
+  dropGhostTitle: {
+    fontSize: 11,
+    color: Colors.primary,
+    fontWeight: "500",
+    marginTop: 2,
+  },
   eventCard: {
     marginBottom: 4,
     padding: 8,

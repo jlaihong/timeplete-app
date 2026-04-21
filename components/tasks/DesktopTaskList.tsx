@@ -16,16 +16,8 @@ import {
 } from "react-native";
 import { useQuery, useMutation } from "convex/react";
 import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  closestCenter,
-  rectIntersection,
-  pointerWithin,
+  useDndMonitor,
   useDroppable,
-  CollisionDetection,
   DragStartEvent,
   DragOverEvent,
   DragEndEvent,
@@ -68,6 +60,35 @@ interface DesktopTaskListProps {
   onSelectTask?: (taskId: Id<"tasks">) => void;
 }
 
+/* ─────────────────────  Lifted-DndContext monitor  ──────────────────────
+ * `useDndMonitor` must be invoked from a descendant of the relevant
+ * DndContext. The DesktopTaskList is rendered inside `HomeDndProvider`
+ * (DesktopHome → HomeDndProvider → … → DesktopTaskList), so this tiny
+ * wrapper qualifies. It registers the list's reorder handlers and
+ * renders nothing.
+ */
+interface TaskListDndMonitorProps {
+  onDragStart: (event: DragStartEvent) => void;
+  onDragOver: (event: DragOverEvent) => void;
+  onDragEnd: (event: DragEndEvent) => void | Promise<void>;
+  onDragCancel: () => void;
+}
+
+function TaskListDndMonitor({
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  onDragCancel,
+}: TaskListDndMonitorProps) {
+  useDndMonitor({
+    onDragStart,
+    onDragOver,
+    onDragEnd,
+    onDragCancel,
+  });
+  return null;
+}
+
 /* ─────────────────────────────  Sortable Row  ───────────────────────────── */
 
 interface SortableRowProps {
@@ -77,6 +98,10 @@ interface SortableRowProps {
   isTicking: boolean;
   timerElapsed: number;
   canDrag: boolean;
+  /** Resolved display colour (trackable → list → default grey). */
+  displayColor: string;
+  /** Default duration in seconds for calendar drop (P1: timeEstimated || 30 min). */
+  durationSec: number;
   onSelect?: (id: Id<"tasks">) => void;
   onToggleComplete?: (id: Id<"tasks">) => void;
   onToggleTimer?: (id: Id<"tasks">) => void;
@@ -91,12 +116,20 @@ function SortableRow({
   isTicking,
   timerElapsed,
   canDrag,
+  displayColor,
+  durationSec,
   onSelect,
   onToggleComplete,
   onToggleTimer,
   onSetTimeSpent,
   onRequestContextMenu,
 }: SortableRowProps) {
+  // Whole-card drag: dnd-kit's listeners are spread onto TaskRowDesktop's
+  // outer `<View>` via `dragHandleProps`. There is no separate grip and
+  // no HTML5 native drag — see comment in TaskRowDesktop for the history.
+  //
+  // The `data` payload carries everything the calendar's drop preview
+  // needs (color, duration, full task) without any extra plumbing.
   const {
     attributes,
     listeners,
@@ -106,7 +139,7 @@ function SortableRow({
     isDragging,
   } = useSortable({
     id: task._id,
-    data: { type: "task", groupId, task },
+    data: { type: "task", groupId, task, meta, displayColor, durationSec },
     disabled: !canDrag,
   });
 
@@ -116,9 +149,15 @@ function SortableRow({
     width: "100%",
   };
 
+  const dragHandleProps = canDrag
+    ? ({ ...attributes, ...listeners } as Record<string, unknown>)
+    : undefined;
+
   return (
     <div ref={setNodeRef} style={style}>
       {isDragging ? (
+        // Placeholder reserves the row's slot in the list while the real
+        // card is rendered in the DragOverlay (see HomeDndProvider).
         <TaskDragPlaceholder />
       ) : (
         <TaskRowDesktop
@@ -131,11 +170,7 @@ function SortableRow({
           onToggleTimer={onToggleTimer}
           onSetTimeSpent={onSetTimeSpent}
           onRequestContextMenu={onRequestContextMenu}
-          dragHandleProps={
-            canDrag
-              ? ({ ...attributes, ...listeners } as Record<string, unknown>)
-              : undefined
-          }
+          dragHandleProps={dragHandleProps}
         />
       )}
     </div>
@@ -426,7 +461,23 @@ export function DesktopTaskList({
         tasks: visibleTasks,
         completedCount,
         totalCount: allTasks.length,
-        canDrop:
+        // Per-group drag rules are deliberately asymmetric:
+        //
+        //   group         | canDrag | canDropInto
+        //   --------------+---------+------------
+        //   Overdue       |  yes    |   no
+        //   Unscheduled   |  no     |   no
+        //   Today/future  |  yes    |   yes
+        //
+        // Overdue tasks must be draggable so the user can move them onto
+        // a real day (or the calendar) — but Overdue is a virtual bucket,
+        // not a target a task should ever land in. Likewise Unscheduled
+        // is a passive bucket today (no drag yet); both are blocked as
+        // drop targets in `onDragOver`/`onDragEnd`, and the underlying
+        // `useDroppable` is also disabled below so collision detection
+        // skips them entirely.
+        canDrag: g.id !== UNSCHEDULED_GROUP_ID,
+        canDropInto:
           g.id !== OVERDUE_GROUP_ID && g.id !== UNSCHEDULED_GROUP_ID,
       };
     });
@@ -508,11 +559,13 @@ export function DesktopTaskList({
     [setTimeSpentMutation]
   );
 
-  /* ───── DnD ───── */
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  );
-
+  /* ───── DnD ─────
+   * Sensors, the DndContext, the DragOverlay, and the custom collision
+   * detection live in `HomeDndProvider` so the calendar (a sibling) can
+   * register hour cells as `useDroppable` siblings of these task rows.
+   * Reorder logic stays here; we hook into the lifted DndContext via
+   * `useDndMonitor` (see `<TaskListDndMonitor>` below).
+   */
   const [activeDrag, setActiveDrag] = useState<{
     task: TaskRowTask;
     fromGroupId: string;
@@ -531,21 +584,10 @@ export function DesktopTaskList({
     [localGroups]
   );
 
-  const customCollisionDetection: CollisionDetection = useCallback(
-    (args) => {
-      // Prefer exact pointer-within first (matches the cursor precisely).
-      const pointerCollisions = pointerWithin(args);
-      if (pointerCollisions.length > 0) {
-        return pointerCollisions;
-      }
-      const rectCollisions = rectIntersection(args);
-      if (rectCollisions.length > 0) {
-        return rectCollisions;
-      }
-      return closestCenter(args);
-    },
-    []
-  );
+  /** Drops with this prefix are owned by the calendar; the task list
+   *  bows out (reverts any optimistic group moves and skips reorder). */
+  const isCalendarDrop = (overId: string | undefined) =>
+    !!overId && overId.startsWith("cal-hour-");
 
   const onDragStart = useCallback(
     (event: DragStartEvent) => {
@@ -573,6 +615,10 @@ export function DesktopTaskList({
       const activeId = String(active.id);
       const overId = String(over.id);
       if (activeId === overId) return;
+      // Hovering the calendar — do nothing here; CalendarView paints the
+      // preview and the cross-group optimistic logic below would only
+      // confuse the user (task would jump out of its current day).
+      if (isCalendarDrop(overId)) return;
 
       const activeLoc = findTaskLocation(activeId);
       if (!activeLoc) return;
@@ -635,6 +681,17 @@ export function DesktopTaskList({
       if (!startInfo) return;
 
       const { active, over } = event;
+      const overId = over ? String(over.id) : undefined;
+
+      // Calendar owns this drop. The CalendarView has already (or is about
+      // to) call `timeWindows.upsert` from its own useDndMonitor handler.
+      // Revert any optimistic cross-group moves we made during onDragOver
+      // by re-syncing from the server.
+      if (isCalendarDrop(overId)) {
+        setLocalGroups(serverGroups);
+        return;
+      }
+
       const taskId = String(active.id) as Id<"tasks">;
 
       // Find where the task currently lives in optimistic state (cross-group
@@ -760,6 +817,41 @@ export function DesktopTaskList({
     [trackableMap, listMap, tagMap]
   );
 
+  /**
+   * Display colour precedence — matches productivity-one's
+   * `interactive-calendar-event-factory.service.ts` (lines 73-106) and
+   * `interactive-calendar-drag-preview.service.ts` (lines 22-83):
+   *   1. trackable.colour  (task.trackableId → trackable)
+   *   2. list.colour       (task.listId → list)
+   *   3. P1 default grey   ('#6b7280' from interactive-calendar.ts:106)
+   *
+   * Used both as the dnd-kit drag-data `displayColor` for the calendar
+   * preview and (future) for the rendered event card after drop.
+   */
+  const deriveDisplayColor = useCallback(
+    (task: TaskRowTask): string => {
+      if (task.trackableId) {
+        const tr = trackableMap.get(task.trackableId);
+        if (tr?.colour) return tr.colour;
+      }
+      if (task.listId) {
+        const ls = listMap.get(task.listId);
+        if (ls?.colour) return ls.colour;
+      }
+      return "#6b7280";
+    },
+    [trackableMap, listMap]
+  );
+
+  /** Default-window duration for a task drop (P1 fallback chain). */
+  const DEFAULT_DURATION_SEC = 1800;
+  const deriveDurationSec = useCallback((task: TaskRowTask): number => {
+    const est = (task as unknown as { timeEstimatedInSecondsUnallocated?: number })
+      .timeEstimatedInSecondsUnallocated;
+    if (typeof est === "number" && est > 60) return est;
+    return DEFAULT_DURATION_SEC;
+  }, []);
+
   const toggleGroupExpansion = useCallback((groupId: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -788,10 +880,6 @@ export function DesktopTaskList({
   const wrapperProps = isWeb
     ? { style: { display: "flex", flexDirection: "column", flex: 1 } as any }
     : { style: { flex: 1 } };
-
-  const activeDragMeta = activeDrag ? buildMeta(activeDrag.task) : null;
-  const activeDragIsTicking =
-    !!activeDrag && timer.isRunning && timer.taskId === activeDrag.task._id;
 
   return (
     <View style={styles.container}>
@@ -835,15 +923,15 @@ export function DesktopTaskList({
       ) : (
         <ScrollView contentContainerStyle={styles.listContent}>
           <Wrapper {...wrapperProps}>
-            <DndContext
-              sensors={sensors}
-              collisionDetection={customCollisionDetection}
+            {/* Hooks into the lifted DndContext (HomeDndProvider). Renders
+                nothing — pure side-effect to register reorder handlers. */}
+            <TaskListDndMonitor
               onDragStart={onDragStart}
               onDragOver={onDragOver}
               onDragEnd={onDragEnd}
               onDragCancel={onDragCancel}
-            >
-              {displayGroups.map((group) => {
+            />
+            {displayGroups.map((group) => {
                 const isCollapsed = collapsedGroups.has(group.id);
                 return (
                   <View key={group.id} style={styles.group}>
@@ -901,7 +989,7 @@ export function DesktopTaskList({
                       >
                         <DroppableGroupBody
                           groupId={group.id}
-                          disabled={!group.canDrop}
+                          disabled={!group.canDropInto}
                           isEmpty={group.tasks.length === 0}
                         >
                           {group.tasks.map((task) => {
@@ -915,7 +1003,9 @@ export function DesktopTaskList({
                                 groupId={group.id}
                                 isTicking={isTicking}
                                 timerElapsed={timer.elapsed}
-                                canDrag={group.canDrop}
+                                canDrag={group.canDrag}
+                                displayColor={deriveDisplayColor(task)}
+                                durationSec={deriveDurationSec(task)}
                                 onSelect={onSelectTask}
                                 onToggleComplete={toggleComplete}
                                 onToggleTimer={handleToggleTimer}
@@ -931,18 +1021,8 @@ export function DesktopTaskList({
                 );
               })}
 
-              <DragOverlay>
-                {activeDrag && activeDragMeta ? (
-                  <TaskRowDesktop
-                    task={activeDrag.task}
-                    meta={activeDragMeta}
-                    isTicking={activeDragIsTicking}
-                    timerElapsedSeconds={timer.elapsed}
-                    isOverlay
-                  />
-                ) : null}
-              </DragOverlay>
-            </DndContext>
+            {/* DragOverlay is rendered by HomeDndProvider so the dragged
+                row can travel cleanly across the task list and calendar. */}
           </Wrapper>
 
           <Pressable style={styles.loadMore} onPress={handleLoadMore}>
