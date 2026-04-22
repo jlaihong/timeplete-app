@@ -76,12 +76,16 @@ export const search = query({
     // is scheduled many times in the range.
     const taskIds = new Set<string>();
     const trackableIds = new Set<string>();
+    const directListIds = new Set<string>();
     for (const w of filtered) {
       if (w.activityType === "TASK" && w.taskId) taskIds.add(w.taskId);
       if (w.activityType === "TRACKABLE" && w.trackableId)
         trackableIds.add(w.trackableId);
-      // EVENT activity type carries no task/trackable, so it always
-      // falls through to DEFAULT_EVENT_COLOR.
+      // Direct list links can appear on any non-TASK row (TASK rows
+      // derive their list from `task.listId` instead).
+      if (w.listId) directListIds.add(w.listId);
+      // EVENT activity type without a list link falls through to
+      // DEFAULT_EVENT_COLOR.
     }
 
     const [taskDocs, trackableDocsFromWindows, links] = await Promise.all([
@@ -103,7 +107,7 @@ export const search = query({
     ]);
 
     const tasksById = new Map<string, NonNullable<typeof taskDocs[number]>>();
-    const listIds = new Set<string>();
+    const listIds = new Set<string>(directListIds);
     for (const t of taskDocs) {
       if (!t) continue;
       tasksById.set(t._id, t);
@@ -159,23 +163,61 @@ export const search = query({
     }
 
     return filtered.map((w) => {
-      let displayTitle = w.title ?? undefined;
+      // ─── Title derivation ────────────────────────────────────────
+      // Single canonical priority ladder (matches productivity-one):
+      //
+      //   1. Explicit user-entered title  (w.title — persisted)
+      //   2. Linked list name             (direct listId, or task.listId)
+      //   3. Linked trackable name
+      //   4. For TASK rows only: task name
+      //   5. Fallback: "Untitled"  (or "Event" for EVENT activityType
+      //      so legacy rows keep their P1 label)
+      //
+      // The persisted `w.title` MUST flow through unchanged so the edit
+      // dialog can distinguish "explicit" (string) from "derived"
+      // (undefined) when re-saving. We compute `derivedTitle` and
+      // `displayTitle` as new fields rather than mutating `w.title`.
       let trackableColour: string | undefined;
       let listColour: string | undefined;
+      let derivedTitle: string | undefined;
+
+      // Resolve a list document for display, preferring the direct
+      // listId. For TASK rows, fall back to the task's listId so the
+      // colour-stripe rule still works.
+      const directListDoc = w.listId ? listsById.get(w.listId) : undefined;
 
       if (w.activityType === "EVENT") {
-        // EVENT: no trackable / no list → default colour, persisted title.
-        // (P1: title falls back to "Event" when missing — keep behaviour
-        // here so the client renders a non-empty label even for legacy
-        // rows.)
-        if (!displayTitle) displayTitle = "Event";
+        // EVENT: list (if linked) → no trackable.
+        if (directListDoc?.name) derivedTitle = directListDoc.name;
+        listColour = directListDoc?.colour;
       } else if (w.activityType === "TRACKABLE" && w.trackableId) {
         const trackable = trackablesById.get(w.trackableId);
-        if (trackable?.name) displayTitle = trackable.name;
+        // Hierarchy: list (if linked) → trackable.
+        if (directListDoc?.name) {
+          derivedTitle = directListDoc.name;
+        } else if (trackable?.name) {
+          derivedTitle = trackable.name;
+        }
         trackableColour = trackable?.colour;
+        listColour = directListDoc?.colour;
       } else if (w.activityType === "TASK") {
         const task = w.taskId ? tasksById.get(w.taskId) : undefined;
-        if (task?.name) displayTitle = task.name;
+        const taskListDoc = task?.listId
+          ? listsById.get(task.listId)
+          : undefined;
+        // Hierarchy: direct list → task list → task name. Task name
+        // takes precedence over the trackable here because it's the
+        // canonical user-facing label for a task event in P1.
+        if (directListDoc?.name) {
+          derivedTitle = directListDoc.name;
+        } else if (taskListDoc?.name && !task?.name) {
+          // Only use the list name when there's no task name to fall
+          // back to. (Practically a task always has a name, but this
+          // keeps the rule total.)
+          derivedTitle = taskListDoc.name;
+        } else if (task?.name) {
+          derivedTitle = task.name;
+        }
 
         const resolvedTrackableId = resolveAttributedTrackableId(
           { trackableId: w.trackableId, taskId: w.taskId },
@@ -185,9 +227,7 @@ export const search = query({
         trackableColour = resolvedTrackableId
           ? trackablesById.get(resolvedTrackableId)?.colour
           : undefined;
-        listColour = task?.listId
-          ? listsById.get(task.listId)?.colour
-          : undefined;
+        listColour = taskListDoc?.colour;
       }
 
       const { displayColor, secondaryColor } = deriveEventColors(
@@ -195,9 +235,18 @@ export const search = query({
         listColour
       );
 
+      const fallback = w.activityType === "EVENT" ? "Event" : "Untitled";
+      const displayTitle = w.title ?? derivedTitle ?? fallback;
+
       return {
         ...w,
-        title: displayTitle,
+        // `title` is the PERSISTED value — flows through untouched.
+        // `displayTitle` is what the calendar renders.
+        // `derivedTitle` is what would render if no explicit title was
+        // set; the dialog uses this for the placeholder and to detect
+        // when a typed title duplicates the derived name.
+        displayTitle,
+        derivedTitle,
         displayColor,
         secondaryColor,
       };
@@ -219,6 +268,7 @@ export const upsert = mutation({
     ),
     taskId: v.optional(v.id("tasks")),
     trackableId: v.optional(v.id("trackables")),
+    listId: v.optional(v.id("lists")),
     title: v.optional(v.string()),
     comments: v.optional(v.string()),
     tagIds: v.optional(v.array(v.id("tags"))),
@@ -234,6 +284,15 @@ export const upsert = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+
+    // Coerce empty/whitespace title to undefined. The display layer
+    // (`search` below) treats `undefined` as "no explicit title — derive
+    // from linked entity". Storing `""` would otherwise look like an
+    // explicit (empty) title and break dynamic name updates.
+    const normalizedTitle =
+      typeof args.title === "string" && args.title.trim().length > 0
+        ? args.title.trim()
+        : undefined;
 
     // Auto-snapshot the resolved trackableId when a task window is created
     // without one (e.g. CalendarView drag-drop). This keeps trackable totals
@@ -265,7 +324,8 @@ export const upsert = mutation({
         activityType: args.activityType,
         taskId: args.taskId,
         trackableId: resolvedTrackableId,
-        title: args.title,
+        listId: args.listId,
+        title: normalizedTitle,
         comments: args.comments,
         tagIds: args.tagIds,
         timeZone: args.timeZone,
@@ -283,7 +343,8 @@ export const upsert = mutation({
       activityType: args.activityType,
       taskId: args.taskId,
       trackableId: resolvedTrackableId,
-      title: args.title,
+      listId: args.listId,
+      title: normalizedTitle,
       comments: args.comments,
       tagIds: args.tagIds,
       timeZone: args.timeZone,

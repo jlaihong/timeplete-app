@@ -3,16 +3,28 @@ import { View, StyleSheet } from "react-native";
 import { Colors } from "../../constants/colors";
 import { DesktopTaskList } from "../tasks/DesktopTaskList";
 import { TrackableList } from "../shared/TrackableList";
-import { CalendarView } from "../shared/CalendarView";
+import {
+  CalendarView,
+  type AddEventPrefill,
+  type EditEventPayload,
+} from "../shared/CalendarView";
 import { AddTaskSheet } from "../tasks/AddTaskSheet";
 import { TaskDetailSheet } from "../tasks/TaskDetailSheet";
 import { EventDialog } from "../calendar/EventDialog";
 import { AddTrackableFlow } from "../trackables/AddTrackableFlow";
 import { TrackableDialogHost } from "../trackables/widgets/TrackableDialogHost";
 import type { LogRequest } from "../trackables/widgets/types";
-import { todayYYYYMMDD } from "../../lib/dates";
 import { Id } from "../../convex/_generated/dataModel";
 import { HomeDndProvider } from "../dnd/HomeDndProvider";
+
+/**
+ * Single dialog state — there is one EventDialog instance reused for
+ * both create and edit. The `mode` discriminates how it's mounted.
+ */
+type DialogState =
+  | { mode: "create"; day: string; prefill: AddEventPrefill | null }
+  | { mode: "edit"; day: string; event: EditEventPayload }
+  | null;
 
 export function DesktopHome() {
   const [showAddTask, setShowAddTask] = useState(false);
@@ -20,8 +32,7 @@ export function DesktopHome() {
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(
     null
   );
-  const [showEventDialog, setShowEventDialog] = useState(false);
-  const [eventDay, setEventDay] = useState(todayYYYYMMDD());
+  const [eventDialog, setEventDialog] = useState<DialogState>(null);
 
   // Trackable dialogs are owned here (rather than inside `TrackableList`) so
   // their overlays cover the full viewport and aren't clipped by the narrow
@@ -60,9 +71,19 @@ export function DesktopHome() {
           <View style={styles.sideColumn}>
             <CalendarView
               title="Calendar"
-              onAddEvent={(day) => {
-                setEventDay(day);
-                setShowEventDialog(true);
+              onAddEvent={(day, prefill) => {
+                setEventDialog({
+                  mode: "create",
+                  day,
+                  prefill: prefill ?? null,
+                });
+              }}
+              onEditEvent={(event) => {
+                setEventDialog({
+                  mode: "edit",
+                  day: event.startDayYYYYMMDD,
+                  event,
+                });
               }}
             />
           </View>
@@ -83,10 +104,23 @@ export function DesktopHome() {
         />
       )}
 
-      {showEventDialog && (
+      {eventDialog && (
         <EventDialog
-          day={eventDay}
-          onClose={() => setShowEventDialog(false)}
+          day={eventDialog.day}
+          existingEvent={
+            eventDialog.mode === "edit" ? eventDialog.event : undefined
+          }
+          defaultStartTimeHHMM={
+            eventDialog.mode === "create"
+              ? eventDialog.prefill?.startTimeHHMM
+              : undefined
+          }
+          defaultDurationMinutes={
+            eventDialog.mode === "create"
+              ? eventDialog.prefill?.durationMinutes
+              : undefined
+          }
+          onClose={() => setEventDialog(null)}
         />
       )}
 
