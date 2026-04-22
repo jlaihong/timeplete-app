@@ -153,6 +153,23 @@ export default defineSchema({
     ),
     taskId: v.optional(v.id("tasks")),
     trackableId: v.optional(v.id("trackables")),
+    /**
+     * Optional direct link to a list. When present (and the row is not
+     * a TASK — task events derive list from `task.listId`), the list
+     * name is the second priority in the title-derivation ladder
+     * (explicit title → list name → trackable name → fallback).
+     */
+    listId: v.optional(v.id("lists")),
+    /**
+     * Persisted user-entered title. Distinguished semantically:
+     *   - `undefined`  → no explicit title; render derived name from
+     *                    list / trackable / task.
+     *   - non-empty    → explicit user title; survives entity renames.
+     *
+     * The `upsert` mutation coerces empty/whitespace input to
+     * `undefined` so "user cleared the field" reverts to derived
+     * behaviour.
+     */
     title: v.optional(v.string()),
     comments: v.optional(v.string()),
     tagIds: v.optional(v.array(v.id("tags"))),
@@ -184,6 +201,7 @@ export default defineSchema({
     .index("by_user_day", ["userId", "startDayYYYYMMDD"])
     .index("by_task", ["taskId"])
     .index("by_trackable", ["trackableId"])
+    .index("by_list", ["listId"])
     .index("by_user", ["userId"])
     .index("by_recurring_event", ["recurringEventId"])
     .index("by_legacy", ["legacyId"]),

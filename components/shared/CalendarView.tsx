@@ -50,6 +50,20 @@ const SNAP_MINUTES = 5;
 const MIN_DURATION_MINUTES = 5;
 const MIN_DURATION_SECONDS = MIN_DURATION_MINUTES * 60;
 const DEFAULT_DROP_DURATION = 1800;
+/**
+ * Default duration in minutes for an event the user creates by clicking
+ * an empty calendar slot without dragging far enough to define a real
+ * range (e.g. micro-drags below the snap grid). Matches the spec
+ * ("Very small drag → default to minimum duration, e.g. 15 min").
+ */
+const DEFAULT_CREATE_DURATION_MINUTES = 15;
+/**
+ * Pixel distance the user must move from the initial pointerdown before
+ * we treat the gesture as a "create new event" drag (vs an accidental
+ * micro-movement / click). Matches the spec ("5–10 px") and is large
+ * enough to keep stray clicks on empty slots from spawning events.
+ */
+const CREATE_DRAG_THRESHOLD_PX = 5;
 const HOUR_LABEL_WIDTH = 56;
 const RESIZE_HANDLE_HEIGHT = 6;
 const HOUR_DROPPABLE_PREFIX = "cal-hour-";
@@ -84,6 +98,18 @@ interface TimeWindowDoc {
   activityType: "TASK" | "EVENT" | "TRACKABLE";
   taskId?: string;
   trackableId?: string;
+  listId?: string;
+  /**
+   * The PERSISTED title:
+   *   - `undefined` → no explicit title; render `displayTitle` (which
+   *     reflects the latest derived name from the linked entity).
+   *   - non-empty   → user-entered explicit title; survives entity
+   *     renames.
+   *
+   * Rendering should use `displayTitle`. Edit/move flows that re-issue
+   * `upsert` MUST send this field (not `displayTitle`) so the
+   * explicit/derived distinction is preserved on the round trip.
+   */
   title?: string;
   comments?: string;
   tagIds?: string[];
@@ -94,19 +120,72 @@ interface TimeWindowDoc {
   isLive?: boolean;
   /**
    * Server-computed by `convex/timeWindows.ts:search`:
-   *   - `displayColor` = trackable.colour ?? list.colour ?? DEFAULT_EVENT_COLOR
-   *   - `secondaryColor` = list.colour ONLY when both trackable + list
+   *   - `displayTitle`  = title ?? derivedTitle ?? "Untitled" (the
+   *     string the calendar should render).
+   *   - `derivedTitle`  = name from linked list / trackable / task
+   *     (what would render with no explicit title). The edit dialog
+   *     uses this as a placeholder and to detect "user typed something
+   *     identical to the derived name → save as derived".
+   *   - `displayColor`  = trackable.colour ?? list.colour ?? DEFAULT_EVENT_COLOR
+   *   - `secondaryColor`= list.colour ONLY when both trackable + list
    *     colours exist and differ (the "list stripe" dual-colour case).
-   * Optional because the live-timer pseudo-event constructed client-side
-   * doesn't go through the server query.
+   * All optional because the live-timer pseudo-event constructed
+   * client-side doesn't go through the server query.
    */
+  displayTitle?: string;
+  derivedTitle?: string;
   displayColor?: string;
   secondaryColor?: string;
 }
 
+/**
+ * Optional pre-fill values for `onAddEvent`. When the host opens the
+ * event-creation panel in response to a click-and-drag gesture on the
+ * calendar, these carry the snapped start time and the dragged duration
+ * so the panel can hydrate its fields without the user retyping them.
+ */
+export interface AddEventPrefill {
+  startTimeHHMM: string;
+  durationMinutes: number;
+}
+
+/**
+ * Payload passed to `onEditEvent` when the user clicks an existing
+ * event. Hosts hand this straight into `EventDialog`'s `existingEvent`
+ * prop to put the dialog in edit mode.
+ */
+export interface EditEventPayload {
+  _id: string;
+  /** Persisted explicit title (undefined → derived from linked entity). */
+  title?: string;
+  /**
+   * Server-derived name from the linked list / trackable / task. The
+   * dialog uses this to:
+   *   - Show as the placeholder when the explicit title is empty.
+   *   - Detect when the user typed something identical to the derived
+   *     name → save as `title: undefined` so the row stays dynamic.
+   */
+  derivedTitle?: string;
+  startTimeHHMM: string;
+  startDayYYYYMMDD: string;
+  durationSeconds: number;
+  activityType: string;
+  budgetType: string;
+  comments?: string;
+  trackableId?: string | null;
+  listId?: string | null;
+  taskId?: string | null;
+}
+
 interface CalendarViewProps {
   title?: string;
-  onAddEvent?: (day: string) => void;
+  onAddEvent?: (day: string, prefill?: AddEventPrefill) => void;
+  /**
+   * Notify the host that the user clicked an event and wants to edit
+   * it. Hosts should open the existing event-creation panel with this
+   * payload as `existingEvent` to put the dialog in edit mode.
+   */
+  onEditEvent?: (event: EditEventPayload) => void;
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -386,9 +465,20 @@ interface CalendarEventBlockProps {
   layout: EventLayout;
   /** Notify parent to persist start/duration changes. */
   onCommit: (id: string, startMinutes: number, durationMinutes: number) => void;
+  /**
+   * Notify parent that the user clicked the event without dragging or
+   * resizing. Used to open the edit dialog. Omitted for the live timer
+   * pseudo-event.
+   */
+  onEditRequest?: () => void;
 }
 
-function CalendarEventBlock({ tw, layout, onCommit }: CalendarEventBlockProps) {
+function CalendarEventBlock({
+  tw,
+  layout,
+  onCommit,
+  onEditRequest,
+}: CalendarEventBlockProps) {
   const baseStart = useMemo(() => hhmmToMinutes(tw.startTimeHHMM), [tw.startTimeHHMM]);
   const baseDuration = useMemo(
     () => Math.max(MIN_DURATION_MINUTES, Math.round(tw.durationSeconds / 60)),
@@ -418,6 +508,20 @@ function CalendarEventBlock({ tw, layout, onCommit }: CalendarEventBlockProps) {
     }
   }, [baseStart, baseDuration, pendingCommit]);
 
+  /**
+   * Tag the rendered DOM node with `data-calendar-event-id` so the
+   * document-level `contextmenu` listener in `CalendarView` can map a
+   * right-click back to the event without per-block listeners (which
+   * proved unreliable on macOS / RN-Web).
+   */
+  const eventBlockRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const node = eventBlockRef.current;
+    if (!node || tw.isLive) return;
+    node.setAttribute("data-calendar-event-id", String(tw._id));
+    return () => node.removeAttribute("data-calendar-event-id");
+  }, [tw._id, tw.isLive]);
+
   const renderStart = draft?.start ?? pendingCommit?.start ?? baseStart;
   const renderDuration = draft?.duration ?? pendingCommit?.duration ?? baseDuration;
   const top = renderStart * PX_PER_MINUTE;
@@ -434,6 +538,15 @@ function CalendarEventBlock({ tw, layout, onCommit }: CalendarEventBlockProps) {
 
   const startInteraction = useCallback(
     (mode: EventInteractionMode, ev: any) => {
+      // Only react to the primary (left) button. Without this guard a
+      // right-click — which on macOS includes a two-finger trackpad
+      // tap — would call preventDefault on `pointerdown`, which most
+      // browsers treat as a signal to suppress the follow-up
+      // `contextmenu` event. That breaks the right-click delete menu
+      // on `eventBlock`.
+      const button: number | undefined = ev?.button ?? ev?.nativeEvent?.button;
+      if (typeof button === "number" && button !== 0) return;
+
       // Stop bubbling so the parent calendar doesn't see this as a
       // generic timeline click and so dnd-kit's document-level sensors
       // (if they ever start listening for non-draggable activity) won't
@@ -478,7 +591,17 @@ function CalendarEventBlock({ tw, layout, onCommit }: CalendarEventBlockProps) {
         return { start: initialStart, duration: newDuration };
       };
 
+      // Track whether the pointer moved past a small threshold during
+      // the gesture. A pointerup with no real movement is interpreted
+      // as a click and (in "drag" mode) opens the edit dialog. We use
+      // a raw-pixel threshold rather than the snapped-minute delta so
+      // even sub-snap-grid jitter still counts as a click.
+      const CLICK_MOVE_THRESHOLD_PX = 4;
+      let movedPx = 0;
+
       const onMove = (e: PointerEvent) => {
+        const dy = Math.abs(e.clientY - startY);
+        if (dy > movedPx) movedPx = dy;
         setDraft(compute(e.clientY));
       };
       const onUp = (e: PointerEvent) => {
@@ -486,7 +609,14 @@ function CalendarEventBlock({ tw, layout, onCommit }: CalendarEventBlockProps) {
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onUp);
         const finalDraft = compute(e.clientY);
+        const wasClick =
+          mode === "drag" && movedPx < CLICK_MOVE_THRESHOLD_PX;
         setDraft(null);
+        if (wasClick) {
+          // Clean click on the event body — open edit dialog.
+          if (onEditRequest) onEditRequest();
+          return;
+        }
         if (
           finalDraft.start !== initialStart ||
           finalDraft.duration !== initialDuration
@@ -500,7 +630,7 @@ function CalendarEventBlock({ tw, layout, onCommit }: CalendarEventBlockProps) {
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [baseStart, baseDuration, onCommit, tw._id]
+    [baseStart, baseDuration, onCommit, onEditRequest, tw._id]
   );
 
   // Colour composition — server-provided `displayColor` (trackable
@@ -567,10 +697,9 @@ function CalendarEventBlock({ tw, layout, onCommit }: CalendarEventBlockProps) {
       } as Record<string, unknown>)
     : null;
 
-  // Title fallback ladder mirrors P1 (`interactive-calendar-event-factory.service.ts:128-133`):
-  // task/trackable name (server-enriched into `tw.title`), then a
-  // sensible activityType label. We never render an empty string —
-  // the spec demands "text should NEVER fully disappear".
+  // Use the server-computed displayTitle (explicit title → derived
+  // name → fallback). Falls back here only for the live-timer
+  // pseudo-event which doesn't go through the server query.
   const fallbackByType =
     tw.activityType === "EVENT"
       ? "Event"
@@ -578,6 +707,7 @@ function CalendarEventBlock({ tw, layout, onCommit }: CalendarEventBlockProps) {
         ? "Trackable"
         : "Task";
   const displayTitle =
+    (tw.displayTitle && tw.displayTitle.trim()) ||
     (tw.title && tw.title.trim()) ||
     (isLive ? "Timer running…" : fallbackByType);
 
@@ -619,6 +749,12 @@ function CalendarEventBlock({ tw, layout, onCommit }: CalendarEventBlockProps) {
       pointerEvents="box-none"
     >
       <View
+        // RN-Web forwards `ref` through to the underlying <div>. We use
+        // it to attach a native `contextmenu` listener (see effect above)
+        // — the JSX `onContextMenu` prop is unreliable here.
+        ref={(node: any) => {
+          eventBlockRef.current = (node as HTMLElement | null) ?? null;
+        }}
         style={[
           styles.eventBlock,
           {
@@ -713,16 +849,57 @@ function CalendarEventBlock({ tw, layout, onCommit }: CalendarEventBlockProps) {
 /* ────────────────────────────────────────────────────────────────────────
  *  CalendarView
  * ──────────────────────────────────────────────────────────────────────── */
-export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
+export function CalendarView({
+  title,
+  onAddEvent,
+  onEditEvent,
+}: CalendarViewProps) {
   const isDesktop = useIsDesktop();
   const [selectedDay, setSelectedDay] = useState(todayYYYYMMDD());
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
+  /**
+   * Live state for the click-and-drag-to-create gesture on empty calendar
+   * space. `null` while no creation gesture is active. While the user is
+   * dragging we update {start, end} on every pointermove so the preview
+   * block tracks the cursor in realtime. We normalise so `start <= end`
+   * regardless of drag direction (matches the spec's "Drag Direction").
+   */
+  const [creationDraft, setCreationDraft] = useState<
+    | { startMinutes: number; endMinutes: number }
+    | null
+  >(null);
+  /** Ref to the grid column DOM node — used to map clientY → minute. */
+  const gridColumnRef = useRef<HTMLElement | null>(null);
+
+  /**
+   * Right-click context menu. A single state object means "only one menu
+   * can be open at a time" is enforced for free. Position is the cursor's
+   * viewport coords; the menu is rendered with `position: fixed` so it
+   * floats above the (scrollable) timeline and isn't clipped.
+   */
+  type CalendarContextMenuState =
+    | {
+        kind: "event";
+        x: number;
+        y: number;
+        eventId: Id<"timeWindows">;
+      }
+    | {
+        kind: "empty";
+        x: number;
+        y: number;
+        startMinutes: number;
+      };
+  const [contextMenu, setContextMenu] = useState<CalendarContextMenuState | null>(
+    null
+  );
 
   const timeWindows = useQuery(api.timeWindows.search, {
     startDay: selectedDay,
     endDay: selectedDay,
   });
   const upsertTimeWindow = useMutation(api.timeWindows.upsert);
+  const removeTimeWindow = useMutation(api.timeWindows.remove);
   const timerHook = useTimer();
 
   const hourElsRef = useRef<Map<number, HTMLElement>>(new Map());
@@ -784,7 +961,12 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
       taskId: string,
       startMinutes: number,
       durationSec: number,
-      taskName: string
+      // Kept in the signature to avoid changing every drag callsite,
+      // but intentionally NOT persisted: dropping a task should leave
+      // `title` undefined so the event tracks the task name dynamically
+      // (see "Dynamic Update Behavior" — renaming the task updates the
+      // calendar label automatically).
+      _taskName: string
     ) => {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       void upsertTimeWindow({
@@ -794,7 +976,8 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
         budgetType: "ACTUAL",
         activityType: "TASK",
         taskId: taskId as Id<"tasks">,
-        title: taskName,
+        // No `title` → server derives it from the task name on every
+        // read.
         timeZone: tz,
         source: "calendar",
       });
@@ -954,6 +1137,9 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
         activityType: tw.activityType,
         taskId: tw.taskId as Id<"tasks"> | undefined,
         trackableId: tw.trackableId as Id<"trackables"> | undefined,
+        listId: tw.listId as Id<"lists"> | undefined,
+        // Pass the PERSISTED title (not displayTitle) so move/resize
+        // never accidentally promotes a derived title to explicit.
         title: tw.title,
         comments: tw.comments,
         tagIds: tw.tagIds as Id<"tags">[] | undefined,
@@ -962,6 +1148,222 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
       });
     },
     [sortedWindows, upsertTimeWindow]
+  );
+
+  /**
+   * Delete a time window. Used by the right-click context menu on
+   * `CalendarEventBlock`. Convex's reactive query will refetch
+   * automatically and the block will unmount.
+   */
+  const handleEventDelete = useCallback(
+    (id: string) => {
+      void removeTimeWindow({ id: id as Id<"timeWindows"> });
+    },
+    [removeTimeWindow]
+  );
+
+  /* ─── Right-click context menu ───────────────────────────────────── */
+  /**
+   * Single document-level `contextmenu` listener. We hit-test the event
+   * target with `closest()` against:
+   *   - `[data-calendar-event-id]` → existing event → "Delete" menu
+   *   - `[data-calendar-grid='1']` → empty calendar space → "Create"
+   *
+   * This bypasses RN-Web's per-element prop forwarding entirely, which
+   * is important because `onContextMenu` on `<View>` was not firing on
+   * macOS two-finger taps in this version of RN-Web.
+   *
+   * Because we always call `preventDefault()` before opening the menu,
+   * the native browser context menu never appears.
+   */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onCtx = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      const eventNode = target.closest?.(
+        "[data-calendar-event-id]"
+      ) as HTMLElement | null;
+      if (eventNode) {
+        const id = eventNode.getAttribute("data-calendar-event-id");
+        if (!id) return;
+        e.preventDefault();
+        // eslint-disable-next-line no-console
+        console.log("RIGHT CLICK DETECTED (event)", {
+          x: e.clientX,
+          y: e.clientY,
+          eventId: id,
+        });
+        setContextMenu({
+          kind: "event",
+          x: e.clientX,
+          y: e.clientY,
+          eventId: id as Id<"timeWindows">,
+        });
+        return;
+      }
+
+      const gridNode = target.closest?.(
+        "[data-calendar-grid='1']"
+      ) as HTMLElement | null;
+      if (gridNode) {
+        e.preventDefault();
+        const grid = gridColumnRef.current;
+        const rect = grid?.getBoundingClientRect();
+        const startMinutes = rect
+          ? clamp(
+              snapMinutes((e.clientY - rect.top) / PX_PER_MINUTE),
+              0,
+              DAY_MINUTES - MIN_DURATION_MINUTES
+            )
+          : 0;
+        // eslint-disable-next-line no-console
+        console.log("RIGHT CLICK DETECTED (empty)", {
+          x: e.clientX,
+          y: e.clientY,
+          startMinutes,
+        });
+        setContextMenu({
+          kind: "empty",
+          x: e.clientX,
+          y: e.clientY,
+          startMinutes,
+        });
+      }
+    };
+    document.addEventListener("contextmenu", onCtx);
+    return () => document.removeEventListener("contextmenu", onCtx);
+  }, []);
+
+  /** Dismissal: outside-click and Escape. */
+  useEffect(() => {
+    if (!contextMenu || typeof window === "undefined") return;
+    const onDocPointerDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.("[data-calendar-context-menu='1']")) return;
+      setContextMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("pointerdown", onDocPointerDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onDocPointerDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [contextMenu]);
+
+  /* ─── Click-and-drag to create new event (empty space) ──────────── */
+  /**
+   * Handle pointerdown on the empty calendar surface. Flow:
+   *   1. Capture the pointer Y at mousedown → snapped start minute.
+   *   2. Subscribe to window pointermove. Until the cursor has moved
+   *      `CREATE_DRAG_THRESHOLD_PX` we don't show a preview (prevents
+   *      every empty-slot click from spawning a draft event).
+   *   3. Once activated, normalise so start = min, end = max so the
+   *      gesture works in both directions (spec § 2 "Drag Direction").
+   *   4. On pointerup: if not activated → no-op. Otherwise persist a new
+   *      ACTUAL/EVENT row and clear the preview.
+   *
+   * Existing event blocks `stopPropagation()` in their pointerdown
+   * (see `startInteraction` in CalendarEventBlock), so this handler
+   * only fires for clicks on truly empty calendar space — leaving
+   * event drag/resize and dnd-kit task drops untouched.
+   */
+  const handleCreatePointerDown = useCallback(
+    // RN-Web forwards the raw PointerEvent on `nativeEvent`, but on plain
+    // web React it comes through as a SyntheticEvent. Accept either.
+    (ev: any) => {
+      if (typeof window === "undefined") return;
+      const native: PointerEvent | undefined =
+        typeof ev?.clientY === "number" ? ev : ev?.nativeEvent;
+      if (!native) return;
+      // Only react to primary mouse / touch / pen, never right-click.
+      if (typeof native.button === "number" && native.button !== 0) return;
+      const grid = gridColumnRef.current;
+      if (!grid) return;
+
+      const rect = grid.getBoundingClientRect();
+      const initialClientY = native.clientY;
+      const initialOffset = initialClientY - rect.top;
+      const startMinAtDown = clamp(
+        snapMinutes(initialOffset / PX_PER_MINUTE),
+        0,
+        DAY_MINUTES
+      );
+
+      let activated = false;
+      const minuteFromClientY = (clientY: number): number => {
+        const offset = clientY - rect.top;
+        return clamp(snapMinutes(offset / PX_PER_MINUTE), 0, DAY_MINUTES);
+      };
+
+      const onMove = (ev: PointerEvent) => {
+        if (!activated) {
+          if (Math.abs(ev.clientY - initialClientY) < CREATE_DRAG_THRESHOLD_PX) {
+            return;
+          }
+          activated = true;
+        }
+        const currentMin = minuteFromClientY(ev.clientY);
+        const start = Math.min(startMinAtDown, currentMin);
+        const end = Math.max(startMinAtDown, currentMin);
+        setCreationDraft((prev) =>
+          prev && prev.startMinutes === start && prev.endMinutes === end
+            ? prev
+            : { startMinutes: start, endMinutes: end }
+        );
+      };
+
+      const cleanup = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+      };
+
+      const onUp = (ev: PointerEvent) => {
+        cleanup();
+        if (!activated) {
+          // Pure click (no drag past threshold) — do nothing. Avoids
+          // accidental panel opens on stray clicks (spec § 5).
+          setCreationDraft(null);
+          return;
+        }
+        const endMin = minuteFromClientY(ev.clientY);
+        let start = Math.min(startMinAtDown, endMin);
+        let end = Math.max(startMinAtDown, endMin);
+        // Sub-snap-grid drags (or up/down jitter that lands on the same
+        // snap line) → fall back to a sensible default duration.
+        if (end - start < MIN_DURATION_MINUTES) {
+          end = Math.min(DAY_MINUTES, start + DEFAULT_CREATE_DURATION_MINUTES);
+          if (end === DAY_MINUTES) {
+            start = Math.max(0, end - DEFAULT_CREATE_DURATION_MINUTES);
+          }
+        }
+        setCreationDraft(null);
+        // Delegate the actual creation to the host: open the event-
+        // creation panel pre-filled with the dragged range. We do NOT
+        // persist anything yet — the user confirms in the panel.
+        if (onAddEvent) {
+          onAddEvent(selectedDay, {
+            startTimeHHMM: minutesToHHMM(start),
+            durationMinutes: end - start,
+          });
+        }
+      };
+
+      const onCancel = () => {
+        cleanup();
+        setCreationDraft(null);
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
+    },
+    [selectedDay, onAddEvent]
   );
 
   /* ─── Live timer pseudo-event ─────────────────────────────────────── */
@@ -1080,7 +1482,19 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
           </View>
 
           {/* Right: hour-grid droppable backdrop + events layer. */}
-          <View style={styles.gridColumn}>
+          <View
+            style={styles.gridColumn}
+            // RN-Web forwards `ref` to the underlying <div>. We use it
+            // to (a) measure clientY → minute, and (b) tag the node with
+            // `data-calendar-grid="1"` so the document-level
+            // `contextmenu` listener can identify empty calendar space.
+            ref={(node: any) => {
+              const el = (node as HTMLElement | null) ?? null;
+              gridColumnRef.current = el;
+              if (el) el.setAttribute("data-calendar-grid", "1");
+            }}
+            onPointerDown={handleCreatePointerDown as any}
+          >
             {hours.map((h) => (
               <HourSlot
                 key={h}
@@ -1107,7 +1521,8 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
                 if (tw.isLive) {
                   // Render the live timer as a non-interactive block at its
                   // current start. CalendarEventBlock already short-circuits
-                  // interaction for `tw.isLive`.
+                  // interaction for `tw.isLive`. No `onDelete` — the live
+                  // timer is a pseudo-row, not a real document.
                   return (
                     <CalendarEventBlock
                       key={tw._id}
@@ -1123,9 +1538,78 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
                     tw={tw}
                     layout={layout}
                     onCommit={handleEventUpdate}
+                    onEditRequest={
+                      onEditEvent
+                        ? () =>
+                            onEditEvent({
+                              _id: String(tw._id),
+                              title: tw.title,
+                              derivedTitle: tw.derivedTitle,
+                              startTimeHHMM: tw.startTimeHHMM,
+                              startDayYYYYMMDD: tw.startDayYYYYMMDD,
+                              durationSeconds: tw.durationSeconds,
+                              activityType: tw.activityType,
+                              budgetType: tw.budgetType,
+                              comments: tw.comments,
+                              trackableId: tw.trackableId,
+                              listId: tw.listId,
+                              taskId: tw.taskId,
+                            })
+                        : undefined
+                    }
                   />
                 );
               })}
+
+              {creationDraft &&
+                (() => {
+                  const cTop = creationDraft.startMinutes * PX_PER_MINUTE;
+                  const cDuration = Math.max(
+                    MIN_DURATION_MINUTES,
+                    creationDraft.endMinutes - creationDraft.startMinutes
+                  );
+                  const cHeight = cDuration * PX_PER_MINUTE;
+                  return (
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.dropGhost,
+                        {
+                          top: cTop,
+                          height: cHeight,
+                          backgroundColor: withAlpha(
+                            DEFAULT_EVENT_COLOR,
+                            "22"
+                          ),
+                          borderColor: DEFAULT_EVENT_COLOR,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.dropGhostText,
+                          { color: DEFAULT_EVENT_COLOR },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {formatClockTime(creationDraft.startMinutes)}
+                        {"  –  "}
+                        {formatClockTime(
+                          creationDraft.startMinutes + cDuration
+                        )}
+                        {"  "}
+                        <Text
+                          style={[
+                            styles.dropGhostDuration,
+                            { color: DEFAULT_EVENT_COLOR },
+                          ]}
+                        >
+                          ({cDuration} min)
+                        </Text>
+                      </Text>
+                    </View>
+                  );
+                })()}
 
               {dropPreview && (
                 <View
@@ -1181,6 +1665,141 @@ export function CalendarView({ title, onAddEvent }: CalendarViewProps) {
           onPress={() => onAddEvent(selectedDay)}
         >
           <Ionicons name="add" size={28} color={Colors.onPrimary} />
+        </TouchableOpacity>
+      )}
+
+      {/* Single right-click context menu — content depends on whether
+          the user clicked an event or empty calendar space. */}
+      {contextMenu && (
+        <CalendarContextMenu
+          state={contextMenu}
+          onDelete={() => {
+            if (contextMenu.kind !== "event") return;
+            handleEventDelete(contextMenu.eventId);
+            setContextMenu(null);
+          }}
+          onEdit={() => {
+            if (contextMenu.kind !== "event") return;
+            const tw = sortedWindows.find((w) => w._id === contextMenu.eventId);
+            setContextMenu(null);
+            if (tw && onEditEvent) {
+              onEditEvent({
+                _id: String(tw._id),
+                title: tw.title,
+                derivedTitle: tw.derivedTitle,
+                startTimeHHMM: tw.startTimeHHMM,
+                startDayYYYYMMDD: tw.startDayYYYYMMDD,
+                durationSeconds: tw.durationSeconds,
+                activityType: tw.activityType,
+                budgetType: tw.budgetType,
+                comments: tw.comments,
+                trackableId: tw.trackableId,
+                listId: tw.listId,
+                taskId: tw.taskId,
+              });
+            }
+          }}
+          onCreate={() => {
+            if (contextMenu.kind !== "empty") return;
+            const start = contextMenu.startMinutes;
+            setContextMenu(null);
+            if (onAddEvent) {
+              onAddEvent(selectedDay, {
+                startTimeHHMM: minutesToHHMM(start),
+                durationMinutes: DEFAULT_CREATE_DURATION_MINUTES,
+              });
+            }
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ *  CalendarContextMenu — right-click dropdown on calendar
+ *
+ *  Content varies by `state.kind`:
+ *    - "event" → Delete
+ *    - "empty" → Create event at this time
+ *
+ *  Rendered with `position: fixed` (web) so it floats above the
+ *  scrollable timeline and isn't clipped. The menu is dismissed by
+ *  the document-level pointerdown / keydown listeners in
+ *  `CalendarView` — see `data-calendar-context-menu` on the wrapper.
+ * ──────────────────────────────────────────────────────────────────────── */
+type CalendarContextMenuKind =
+  | { kind: "event"; x: number; y: number; eventId: Id<"timeWindows"> }
+  | { kind: "empty"; x: number; y: number; startMinutes: number };
+
+function CalendarContextMenu({
+  state,
+  onDelete,
+  onEdit,
+  onCreate,
+}: {
+  state: CalendarContextMenuKind;
+  onDelete: () => void;
+  onEdit: () => void;
+  onCreate: () => void;
+}) {
+  // Approximate menu size so we can clamp position to the viewport.
+  // Real measurement would need a layout pass; this is close enough
+  // and avoids a flicker at the wrong position on first paint.
+  const APPROX_W = 220;
+  const APPROX_H = 48;
+  const vw = typeof window !== "undefined" ? window.innerWidth : 0;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 0;
+  const left = vw ? Math.min(state.x, vw - APPROX_W - 8) : state.x;
+  const top = vh ? Math.min(state.y, vh - APPROX_H - 8) : state.y;
+
+  return (
+    <View
+      style={[
+        styles.contextMenu,
+        { left, top } as any,
+        Platform.OS === "web" ? ({ position: "fixed" } as any) : null,
+      ]}
+      // Marker so the document-level pointerdown listener knows clicks
+      // within the menu shouldn't dismiss it before the item's onPress.
+      ref={(node: any) => {
+        const el = (node as HTMLElement | null) ?? null;
+        if (el) el.setAttribute("data-calendar-context-menu", "1");
+      }}
+    >
+      {state.kind === "event" ? (
+        <>
+          <TouchableOpacity
+            style={styles.contextMenuItem}
+            onPress={onEdit}
+            accessibilityLabel="Edit event"
+          >
+            <Ionicons name="create-outline" size={16} color={Colors.text} />
+            <Text style={[styles.contextMenuItemText, { color: Colors.text }]}>
+              Edit
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.contextMenuItem}
+            onPress={onDelete}
+            accessibilityLabel="Delete time window"
+          >
+            <Ionicons name="trash-outline" size={16} color={Colors.error} />
+            <Text style={[styles.contextMenuItemText, { color: Colors.error }]}>
+              Delete
+            </Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <TouchableOpacity
+          style={styles.contextMenuItem}
+          onPress={onCreate}
+          accessibilityLabel="Create event at this time"
+        >
+          <Ionicons name="add-circle-outline" size={16} color={Colors.text} />
+          <Text style={[styles.contextMenuItemText, { color: Colors.text }]}>
+            Create event at this time
+          </Text>
         </TouchableOpacity>
       )}
     </View>
@@ -1378,6 +1997,38 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 5,
   },
+
+  contextMenu: {
+    minWidth: 160,
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    paddingVertical: 4,
+    zIndex: 1000,
+    ...Platform.select({
+      web: { boxShadow: "0 8px 24px rgba(0,0,0,0.4)" } as any,
+      default: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 12,
+        elevation: 8,
+      },
+    }),
+  },
+  contextMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    ...Platform.select({
+      web: { cursor: "pointer" } as any,
+      default: {},
+    }),
+  },
+  contextMenuItemText: { fontSize: 14, fontWeight: "500" },
   dropGhostText: { fontSize: 12, fontWeight: "600" },
   dropGhostDuration: { fontSize: 11, fontWeight: "400" },
   dropGhostTitle: { fontSize: 11, fontWeight: "500", marginTop: 2 },
