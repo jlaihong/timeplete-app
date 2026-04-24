@@ -34,6 +34,7 @@ import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
+import { DateField } from "../ui/DateField";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { Id } from "../../convex/_generated/dataModel";
 
@@ -69,60 +70,6 @@ interface EventDialogProps {
   defaultStartTimeHHMM?: string;
   defaultDurationMinutes?: number;
 }
-
-/* ------------------------------------------------------------------ *
- * DateField — RN-Web renders a native HTML5 <input type="date">; on   *
- * native we fall back to a plain text input that accepts YYYY-MM-DD.  *
- * ------------------------------------------------------------------ */
-function DateField({
-  value,
-  onChange,
-  label,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  label: string;
-}) {
-  if (Platform.OS === "web") {
-    // RN-Web doesn't expose `<input type="date">` through TextInput, so
-    // we drop down to React.createElement to render the real DOM input.
-    return (
-      <View style={styles.field}>
-        <Text style={styles.fieldLabel}>{label}</Text>
-        {React.createElement("input", {
-          type: "date",
-          value,
-          onChange: (e: { target: { value: string } }) =>
-            onChange(e.target.value),
-          style: webDateInputStyle,
-        })}
-      </View>
-    );
-  }
-  return (
-    <Input
-      label={label}
-      value={value}
-      onChangeText={onChange}
-      placeholder="YYYY-MM-DD"
-      autoCapitalize="none"
-      containerStyle={{ marginBottom: 0 }}
-    />
-  );
-}
-
-const webDateInputStyle = {
-  backgroundColor: Colors.surfaceContainer,
-  border: `1px solid ${Colors.outlineVariant}`,
-  borderRadius: 10,
-  padding: "12px 14px",
-  fontSize: 16,
-  color: Colors.text,
-  width: "100%",
-  boxSizing: "border-box" as const,
-  fontFamily: "inherit",
-  colorScheme: "dark" as const,
-} as const;
 
 /* ------------------------------------------------------------------ *
  * EventDialog                                                         *
@@ -475,13 +422,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   flex1: { flex: 1 },
-  field: { marginBottom: 16 },
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 6,
-  },
   actions: {
     flexDirection: "row",
     gap: 12,

@@ -72,7 +72,13 @@ export default defineSchema({
     sectionOrderIndex: v.number(),
     trackableId: v.optional(v.id("trackables")),
     recurringTaskId: v.optional(v.id("recurringTasks")),
+    /** Explicit series link used by scoped recurring edits. */
+    seriesId: v.optional(v.id("recurringTasks")),
     isRecurringInstance: v.boolean(),
+    /** True when this occurrence overrides the base recurrence rule. */
+    isException: v.optional(v.boolean()),
+    /** Original generated date before an exception moved the task. */
+    originalTaskDay: v.optional(v.string()),
     userId: v.id("users"),
     createdBy: v.id("users"),
     assignedToUserId: v.optional(v.id("users")),

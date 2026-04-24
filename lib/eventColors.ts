@@ -91,6 +91,19 @@ export function safeHex(hex: string | undefined | null): string {
   return DEFAULT_EVENT_COLOR;
 }
 
+function normalizeHexKey(hex: string): string {
+  const safe = safeHex(hex);
+  const h = safe.slice(1);
+  if (h.length === 3) {
+    return `#${h
+      .split("")
+      .map((c) => c + c)
+      .join("")
+      .toLowerCase()}`;
+  }
+  return `#${h.toLowerCase()}`;
+}
+
 export function pickReadableTextColor(bgHex: string): "#000000" | "#FFFFFF" {
   const bg = hexToRgb(safeHex(bgHex));
   const Lbg = relativeLuminance(bg);
@@ -180,7 +193,11 @@ export function deriveEventColors(
   const l = listColor && listColor !== "" ? safeHex(listColor) : undefined;
 
   const displayColor = t ?? l ?? DEFAULT_EVENT_COLOR;
+  const listIsDefaultFallback =
+    !!l && normalizeHexKey(l) === normalizeHexKey(DEFAULT_EVENT_COLOR);
   const secondaryColor =
-    t && l && l !== DEFAULT_EVENT_COLOR && t !== l ? l : undefined;
+    t && l && !listIsDefaultFallback && normalizeHexKey(t) !== normalizeHexKey(l)
+      ? l
+      : undefined;
   return { displayColor, secondaryColor };
 }

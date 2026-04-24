@@ -143,6 +143,7 @@ export const getHomeTasks = query({
     // implementation collected the entire `taskTags` table on every refetch,
     // which dominated the cost of post-mutation re-renders.
     const tagMap = new Map<string, string[]>();
+    const timeSpentMap = new Map<string, number>();
     await Promise.all(
       tasks.map(async (t) => {
         const tts = await ctx.db
@@ -155,6 +156,18 @@ export const getHomeTasks = query({
             tts.map((tt) => tt.tagId)
           );
         }
+
+        // Use time windows as the authoritative source for row-level "time
+        // spent" so recurring instances with planned calendar windows show
+        // consistent durations in the task panel.
+        const windows = await ctx.db
+          .query("timeWindows")
+          .withIndex("by_task", (q) => q.eq("taskId", t._id))
+          .collect();
+        const totalFromWindows = windows
+          .filter((w) => w.activityType === "TASK" && w.budgetType === "ACTUAL")
+          .reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
+        timeSpentMap.set(t._id, totalFromWindows);
       })
     );
 
@@ -162,6 +175,10 @@ export const getHomeTasks = query({
       .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex)
       .map((t) => ({
         ...t,
+        timeSpentInSecondsUnallocated:
+          timeSpentMap.get(t._id) ??
+          t.timeSpentInSecondsUnallocated ??
+          0,
         tagIds: tagMap.get(t._id) ?? [],
       }));
   },
@@ -337,6 +354,11 @@ export const remove = mutation({
           .withIndex("by_task", (q) => q.eq("taskId", child._id))
           .collect();
         for (const tt of tags) await ctx.db.delete(tt._id);
+        const childWindows = await ctx.db
+          .query("timeWindows")
+          .withIndex("by_task", (q) => q.eq("taskId", child._id))
+          .collect();
+        for (const w of childWindows) await ctx.db.delete(w._id);
         await ctx.db.delete(child._id);
       }
     }
@@ -352,6 +374,12 @@ export const remove = mutation({
       .withIndex("by_task", (q) => q.eq("taskId", args.id))
       .collect();
     for (const c of comments) await ctx.db.delete(c._id);
+
+    const windows = await ctx.db
+      .query("timeWindows")
+      .withIndex("by_task", (q) => q.eq("taskId", args.id))
+      .collect();
+    for (const w of windows) await ctx.db.delete(w._id);
 
     await ctx.db.delete(args.id);
   },
@@ -501,69 +529,90 @@ export const setTimeSpent = mutation({
     });
 
     /**
-     * Reconcile time windows so manual edits are visible to ALL analytics
-     * surfaces (productivity-one parity: trackable totals are window-driven,
-     * never field-driven).
+     * Reconcile task windows to match the newly requested total.
      *
-     * Strategy: maintain at most ONE `source: "manual"` window per task. Its
-     * duration absorbs the difference between the user-entered total and the
-     * sum of timer/calendar windows for that task. If the user manually
-     * lowers the total below what timers logged, we clamp the manual window
-     * to 0 (we never destroy timer-recorded work).
+     * - Decrease: trim/delete from latest windows backward.
+     * - Increase: extend the latest existing task window (P1 behavior).
+     *   If no task windows exist yet, create a manual window.
      */
     const allWindows = await ctx.db
       .query("timeWindows")
       .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
       .collect();
 
-    const manualWindows = allWindows.filter((w) => w.source === "manual");
-    const nonManualSum = allWindows
-      .filter((w) => w.source !== "manual")
-      .reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
-
-    const desiredManualSeconds = Math.max(
-      0,
-      args.timeSpentInSecondsUnallocated - nonManualSum
+    const taskActualWindows = allWindows.filter(
+      (w) => w.activityType === "TASK" && w.budgetType === "ACTUAL"
+    );
+    const currentTotal = taskActualWindows.reduce(
+      (s, w) => s + (w.durationSeconds ?? 0),
+      0
     );
 
-    if (desiredManualSeconds === 0) {
-      for (const w of manualWindows) await ctx.db.delete(w._id);
+    const desiredTotal = Math.max(0, args.timeSpentInSecondsUnallocated);
+    if (desiredTotal === currentTotal) return;
+
+    if (desiredTotal < currentTotal) {
+      let toTrim = currentTotal - desiredTotal;
+      const newestFirst = [...taskActualWindows].sort((a, b) => {
+        const dayCmp = (b.startDayYYYYMMDD ?? "").localeCompare(
+          a.startDayYYYYMMDD ?? ""
+        );
+        if (dayCmp !== 0) return dayCmp;
+        return (b.startTimeHHMM ?? "").localeCompare(a.startTimeHHMM ?? "");
+      });
+
+      for (const w of newestFirst) {
+        if (toTrim <= 0) break;
+        const dur = Math.max(0, w.durationSeconds ?? 0);
+        if (dur <= toTrim) {
+          await ctx.db.delete(w._id);
+          toTrim -= dur;
+        } else {
+          await ctx.db.patch(w._id, {
+            durationSeconds: dur - toTrim,
+          });
+          toTrim = 0;
+        }
+      }
       return;
     }
 
-    if (manualWindows.length > 0) {
-      // Keep the first manual window, fold any extras into it (defensive).
-      const [primary, ...extras] = manualWindows;
-      for (const e of extras) await ctx.db.delete(e._id);
-      await ctx.db.patch(primary._id, {
-        durationSeconds: desiredManualSeconds,
+    const deltaToAdd = desiredTotal - currentTotal;
+    const newestFirst = [...taskActualWindows].sort((a, b) => {
+      const dayCmp = (b.startDayYYYYMMDD ?? "").localeCompare(
+        a.startDayYYYYMMDD ?? ""
+      );
+      if (dayCmp !== 0) return dayCmp;
+      const timeCmp = (b.startTimeHHMM ?? "").localeCompare(a.startTimeHHMM ?? "");
+      if (timeCmp !== 0) return timeCmp;
+      return (b._creationTime ?? 0) - (a._creationTime ?? 0);
+    });
+    const latest = newestFirst[0];
+    if (latest) {
+      await ctx.db.patch(latest._id, {
+        durationSeconds: Math.max(0, (latest.durationSeconds ?? 0) + deltaToAdd),
       });
       return;
     }
 
-    // No manual window yet → create one for the task's day (or today).
     const day =
       task.taskDay ??
       (() => {
         const now = new Date();
-        return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+        return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
+          now.getDate()
+        ).padStart(2, "0")}`;
       })();
-    const tz = "UTC";
 
-    // Intentionally leave trackableId unset on the manual window. Manual
-    // entries represent the user editing the task's total time, not work
-    // logged at a specific moment, so they should follow the task's CURRENT
-    // trackable (resolved at query time via `resolveAttributedTrackableId`)
-    // rather than carry a frozen snapshot.
     await ctx.db.insert("timeWindows", {
       startTimeHHMM: "00:00",
       startDayYYYYMMDD: day,
-      durationSeconds: desiredManualSeconds,
+      durationSeconds: deltaToAdd,
       userId: user._id,
       budgetType: "ACTUAL" as const,
       activityType: "TASK" as const,
       taskId: args.taskId,
-      timeZone: tz,
+      timeZone: "UTC",
       isRecurringInstance: false,
       source: "manual" as const,
     });

@@ -79,7 +79,9 @@ export const search = query({
     const directListIds = new Set<string>();
     for (const w of filtered) {
       if (w.activityType === "TASK" && w.taskId) taskIds.add(w.taskId);
-      if (w.activityType === "TRACKABLE" && w.trackableId)
+      // Calendar color logic should honor direct trackable links regardless
+      // of activityType (EVENT/TRACKABLE/TASK snapshot).
+      if (w.trackableId)
         trackableIds.add(w.trackableId);
       // Direct list links can appear on any non-TASK row (TASK rows
       // derive their list from `task.listId` instead).
@@ -187,9 +189,14 @@ export const search = query({
       const directListDoc = w.listId ? listsById.get(w.listId) : undefined;
 
       if (w.activityType === "EVENT") {
-        // EVENT: list (if linked) → no trackable.
+        // EVENT: allow direct trackable colour/title fallback parity with P1.
+        const eventTrackable = w.trackableId
+          ? trackablesById.get(w.trackableId)
+          : undefined;
         if (directListDoc?.name) derivedTitle = directListDoc.name;
+        else if (eventTrackable?.name) derivedTitle = eventTrackable.name;
         listColour = directListDoc?.colour;
+        trackableColour = eventTrackable?.colour;
       } else if (w.activityType === "TRACKABLE" && w.trackableId) {
         const trackable = trackablesById.get(w.trackableId);
         // Hierarchy: list (if linked) → trackable.
@@ -205,18 +212,18 @@ export const search = query({
         const taskListDoc = task?.listId
           ? listsById.get(task.listId)
           : undefined;
-        // Hierarchy: direct list → task list → task name. Task name
-        // takes precedence over the trackable here because it's the
-        // canonical user-facing label for a task event in P1.
-        if (directListDoc?.name) {
-          derivedTitle = directListDoc.name;
-        } else if (taskListDoc?.name && !task?.name) {
-          // Only use the list name when there's no task name to fall
-          // back to. (Practically a task always has a name, but this
-          // keeps the rule total.)
-          derivedTitle = taskListDoc.name;
-        } else if (task?.name) {
+        // Hierarchy for TASK rows: task name → direct list → task
+        // list. The task name MUST win because the linked task is
+        // the canonical user-facing label for a TASK calendar block
+        // (matches productivity-one). The list/list-name fallbacks
+        // only fire if there's no task at all (defensive — in
+        // practice every TASK row has a non-empty task.name).
+        if (task?.name) {
           derivedTitle = task.name;
+        } else if (directListDoc?.name) {
+          derivedTitle = directListDoc.name;
+        } else if (taskListDoc?.name) {
+          derivedTitle = taskListDoc.name;
         }
 
         const resolvedTrackableId = resolveAttributedTrackableId(
