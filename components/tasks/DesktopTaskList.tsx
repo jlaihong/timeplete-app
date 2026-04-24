@@ -247,6 +247,46 @@ export function DesktopTaskList({
   const tags = useQuery(api.tags.search, {});
   const lists = useQuery(api.lists.search, {});
   const trackables = useQuery(api.trackables.search, {});
+  const recurringRules = useQuery(api.recurringTasks.list, {});
+
+  /* ──────────────────  Recurring instance materialization  ──────────────────
+   * Recurring tasks live as a single `recurringTasks` rule plus zero-to-many
+   * materialized `tasks` rows (one per occurrence). Materialization is lazy:
+   * the home page calls `generateInstances(today, visibleEndDay)` whenever
+   * its window changes, and the mutation idempotently fills any missing
+   * `(ruleId, taskDay)` rows. Once the rows exist, the reactive
+   * `getHomeTasks` query above pulls them in like any other task — no
+   * synthetic-id branches anywhere downstream.
+   *
+   * Idempotency note: `generateInstances` de-dupes against existing
+   * `(recurringTaskId, taskDay)` so calling it on every range change (or
+   * after a rule edit) cannot create duplicates. The `recurringRules`
+   * subscription is included in the effect deps so creating/editing a
+   * rule triggers a regeneration immediately, before the user has to
+   * scroll or change the window.
+   */
+  const generateInstances = useMutation(
+    api.recurringTasks.generateInstances
+  );
+  useEffect(() => {
+    // Only fire after the rules subscription has loaded — otherwise we
+    // generate an empty result (harmless) and then re-fire once the
+    // subscription resolves, doubling RTTs on first paint.
+    if (recurringRules === undefined) return;
+    void generateInstances({
+      rangeStartYYYYMMDD: today,
+      rangeEndYYYYMMDD: visibleEndDay,
+    });
+    // We intentionally key on the *content* of the rules array, not the
+    // identity, so a rule mutation immediately re-materializes — but a
+    // re-render with no rule change is a no-op.
+  }, [
+    today,
+    visibleEndDay,
+    recurringRules?.length,
+    recurringRules?.map((r) => r._id).join(","),
+    generateInstances,
+  ]);
   // Optimistic update: when `upsert` is called with an existing `id`, patch the
   // matching task in every active `getHomeTasks` subscription synchronously so
   // the UI updates in <1 frame. The server response will reconcile when it
@@ -290,6 +330,12 @@ export function DesktopTaskList({
     }
   );
   const removeTask = useMutation(api.tasks.remove);
+  // Recurring-instance delete uses a dedicated mutation that adds the date
+  // to `deletedRecurringOccurrences` (the skip set) before removing the
+  // task row, so the next `generateInstances` call doesn't recreate it.
+  const deleteRecurringInstance = useMutation(
+    api.recurringTasks.deleteInstance
+  );
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
   const setTimeSpentMutation = useMutation(api.tasks.setTimeSpent);
@@ -543,9 +589,16 @@ export function DesktopTaskList({
 
   const handleDelete = useCallback(
     async (taskId: Id<"tasks">) => {
-      await removeTask({ id: taskId });
+      // Route recurring-instance deletes through the skip-set-aware
+      // mutation; everything else uses the normal cascade delete.
+      const task = tasks?.find((t) => t._id === taskId);
+      if (task?.isRecurringInstance && task.recurringTaskId) {
+        await deleteRecurringInstance({ taskId });
+      } else {
+        await removeTask({ id: taskId });
+      }
     },
-    [removeTask]
+    [removeTask, deleteRecurringInstance, tasks]
   );
 
   const handleSetTimeSpent = useCallback(

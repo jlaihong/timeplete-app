@@ -32,6 +32,13 @@ export interface TaskRowTask {
   tagIds?: string[];
   assignedToUserName?: string;
   taskDayOrderIndex?: number;
+  /**
+   * True when this task is a materialized occurrence of a `recurringTasks`
+   * series. Surfaced visually with a small "repeat" icon next to the
+   * title so the user can distinguish series-instances from one-off
+   * tasks at a glance — same affordance as productivity-one's row.
+   */
+  isRecurringInstance?: boolean;
 }
 
 export interface TaskRowMeta {
@@ -188,13 +195,27 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
               />
             </Pressable>
 
-            {/* Col 2: title */}
-            <Text
-              numberOfLines={1}
-              style={[styles.title, isCompleted && styles.titleCompleted]}
-            >
-              {task.name}
-            </Text>
+            {/* Col 2: title (with optional recurring-instance badge) */}
+            <View style={styles.titleRow}>
+              {task.isRecurringInstance && (
+                <Ionicons
+                  name="repeat"
+                  size={14}
+                  color={Colors.textSecondary}
+                  style={styles.recurringIcon}
+                />
+              )}
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.title,
+                  isCompleted && styles.titleCompleted,
+                  styles.titleFlex,
+                ]}
+              >
+                {task.name}
+              </Text>
+            </View>
 
             {/* Col 3: time area */}
             <View style={styles.timeCol}>
@@ -371,6 +392,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "400",
   },
+  titleRow: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  titleFlex: { flex: 1 },
+  recurringIcon: { flexShrink: 0 },
   titleCompleted: {
     textDecorationLine: "line-through",
     color: Colors.textTertiary,
