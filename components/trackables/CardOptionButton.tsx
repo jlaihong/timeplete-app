@@ -10,13 +10,21 @@ export interface CardOption {
   onPress: () => void;
 }
 
+interface CardOptionButtonProps {
+  option: CardOption;
+  twoColumn?: boolean;
+}
+
 /**
  * Faithful port of productivity-one's `app-card-button`:
  * a `mat-card` row containing a 64px material icon on the left and
  * a name/caption stack on the right. Hover/press elevation uses the
  * surface tonal variants from the Material 3 palette.
  */
-export function CardOptionButton({ option }: { option: CardOption }) {
+export function CardOptionButton({
+  option,
+  twoColumn = false,
+}: CardOptionButtonProps) {
   const [isHovering, setIsHovering] = React.useState(false);
   const [isPressed, setIsPressed] = React.useState(false);
 
@@ -30,6 +38,7 @@ export function CardOptionButton({ option }: { option: CardOption }) {
       onPressOut={() => setIsPressed(false)}
       style={[
         styles.card,
+        twoColumn && styles.cardTwoColumn,
         isHovering && styles.cardHover,
         isPressed && styles.cardPressed,
       ]}
@@ -56,8 +65,7 @@ export function CardOptionButton({ option }: { option: CardOption }) {
 
 const styles = StyleSheet.create({
   card: {
-    flex: 1,
-    minWidth: 0,
+    width: "100%",
     padding: 16,
     borderRadius: 12,
     backgroundColor: Colors.surfaceContainerHigh,
@@ -71,6 +79,19 @@ const styles = StyleSheet.create({
       } as any,
       default: {},
     }),
+  },
+  cardTwoColumn: {
+    // Two-column layout for desktop onboarding dialogs.
+    // `flex: 1` style sharing makes paired cards split row space
+    // evenly. `minWidth` forces a wrap to a new row only when there
+    // genuinely isn't enough horizontal space for two cards side by
+    // side. Avoids the percentage+gap math that caused unintentional
+    // single-column collapse and uneven row widths.
+    flexBasis: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 240,
+    width: "auto",
   },
   cardHover: {
     backgroundColor: Colors.surfaceContainerHighest,

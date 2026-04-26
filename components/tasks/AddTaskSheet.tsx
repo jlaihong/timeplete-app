@@ -1,11 +1,5 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -35,9 +29,6 @@ export function AddTaskSheet({
   onClose,
 }: AddTaskSheetProps) {
   const [name, setName] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [estimateMinutes, setEstimateMinutes] = useState("");
-  const [selectedTags, setSelectedTags] = useState<Id<"tags">[]>([]);
   const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(
     initialTrackableId ?? null
   );
@@ -48,7 +39,6 @@ export function AddTaskSheet({
   );
   const [loading, setLoading] = useState(false);
 
-  const tags = useQuery(api.tags.search);
   const lists = useQuery(api.lists.search, {});
   const upsertTask = useMutation(api.tasks.upsert);
 
@@ -93,24 +83,11 @@ export function AddTaskSheet({
         sectionId,
         parentId,
         trackableId: trackableId ?? undefined,
-        dueDateYYYYMMDD: dueDate || undefined,
-        timeEstimatedInSecondsUnallocated: estimateMinutes
-          ? parseInt(estimateMinutes) * 60
-          : undefined,
-        tagIds: selectedTags.length > 0 ? selectedTags : undefined,
       });
       onClose();
     } finally {
       setLoading(false);
     }
-  };
-
-  const toggleTag = (tagId: Id<"tags">) => {
-    setSelectedTags((prev) =>
-      prev.includes(tagId)
-        ? prev.filter((id) => id !== tagId)
-        : [...prev, tagId]
-    );
   };
 
   return (
@@ -129,22 +106,6 @@ export function AddTaskSheet({
             autoFocus
           />
 
-          <Input
-            label="Due Date (YYYYMMDD)"
-            value={dueDate}
-            onChangeText={setDueDate}
-            placeholder="Optional"
-            keyboardType="numeric"
-          />
-
-          <Input
-            label="Time Estimate (minutes)"
-            value={estimateMinutes}
-            onChangeText={setEstimateMinutes}
-            placeholder="Optional"
-            keyboardType="numeric"
-          />
-
           <TrackablePicker
             value={trackableId}
             onChange={handleTrackableChange}
@@ -160,36 +121,6 @@ export function AddTaskSheet({
               onChange={handleListChange}
               mode="add"
             />
-          )}
-
-          {tags && tags.filter((t) => !t.archived).length > 0 && (
-            <>
-              <Text style={styles.fieldLabel}>Tags</Text>
-              <View style={styles.tagList}>
-                {tags
-                  .filter((t) => !t.archived)
-                  .map((tag) => (
-                    <TouchableOpacity
-                      key={tag._id}
-                      style={[
-                        styles.tagChip,
-                        {
-                          borderColor: tag.colour,
-                          backgroundColor: selectedTags.includes(tag._id)
-                            ? tag.colour + "20"
-                            : "transparent",
-                        },
-                      ]}
-                      onPress={() => toggleTag(tag._id)}
-                    >
-                      <View
-                        style={[styles.tagDot, { backgroundColor: tag.colour }]}
-                      />
-                      <Text style={styles.tagName}>{tag.name}</Text>
-                    </TouchableOpacity>
-                  ))}
-              </View>
-            </>
           )}
 
           <View style={styles.actions}>
@@ -225,29 +156,6 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: 20,
   },
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 8,
-  },
-  tagList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 16,
-  },
-  tagChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 16,
-    borderWidth: 1,
-    gap: 6,
-  },
-  tagDot: { width: 8, height: 8, borderRadius: 4 },
-  tagName: { fontSize: 13, color: Colors.text },
   actions: {
     flexDirection: "row",
     gap: 12,

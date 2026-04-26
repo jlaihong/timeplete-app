@@ -19,11 +19,12 @@
  *   - `step="300"` snaps the picker to 5-minute increments — same
  *     granularity as the calendar drag logic in CalendarView.
  *
- * On web: renders `<input type="time">` (real native picker).
- * On native: falls back to a plain TextInput accepting `HH:MM`.
+ * On web: renders `<input type="time">` inside a Material-style filled
+ * wrapper so the field visually matches the floating-label `Input`.
+ * On native: falls back to the standard `Input` accepting `HH:MM`.
  */
-import React from "react";
-import { Platform, View, Text, StyleSheet } from "react-native";
+import React, { useState } from "react";
+import { Platform, View, Text, StyleSheet, Pressable } from "react-native";
 import { Colors } from "../../constants/colors";
 import { Input } from "./Input";
 
@@ -41,24 +42,73 @@ interface TimeFieldProps {
   stepSeconds?: number;
 }
 
+const FIELD_HORIZONTAL_PADDING = 12;
+const FIELD_MIN_HEIGHT = 56;
+
 export function TimeField({
   value,
   onChange,
   label,
   stepSeconds = 300,
 }: TimeFieldProps) {
+  const [focused, setFocused] = useState(false);
+
   if (Platform.OS === "web") {
+    const hasValue = !!value;
+    const isFloating = focused || hasValue;
+    const accent = focused ? Colors.primary : Colors.outline;
+    const labelColor = focused ? Colors.primary : Colors.textSecondary;
+    // Hide the browser's "--:-- --" placeholder text when the field
+    // is at rest so the floating label can sit centered as the
+    // placeholder (matches productivity-one's mat-form-field). Once
+    // the user focuses or picks a value, the label floats up and the
+    // native placeholder/value reappears in the freed-up space.
+    const showNativeText = label ? isFloating : true;
+
     return (
-      <View style={styles.field}>
-        {label ? <Text style={styles.label}>{label}</Text> : null}
-        {React.createElement("input", {
-          type: "time",
-          value: value || "",
-          step: stepSeconds,
-          onChange: (e: { target: { value: string } }) =>
-            onChange(e.target.value),
-          style: webTimeInputStyle,
-        })}
+      <View style={styles.container}>
+        <Pressable style={styles.field}>
+          {label ? (
+            <Text
+              style={[
+                styles.label,
+                {
+                  top: isFloating ? 6 : 18,
+                  fontSize: isFloating ? 12 : 16,
+                  color: labelColor,
+                },
+              ]}
+            >
+              {label}
+            </Text>
+          ) : null}
+          {label ? (
+            // Width-reserving ghost — see Input.tsx for full rationale.
+            // @ts-expect-error - aria-hidden is web-only and not on Text types.
+            <Text aria-hidden pointerEvents="none" style={styles.labelGhost}>
+              {label}
+            </Text>
+          ) : null}
+          {React.createElement("input", {
+            type: "time",
+            value: value || "",
+            step: stepSeconds,
+            onChange: (e: { target: { value: string } }) =>
+              onChange(e.target.value),
+            onFocus: () => setFocused(true),
+            onBlur: () => setFocused(false),
+            style: {
+              ...webTimeInputStyle,
+              color: showNativeText ? Colors.text : "transparent",
+            },
+          })}
+          <View
+            style={[
+              styles.underline,
+              { backgroundColor: accent, height: focused ? 2 : 1 },
+            ]}
+          />
+        </Pressable>
       </View>
     );
   }
@@ -78,10 +128,10 @@ export function TimeField({
 }
 
 const webTimeInputStyle = {
-  backgroundColor: Colors.surfaceContainer,
-  border: `1px solid ${Colors.outlineVariant}`,
-  borderRadius: 10,
-  padding: "12px 14px",
+  background: "transparent",
+  border: "none",
+  outline: "none",
+  padding: "22px 0 8px 0",
   fontSize: 16,
   color: Colors.text,
   width: "100%",
@@ -91,11 +141,34 @@ const webTimeInputStyle = {
 } as const;
 
 const styles = StyleSheet.create({
-  field: { marginBottom: 0 },
+  container: { marginBottom: 0 },
+  field: {
+    backgroundColor: Colors.surfaceContainerHighest,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    paddingHorizontal: FIELD_HORIZONTAL_PADDING,
+    minHeight: FIELD_MIN_HEIGHT,
+    justifyContent: "flex-end",
+    position: "relative",
+    overflow: "hidden",
+  },
   label: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: Colors.textSecondary,
-    marginBottom: 6,
+    position: "absolute",
+    left: FIELD_HORIZONTAL_PADDING,
+    fontWeight: "400",
+  },
+  labelGhost: {
+    fontSize: 16,
+    fontWeight: "400",
+    height: 0,
+    lineHeight: 0,
+    opacity: 0,
+    overflow: "hidden",
+  },
+  underline: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });

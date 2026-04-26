@@ -125,12 +125,15 @@ interface RecurrenceSectionProps {
    * recurring" button in the parent).
    */
   hideToggle?: boolean;
+  /** Hide recurrence-specific time-window controls (event forms use their own start/end). */
+  hideTimeWindowControls?: boolean;
 }
 
 export function RecurrenceSection({
   value,
   onChange,
   hideToggle = false,
+  hideTimeWindowControls = false,
 }: RecurrenceSectionProps) {
   const enabled = value !== null;
 
@@ -367,56 +370,60 @@ export function RecurrenceSection({
             </View>
           </View>
 
-          {/* Time-window checkbox label
-              "Set start and end time (appears on calendar)" copied
-              verbatim from P1 task-details.html line 387. */}
-          <Pressable
-            style={styles.toggleRow}
-            onPress={() => {
-              const next = !value.hasTimeWindow;
-              onChange({
-                ...value,
-                hasTimeWindow: next,
-                startTimeHHMM: next
-                  ? value.startTimeHHMM || "09:00"
-                  : value.startTimeHHMM,
-                endTimeHHMM: next
-                  ? value.endTimeHHMM || "10:00"
-                  : value.endTimeHHMM,
-              });
-            }}
-          >
-            <Ionicons
-              name={value.hasTimeWindow ? "checkbox" : "square-outline"}
-              size={20}
-              color={value.hasTimeWindow ? Colors.primary : Colors.textSecondary}
-            />
-            <Text style={styles.toggleLabel}>
-              Set start and end time (appears on calendar)
-            </Text>
-          </Pressable>
+          {!hideTimeWindowControls && (
+            <>
+              {/* Time-window checkbox label
+                  "Set start and end time (appears on calendar)" copied
+                  verbatim from P1 task-details.html line 387. */}
+              <Pressable
+                style={styles.toggleRow}
+                onPress={() => {
+                  const next = !value.hasTimeWindow;
+                  onChange({
+                    ...value,
+                    hasTimeWindow: next,
+                    startTimeHHMM: next
+                      ? value.startTimeHHMM || "09:00"
+                      : value.startTimeHHMM,
+                    endTimeHHMM: next
+                      ? value.endTimeHHMM || "10:00"
+                      : value.endTimeHHMM,
+                  });
+                }}
+              >
+                <Ionicons
+                  name={value.hasTimeWindow ? "checkbox" : "square-outline"}
+                  size={20}
+                  color={value.hasTimeWindow ? Colors.primary : Colors.textSecondary}
+                />
+                <Text style={styles.toggleLabel}>
+                  Set start and end time (appears on calendar)
+                </Text>
+              </Pressable>
 
-          {/* Time labels "Start Time" / "End Time" copied verbatim
-              from P1 task-details.html lines 394, 403. */}
-          {value.hasTimeWindow && (
-            <View style={styles.row}>
-              <View style={[styles.field, styles.flex1]}>
-                <TimeField
-                  label="Start Time"
-                  value={value.startTimeHHMM}
-                  onChange={(s) =>
-                    onChange({ ...value, startTimeHHMM: s })
-                  }
-                />
-              </View>
-              <View style={[styles.field, styles.flex1]}>
-                <TimeField
-                  label="End Time"
-                  value={value.endTimeHHMM}
-                  onChange={(s) => onChange({ ...value, endTimeHHMM: s })}
-                />
-              </View>
-            </View>
+              {/* Time labels "Start Time" / "End Time" copied verbatim
+                  from P1 task-details.html lines 394, 403. */}
+              {value.hasTimeWindow && (
+                <View style={styles.row}>
+                  <View style={[styles.field, styles.flex1]}>
+                    <TimeField
+                      label="Start Time"
+                      value={value.startTimeHHMM}
+                      onChange={(s) =>
+                        onChange({ ...value, startTimeHHMM: s })
+                      }
+                    />
+                  </View>
+                  <View style={[styles.field, styles.flex1]}>
+                    <TimeField
+                      label="End Time"
+                      value={value.endTimeHHMM}
+                      onChange={(s) => onChange({ ...value, endTimeHHMM: s })}
+                    />
+                  </View>
+                </View>
+              )}
+            </>
           )}
         </View>
       )}

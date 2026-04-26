@@ -13,6 +13,7 @@ interface TrackableWidgetFactoryProps {
   today: string;
   /** Called when a widget wants to open a quick-log dialog. */
   onRequestLog: (req: LogRequest) => void;
+  onRequestEditTrackable?: (trackableId: string) => void;
 }
 
 /**
@@ -30,9 +31,13 @@ export function TrackableWidgetFactory({
   goal,
   today,
   onRequestLog,
+  onRequestEditTrackable,
 }: TrackableWidgetFactoryProps) {
   return (
-    <TrackableWidgetCard goal={goal}>
+    <TrackableWidgetCard
+      goal={goal}
+      onRequestEditTrackable={onRequestEditTrackable}
+    >
       {renderBody(goal, today, onRequestLog)}
     </TrackableWidgetCard>
   );

@@ -270,7 +270,7 @@ function GoalTrackerSelection({
       <Text style={styles.headingCentered}>What would you like to do?</Text>
       <View style={[styles.cardGrid, isWide && styles.cardGridTwoCol]}>
         {options.map((option) => (
-          <CardOptionButton key={option.name} option={option} />
+          <CardOptionButton key={option.name} option={option} twoColumn={isWide} />
         ))}
       </View>
     </View>
@@ -336,7 +336,7 @@ function GoalOnboardingInitial({
       <Text style={styles.subheading}>I want to...</Text>
       <View style={[styles.cardGrid, isWide && styles.cardGridTwoCol]}>
         {options.map((option) => (
-          <CardOptionButton key={option.name} option={option} />
+          <CardOptionButton key={option.name} option={option} twoColumn={isWide} />
         ))}
       </View>
     </View>
@@ -387,7 +387,7 @@ function GoalOnboardingSomethingElse({
       <Text style={styles.subheading}>I want to...</Text>
       <View style={[styles.cardGrid, isWide && styles.cardGridTwoCol]}>
         {options.map((option) => (
-          <CardOptionButton key={option.name} option={option} />
+          <CardOptionButton key={option.name} option={option} twoColumn={isWide} />
         ))}
       </View>
     </View>
@@ -470,7 +470,7 @@ function TrackerOnboardingStep({
       <Text style={styles.subheading}>I want to track...</Text>
       <View style={[styles.cardGrid, isWide && styles.cardGridTwoCol]}>
         {trackers.map((option) => (
-          <CardOptionButton key={option.name} option={option} />
+          <CardOptionButton key={option.name} option={option} twoColumn={isWide} />
         ))}
       </View>
     </View>
@@ -582,18 +582,18 @@ function NewTrackerForm({ seed, onCancel, onSubmit }: NewTrackerFormProps) {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>Name</Text>
           <Input
+            label="Name"
             value={name}
             onChangeText={(v) => {
               setName(v);
               if (nameError) setNameError(null);
             }}
-            placeholder="Tracker name"
+            error={nameError ?? undefined}
             autoFocus
-            containerStyle={{ marginBottom: 0 }}
+            containerStyle={{ marginBottom: 0, alignSelf: "flex-start" }}
+            style={{ width: 240 }}
           />
-          {nameError ? <Text style={styles.errorText}>{nameError}</Text> : null}
         </View>
 
         <View style={styles.field}>

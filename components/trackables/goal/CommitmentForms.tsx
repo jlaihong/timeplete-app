@@ -15,13 +15,14 @@
  *   components/my-commitment-form-total-time/
  *   components/my-commitment-form-count/
  */
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../../constants/colors";
 import {
   todayYYYYMMDD,
   weeksBetweenYYYYMMDD,
   hoursBetweenYYYYMMDD,
+  formatYYYYMMDDtoDDMMM,
 } from "../../../lib/dates";
 import { ColourSwatchPicker } from "../ColourSwatchPicker";
 import { LabeledField, TextField, NumberField, DateField } from "./atoms";
@@ -196,6 +197,35 @@ interface FormProps {
   onChange: (next: CommitmentValue) => void;
 }
 
+/**
+ * Productivity-one's "suggested weeks" rule (`my-commitment-form-*.ts`):
+ *
+ *   suggestedGracePeriod = weeksBetween <= 4 ? 0 : round(weeksBetween * 0.2)
+ *   suggestedWeeksWithGrace = weeksBetween - suggestedGracePeriod
+ *
+ * The form runs an `effect()` that always sets `targetNumberOfWeeks`
+ * to `suggestedWeeksWithGrace` whenever the date range changes, with
+ * a special-case forcing `targetNumberOfWeeks = 1` when the user
+ * picks a 1-week range (otherwise grace would zero it out and the
+ * form would be invalid). We mirror that here.
+ */
+function suggestedGracePeriod(weeksBetween: number): number {
+  if (weeksBetween <= 4) return 0;
+  return Math.round(weeksBetween * 0.2);
+}
+
+function suggestedWeeksWithGrace(weeksBetween: number): number {
+  if (weeksBetween <= 0) return 0;
+  if (weeksBetween === 1) return 1;
+  return Math.max(1, weeksBetween - suggestedGracePeriod(weeksBetween));
+}
+
+const WEEKS_BASED_VARIANTS = new Set<CommitmentVariant>([
+  "periodic",
+  "reading",
+  "minutes-weekly",
+]);
+
 export function CommitmentForm({ variant, value, onChange }: FormProps) {
   const set = (patch: Partial<CommitmentValue>) =>
     onChange({ ...value, ...patch });
@@ -207,55 +237,81 @@ export function CommitmentForm({ variant, value, onChange }: FormProps) {
     ? hoursBetweenYYYYMMDD(value.startDayYYYYMMDD, value.endDayYYYYMMDD)
     : 0;
 
+  // Mirror productivity-one's effect: every time the date range
+  // changes, recompute `targetNumberOfWeeks = suggestedWeeksWithGrace`
+  // for variants that use a weekly target. Manual edits to
+  // `targetNumberOfWeeks` persist until the user changes a date again.
+  // Only re-runs when start/end date or variant changes — the value's
+  // other fields are intentionally not in deps so this never overrides
+  // a manually-typed week count.
+  useEffect(() => {
+    if (!WEEKS_BASED_VARIANTS.has(variant)) return;
+    if (!value.endDayYYYYMMDD) return;
+    const next = suggestedWeeksWithGrace(wks);
+    if (next > 0 && value.targetNumberOfWeeks !== next) {
+      onChange({ ...value, targetNumberOfWeeks: next });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variant, value.startDayYYYYMMDD, value.endDayYYYYMMDD]);
+
+  // The grace period that's actually being granted, given the user's
+  // current target. Mirrors P1's `actualGracePeriod` and drives the
+  // "(N weeks grace period...)" helper below the required-weeks input.
+  const actualGrace = Math.max(0, wks - (value.targetNumberOfWeeks ?? 0));
+
   // Common fields: Name + variant-specific target on the same row.
+  // Input widths mirror productivity-one's tailwind sizes:
+  //   `class="w-12"` (48px) for numeric inputs,
+  //   `class="w-40"` (160px) for the goal name.
+  // The outer field auto-expands beyond these to fit the label.
   const renderTargetField = () => {
     switch (variant) {
       case "periodic":
       case "reading":
         return (
-          <LabeledField label="Number of days per week" width={140}>
+          <LabeledField label="Number of days per week">
             <NumberField
               value={value.targetNumberOfDaysAWeek}
               onChange={(n) => set({ targetNumberOfDaysAWeek: n })}
               min={1}
               max={7}
-              width={70}
+              width={48}
             />
           </LabeledField>
         );
       case "minutes-weekly":
         return (
-          <LabeledField label="Minutes per week" width={140}>
+          <LabeledField label="Minutes per week">
             <NumberField
               value={value.targetNumberOfMinutesAWeek}
               onChange={(n) => set({ targetNumberOfMinutesAWeek: n })}
               min={60}
               max={10080}
-              width={100}
+              width={64}
             />
           </LabeledField>
         );
       case "total-time":
         return (
-          <LabeledField label="Total hours" width={120}>
+          <LabeledField label="Total hours">
             <NumberField
               value={value.targetNumberOfHours}
               onChange={(n) => set({ targetNumberOfHours: n })}
               min={10}
               max={10000}
-              width={100}
+              width={64}
             />
           </LabeledField>
         );
       case "count":
         return (
-          <LabeledField label="Target count" width={120}>
+          <LabeledField label="Target count">
             <NumberField
               value={value.targetCount}
               onChange={(n) => set({ targetCount: n })}
               min={1}
               max={10000}
-              width={100}
+              width={64}
             />
           </LabeledField>
         );
@@ -291,15 +347,20 @@ export function CommitmentForm({ variant, value, onChange }: FormProps) {
         </LabeledField>
       </View>
 
-      {/* Conditional helper / error copy ─ days, minutes, reading */}
+      {/* Conditional helper / error copy ─ days, minutes, reading.
+          The grace-period note and the colour picker live INSIDE
+          this same tight column (`gap: 8`) so the whole "you've got
+          X weeks → pick how many → grace info → choose a colour"
+          sequence reads as one block, instead of crossing the
+          form's larger 16-px section rhythm in the middle. */}
       {(variant === "periodic" ||
         variant === "reading" ||
         variant === "minutes-weekly") &&
         value.endDayYYYYMMDD && (
-          <View style={{ gap: 6 }}>
+          <View style={styles.weeksSection}>
             <Text style={styles.helper}>
-              You've given yourself {wks === 1 ? "1 week" : `${wks} weeks`} to
-              complete your goal.
+              Between {formatYYYYMMDDtoDDMMM(value.startDayYYYYMMDD)} and{" "}
+              {formatYYYYMMDDtoDDMMM(value.endDayYYYYMMDD)} there are {wks} weeks.
             </Text>
             {wks <= 0 && (
               <Text style={styles.helper}>
@@ -308,18 +369,35 @@ export function CommitmentForm({ variant, value, onChange }: FormProps) {
               </Text>
             )}
             {wks > 1 && (
-              <View style={{ alignSelf: "flex-start" }}>
-                <LabeledField
+              // NOTE: we render `NumberField` directly here instead of
+              // wrapping it in `LabeledField`. `LabeledField` is sized
+              // for the responsive 2-up grid (`flexBasis: 220`,
+              // `flexGrow: 1`), which inside a column-flex parent
+              // resolves to 220 px *tall* — that was inflating this
+              // cell to ~220px and leaving a huge void between the
+              // input and the grace-period text. `NumberField`
+              // already accepts `label`, so the wrapper is
+              // unnecessary here.
+              <View style={styles.weeksGroup}>
+                <Text style={styles.helper}>
+                  {variant === "reading"
+                    ? "How many weeks do you think you'll need to accomplish this goal?"
+                    : "How many weeks will you commit to hitting the target?"}
+                </Text>
+                <NumberField
                   label={`Required weeks (out of the ${wks === 1 ? "1 week" : `${wks} weeks`})`}
-                  width={260}
-                >
-                  <NumberField
-                    value={value.targetNumberOfWeeks}
-                    onChange={(n) => set({ targetNumberOfWeeks: n })}
-                    min={1}
-                    width={70}
-                  />
-                </LabeledField>
+                  value={value.targetNumberOfWeeks}
+                  onChange={(n) => set({ targetNumberOfWeeks: n })}
+                  min={1}
+                  width={48}
+                />
+                {actualGrace > 0 && (
+                  <Text style={styles.helperSmall}>
+                    ({actualGrace === 1 ? "1 week" : `${actualGrace} weeks`}{" "}
+                    grace period. Grace periods help to account for sickness,
+                    travel or unforeseen events.)
+                  </Text>
+                )}
               </View>
             )}
             {value.targetNumberOfWeeks !== undefined &&
@@ -330,15 +408,24 @@ export function CommitmentForm({ variant, value, onChange }: FormProps) {
                   Even if you're David Goggins
                 </Text>
               )}
+            {!!value.targetNumberOfWeeks && (
+              <ColourSwatchPicker
+                label="Give your goal a colour"
+                value={value.colour}
+                onChange={(c) => set({ colour: c })}
+              />
+            )}
           </View>
         )}
 
-      {/* Conditional helper / error copy ─ total-time */}
+      {/* Conditional helper / error copy ─ total-time. Same single-
+          column treatment as periodic so the colour picker rides
+          inline with the helper copy instead of jumping a section. */}
       {variant === "total-time" && value.endDayYYYYMMDD && (
-        <View style={{ gap: 4 }}>
+        <View style={styles.weeksSection}>
           <Text style={styles.helper}>
-            Between {value.startDayYYYYMMDD} and {value.endDayYYYYMMDD} there
-            are {hrs} hour(s).
+            Between {formatYYYYMMDDtoDDMMM(value.startDayYYYYMMDD)} and{" "}
+            {formatYYYYMMDDtoDDMMM(value.endDayYYYYMMDD)} there are {hrs} hour(s).
           </Text>
           <Text style={styles.helper}>
             Assuming 8 hours of sleep a night, the number of waking hours is:{" "}
@@ -354,23 +441,26 @@ export function CommitmentForm({ variant, value, onChange }: FormProps) {
                 There aren't enough hours for you to complete your goal in time
               </Text>
             )}
+          {!!value.targetNumberOfHours && (
+            <ColourSwatchPicker
+              label="Give your goal a colour"
+              value={value.colour}
+              onChange={(c) => set({ colour: c })}
+            />
+          )}
         </View>
       )}
 
-      {/* Colour picker — gated on the same condition as angular */}
-      {((variant === "count" && !!value.targetCount) ||
-        (variant === "total-time" && !!value.targetNumberOfHours) ||
-        ((variant === "periodic" ||
-          variant === "reading" ||
-          variant === "minutes-weekly") &&
-          !!value.targetNumberOfWeeks)) && (
-        <View style={{ marginTop: 4 }}>
-          <ColourSwatchPicker
-            label="Give your goal a colour"
-            value={value.colour}
-            onChange={(c) => set({ colour: c })}
-          />
-        </View>
+      {/* Colour picker for `count` — kept as its own section because
+          the count form has no "between X and Y" helper block to
+          piggy-back on. Other variants render the picker inline
+          (above) so they don't cross the 16-px form gap. */}
+      {variant === "count" && !!value.targetCount && (
+        <ColourSwatchPicker
+          label="Give your goal a colour"
+          value={value.colour}
+          onChange={(c) => set({ colour: c })}
+        />
       )}
     </View>
   );
@@ -380,5 +470,25 @@ const styles = StyleSheet.create({
   form: { gap: 16 },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   helper: { fontSize: 14, color: Colors.text, lineHeight: 20 },
+  helperSmall: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+  },
+  /**
+   * The whole "between X and Y → required weeks → grace text →
+   * colour picker" sequence flows inside this single column with a
+   * tight `gap` so the colour picker doesn't jump the form-level
+   * 16-px section gap (which the user reads as a wasted vertical
+   * void after the grace-period note).
+   */
+  weeksSection: { gap: 8 },
+  /**
+   * Inner stack: prompt → field → grace note. Sized to the field
+   * (not full width) so the narrow input doesn't get stretched, and
+   * `alignSelf: flex-start` keeps it from inheriting the parent
+   * column's full width.
+   */
+  weeksGroup: { alignSelf: "flex-start", gap: 4 },
   error: { fontSize: 13, color: Colors.error, lineHeight: 18 },
 });

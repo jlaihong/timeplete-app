@@ -27,9 +27,9 @@ import {
   ScrollView,
   Platform,
   useWindowDimensions,
+  Switch,
 } from "react-native";
 import { useMutation, useQuery } from "convex/react";
-import { MaterialIcons } from "@expo/vector-icons";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
@@ -37,6 +37,19 @@ import { Input } from "../ui/Input";
 import { DateField } from "../ui/DateField";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { Id } from "../../convex/_generated/dataModel";
+import {
+  RecurrenceSection,
+  type RecurrenceFormValue,
+  defaultRecurrence,
+  recurrenceFormToRuleFields,
+  ruleToRecurrenceForm,
+} from "../tasks/RecurrenceSection";
+import {
+  DialogOverlay,
+  DialogCard,
+  DialogHeader,
+  DialogFooter,
+} from "../ui/DialogScaffold";
 
 interface EventDialogProps {
   day: string;
@@ -61,6 +74,8 @@ interface EventDialogProps {
     trackableId?: string | null;
     listId?: string | null;
     taskId?: string | null;
+    recurringEventId?: string | null;
+    isRecurringInstance?: boolean;
   };
   /**
    * Pre-fill values when opening for a brand-new event (e.g. populated
@@ -70,6 +85,7 @@ interface EventDialogProps {
   defaultStartTimeHHMM?: string;
   defaultDurationMinutes?: number;
 }
+type RecurringEditScope = "THIS_INSTANCE" | "THIS_AND_FUTURE" | "ALL_INSTANCES";
 
 /* ------------------------------------------------------------------ *
  * EventDialog                                                         *
@@ -115,8 +131,31 @@ export function EventDialog({
   const [comments, setComments] = useState(existingEvent?.comments ?? "");
   const [titleError, setTitleError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showRecurringScopeModal, setShowRecurringScopeModal] = useState(false);
+  const [pendingScopeSave, setPendingScopeSave] = useState<{
+    titleToPersist: string | undefined;
+    activityType: "TASK" | "EVENT" | "TRACKABLE";
+  } | null>(null);
 
   const upsertTimeWindow = useMutation(api.timeWindows.upsert);
+  const recurringRules = useQuery((api as any).recurringEvents.list, {});
+  const existingRule = useMemo(
+    () =>
+      existingEvent?.recurringEventId
+        ? recurringRules?.find((r: any) => r._id === existingEvent.recurringEventId) ?? null
+        : null,
+    [existingEvent?.recurringEventId, recurringRules]
+  );
+  const createRecurringRule = useMutation((api as any).recurringEvents.create);
+  const updateRecurringRule = useMutation((api as any).recurringEvents.updateRule);
+  const stopRecurringRule = useMutation((api as any).recurringEvents.stop);
+  const applyRecurringOverride = useMutation(
+    (api as any).recurringEvents.applyInstanceOverride
+  );
+  const recordDeletedRecurringOcc = useMutation(
+    (api as any).recurringEvents.recordDeletedOccurrence
+  );
+  const [recurrence, setRecurrence] = useState<RecurrenceFormValue | null>(null);
 
   // Look up the currently-selected trackable so we can compute the LIVE
   // derived name (changes as the user picks a different trackable for
@@ -154,6 +193,14 @@ export function EventDialog({
   const { width } = useWindowDimensions();
   const isWide = width >= 768;
 
+  useEffect(() => {
+    if (existingRule) {
+      setRecurrence(ruleToRecurrenceForm(existingRule));
+      return;
+    }
+    setRecurrence(null);
+  }, [existingRule?._id]);
+
   /* ESC dismisses the dialog (parity with MatDialog / AddTrackableFlow). */
   useEffect(() => {
     if (Platform.OS !== "web") return;
@@ -166,6 +213,157 @@ export function EventDialog({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const previousDay = (yyyymmdd: string) => {
+    const y = parseInt(yyyymmdd.slice(0, 4), 10);
+    const m = parseInt(yyyymmdd.slice(4, 6), 10) - 1;
+    const d = parseInt(yyyymmdd.slice(6, 8), 10);
+    const dt = new Date(y, m, d);
+    dt.setDate(dt.getDate() - 1);
+    return `${dt.getFullYear()}${String(dt.getMonth() + 1).padStart(2, "0")}${String(
+      dt.getDate()
+    ).padStart(2, "0")}`;
+  };
+
+  const persistRecurringRule = async (
+    scope: RecurringEditScope,
+    payload: {
+      titleToPersist: string | undefined;
+      activityType: "TASK" | "EVENT" | "TRACKABLE";
+    },
+    sourceTimeWindowId?: Id<"timeWindows">
+  ) => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!recurrence) {
+      if (existingRule) {
+        if (scope === "THIS_AND_FUTURE") {
+          await applyRecurringOverride({
+            timeWindowId: existingEvent!._id as Id<"timeWindows">,
+            detachFromSeries: true,
+          });
+          await updateRecurringRule({
+            id: existingRule._id,
+            endDateYYYYMMDD: previousDay(eventDay),
+            regenerateFromYYYYMMDD: eventDay,
+          });
+        } else {
+          await stopRecurringRule({
+            id: existingRule._id,
+            effectiveFromYYYYMMDD:
+              scope === "ALL_INSTANCES" ? existingRule.startDateYYYYMMDD : eventDay,
+          });
+        }
+      }
+      return;
+    }
+
+    const durationSeconds = parseInt(durationMinutes, 10) * 60;
+    const ruleFields = recurrenceFormToRuleFields(recurrence);
+    const sharedFields = {
+      ...ruleFields,
+      title: payload.titleToPersist,
+      startTimeHHMM: startTime,
+      durationSeconds,
+      comments: comments || undefined,
+      trackableId: trackableId ?? undefined,
+      tagIds: undefined as Id<"tags">[] | undefined,
+      timeZone: tz,
+      budgetType: "ACTUAL" as const,
+      activityType: payload.activityType,
+      startDateYYYYMMDD: recurrence.startDateYYYYMMDD || eventDay,
+      endDateYYYYMMDD: recurrence.endDateYYYYMMDD || undefined,
+    };
+
+    if (!existingRule) {
+      await createRecurringRule({
+        ...sharedFields,
+        sourceTimeWindowId:
+          sourceTimeWindowId ??
+          (existingEvent?._id ? (existingEvent._id as Id<"timeWindows">) : undefined),
+      });
+      return;
+    }
+
+    if (scope === "THIS_AND_FUTURE") {
+      const splitFrom = eventDay;
+      await createRecurringRule({
+        ...sharedFields,
+        startDateYYYYMMDD: splitFrom,
+        sourceTimeWindowId:
+          sourceTimeWindowId ??
+          (existingEvent?._id ? (existingEvent._id as Id<"timeWindows">) : undefined),
+      });
+      if (existingEvent?.startDayYYYYMMDD && splitFrom > existingEvent.startDayYYYYMMDD) {
+        await recordDeletedRecurringOcc({
+          recurringEventId: existingRule._id,
+          deletedDateYYYYMMDD: existingEvent.startDayYYYYMMDD,
+        });
+      }
+      await updateRecurringRule({
+        id: existingRule._id,
+        endDateYYYYMMDD: previousDay(splitFrom),
+        regenerateFromYYYYMMDD: splitFrom,
+      });
+      return;
+    }
+
+    await updateRecurringRule({
+      id: existingRule._id,
+      ...sharedFields,
+      endDateYYYYMMDD: recurrence.endDateYYYYMMDD || null,
+      regenerateFromYYYYMMDD:
+        scope === "ALL_INSTANCES" ? existingRule.startDateYYYYMMDD : eventDay,
+    });
+  };
+
+  const executeSaveWithScope = async (
+    scope: RecurringEditScope,
+    payload: {
+      titleToPersist: string | undefined;
+      activityType: "TASK" | "EVENT" | "TRACKABLE";
+    }
+  ) => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const upsertedId = (await upsertTimeWindow({
+      id: existingEvent?._id as Id<"timeWindows"> | undefined,
+      startTimeHHMM: startTime,
+      startDayYYYYMMDD: eventDay,
+      durationSeconds: parseInt(durationMinutes, 10) * 60,
+      budgetType: "ACTUAL",
+      activityType: payload.activityType,
+      taskId:
+        (existingEvent?.taskId as Id<"tasks"> | null | undefined) ?? undefined,
+      trackableId: trackableId ?? undefined,
+      listId:
+        (existingEvent?.listId as Id<"lists"> | null | undefined) ?? undefined,
+      title: payload.titleToPersist,
+      comments: comments || undefined,
+      timeZone: tz,
+    })) as Id<"timeWindows">;
+
+    const dateMoved =
+      !!existingEvent?.recurringEventId &&
+      !!existingEvent?.startDayYYYYMMDD &&
+      existingEvent.startDayYYYYMMDD !== eventDay;
+
+    if (scope === "THIS_INSTANCE" || (existingEvent?.isRecurringInstance && !existingRule)) {
+      if (dateMoved && existingEvent?.recurringEventId) {
+        await recordDeletedRecurringOcc({
+          recurringEventId: existingEvent.recurringEventId as Id<"recurringEvents">,
+          deletedDateYYYYMMDD: existingEvent.startDayYYYYMMDD!,
+        });
+      }
+      if (existingEvent?.recurringEventId && existingEvent?._id) {
+        await applyRecurringOverride({
+          timeWindowId: existingEvent._id as Id<"timeWindows">,
+          detachFromSeries: true,
+        });
+      }
+      return;
+    }
+
+    await persistRecurringRule(scope, payload, upsertedId);
+  };
 
   const handleSave = async () => {
     const trimmedTitle = title.trim();
@@ -197,8 +395,6 @@ export function EventDialog({
 
     setLoading(true);
     try {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
       // Preserve the original activityType for TASK events being
       // edited — the dialog has no task picker, so flipping a task
       // event to TRACKABLE/EVENT here would silently sever the task
@@ -210,30 +406,24 @@ export function EventDialog({
         : trackableId
           ? "TRACKABLE"
           : "EVENT";
+      const isRecurringInstance =
+        !!existingEvent?.isRecurringInstance && !!existingEvent?.recurringEventId;
+      const recurrenceChanged = JSON.stringify(recurrence) !== JSON.stringify(existingRule ? ruleToRecurrenceForm(existingRule) : null);
+      const fieldsChanged =
+        !!existingEvent &&
+        (existingEvent.startTimeHHMM !== startTime ||
+          existingEvent.startDayYYYYMMDD !== eventDay ||
+          Math.round(existingEvent.durationSeconds / 60) !== parseInt(durationMinutes, 10) ||
+          (existingEvent.title ?? "") !== (titleToPersist ?? "") ||
+          (existingEvent.comments ?? "") !== (comments || "") ||
+          (existingEvent.trackableId ?? null) !== (trackableId ?? null));
+      if (isRecurringInstance && (fieldsChanged || recurrenceChanged)) {
+        setPendingScopeSave({ titleToPersist, activityType });
+        setShowRecurringScopeModal(true);
+        return;
+      }
 
-      await upsertTimeWindow({
-        id: existingEvent?._id as Id<"timeWindows"> | undefined,
-        startTimeHHMM: startTime,
-        startDayYYYYMMDD: eventDay,
-        durationSeconds: parseInt(durationMinutes, 10) * 60,
-        // BudgetType is fixed — the BUDGETED branch is legacy and not
-        // exposed in the UI.
-        budgetType: "ACTUAL",
-        activityType,
-        // Preserve task / list links across edits (the dialog only
-        // exposes the trackable picker today; the other links flow
-        // through unchanged so we don't accidentally drop them).
-        taskId:
-          (existingEvent?.taskId as Id<"tasks"> | null | undefined) ??
-          undefined,
-        trackableId: trackableId ?? undefined,
-        listId:
-          (existingEvent?.listId as Id<"lists"> | null | undefined) ??
-          undefined,
-        title: titleToPersist,
-        comments: comments || undefined,
-        timeZone: tz,
-      });
+      await executeSaveWithScope("ALL_INSTANCES", { titleToPersist, activityType });
       onClose();
     } finally {
       setLoading(false);
@@ -241,35 +431,12 @@ export function EventDialog({
   };
 
   return (
-    <Pressable
-      style={[
-        styles.overlay,
-        isWide ? styles.overlayDesktop : styles.overlayMobile,
-      ]}
-      onPress={onClose}
-    >
-      <Pressable
-        // Stop the inner card from bubbling clicks to the backdrop —
-        // otherwise typing in the inputs would dismiss the dialog.
-        onPress={(e) => e.stopPropagation?.()}
-        style={[
-          styles.dialog,
-          isWide ? styles.dialogDesktop : styles.dialogMobile,
-        ]}
-      >
-        {/* Top-right close X — same pattern as AddTrackableFlow. */}
-        <Pressable
-          onPress={onClose}
-          style={styles.closeBtn}
-          accessibilityLabel="Close dialog"
-          hitSlop={8}
-        >
-          <MaterialIcons name="close" size={20} color={Colors.text} />
-        </Pressable>
-
-        <Text style={styles.title}>
-          {existingEvent ? "Edit Event" : "New Event"}
-        </Text>
+    <DialogOverlay onBackdropPress={onClose} align={isWide ? "center" : "bottom"}>
+      <DialogCard desktopWidth={520}>
+        <DialogHeader
+          title={existingEvent ? "Edit Event" : "New Event"}
+          onClose={onClose}
+        />
 
         <ScrollView
           style={styles.scroll}
@@ -330,90 +497,134 @@ export function EventDialog({
             placeholder="Optional comments"
             multiline
           />
+
+          <View style={styles.recurringToggleRow}>
+            <Text style={styles.recurringToggleLabel}>Recurring event</Text>
+            <Switch
+              value={!!recurrence}
+              onValueChange={(enabled) => {
+                if (!enabled) {
+                  setRecurrence(null);
+                  return;
+                }
+                setRecurrence(
+                  existingRule ? ruleToRecurrenceForm(existingRule) : defaultRecurrence(eventDay)
+                );
+              }}
+            />
+          </View>
+
+          {existingEvent?.isRecurringInstance && existingEvent?.recurringEventId ? (
+            <View style={styles.recurringBadge}>
+              <Text style={styles.recurringBadgeText}>
+                This is a recurring event. Save changes with scope options.
+              </Text>
+              <Button
+                title="Stop recurring from this date"
+                variant="outline"
+                onPress={async () => {
+                  if (!existingRule) return;
+                  setLoading(true);
+                  try {
+                    await stopRecurringRule({
+                      id: existingRule._id,
+                      effectiveFromYYYYMMDD: eventDay,
+                    });
+                    onClose();
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              />
+            </View>
+          ) : null}
+
+          {recurrence ? (
+            <RecurrenceSection
+              value={recurrence}
+              onChange={setRecurrence}
+              hideToggle
+              hideTimeWindowControls
+            />
+          ) : null}
         </ScrollView>
 
-        <View style={styles.actions}>
+        <DialogFooter>
           <Button title="Cancel" variant="outline" onPress={onClose} />
           <Button
             title={existingEvent ? "Save" : "Create"}
             onPress={handleSave}
             loading={loading}
           />
-        </View>
-      </Pressable>
-    </Pressable>
+        </DialogFooter>
+
+      {showRecurringScopeModal && pendingScopeSave ? (
+        <Pressable
+          style={styles.scopeOverlay}
+          onPress={(e) => {
+            e.stopPropagation?.();
+            setShowRecurringScopeModal(false);
+            setPendingScopeSave(null);
+          }}
+        >
+          <Pressable
+            style={styles.scopeDialog}
+            onPress={(e) => e.stopPropagation?.()}
+          >
+            <Text style={styles.scopeTitle}>Apply changes to recurring event</Text>
+            <Text style={styles.scopeBody}>
+              Choose how broadly to apply your edits.
+            </Text>
+            <Button
+              title="This instance only"
+              variant="outline"
+              onPress={async () => {
+                setLoading(true);
+                try {
+                  await executeSaveWithScope("THIS_INSTANCE", pendingScopeSave);
+                  setShowRecurringScopeModal(false);
+                  onClose();
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            />
+            <Button
+              title="This and future instances"
+              variant="outline"
+              onPress={async () => {
+                setLoading(true);
+                try {
+                  await executeSaveWithScope("THIS_AND_FUTURE", pendingScopeSave);
+                  setShowRecurringScopeModal(false);
+                  onClose();
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            />
+            <Button
+              title="All instances"
+              onPress={async () => {
+                setLoading(true);
+                try {
+                  await executeSaveWithScope("ALL_INSTANCES", pendingScopeSave);
+                  setShowRecurringScopeModal(false);
+                  onClose();
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      ) : null}
+      </DialogCard>
+    </DialogOverlay>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    zIndex: 1000,
-    // On web, escape any positioned ancestor (e.g. the narrow side
-    // column on DesktopHome) so the overlay always covers the full
-    // viewport — matches AddTrackableFlow's overlay strategy.
-    ...Platform.select({
-      web: { position: "fixed" as any },
-      default: {},
-    }),
-  },
-  overlayMobile: { justifyContent: "flex-end" },
-  overlayDesktop: { justifyContent: "center", alignItems: "center" },
-  dialog: {
-    backgroundColor: Colors.surfaceContainerHigh,
-    overflow: "hidden",
-    ...Platform.select({
-      web: { boxShadow: "0 8px 32px rgba(0,0,0,0.5)" } as any,
-      default: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.5,
-        shadowRadius: 32,
-        elevation: 12,
-      },
-    }),
-  },
-  dialogMobile: {
-    width: "100%",
-    maxHeight: "92%",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 24,
-  },
-  dialogDesktop: {
-    width: 520,
-    maxWidth: "94%",
-    maxHeight: "90%",
-    borderRadius: 12,
-    padding: 24,
-  },
-  closeBtn: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-    ...Platform.select({
-      web: { cursor: "pointer" } as any,
-      default: {},
-    }),
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 16,
-    paddingRight: 24, // leave room for close X
-  },
   scroll: { maxHeight: 480 },
   scrollContent: { paddingBottom: 8 },
   row: {
@@ -422,14 +633,51 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   flex1: { flex: 1 },
-  actions: {
+  recurringToggleRow: {
     flexDirection: "row",
-    gap: 12,
-    justifyContent: "flex-end",
     alignItems: "center",
-    marginTop: 12,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: Colors.outlineVariant,
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  recurringToggleLabel: {
+    color: Colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  recurringBadge: {
+    backgroundColor: Colors.primaryContainer,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  recurringBadgeText: {
+    color: Colors.onPrimaryContainer,
+    fontSize: 12,
+  },
+  scopeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2000,
+  },
+  scopeDialog: {
+    width: 380,
+    maxWidth: "92%",
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderRadius: 12,
+    padding: 16,
+    gap: 10,
+  },
+  scopeTitle: {
+    color: Colors.text,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  scopeBody: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    marginBottom: 4,
   },
 });

@@ -175,6 +175,8 @@ export interface EditEventPayload {
   trackableId?: string | null;
   listId?: string | null;
   taskId?: string | null;
+  recurringEventId?: string | null;
+  isRecurringInstance?: boolean;
 }
 
 interface CalendarViewProps {
@@ -898,6 +900,10 @@ export function CalendarView({
     startDay: selectedDay,
     endDay: selectedDay,
   });
+  const recurringEventRules = useQuery((api as any).recurringEvents.list, {});
+  const generateRecurringEventInstances = useMutation(
+    (api as any).recurringEvents.generateInstances
+  );
   const upsertTimeWindow = useMutation(api.timeWindows.upsert);
   const removeTimeWindow = useMutation(api.timeWindows.remove);
   const timerHook = useTimer();
@@ -954,6 +960,19 @@ export function CalendarView({
   }, [timeWindows]);
 
   const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => i), []);
+
+  useEffect(() => {
+    if (recurringEventRules === undefined) return;
+    void generateRecurringEventInstances({
+      rangeStartYYYYMMDD: selectedDay,
+      rangeEndYYYYMMDD: selectedDay,
+    });
+  }, [
+    selectedDay,
+    recurringEventRules?.length,
+    recurringEventRules?.map((r: any) => r._id).join(","),
+    generateRecurringEventInstances,
+  ]);
 
   /* ─── Task→Calendar drop (via dnd-kit) ───────────────────────────── */
   const handleTaskDrop = useCallback(
@@ -1554,6 +1573,8 @@ export function CalendarView({
                               trackableId: tw.trackableId,
                               listId: tw.listId,
                               taskId: tw.taskId,
+                              recurringEventId: tw.recurringEventId,
+                              isRecurringInstance: !!tw.isRecurringInstance,
                             })
                         : undefined
                     }
@@ -1696,6 +1717,8 @@ export function CalendarView({
                 trackableId: tw.trackableId,
                 listId: tw.listId,
                 taskId: tw.taskId,
+                recurringEventId: tw.recurringEventId,
+                isRecurringInstance: !!tw.isRecurringInstance,
               });
             }
           }}

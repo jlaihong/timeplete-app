@@ -5,6 +5,7 @@ export default function EditTrackableLayout() {
   return (
     <Stack
       screenOptions={{
+        headerShown: false,
         headerStyle: { backgroundColor: Colors.surfaceContainer },
         headerTintColor: Colors.text,
       }}
