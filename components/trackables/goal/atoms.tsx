@@ -7,7 +7,7 @@
  * `components/ui` because they are shaped to match the angular goal forms
  * specifically (mat-checkbox, mat-form-field, mat-table styling).
  */
-import React from "react";
+import React, { forwardRef } from "react";
 import {
   View,
   Text,
@@ -19,7 +19,8 @@ import {
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Colors } from "../../../constants/colors";
-import { yyyymmddToIsoDate, isoDateToYyyymmdd } from "../../../lib/dates";
+import { Input } from "../../ui/Input";
+import { DateField as MaterialDateField } from "../../ui/DateField";
 
 /* ──────────────────────────────────────────────────────────────────── */
 /* CheckboxRow — port of `<mat-checkbox>`                               */
@@ -50,41 +51,74 @@ export function CheckboxRow({
 /* LabeledField — port of `<mat-form-field>` floating label             */
 /* ──────────────────────────────────────────────────────────────────── */
 
+/**
+ * `LabeledField` is a thin layout shell that injects its `label`
+ * (and `error`) into the wrapped field via `React.cloneElement` so
+ * the child can render the label inside its own filled chrome with
+ * the floating-label animation used everywhere else. The field
+ * always self-sizes to fit the wider of its label or its inner
+ * input — matching productivity-one's `mat-form-field`, which never
+ * clips a label even when the input itself is narrow (e.g. a
+ * `class="w-12"` 2-digit number input under a "Number of days per
+ * week" label).
+ *
+ * `width` is intentionally NOT forwarded as the outer field width
+ * — that was clipping long labels. If you want a narrow visible
+ * input box, pass `width` directly on the child (`NumberField` /
+ * `TextField`); it sizes only the inner input, while the outer
+ * field still expands to fit the label.
+ */
 export function LabeledField({
   label,
   children,
-  width,
   error,
 }: {
   label: string;
-  children: React.ReactNode;
-  width?: number | string;
+  children: React.ReactElement;
   error?: string | null;
 }) {
-  return (
-    <View style={[styles.fieldContainer, width !== undefined && { width: width as any }]}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      {children}
-      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
-    </View>
-  );
+  const child = React.isValidElement(children)
+    ? React.cloneElement(children as React.ReactElement<any>, {
+        label,
+        error,
+      })
+    : children;
+  return <View style={styles.fieldContainer}>{child}</View>;
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
 /* TextField / NumberField — Material-styled inputs                     */
 /* ──────────────────────────────────────────────────────────────────── */
 
+/**
+ * `TextField` and `NumberField` delegate to the shared `Input`
+ * component so they pick up the same Material 3 floating-label
+ * appearance used by every other input in the app.
+ *
+ * `width` controls the inner input box width (matches P1's
+ * `class="w-12"` / `class="w-40"` on the `<input>` itself). The
+ * outer field auto-sizes to fit the wider of the label or input,
+ * so a narrow input under a long label never clips the label.
+ */
 interface BaseFieldProps extends Omit<TextInputProps, "style"> {
   width?: number | string;
+  label?: string;
+  error?: string | null;
 }
 
-export const TextField = React.forwardRef<TextInput, BaseFieldProps>(
-  function TextField({ width, ...props }, ref) {
+export const TextField = forwardRef<TextInput, BaseFieldProps>(
+  function TextField({ width, label, error, ...props }, ref) {
     return (
-      <TextInput
-        ref={ref}
-        placeholderTextColor={Colors.textTertiary}
-        style={[styles.textInput, width !== undefined && { width: width as any }]}
+      <Input
+        ref={ref as any}
+        label={label}
+        error={error ?? undefined}
+        // Default to filling the parent field (which itself sits in a
+        // grid cell, see `LabeledField`). Callers can pin the input
+        // narrower by passing an explicit `width`. Numeric inputs use
+        // `NumberField`, which has its own small default.
+        style={{ width: (width as any) ?? "100%" }}
+        containerStyle={{ marginBottom: 0 }}
         {...props}
       />
     );
@@ -96,17 +130,35 @@ export function NumberField({
   onChange,
   min,
   max,
-  width = 80,
+  width = 64,
+  label,
+  error,
+  helperText,
   ...rest
 }: {
   value: number | undefined;
   onChange: (n: number | undefined) => void;
   min?: number;
   max?: number;
+  /**
+   * Width of the visible input box (matches P1's `class="w-12"`).
+   * The outer field expands beyond this to fit the label.
+   */
   width?: number;
+  label?: string;
+  error?: string | null;
+  /**
+   * Hint copy rendered as a Material-style hint inside the input's
+   * chrome (immediately under the underline). Tighter and more
+   * consistent than placing free-floating helper `<Text>` siblings.
+   */
+  helperText?: string;
 } & Omit<TextInputProps, "value" | "onChange" | "onChangeText">) {
   return (
-    <TextInput
+    <Input
+      label={label}
+      error={error ?? undefined}
+      helperText={helperText}
       value={value === undefined ? "" : String(value)}
       onChangeText={(s) => {
         if (s === "") {
@@ -126,58 +178,38 @@ export function NumberField({
       }}
       keyboardType="number-pad"
       inputMode="numeric"
-      placeholderTextColor={Colors.textTertiary}
-      style={[styles.textInput, { width }]}
+      style={{ width }}
+      containerStyle={{ marginBottom: 0 }}
       {...rest}
     />
   );
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
-/* DateField — `<input type="date">` on web, plain text fallback else.  */
+/* DateField — Material-styled wrapper around `<input type="date">`.    */
 /* ──────────────────────────────────────────────────────────────────── */
 
+/**
+ * Delegates to the shared `MaterialDateField` so the goal-onboarding
+ * date pickers match the rest of the app (filled background, animated
+ * underline, floating label). The `label` (and `error`) come from
+ * `LabeledField` via `cloneElement`.
+ *
+ * The shared `MaterialDateField` self-sizes to fit its label, so we
+ * don't accept (or forward) a width prop here — wrapping it in a
+ * fixed-width View would just clip long labels again.
+ */
 export function DateField({
   value,
   onChange,
+  label,
 }: {
   /** YYYYMMDD or empty string */
   value: string;
   onChange: (yyyymmdd: string) => void;
+  label?: string;
 }) {
-  if (Platform.OS === "web") {
-    return (
-      <input
-        type="date"
-        value={yyyymmddToIsoDate(value)}
-        onChange={(e) => {
-          const v = (e.target as HTMLInputElement).value;
-          onChange(v ? isoDateToYyyymmdd(v) : "");
-        }}
-        style={{
-          backgroundColor: Colors.surfaceContainer,
-          color: Colors.text,
-          border: `1px solid ${Colors.outlineVariant}`,
-          borderRadius: 8,
-          padding: "10px 12px",
-          fontSize: 14,
-          fontFamily: "inherit",
-          minWidth: 150,
-        }}
-      />
-    );
-  }
-  // Native fallback: text entry. Productivity-one uses Material datepicker;
-  // a true mobile picker can be wired in later — desktop web is the focus.
-  return (
-    <TextInput
-      value={yyyymmddToIsoDate(value)}
-      placeholder="YYYY-MM-DD"
-      placeholderTextColor={Colors.textTertiary}
-      onChangeText={(s) => onChange(s.length === 10 ? isoDateToYyyymmdd(s) : "")}
-      style={[styles.textInput, { minWidth: 150 }]}
-    />
-  );
+  return <MaterialDateField value={value} onChange={onChange} label={label} />;
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
@@ -280,7 +312,20 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   /* labeled field */
-  fieldContainer: { gap: 6 },
+  fieldContainer: {
+    // Behave as a uniform grid cell: every LabeledField in the same
+    // flex-row tries to be `flexBasis` wide, grows to share leftover
+    // space evenly, and wraps to its own row once the container
+    // narrower than `minWidth * 2 + gap`. Combined with the row
+    // styles in CommitmentForms (flex-direction: row, flex-wrap:
+    // wrap), this gives the 2-up grid on desktop and a single
+    // column on mobile/narrow dialogs.
+    gap: 6,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 220,
+    minWidth: 220,
+  },
   fieldLabel: {
     fontSize: 13,
     fontWeight: "500",

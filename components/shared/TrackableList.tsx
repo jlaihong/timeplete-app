@@ -35,6 +35,11 @@ interface TrackableListProps {
    * its own dialog host.
    */
   onRequestLog?: (req: LogRequest) => void;
+  /**
+   * Desktop-only: open the shared edit dialog at screen root.
+   * If absent, widgets fall back to route-based editor.
+   */
+  onRequestEditTrackable?: (trackableId: string) => void;
 }
 
 /**
@@ -47,6 +52,7 @@ export function TrackableList({
   title,
   onRequestAddTrackable,
   onRequestLog,
+  onRequestEditTrackable,
 }: TrackableListProps) {
   const isDesktop = useIsDesktop();
 
@@ -163,6 +169,7 @@ export function TrackableList({
               goal={item}
               today={today}
               onRequestLog={handleRequestLog}
+              onRequestEditTrackable={onRequestEditTrackable}
             />
           )}
           contentContainerStyle={styles.listContent}

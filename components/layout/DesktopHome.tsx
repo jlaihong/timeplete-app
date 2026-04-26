@@ -12,6 +12,7 @@ import { AddTaskSheet } from "../tasks/AddTaskSheet";
 import { TaskDetailSheet } from "../tasks/TaskDetailSheet";
 import { EventDialog } from "../calendar/EventDialog";
 import { AddTrackableFlow } from "../trackables/AddTrackableFlow";
+import { EditTrackableDialog } from "../trackables/EditTrackableDialog";
 import { TrackableDialogHost } from "../trackables/widgets/TrackableDialogHost";
 import type { LogRequest } from "../trackables/widgets/types";
 import { Id } from "../../convex/_generated/dataModel";
@@ -38,6 +39,8 @@ export function DesktopHome() {
   // their overlays cover the full viewport and aren't clipped by the narrow
   // `sideColumn`. See note in `TrackableList.tsx`.
   const [showAddTrackable, setShowAddTrackable] = useState(false);
+  const [editingTrackableId, setEditingTrackableId] =
+    useState<Id<"trackables"> | null>(null);
   const [logRequest, setLogRequest] = useState<LogRequest | null>(null);
 
   return (
@@ -54,6 +57,9 @@ export function DesktopHome() {
               title="Trackables"
               onRequestAddTrackable={() => setShowAddTrackable(true)}
               onRequestLog={setLogRequest}
+              onRequestEditTrackable={(id) =>
+                setEditingTrackableId(id as Id<"trackables">)
+              }
             />
           </View>
 
@@ -126,6 +132,13 @@ export function DesktopHome() {
 
       {showAddTrackable && (
         <AddTrackableFlow onClose={() => setShowAddTrackable(false)} />
+      )}
+
+      {editingTrackableId && (
+        <EditTrackableDialog
+          trackableId={editingTrackableId}
+          onClose={() => setEditingTrackableId(null)}
+        />
       )}
 
       <TrackableDialogHost

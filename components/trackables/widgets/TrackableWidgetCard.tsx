@@ -24,6 +24,7 @@ import type { WidgetGoal } from "./types";
 interface TrackableWidgetCardProps {
   goal: WidgetGoal;
   children: React.ReactNode;
+  onRequestEditTrackable?: (trackableId: string) => void;
 }
 
 /**
@@ -40,6 +41,7 @@ interface TrackableWidgetCardProps {
 export function TrackableWidgetCard({
   goal,
   children,
+  onRequestEditTrackable,
 }: TrackableWidgetCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const archiveTrackable = useMutation(api.trackables.archive);
@@ -120,7 +122,13 @@ export function TrackableWidgetCard({
 
         <TouchableOpacity
           style={styles.headerBtn}
-          onPress={() => router.push(`/(app)/edit-trackable/${goal._id}`)}
+          onPress={() => {
+            if (onRequestEditTrackable) {
+              onRequestEditTrackable(goal._id);
+              return;
+            }
+            router.push(`/(app)/edit-trackable/${goal._id}`);
+          }}
           accessibilityLabel="Open trackable details"
         >
           <Ionicons

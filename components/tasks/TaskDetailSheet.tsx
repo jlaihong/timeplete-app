@@ -52,6 +52,7 @@ import { useTimer } from "../../hooks/useTimer";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { formatSecondsAsHM, formatDisplayDate, todayYYYYMMDD } from "../../lib/dates";
 import { Id } from "../../convex/_generated/dataModel";
+import { DialogOverlay } from "../ui/DialogScaffold";
 
 type Tab = "details" | "time" | "comments";
 type RecurringEditScope = "THIS_INSTANCE" | "THIS_AND_FUTURE" | "ALL_INSTANCES";
@@ -879,12 +880,9 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   );
 
   return (
-    <Pressable
-      style={[
-        styles.overlay,
-        isDesktop ? styles.overlayDesktop : styles.overlayMobile,
-      ]}
-      onPress={() => {
+    <DialogOverlay
+      align={isDesktop ? "center" : "bottom"}
+      onBackdropPress={() => {
         if (
           showRecurringScopeModal ||
           showStopRecurringModal ||
@@ -895,9 +893,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
         handleClose();
       }}
     >
-      <Pressable onPress={(e) => e.stopPropagation?.()}>
-        {content}
-      </Pressable>
+      {content}
       {showRecurringScopeModal && (
         <Pressable
           style={styles.scopeModalOverlay}
@@ -1012,21 +1008,11 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
           </Pressable>
         </Pressable>
       )}
-    </Pressable>
+    </DialogOverlay>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.6)",
-  },
-  overlayMobile: { justifyContent: "flex-end" },
-  overlayDesktop: { justifyContent: "center", alignItems: "center" },
   sheet: {
     backgroundColor: Colors.surfaceContainerHigh,
     borderTopLeftRadius: 16,
