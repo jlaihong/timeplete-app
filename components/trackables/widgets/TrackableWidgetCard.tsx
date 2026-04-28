@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Card } from "../../ui/Card";
@@ -23,7 +23,7 @@ interface TrackableWidgetCardProps {
  * Mirrors productivity-one's `goal-widget` chrome:
  *   - Colour-tinted "target" icon + name in the header
  *   - Days remaining / overdue copy (suppressed for `TRACKER`)
- *   - Top-right "open in new" affordance opening the edit screen
+ *   - Tap the title block to open the edit screen
  *   - A live border highlight when this trackable's timer is ticking
  *     (handled inside `WidgetTimerRow`, not here, to avoid an extra hook).
  */
@@ -38,6 +38,14 @@ export function TrackableWidgetCard({
   const showDueCopy = goal.trackableType !== "TRACKER";
   const dueCopy = showDueCopy ? formatDueCopy(goal.endDayYYYYMMDD) : null;
 
+  const openEdit = () => {
+    if (onRequestEditTrackable) {
+      onRequestEditTrackable(goal._id);
+      return;
+    }
+    router.push(`/(app)/edit-trackable/${goal._id}`);
+  };
+
   return (
     <Card style={[styles.card, isTicking && styles.cardTicking]}>
       <View style={styles.header}>
@@ -47,7 +55,12 @@ export function TrackableWidgetCard({
           color={goal.colour}
           style={{ marginRight: 6 }}
         />
-        <View style={styles.titleBlock}>
+        <Pressable
+          style={styles.titleBlock}
+          onPress={openEdit}
+          accessibilityRole="button"
+          accessibilityLabel="Open trackable details"
+        >
           <Text style={styles.title}>{goal.name}</Text>
           {dueCopy && (
             <Text
@@ -60,25 +73,7 @@ export function TrackableWidgetCard({
               {dueCopy.label}
             </Text>
           )}
-        </View>
-
-        <TouchableOpacity
-          style={styles.headerBtn}
-          onPress={() => {
-            if (onRequestEditTrackable) {
-              onRequestEditTrackable(goal._id);
-              return;
-            }
-            router.push(`/(app)/edit-trackable/${goal._id}`);
-          }}
-          accessibilityLabel="Open trackable details"
-        >
-          <Ionicons
-            name="open-outline"
-            size={18}
-            color={Colors.textSecondary}
-          />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <View style={styles.body}>{children}</View>
@@ -134,6 +129,5 @@ const styles = StyleSheet.create({
   },
   dueCopyDueToday: { color: Colors.warning },
   dueCopyOverdue: { color: Colors.error },
-  headerBtn: { padding: 4, marginLeft: 4 },
   body: { gap: 10, alignItems: "center" },
 });
