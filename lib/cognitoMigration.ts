@@ -26,11 +26,13 @@ import {
   CognitoUserPool,
   type CognitoUserSession,
 } from "amazon-cognito-identity-js";
+import { getExpoPublicConvexSiteUrl } from "./convexEnv";
+import { convexPublicUrlForClient } from "./convexPublicUrl";
 
 const REGION = process.env.EXPO_PUBLIC_COGNITO_REGION;
 const USER_POOL_ID = process.env.EXPO_PUBLIC_COGNITO_USER_POOL_ID;
 const APP_CLIENT_ID = process.env.EXPO_PUBLIC_COGNITO_APP_CLIENT_ID;
-const CONVEX_SITE_URL = process.env.EXPO_PUBLIC_CONVEX_SITE_URL;
+const CONVEX_SITE_URL = convexPublicUrlForClient(getExpoPublicConvexSiteUrl());
 
 let cachedPool: CognitoUserPool | null = null;
 function getPool(): CognitoUserPool {
