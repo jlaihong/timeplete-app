@@ -4,13 +4,19 @@ import { ConvexReactClient, ConvexProvider } from "convex/react";
 import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
 import { StatusBar } from "expo-status-bar";
 import { authClient } from "@/lib/auth-client";
+import { getExpoPublicConvexUrl } from "@/lib/convexEnv";
+import { convexPublicUrlForClient } from "@/lib/convexPublicUrl";
 
-const convex = new ConvexReactClient(
-  process.env.EXPO_PUBLIC_CONVEX_URL as string,
-  {
-    unsavedChangesWarning: false,
-  }
-);
+const convexUrl = convexPublicUrlForClient(getExpoPublicConvexUrl());
+if (!convexUrl) {
+  throw new Error(
+    "EXPO_PUBLIC_CONVEX_URL is missing. Run `npx convex dev` once, restart Expo, or use app.config.js (reads .convex/local ports when .env.local is absent).",
+  );
+}
+
+const convex = new ConvexReactClient(convexUrl, {
+  unsavedChangesWarning: false,
+});
 
 export default function RootLayout() {
   return (
