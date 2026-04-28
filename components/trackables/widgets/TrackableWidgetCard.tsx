@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Card } from "../../ui/Card";
@@ -23,7 +23,8 @@ interface TrackableWidgetCardProps {
  * Mirrors productivity-one's `goal-widget` chrome:
  *   - Colour-tinted "target" icon + name in the header
  *   - Days remaining / overdue copy (suppressed for `TRACKER`)
- *   - Tap the title block to open the edit screen
+ *   - Tap the title block or the top-right expand icon to open edit (route or
+ *     desktop `EditTrackableDialog` when `onRequestEditTrackable` is passed)
  *   - A live border highlight when this trackable's timer is ticking
  *     (handled inside `WidgetTimerRow`, not here, to avoid an extra hook).
  */
@@ -74,6 +75,18 @@ export function TrackableWidgetCard({
             </Text>
           )}
         </Pressable>
+
+        <TouchableOpacity
+          style={styles.headerBtn}
+          onPress={openEdit}
+          accessibilityLabel="Expand trackable details"
+        >
+          <Ionicons
+            name="open-outline"
+            size={18}
+            color={Colors.textSecondary}
+          />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.body}>{children}</View>
@@ -129,5 +142,6 @@ const styles = StyleSheet.create({
   },
   dueCopyDueToday: { color: Colors.warning },
   dueCopyOverdue: { color: Colors.error },
+  headerBtn: { padding: 4, marginLeft: 4 },
   body: { gap: 10, alignItems: "center" },
 });
