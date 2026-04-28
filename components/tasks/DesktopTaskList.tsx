@@ -939,15 +939,6 @@ export function DesktopTaskList({
       {title && (
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{title}</Text>
-          {onAddTask && (
-            <Pressable
-              onPress={() => onAddTask(today)}
-              hitSlop={8}
-              style={styles.headerAddBtn}
-            >
-              <Ionicons name="add-circle" size={24} color={Colors.primary} />
-            </Pressable>
-          )}
         </View>
       )}
 
@@ -1171,14 +1162,10 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  headerAddBtn: {
-    padding: 4,
-  },
   filterBar: {
     paddingHorizontal: 16,
     paddingVertical: 8,
