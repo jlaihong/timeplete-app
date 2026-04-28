@@ -13,11 +13,99 @@ import authConfig from "./auth.config";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
-const siteUrl = process.env.SITE_URL!;
+function stripTrailingSlash(s: string): string {
+  return s.replace(/\/+$/, "") || s;
+}
+
+/** Same dev server as `localhost` vs `127.0.0.1` — browsers send different `Origin`; CORS must allow both. */
+function localWebOriginVariants(primary: string): string[] {
+  const normalized = stripTrailingSlash(primary.trim());
+  const variants = new Set<string>([normalized]);
+  try {
+    const u = new URL(normalized);
+    const altHost =
+      u.hostname === "localhost"
+        ? "127.0.0.1"
+        : u.hostname === "127.0.0.1"
+          ? "localhost"
+          : null;
+    if (altHost) {
+      u.hostname = altHost;
+      variants.add(stripTrailingSlash(`${u.origin}${u.pathname}`));
+    }
+  } catch {
+    /* keep primary only */
+  }
+  return [...variants];
+}
+
+/**
+ * In dev we want any `http://localhost:<port>` (or 127.0.0.1 / [::1]) to be
+ * trusted, because the agent-flow worktree workflow spins up an Expo dev
+ * server on a fresh, unpredictable port for every task. Hard-coding a port
+ * list (8081–8085, 19000–19006) used to work but breaks as soon as an agent
+ * picks something else.
+ *
+ * The CORS layer (`convex-helpers/server/cors.js`, used internally by
+ * `authComponent.registerRoutes(..., { cors: true })`) only does exact-string
+ * origin matching, so a wildcard string like `http://localhost:*` does NOT
+ * help — instead we hand Better Auth a function that, given the live request,
+ * echoes the request's own `Origin` back when it's a loopback dev origin.
+ * Better Auth then forwards that to corsRouter as an "allowed origin", which
+ * makes it write the matching `Access-Control-Allow-Origin` header.
+ */
+function isLoopbackDevOrigin(origin: string): boolean {
+  try {
+    const u = new URL(origin);
+    if (u.protocol !== "http:") return false;
+    return (
+      u.hostname === "localhost" ||
+      u.hostname === "127.0.0.1" ||
+      u.hostname === "::1" ||
+      u.hostname === "[::1]"
+    );
+  } catch {
+    return false;
+  }
+}
+
+const siteUrlRaw = process.env.SITE_URL?.trim();
+if (!siteUrlRaw) {
+  throw new Error(
+    "Convex env SITE_URL is not set. For Expo Web, set it to your dev origin (e.g. npx convex env set SITE_URL http://localhost:8081).",
+  );
+}
+const siteUrl = stripTrailingSlash(siteUrlRaw);
+const staticTrustedOrigins = [
+  ...localWebOriginVariants(siteUrl),
+  "timeplete://",
+];
+
+/**
+ * `true` ↔ the deployment is running locally for development. Convex's local
+ * backend sets `CONVEX_CLOUD_URL` to a `127.0.0.1` URL; production deployments
+ * have a `*.convex.cloud` URL. We deliberately do NOT widen trustedOrigins on
+ * production, even though the function is request-scoped — defense in depth.
+ */
+const isLocalDevDeployment = (() => {
+  const cloud = process.env.CONVEX_CLOUD_URL ?? "";
+  return /^https?:\/\/(127\.0\.0\.1|localhost|\[?::1\]?)(:|\/|$)/.test(cloud);
+})();
 
 export const createAuth = (ctx: GenericCtx<DataModel>) => {
   return betterAuth({
-    trustedOrigins: [siteUrl, "timeplete://"],
+    trustedOrigins: (request: Request | undefined) => {
+      const origins = [...staticTrustedOrigins];
+      // Better Auth calls this with `undefined` during init (no live request yet)
+      // and again per-request via corsRouter / origin-check middleware.
+      if (isLocalDevDeployment && request) {
+        const reqOrigin = request.headers.get("origin");
+        if (reqOrigin && isLoopbackDevOrigin(reqOrigin)) {
+          origins.push(reqOrigin);
+        }
+      }
+      return origins;
+    },
     database: authComponent.adapter(ctx),
     emailAndPassword: {
       enabled: true,
