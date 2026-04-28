@@ -37,7 +37,9 @@ export function NumberWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
     : computeRequiredRate(goal, goal.totalDayCount, target, "", today);
 
   return (
-    <View style={{ gap: 12 }}>
+    <View
+      style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}
+    >
       <Button
         title="Add progress"
         variant="secondary"
@@ -101,7 +103,12 @@ const styles = StyleSheet.create({
   addBtn: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    alignSelf: "flex-start",
   },
-  statsRow: { flexDirection: "row", gap: 18, flexWrap: "wrap" },
+  statsRow: {
+    flexDirection: "row",
+    gap: 18,
+    flexWrap: "wrap",
+    justifyContent: "center",
+    alignSelf: "stretch",
+  },
 });

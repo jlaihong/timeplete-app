@@ -51,8 +51,10 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 10,
     paddingVertical: 4,
+    alignSelf: "stretch",
   },
   iconWrap: {
     width: 26,
@@ -61,7 +63,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  copy: { flex: 1 },
-  title: { fontSize: 14, fontWeight: "700", color: Colors.text },
-  sub: { fontSize: 12, color: Colors.textSecondary, marginTop: 1 },
+  copy: { alignItems: "center" },
+  title: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Colors.text,
+    textAlign: "center",
+  },
+  sub: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 1,
+    textAlign: "center",
+  },
 });

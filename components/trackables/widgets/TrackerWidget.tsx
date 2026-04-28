@@ -24,7 +24,9 @@ export function TrackerWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
   const avgHours = goal.dailyTimeAverageSeconds / 3600;
 
   return (
-    <View style={{ gap: 12 }}>
+    <View
+      style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}
+    >
       <View style={styles.actionsRow}>
         {trackTime && <WidgetTimerRow trackableId={goal._id} />}
         <Button
@@ -90,7 +92,9 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 10,
+    alignSelf: "stretch",
   },
   addBtn: {
     paddingVertical: 6,
@@ -101,5 +105,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 18,
     flexWrap: "wrap",
+    justifyContent: "center",
+    alignSelf: "stretch",
   },
 });
