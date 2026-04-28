@@ -139,6 +139,11 @@ export default function LoginScreen() {
             onChangeText={setPassword}
             placeholder="Your password"
             secureTextEntry
+            returnKeyType="go"
+            onSubmitEditing={() => {
+              if (loading) return;
+              void handleLogin();
+            }}
           />
 
           {statusMessage ? (
