@@ -1,0 +1,125 @@
+diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Overlay.js b/node_modules/react-native-drawer-layout/lib/module/views/Overlay.js
+index abe6647..eab47b1 100644
+--- a/node_modules/react-native-drawer-layout/lib/module/views/Overlay.js
++++ b/node_modules/react-native-drawer-layout/lib/module/views/Overlay.js
+@@ -1,42 +1,35 @@
+ "use strict";
+ 
+-import { Pressable, StyleSheet, View } from 'react-native';
++import { StyleSheet, View } from 'react-native';
+ import { jsx as _jsx } from "react/jsx-runtime";
++/**
++ * Pass-through overlay: no scrim and no touch interception so the main screen
++ * stays fully usable while the drawer is open (close via menu / swipe only).
++ */
+ export function Overlay({
+-  open,
+-  onPress,
++  open: _open,
++  onPress: _onPress,
+   style,
+-  accessibilityLabel = 'Close drawer',
++  accessibilityLabel: _accessibilityLabel = 'Close drawer',
+   ...rest
+ }) {
+   return /*#__PURE__*/_jsx(View, {
+     ...rest,
+     style: [StyleSheet.absoluteFill, styles.overlay, {
+-      opacity: open ? 1 : 0,
+-      pointerEvents: open ? 'auto' : 'none'
++      opacity: 0,
++      pointerEvents: 'none'
+     }, style],
+-    "aria-hidden": !open,
+-    children: /*#__PURE__*/_jsx(Pressable, {
+-      onPress: onPress,
+-      style: [styles.pressable, {
+-        pointerEvents: open ? 'auto' : 'none'
+-      }],
+-      role: "button",
+-      "aria-label": accessibilityLabel
+-    })
++    "aria-hidden": true
+   });
+ }
+ const styles = StyleSheet.create({
+   overlay: {
+-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
++    backgroundColor: 'transparent',
+     // Disable touch highlight on mobile Safari.
+     // WebkitTapHighlightColor must be used outside of StyleSheet.create because react-native-web will omit the property.
+     // @ts-expect-error: WebkitTapHighlightColor is web only
+     WebkitTapHighlightColor: 'transparent',
+     transition: 'opacity 0.3s'
+-  },
+-  pressable: {
+-    flex: 1
+   }
+ });
+ //# sourceMappingURL=Overlay.js.map
+diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Overlay.native.js b/node_modules/react-native-drawer-layout/lib/module/views/Overlay.native.js
+index 347d806..1c4560b 100644
+--- a/node_modules/react-native-drawer-layout/lib/module/views/Overlay.native.js
++++ b/node_modules/react-native-drawer-layout/lib/module/views/Overlay.native.js
+@@ -1,48 +1,41 @@
+ "use strict";
+ 
+-import { Pressable, StyleSheet } from 'react-native';
++import { StyleSheet } from 'react-native';
+ import Animated, { useAnimatedProps, useAnimatedStyle } from 'react-native-reanimated';
+ import { jsx as _jsx } from "react/jsx-runtime";
+ const PROGRESS_EPSILON = 0.05;
++
++/**
++ * Pass-through overlay: no scrim and no touch interception so the main screen
++ * stays fully usable while the drawer is open (close via menu / swipe only).
++ */
+ export function Overlay({
+   progress,
+-  onPress,
++  onPress: _onPress,
+   style,
+-  accessibilityLabel = 'Close drawer',
++  accessibilityLabel: _accessibilityLabel = 'Close drawer',
+   ...rest
+ }) {
+   const animatedStyle = useAnimatedStyle(() => {
+     return {
+-      opacity: progress.value
++      opacity: 0,
+     };
+-  }, [progress]);
++  }, []);
+   const animatedProps = useAnimatedProps(() => {
+-    const active = progress.value > PROGRESS_EPSILON;
+     return {
+-      'pointerEvents': active ? 'auto' : 'none',
+-      'aria-hidden': !active
++      'pointerEvents': 'none',
++      'aria-hidden': progress.value <= PROGRESS_EPSILON,
+     };
+   }, [progress]);
+   return /*#__PURE__*/_jsx(Animated.View, {
+     ...rest,
+     style: [StyleSheet.absoluteFill, styles.overlay, animatedStyle, style],
+     animatedProps: animatedProps,
+-    children: /*#__PURE__*/_jsx(Pressable, {
+-      onPress: onPress,
+-      style: styles.pressable,
+-      role: "button",
+-      "aria-label": accessibilityLabel,
+-      accessible: true
+-    })
+   });
+ }
+ const styles = StyleSheet.create({
+   overlay: {
+-    backgroundColor: 'rgba(0, 0, 0, 0.5)'
++    backgroundColor: 'transparent',
+   },
+-  pressable: {
+-    flex: 1,
+-    pointerEvents: 'auto'
+-  }
+ });
+ //# sourceMappingURL=Overlay.native.js.map

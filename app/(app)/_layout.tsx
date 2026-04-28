@@ -220,9 +220,11 @@ export default function AppLayout() {
         defaultStatus={isDesktop ? "open" : "closed"}
         screenOptions={{
           headerShown: false,
-          drawerType: "front",
+          // Slide keeps the drawer as a side panel while shifting content; avoids
+          // covering the workspace like `front` when the overlay is pass-through.
+          drawerType: "slide",
           swipeEnabled: true,
-          overlayColor: "rgba(0,0,0,0.5)",
+          overlayColor: "transparent",
           drawerStyle: {
             backgroundColor: Colors.sidenav,
             width: 250,

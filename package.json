@@ -7,7 +7,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@better-auth/expo": "1.5.3",
@@ -51,6 +52,7 @@
     "@types/pg": "^8.20.0",
     "@types/react": "~19.1.0",
     "@types/react-dom": "^19.2.3",
+    "patch-package": "^8.0.1",
     "pg": "^8.20.0",
     "tsx": "^4.21.0",
     "typescript": "~5.9.2"
