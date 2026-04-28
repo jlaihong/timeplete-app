@@ -44,8 +44,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         label="Home"
         focused={sel.home}
         activeBackgroundColor={Colors.sidenavItemActive}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.text}
+        inactiveTintColor={Colors.productivityNavTextMuted}
+        activeTintColor={Colors.productivityNavText}
         style={drawerItemStyle}
         icon={({ size, color }) => (
           <Ionicons name="home-outline" size={size} color={color} />
@@ -56,8 +56,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         label="Trackables"
         focused={sel.goals}
         activeBackgroundColor={Colors.sidenavItemActive}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.text}
+        inactiveTintColor={Colors.productivityNavTextMuted}
+        activeTintColor={Colors.productivityNavText}
         style={drawerItemStyle}
         icon={({ size, color }) => (
           <Ionicons name="analytics-outline" size={size} color={color} />
@@ -68,8 +68,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         label="Calendar"
         focused={sel.calendar}
         activeBackgroundColor={Colors.sidenavItemActive}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.text}
+        inactiveTintColor={Colors.productivityNavTextMuted}
+        activeTintColor={Colors.productivityNavText}
         style={drawerItemStyle}
         icon={({ size, color }) => (
           <Ionicons name="calendar-outline" size={size} color={color} />
@@ -80,8 +80,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         label="Analytics"
         focused={sel.analytics}
         activeBackgroundColor={Colors.sidenavItemActive}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.text}
+        inactiveTintColor={Colors.productivityNavTextMuted}
+        activeTintColor={Colors.productivityNavText}
         style={drawerItemStyle}
         icon={({ size, color }) => (
           <Ionicons name="bar-chart-outline" size={size} color={color} />
@@ -94,8 +94,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
           label="Reviews"
           focused={sel.reviews}
           activeBackgroundColor={Colors.sidenavItemActive}
-          inactiveTintColor={Colors.textSecondary}
-          activeTintColor={Colors.text}
+          inactiveTintColor={Colors.productivityNavTextMuted}
+          activeTintColor={Colors.productivityNavText}
           style={drawerItemStyle}
           icon={({ size, color }) => (
             <Ionicons name="journal-outline" size={size} color={color} />
@@ -108,8 +108,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         label="Tags"
         focused={sel.tags}
         activeBackgroundColor={Colors.sidenavItemActive}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.text}
+        inactiveTintColor={Colors.productivityNavTextMuted}
+        activeTintColor={Colors.productivityNavText}
         style={drawerItemStyle}
         icon={({ size, color }) => (
           <Ionicons name="pricetag-outline" size={size} color={color} />
@@ -129,8 +129,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
               label={list.name}
               focused={sel.activeListId === list._id}
               activeBackgroundColor={Colors.sidenavItemActive}
-              inactiveTintColor={Colors.textSecondary}
-              activeTintColor={Colors.text}
+              inactiveTintColor={Colors.productivityNavTextMuted}
+              activeTintColor={Colors.productivityNavText}
               style={drawerItemStyle}
               icon={() => (
                 <View
@@ -144,8 +144,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         label="All Lists"
         focused={sel.allLists}
         activeBackgroundColor={Colors.sidenavItemActive}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.text}
+        inactiveTintColor={Colors.productivityNavTextMuted}
+        activeTintColor={Colors.productivityNavText}
         style={drawerItemStyle}
         icon={({ size, color }) => (
           <Ionicons name="list-outline" size={size} color={color} />
@@ -159,8 +159,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         label="Shared with Me"
         focused={sel.shared}
         activeBackgroundColor={Colors.sidenavItemActive}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.text}
+        inactiveTintColor={Colors.productivityNavTextMuted}
+        activeTintColor={Colors.productivityNavText}
         style={drawerItemStyle}
         icon={({ size, color }) => (
           <Ionicons name="people-outline" size={size} color={color} />
@@ -228,6 +228,7 @@ export default function AppLayout() {
           drawerStyle: {
             backgroundColor: Colors.sidenav,
             width: 250,
+            borderRightWidth: 0,
           },
         }}
       >
@@ -250,24 +251,24 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
+    borderBottomColor: "rgba(255, 255, 255, 0.22)",
   },
   drawerTitle: {
     fontSize: 24,
     fontWeight: "800",
-    color: Colors.text,
+    color: Colors.productivityNavText,
     letterSpacing: -0.5,
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.outlineVariant,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
     marginVertical: 8,
     marginHorizontal: 16,
   },
   sectionTitle: {
     fontSize: 12,
     fontWeight: "600",
-    color: Colors.textTertiary,
+    color: "rgba(255, 255, 255, 0.65)",
     textTransform: "uppercase",
     paddingHorizontal: 20,
     paddingVertical: 8,
