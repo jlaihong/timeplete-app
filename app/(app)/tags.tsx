@@ -17,6 +17,7 @@ import { Input } from "../../components/ui/Input";
 import { ColorPicker } from "../../components/ui/ColorPicker";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Stack } from "expo-router";
+import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
 
 export default function TagsScreen() {
   const tags = useQuery(api.tags.search);
@@ -56,7 +57,13 @@ export default function TagsScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ headerShown: true, title: "Tags" }} />
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: "Tags",
+          headerLeft: () => <DrawerMenuButton />,
+        }}
+      />
 
       <View style={styles.tabs}>
         <TouchableOpacity

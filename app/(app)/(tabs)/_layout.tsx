@@ -2,22 +2,14 @@ import React from "react";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../../constants/colors";
-import { TouchableOpacity, Platform } from "react-native";
-import { DrawerActions, useNavigation } from "@react-navigation/native";
+import { Platform } from "react-native";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
+import { DrawerMenuButton } from "../../../components/layout/DrawerMenuButton";
 
 export default function TabsLayout() {
   const isDesktop = useIsDesktop();
-  const navigation = useNavigation();
 
-  const headerLeft = () => (
-    <TouchableOpacity
-      onPress={() => navigation.dispatch(DrawerActions.toggleDrawer())}
-      style={{ paddingLeft: 16 }}
-    >
-      <Ionicons name="menu" size={24} color={Colors.text} />
-    </TouchableOpacity>
-  );
+  const headerLeft = () => <DrawerMenuButton />;
 
   return (
     <Tabs
@@ -33,10 +25,10 @@ export default function TabsLayout() {
               paddingBottom: Platform.OS === "ios" ? 28 : 8,
               paddingTop: 8,
             },
-        headerShown: !isDesktop,
+        headerShown: true,
         headerStyle: { backgroundColor: Colors.surfaceContainer },
         headerTintColor: Colors.text,
-        ...(isDesktop ? {} : { headerLeft }),
+        headerLeft,
       }}
     >
       <Tabs.Screen

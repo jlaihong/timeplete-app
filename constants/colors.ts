@@ -44,6 +44,8 @@ export const Colors = {
   appBackground: "#333333",
   sidenav: "#0F0F0F",
   sidenavItemHover: "#4F4F4F",
+  /** Background for the currently selected drawer row */
+  sidenavItemActive: "#2F3638",
 
   inverseSurface: "#DDE4E5",
   inverseOnSurface: "#2A3233",
