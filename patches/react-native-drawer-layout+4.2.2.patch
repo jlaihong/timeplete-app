@@ -1,5 +1,5 @@
 diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js
-index af7d7a9..9733a0e 100644
+index af7d7a9..60c62c4 100644
 --- a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js
 +++ b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js
 @@ -46,15 +46,19 @@ export function Drawer({
@@ -18,7 +18,7 @@ index af7d7a9..9733a0e 100644
      transform: `translateX(${drawerTranslateX})`
 -  } : null;
 +  } : {
-+    transition: 'width 0.25s ease-out',
++    transition: 'width 0.38s cubic-bezier(0.4, 0, 0.2, 1)',
 +    minWidth: 0
 +  };
    const contentTranslateX = open ?
@@ -69,8 +69,12 @@ index af7d7a9..9733a0e 100644
        style: styles.content,
        children: children
      }), drawerType !== 'permanent' ? /*#__PURE__*/_jsx(Overlay, {
-@@ -118,7 +142,8 @@ const styles = StyleSheet.create({
-     backgroundColor: 'white'
+@@ -115,10 +139,11 @@ const styles = StyleSheet.create({
+     top: 0,
+     bottom: 0,
+     maxWidth: '100%',
+-    backgroundColor: 'white'
++    backgroundColor: 'transparent'
    },
    content: {
 -    flex: 1
@@ -80,10 +84,40 @@ index af7d7a9..9733a0e 100644
  });
  //# sourceMappingURL=Drawer.js.map
 diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
-index c5882f9..9409245 100644
+index c5882f9..96f2adc 100644
 --- a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
 +++ b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
-@@ -269,7 +269,7 @@ export function Drawer({
+@@ -1,7 +1,7 @@
+ "use strict";
+ 
+ import * as React from 'react';
+-import { I18nManager, InteractionManager, Keyboard, Platform, StatusBar, StyleSheet, useWindowDimensions, View } from 'react-native';
++import { I18nManager, InteractionManager, Keyboard, LayoutAnimation, Platform, StatusBar, StyleSheet, UIManager, useWindowDimensions, View } from 'react-native';
+ import Animated, { interpolate, ReduceMotion, runOnJS, useAnimatedStyle, useDerivedValue, useSharedValue, withSpring } from 'react-native-reanimated';
+ import useLatestCallback from 'use-latest-callback';
+ import { DrawerGestureContext } from "../utils/DrawerGestureContext.js";
+@@ -72,6 +72,20 @@ export function Drawer({
+     hideStatusBar(isOpen);
+     return () => hideStatusBar(false);
+   }, [isOpen, hideStatusBarOnOpen, statusBarAnimation, hideStatusBar]);
++  React.useLayoutEffect(() => {
++    if (drawerType !== 'permanent') {
++      return;
++    }
++    if (Platform.OS === 'android') {
++      UIManager.setLayoutAnimationEnabledExperimental?.(true);
++    }
++    LayoutAnimation.configureNext({
++      duration: 340,
++      update: {
++        type: LayoutAnimation.Types.easeInEaseOut,
++      },
++    });
++  }, [open, drawerType]);
+   const interactionHandleRef = React.useRef(null);
+   const startInteraction = useLatestCallback(() => {
+     interactionHandleRef.current = InteractionManager.createInteractionHandle();
+@@ -269,7 +283,7 @@ export function Drawer({
              children: [/*#__PURE__*/_jsxs(Animated.View, {
                style: [styles.content, contentAnimatedStyle],
                children: [/*#__PURE__*/_jsx(View, {
@@ -92,7 +126,7 @@ index c5882f9..9409245 100644
                  style: styles.content,
                  children: children
                }), drawerType !== 'permanent' ? /*#__PURE__*/_jsx(Overlay, {
-@@ -282,9 +282,23 @@ export function Drawer({
+@@ -282,9 +296,23 @@ export function Drawer({
              }), /*#__PURE__*/_jsx(Animated.View, {
                removeClippedSubviews: Platform.OS !== 'ios',
                style: [styles.drawer, {
