@@ -9,20 +9,28 @@ import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import {
   DrawerContentScrollView,
   DrawerItem,
+  type DrawerContentComponentProps,
 } from "@react-navigation/drawer";
-import { router, Redirect } from "expo-router";
+import { router, Redirect, type Href } from "expo-router";
 import { authClient } from "../../lib/auth-client";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
+import { useDrawerSelection } from "../../hooks/useDrawerSelection";
 import { TimerDisplay } from "../../components/timer/TimerDisplay";
 
-const drawerLabelStyle = { color: Colors.text };
 const drawerItemStyle = { borderRadius: 8 };
 
-function CustomDrawerContent(props: any) {
+function CustomDrawerContent(props: DrawerContentComponentProps) {
+  const { navigation } = props;
   const { isAuthenticated } = useAuth();
   const isDesktop = useIsDesktop();
+  const sel = useDrawerSelection();
   const lists = useQuery(api.lists.search, isAuthenticated ? {} : "skip");
+
+  const go = (href: Href) => {
+    router.push(href);
+    navigation.closeDrawer();
+  };
 
   return (
     <DrawerContentScrollView {...props} style={styles.drawer}>
@@ -32,81 +40,79 @@ function CustomDrawerContent(props: any) {
 
       <DrawerItem
         label="Home"
-        labelStyle={drawerLabelStyle}
+        focused={sel.home}
+        activeBackgroundColor={Colors.sidenavItemActive}
+        inactiveTintColor={Colors.textSecondary}
+        activeTintColor={Colors.text}
         style={drawerItemStyle}
-        icon={({ size }) => (
-          <Ionicons name="home-outline" size={size} color={Colors.primary} />
+        icon={({ size, color }) => (
+          <Ionicons name="home-outline" size={size} color={color} />
         )}
-        onPress={() => router.push("/(app)/(tabs)")}
+        onPress={() => go("/(app)/(tabs)")}
       />
       <DrawerItem
         label="Trackables"
-        labelStyle={drawerLabelStyle}
+        focused={sel.goals}
+        activeBackgroundColor={Colors.sidenavItemActive}
+        inactiveTintColor={Colors.textSecondary}
+        activeTintColor={Colors.text}
         style={drawerItemStyle}
-        icon={({ size }) => (
-          <Ionicons
-            name="analytics-outline"
-            size={size}
-            color={Colors.primary}
-          />
+        icon={({ size, color }) => (
+          <Ionicons name="analytics-outline" size={size} color={color} />
         )}
-        onPress={() => router.push("/(app)/(tabs)/goals")}
+        onPress={() => go("/(app)/(tabs)/goals")}
       />
       <DrawerItem
         label="Calendar"
-        labelStyle={drawerLabelStyle}
+        focused={sel.calendar}
+        activeBackgroundColor={Colors.sidenavItemActive}
+        inactiveTintColor={Colors.textSecondary}
+        activeTintColor={Colors.text}
         style={drawerItemStyle}
-        icon={({ size }) => (
-          <Ionicons
-            name="calendar-outline"
-            size={size}
-            color={Colors.primary}
-          />
+        icon={({ size, color }) => (
+          <Ionicons name="calendar-outline" size={size} color={color} />
         )}
-        onPress={() => router.push("/(app)/(tabs)/calendar")}
+        onPress={() => go("/(app)/(tabs)/calendar")}
       />
       <DrawerItem
         label="Analytics"
-        labelStyle={drawerLabelStyle}
+        focused={sel.analytics}
+        activeBackgroundColor={Colors.sidenavItemActive}
+        inactiveTintColor={Colors.textSecondary}
+        activeTintColor={Colors.text}
         style={drawerItemStyle}
-        icon={({ size }) => (
-          <Ionicons
-            name="bar-chart-outline"
-            size={size}
-            color={Colors.primary}
-          />
+        icon={({ size, color }) => (
+          <Ionicons name="bar-chart-outline" size={size} color={color} />
         )}
-        onPress={() => router.push("/(app)/(tabs)/analytics")}
+        onPress={() => go("/(app)/(tabs)/analytics")}
       />
 
       {!isDesktop && (
         <DrawerItem
           label="Reviews"
-          labelStyle={drawerLabelStyle}
+          focused={sel.reviews}
+          activeBackgroundColor={Colors.sidenavItemActive}
+          inactiveTintColor={Colors.textSecondary}
+          activeTintColor={Colors.text}
           style={drawerItemStyle}
-          icon={({ size }) => (
-            <Ionicons
-              name="journal-outline"
-              size={size}
-              color={Colors.primary}
-            />
+          icon={({ size, color }) => (
+            <Ionicons name="journal-outline" size={size} color={color} />
           )}
-          onPress={() => router.push("/(app)/(tabs)/reviews")}
+          onPress={() => go("/(app)/(tabs)/reviews")}
         />
       )}
 
       <DrawerItem
         label="Tags"
-        labelStyle={drawerLabelStyle}
+        focused={sel.tags}
+        activeBackgroundColor={Colors.sidenavItemActive}
+        inactiveTintColor={Colors.textSecondary}
+        activeTintColor={Colors.text}
         style={drawerItemStyle}
-        icon={({ size }) => (
-          <Ionicons
-            name="pricetag-outline"
-            size={size}
-            color={Colors.primary}
-          />
+        icon={({ size, color }) => (
+          <Ionicons name="pricetag-outline" size={size} color={color} />
         )}
-        onPress={() => router.push("/(app)/tags")}
+        onPress={() => go("/(app)/tags")}
       />
 
       <View style={styles.divider} />
@@ -114,49 +120,50 @@ function CustomDrawerContent(props: any) {
       <Text style={styles.sectionTitle}>My Lists</Text>
       {lists &&
         lists
-          .filter((l: any) => !l.archived)
-          .map((list: any) => (
+          .filter((l: { archived?: boolean }) => !l.archived)
+          .map((list: { _id: string; name: string; colour: string }) => (
             <DrawerItem
               key={list._id}
               label={list.name}
-              labelStyle={drawerLabelStyle}
+              focused={sel.activeListId === list._id}
+              activeBackgroundColor={Colors.sidenavItemActive}
+              inactiveTintColor={Colors.textSecondary}
+              activeTintColor={Colors.text}
               style={drawerItemStyle}
               icon={() => (
                 <View
                   style={[styles.listDot, { backgroundColor: list.colour }]}
                 />
               )}
-              onPress={() => router.push(`/(app)/lists/${list._id}`)}
+              onPress={() => go(`/(app)/lists/${list._id}`)}
             />
           ))}
       <DrawerItem
         label="All Lists"
-        labelStyle={drawerLabelStyle}
+        focused={sel.allLists}
+        activeBackgroundColor={Colors.sidenavItemActive}
+        inactiveTintColor={Colors.textSecondary}
+        activeTintColor={Colors.text}
         style={drawerItemStyle}
-        icon={({ size }) => (
-          <Ionicons
-            name="list-outline"
-            size={size}
-            color={Colors.textSecondary}
-          />
+        icon={({ size, color }) => (
+          <Ionicons name="list-outline" size={size} color={color} />
         )}
-        onPress={() => router.push("/(app)/lists")}
+        onPress={() => go("/(app)/lists")}
       />
 
       <View style={styles.divider} />
 
       <DrawerItem
         label="Shared with Me"
-        labelStyle={drawerLabelStyle}
+        focused={sel.shared}
+        activeBackgroundColor={Colors.sidenavItemActive}
+        inactiveTintColor={Colors.textSecondary}
+        activeTintColor={Colors.text}
         style={drawerItemStyle}
-        icon={({ size }) => (
-          <Ionicons
-            name="people-outline"
-            size={size}
-            color={Colors.textSecondary}
-          />
+        icon={({ size, color }) => (
+          <Ionicons name="people-outline" size={size} color={color} />
         )}
-        onPress={() => router.push("/(app)/shared")}
+        onPress={() => go("/(app)/shared")}
       />
 
       <View style={styles.divider} />
@@ -174,6 +181,7 @@ function CustomDrawerContent(props: any) {
         )}
         onPress={async () => {
           await authClient.signOut();
+          navigation.closeDrawer();
           router.replace("/");
         }}
       />
@@ -208,17 +216,16 @@ export default function AppLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <TimerDisplay />
       <Drawer
-        drawerContent={(props) => <CustomDrawerContent {...props} />}
+        drawerContent={(p) => <CustomDrawerContent {...p} />}
+        defaultStatus={isDesktop ? "open" : "closed"}
         screenOptions={{
           headerShown: false,
-          drawerType: isDesktop ? "permanent" : "front",
-          swipeEnabled: !isDesktop,
-          overlayColor: isDesktop ? "transparent" : "rgba(0,0,0,0.5)",
+          drawerType: "front",
+          swipeEnabled: true,
+          overlayColor: "rgba(0,0,0,0.5)",
           drawerStyle: {
             backgroundColor: Colors.sidenav,
             width: 250,
-            borderRightWidth: isDesktop ? 1 : 0,
-            borderRightColor: Colors.outlineVariant,
           },
         }}
       >
@@ -246,7 +253,7 @@ const styles = StyleSheet.create({
   drawerTitle: {
     fontSize: 24,
     fontWeight: "800",
-    color: Colors.primary,
+    color: Colors.text,
     letterSpacing: -0.5,
   },
   divider: {

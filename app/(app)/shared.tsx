@@ -15,6 +15,7 @@ import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Stack } from "expo-router";
+import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
 
 export default function SharedScreen() {
   const shared = useQuery(api.sharing.getSharedWithMe, {});
@@ -24,7 +25,13 @@ export default function SharedScreen() {
   if (!shared) {
     return (
       <View style={styles.loading}>
-        <Stack.Screen options={{ headerShown: true, title: "Shared with Me" }} />
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            title: "Shared with Me",
+            headerLeft: () => <DrawerMenuButton />,
+          }}
+        />
         <Text>Loading...</Text>
       </View>
     );
@@ -55,7 +62,13 @@ export default function SharedScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ headerShown: true, title: "Shared with Me" }} />
+      <Stack.Screen
+        options={{
+          headerShown: true,
+          title: "Shared with Me",
+          headerLeft: () => <DrawerMenuButton />,
+        }}
+      />
 
       {allItems.length === 0 ? (
         <EmptyState
