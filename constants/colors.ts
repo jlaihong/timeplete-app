@@ -43,15 +43,21 @@ export const Colors = {
   taskPanel: "#4F4F4F",
   appBackground: "#333333",
 
-  /** Productivity-one TopBar chrome (#5B6E9E) — sidebar / legacy nav tone */
+  /**
+   * Productivity-one TopBar: solid #5B6E9E + #FFFFFF (App.css).
+   * Companion solids below avoid washed-out rgba on the indigo rail.
+   */
   productivityNav: "#5B6E9E",
+  /** Darker indigo — dividers / pressed row (same hue as TopBar) */
+  productivityNavDeep: "#4A5D85",
   productivityNavText: "#FFFFFF",
-  productivityNavTextMuted: "rgba(255, 255, 255, 0.82)",
+  /** Sidebar secondary labels — solid cool gray, not translucent white */
+  productivityNavTextMuted: "#C9D3EE",
 
   sidenav: "#5B6E9E",
-  sidenavItemHover: "rgba(255, 255, 255, 0.12)",
-  /** Highlight row on blue sidebar */
-  sidenavItemActive: "rgba(255, 255, 255, 0.2)",
+  sidenavItemHover: "#5269A3",
+  /** Selected row — clearly darker than bar (TopBar has no equivalent; fits M3 nav) */
+  sidenavItemActive: "#4A5D85",
 
   inverseSurface: "#DDE4E5",
   inverseOnSurface: "#2A3233",
@@ -71,16 +77,23 @@ export const Colors = {
   },
 };
 
-/** Stack / tab headers — flush with page background (no hairline seam) */
+/**
+ * App bar — match productivity-one TopBar (#5B6E9E + white title/actions).
+ * Content below stays on Colors.background.
+ */
 export const stackHeaderChromeOptions = {
   headerShadowVisible: false,
   headerStyle: {
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.productivityNav,
     borderBottomWidth: 0,
     elevation: 0,
     shadowOpacity: 0,
   },
-  headerTintColor: Colors.text,
+  headerTintColor: Colors.white,
+  headerTitleStyle: {
+    color: Colors.white,
+    fontWeight: "600" as const,
+  },
 } as const;
 
 export const TRACKABLE_COLORS = [

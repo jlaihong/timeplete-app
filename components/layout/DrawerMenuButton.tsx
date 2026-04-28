@@ -13,7 +13,7 @@ export function DrawerMenuButton() {
       accessibilityRole="button"
       accessibilityLabel="Open navigation menu"
     >
-      <Ionicons name="menu" size={24} color={Colors.text} />
+      <Ionicons name="menu" size={24} color={Colors.white} />
     </TouchableOpacity>
   );
 }

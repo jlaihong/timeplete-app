@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.22)",
+    borderBottomColor: Colors.productivityNavDeep,
   },
   drawerTitle: {
     fontSize: 24,
@@ -261,14 +261,14 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    backgroundColor: Colors.productivityNavDeep,
     marginVertical: 8,
     marginHorizontal: 16,
   },
   sectionTitle: {
     fontSize: 12,
     fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.65)",
+    color: Colors.productivityNavTextMuted,
     textTransform: "uppercase",
     paddingHorizontal: 20,
     paddingVertical: 8,
