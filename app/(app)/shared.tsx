@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { Colors } from "../../constants/colors";
+import { Colors, stackHeaderChromeOptions } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
@@ -27,6 +27,7 @@ export default function SharedScreen() {
       <View style={styles.loading}>
         <Stack.Screen
           options={{
+            ...stackHeaderChromeOptions,
             headerShown: true,
             title: "Shared with Me",
             headerLeft: () => <DrawerMenuButton />,
@@ -64,6 +65,7 @@ export default function SharedScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
+          ...stackHeaderChromeOptions,
           headerShown: true,
           title: "Shared with Me",
           headerLeft: () => <DrawerMenuButton />,

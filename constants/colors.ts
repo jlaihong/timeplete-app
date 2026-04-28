@@ -42,10 +42,16 @@ export const Colors = {
 
   taskPanel: "#4F4F4F",
   appBackground: "#333333",
-  sidenav: "#0F0F0F",
-  sidenavItemHover: "#4F4F4F",
-  /** Background for the currently selected drawer row */
-  sidenavItemActive: "#2F3638",
+
+  /** Productivity-one TopBar chrome (#5B6E9E) — sidebar / legacy nav tone */
+  productivityNav: "#5B6E9E",
+  productivityNavText: "#FFFFFF",
+  productivityNavTextMuted: "rgba(255, 255, 255, 0.82)",
+
+  sidenav: "#5B6E9E",
+  sidenavItemHover: "rgba(255, 255, 255, 0.12)",
+  /** Highlight row on blue sidebar */
+  sidenavItemActive: "rgba(255, 255, 255, 0.2)",
 
   inverseSurface: "#DDE4E5",
   inverseOnSurface: "#2A3233",
@@ -64,6 +70,18 @@ export const Colors = {
     tracker: "#E91E63",
   },
 };
+
+/** Stack / tab headers — flush with page background (no hairline seam) */
+export const stackHeaderChromeOptions = {
+  headerShadowVisible: false,
+  headerStyle: {
+    backgroundColor: Colors.background,
+    borderBottomWidth: 0,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  headerTintColor: Colors.text,
+} as const;
 
 export const TRACKABLE_COLORS = [
   "#6750A4",

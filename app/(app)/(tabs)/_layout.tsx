@@ -1,7 +1,7 @@
 import React from "react";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Colors } from "../../../constants/colors";
+import { Colors, stackHeaderChromeOptions } from "../../../constants/colors";
 import { Platform } from "react-native";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
 import { DrawerMenuButton } from "../../../components/layout/DrawerMenuButton";
@@ -26,8 +26,7 @@ export default function TabsLayout() {
               paddingTop: 8,
             },
         headerShown: true,
-        headerStyle: { backgroundColor: Colors.surfaceContainer },
-        headerTintColor: Colors.text,
+        ...stackHeaderChromeOptions,
         headerLeft,
       }}
     >
