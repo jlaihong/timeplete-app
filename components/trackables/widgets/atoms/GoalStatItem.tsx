@@ -26,13 +26,19 @@ export function GoalStatItem({ label, value, meta }: GoalStatItemProps) {
 }
 
 const styles = StyleSheet.create({
-  item: { alignItems: "flex-start" },
-  row: { flexDirection: "row", alignItems: "center", gap: 4 },
+  item: { alignItems: "center" },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
   value: { fontSize: 16, fontWeight: "700", color: Colors.text },
   label: {
     fontSize: 11,
     color: Colors.textTertiary,
     textTransform: "lowercase",
     marginTop: 1,
+    textAlign: "center",
   },
 });

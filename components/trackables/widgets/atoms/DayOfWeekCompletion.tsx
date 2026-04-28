@@ -75,6 +75,7 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: "row",
     alignItems: "stretch",
+    alignSelf: "stretch",
     backgroundColor: Colors.surfaceContainer,
     borderRadius: 999,
     padding: 3,

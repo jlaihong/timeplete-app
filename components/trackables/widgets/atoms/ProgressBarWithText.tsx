@@ -55,11 +55,12 @@ function defaultFormat(n: number): string {
 }
 
 const styles = StyleSheet.create({
-  container: { width: "100%" },
+  container: { width: "100%", alignSelf: "stretch" },
   label: {
     fontSize: 12,
     color: Colors.textSecondary,
     marginBottom: 4,
+    textAlign: "center",
   },
   track: {
     height: 6,

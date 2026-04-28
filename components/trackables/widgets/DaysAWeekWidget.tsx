@@ -14,7 +14,7 @@ export function DaysAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
   const target = goal.targetNumberOfDaysAWeek ?? 0;
 
   return (
-    <View style={{ gap: 12 }}>
+    <View style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}>
       <DayOfWeekCompletion
         days={goal.weeklyDayCompletion}
         colour={goal.colour}

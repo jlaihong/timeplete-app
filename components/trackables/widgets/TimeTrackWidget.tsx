@@ -39,7 +39,9 @@ export function TimeTrackWidget({
     : computeRequiredRate(goal, totalHours, targetHours, "h", today);
 
   return (
-    <View style={{ gap: 12 }}>
+    <View
+      style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}
+    >
       <View style={styles.actionsRow}>
         <WidgetTimerRow trackableId={goal._id} />
         <Button
@@ -100,7 +102,9 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 10,
+    alignSelf: "stretch",
   },
   addBtn: {
     paddingVertical: 6,
@@ -111,5 +115,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 18,
     flexWrap: "wrap",
+    justifyContent: "center",
+    alignSelf: "stretch",
   },
 });
