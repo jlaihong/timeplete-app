@@ -104,9 +104,7 @@ export function TrackableWidgetCard({
           style={{ marginRight: 6 }}
         />
         <View style={styles.titleBlock}>
-          <Text style={styles.title} numberOfLines={1}>
-            {goal.name}
-          </Text>
+          <Text style={styles.title}>{goal.name}</Text>
           {dueCopy && (
             <Text
               style={[
@@ -224,13 +222,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10,
   },
-  titleBlock: { flex: 1, flexDirection: "column" },
-  title: { fontSize: 16, fontWeight: "700", color: Colors.text },
-  dueCopy: { fontSize: 11, color: Colors.textTertiary, marginTop: 1 },
+  titleBlock: { flex: 1, flexDirection: "column", alignItems: "center" },
+  title: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Colors.text,
+    textAlign: "center",
+  },
+  dueCopy: {
+    fontSize: 11,
+    color: Colors.textTertiary,
+    marginTop: 1,
+    textAlign: "center",
+  },
   dueCopyDueToday: { color: Colors.warning },
   dueCopyOverdue: { color: Colors.error },
   headerBtn: { padding: 4, marginLeft: 4 },
-  body: { gap: 10 },
+  body: { gap: 10, alignItems: "center" },
   menuBackdrop: {
     position: "absolute",
     top: 0,
