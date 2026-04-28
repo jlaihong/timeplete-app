@@ -55,6 +55,7 @@ export function DesktopHome() {
           <View style={styles.sideColumn}>
             <TrackableList
               title="Trackables"
+              showArchivedToggle={false}
               onRequestAddTrackable={() => setShowAddTrackable(true)}
               onRequestLog={setLogRequest}
               onRequestEditTrackable={(id) =>
