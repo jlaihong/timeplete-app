@@ -1,3 +1,85 @@
+diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js
+index af7d7a9..8e2dd84 100644
+--- a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js
++++ b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js
+@@ -46,15 +46,19 @@ export function Drawer({
+       element?.removeEventListener('transitionend', onTransitionEndLatest);
+     };
+   }, [onTransitionEndLatest, onTransitionStartLatest]);
+-  const isOpen = drawerType === 'permanent' ? true : open;
+   const isRight = drawerPosition === 'right';
++  /** Collapsed rail for permanent drawer when navigation marks it closed */
++  const permCollapsed = drawerType === 'permanent' && !open;
+   const drawerTranslateX =
+   // The drawer stays in place at open position when `drawerType` is `back`
+   open || drawerType === 'back' ? drawerPosition === 'left' ? '100%' : '-100%' : 0;
+   const drawerAnimatedStyle = drawerType !== 'permanent' ? {
+     transition: 'transform 0.3s',
+     transform: `translateX(${drawerTranslateX})`
+-  } : null;
++  } : {
++    transition: 'width 0.25s ease-out, opacity 0.2s ease-out',
++    minWidth: 0
++  };
+   const contentTranslateX = open ?
+   // The screen content stays in place when `drawerType` is `front`
+   drawerType === 'front' ? 0 : `calc(${drawerWidth} * ${drawerPosition === 'left' ? 1 : -1})` : 0;
+@@ -70,7 +74,10 @@ export function Drawer({
+     },
+     // FIXME: width contains `px` on web
+     {
+-      width: drawerWidth
++      width: permCollapsed ? 0 : drawerWidth,
++      opacity: permCollapsed ? 0 : 1,
++      overflow: permCollapsed ? 'hidden' : 'visible',
++      pointerEvents: permCollapsed ? 'none' : 'auto'
+     },
+     // @ts-expect-error offset contains `calc` for web
+     drawerType !== 'permanent' ?
+@@ -81,13 +88,18 @@ export function Drawer({
+       right: `calc(${drawerWidth} * -1)`
+     } : {
+       left: `calc(${drawerWidth} * -1)`
+-    } : null, drawerAnimatedStyle, drawerStyle],
++    } : null, drawerAnimatedStyle, drawerStyle, permCollapsed ? {
++      borderRightWidth: 0,
++      borderLeftWidth: 0
++    } : null],
+     children: renderDrawerContent()
+   }, "drawer");
+   const mainContent = /*#__PURE__*/_jsxs(View, {
+     style: [styles.content, contentAnimatedStyle],
+     children: [/*#__PURE__*/_jsx(View, {
+-      "aria-hidden": isOpen && drawerType !== 'permanent',
++      // Never mark the workspace as aria-hidden: side drawers are non-modal and
++      // should remain fully interactive (slide/front previously set true while open).
++      "aria-hidden": false,
+       style: styles.content,
+       children: children
+     }), drawerType !== 'permanent' ? /*#__PURE__*/_jsx(Overlay, {
+diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
+index c5882f9..5f5ec89 100644
+--- a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
++++ b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
+@@ -269,7 +269,7 @@ export function Drawer({
+             children: [/*#__PURE__*/_jsxs(Animated.View, {
+               style: [styles.content, contentAnimatedStyle],
+               children: [/*#__PURE__*/_jsx(View, {
+-                "aria-hidden": isOpen && drawerType !== 'permanent',
++                "aria-hidden": false,
+                 style: styles.content,
+                 children: children
+               }), drawerType !== 'permanent' ? /*#__PURE__*/_jsx(Overlay, {
+@@ -282,7 +282,8 @@ export function Drawer({
+             }), /*#__PURE__*/_jsx(Animated.View, {
+               removeClippedSubviews: Platform.OS !== 'ios',
+               style: [styles.drawer, {
+-                width: drawerWidth,
++                width: drawerType === 'permanent' && !open ? 0 : drawerWidth,
++                overflow: drawerType === 'permanent' && !open ? 'hidden' : undefined,
+                 position: drawerType === 'permanent' ? 'relative' : 'absolute'
+               }, drawerAnimatedStyle, drawerStyle],
+               children: renderDrawerContent()
 diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Overlay.js b/node_modules/react-native-drawer-layout/lib/module/views/Overlay.js
 index abe6647..eab47b1 100644
 --- a/node_modules/react-native-drawer-layout/lib/module/views/Overlay.js
