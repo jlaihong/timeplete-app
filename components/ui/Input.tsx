@@ -127,8 +127,9 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
   return (
     <View style={[styles.container, containerStyle]}>
       <Pressable
-        // Tapping anywhere inside the filled area focuses the input —
-        // matches Material's `mat-form-field` click behaviour.
+        // Tap-to-focus the inner TextInput (mat-form-field behaviour).
+        // Web: Pressable is focusable; tabIndex -1 keeps Tab order on the input only.
+        {...(Platform.OS === "web" ? { tabIndex: -1 as const } : {})}
         onPress={() => {
           if (editable) inputRef.current?.focus();
         }}
