@@ -29,7 +29,9 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
 
   const go = (href: Href) => {
     router.push(href);
-    navigation.closeDrawer();
+    if (!isDesktop) {
+      navigation.closeDrawer();
+    }
   };
 
   return (
@@ -220,10 +222,8 @@ export default function AppLayout() {
         defaultStatus={isDesktop ? "open" : "closed"}
         screenOptions={{
           headerShown: false,
-          // Slide keeps the drawer as a side panel while shifting content; avoids
-          // covering the workspace like `front` when the overlay is pass-through.
-          drawerType: "slide",
-          swipeEnabled: true,
+          drawerType: isDesktop ? "permanent" : "slide",
+          swipeEnabled: !isDesktop,
           overlayColor: "transparent",
           drawerStyle: {
             backgroundColor: Colors.sidenav,
