@@ -43,21 +43,14 @@ export const Colors = {
   taskPanel: "#4F4F4F",
   appBackground: "#333333",
 
-  /**
-   * Productivity-one TopBar: solid #5B6E9E + #FFFFFF (App.css).
-   * Companion solids below avoid washed-out rgba on the indigo rail.
-   */
+  /** Productivity-one TopBar (App.css) — stack headers / modal chrome only */
   productivityNav: "#5B6E9E",
-  /** Darker indigo — dividers / pressed row (same hue as TopBar) */
-  productivityNavDeep: "#4A5D85",
-  productivityNavText: "#FFFFFF",
-  /** Sidebar secondary labels — solid cool gray, not translucent white */
-  productivityNavTextMuted: "#C9D3EE",
 
-  sidenav: "#5B6E9E",
-  sidenavItemHover: "#5269A3",
-  /** Selected row — clearly darker than bar (TopBar has no equivalent; fits M3 nav) */
-  sidenavItemActive: "#4A5D85",
+  /** Main app sidenav — timeplete-app constants (not the TopBar indigo) */
+  sidenav: "#0F0F0F",
+  sidenavItemHover: "#4F4F4F",
+  /** Selected / pressed row on dark sidenav */
+  sidenavItemActive: "#4F4F4F",
 
   inverseSurface: "#DDE4E5",
   inverseOnSurface: "#2A3233",
