@@ -21,7 +21,7 @@ const convex = new ConvexReactClient(convexUrl, {
 
 export default function RootLayout() {
   useEffect(() => {
-    installWebScrollbarStyles();
+    return installWebScrollbarStyles();
   }, []);
 
   return (
