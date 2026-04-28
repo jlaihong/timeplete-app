@@ -40,6 +40,11 @@ interface TrackableListProps {
    * If absent, widgets fall back to route-based editor.
    */
   onRequestEditTrackable?: (trackableId: string) => void;
+  /**
+   * When false, only active trackables are listed and the Active / Archived
+   * tabs are omitted (home page behaviour). Defaults to true (e.g. Goals tab).
+   */
+  showArchivedToggle?: boolean;
 }
 
 /**
@@ -53,6 +58,7 @@ export function TrackableList({
   onRequestAddTrackable,
   onRequestLog,
   onRequestEditTrackable,
+  showArchivedToggle = true,
 }: TrackableListProps) {
   const isDesktop = useIsDesktop();
 
@@ -101,7 +107,8 @@ export function TrackableList({
     );
   }
 
-  const displayGoals = showArchived
+  const isShowingArchivedList = showArchivedToggle && showArchived;
+  const displayGoals = isShowingArchivedList
     ? goalDetails.archived
     : goalDetails.active;
 
@@ -118,44 +125,48 @@ export function TrackableList({
         </View>
       )}
 
-      <View style={styles.tabs}>
-        <TouchableOpacity
-          style={[styles.tab, !showArchived && styles.activeTab]}
-          onPress={() => setShowArchived(false)}
-        >
-          <Text
-            style={[styles.tabText, !showArchived && styles.activeTabText]}
-          >
-            Active ({goalDetails.activeCount})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, showArchived && styles.activeTab]}
-          onPress={() => setShowArchived(true)}
-        >
-          <Text
-            style={[styles.tabText, showArchived && styles.activeTabText]}
-          >
-            Archived ({goalDetails.archivedCount})
-          </Text>
-        </TouchableOpacity>
-        {!title && isDesktop && (
+      {showArchivedToggle && (
+        <View style={styles.tabs}>
           <TouchableOpacity
-            onPress={openAddTrackable}
-            style={styles.inlineAdd}
+            style={[styles.tab, !showArchived && styles.activeTab]}
+            onPress={() => setShowArchived(false)}
           >
-            <Ionicons name="add-circle" size={22} color={Colors.primary} />
+            <Text
+              style={[styles.tabText, !showArchived && styles.activeTabText]}
+            >
+              Active ({goalDetails.activeCount})
+            </Text>
           </TouchableOpacity>
-        )}
-      </View>
+          <TouchableOpacity
+            style={[styles.tab, showArchived && styles.activeTab]}
+            onPress={() => setShowArchived(true)}
+          >
+            <Text
+              style={[styles.tabText, showArchived && styles.activeTabText]}
+            >
+              Archived ({goalDetails.archivedCount})
+            </Text>
+          </TouchableOpacity>
+          {!title && isDesktop && (
+            <TouchableOpacity
+              onPress={openAddTrackable}
+              style={styles.inlineAdd}
+            >
+              <Ionicons name="add-circle" size={22} color={Colors.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {displayGoals.length === 0 ? (
         <EmptyState
           title={
-            showArchived ? "No archived trackables" : "No active trackables"
+            isShowingArchivedList
+              ? "No archived trackables"
+              : "No active trackables"
           }
           message={
-            showArchived
+            isShowingArchivedList
               ? "Archive trackables you've completed"
               : "Create a trackable to start tracking your progress"
           }
