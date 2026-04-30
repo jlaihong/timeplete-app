@@ -230,8 +230,7 @@ export default function AppLayout() {
           drawerStyle: {
             backgroundColor: Colors.sidenav,
             width: 250,
-            borderRightWidth: isDesktop ? 1 : 0,
-            borderRightColor: Colors.outlineVariant,
+            borderRightWidth: 0,
           },
         }}
       >
