@@ -5,15 +5,24 @@ import { Colors, stackHeaderChromeOptions } from "../../../constants/colors";
 import { Platform } from "react-native";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
 import { DrawerMenuButton } from "../../../components/layout/DrawerMenuButton";
+import { DesktopBrandedHeaderTitle } from "../../../components/layout/DesktopBrandedHeaderTitle";
 
 export default function TabsLayout() {
   const isDesktop = useIsDesktop();
 
   const headerLeft = () => <DrawerMenuButton />;
 
+  const routeSubtitle: Record<string, string> = {
+    index: "Tasks",
+    goals: "Trackables",
+    calendar: "Calendar",
+    analytics: "Analytics",
+    reviews: "Reviews",
+  };
+
   return (
     <Tabs
-      screenOptions={{
+      screenOptions={({ route }) => ({
         tabBarActiveTintColor: Colors.tab.active,
         tabBarInactiveTintColor: Colors.tab.inactive,
         tabBarStyle: isDesktop
@@ -28,7 +37,16 @@ export default function TabsLayout() {
         headerShown: true,
         ...stackHeaderChromeOptions,
         headerLeft,
-      }}
+        ...(isDesktop
+          ? {
+              headerTitle: () => (
+                <DesktopBrandedHeaderTitle
+                  subtitle={routeSubtitle[route.name] ?? route.name}
+                />
+              ),
+            }
+          : {}),
+      })}
     >
       <Tabs.Screen
         name="goals"

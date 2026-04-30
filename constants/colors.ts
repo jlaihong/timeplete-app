@@ -43,14 +43,14 @@ export const Colors = {
   taskPanel: "#4F4F4F",
   appBackground: "#333333",
 
-  /** Productivity-one TopBar (App.css) — stack headers / modal chrome only */
-  productivityNav: "#5B6E9E",
-
-  /** Main app sidenav — timeplete-app constants (not the TopBar indigo) */
-  sidenav: "#0F0F0F",
-  sidenavItemHover: "#4F4F4F",
-  /** Selected / pressed row on dark sidenav */
-  sidenavItemActive: "#4F4F4F",
+  /**
+   * Same surface as trackable/task widgets (`theme/panels.ts` / surfaceContainerLow).
+   * Used for drawer rail and stack headers.
+   */
+  sidenav: "#161D1E",
+  sidenavItemHover: "#1A2122",
+  /** Selected row — slightly elevated vs panel */
+  sidenavItemActive: "#242B2D",
 
   inverseSurface: "#DDE4E5",
   inverseOnSurface: "#2A3233",
@@ -70,21 +70,18 @@ export const Colors = {
   },
 };
 
-/**
- * App bar — match productivity-one TopBar (#5B6E9E + white title/actions).
- * Content below stays on Colors.background.
- */
+/** Stack / tab headers — same panel surface as trackable widgets. */
 export const stackHeaderChromeOptions = {
   headerShadowVisible: false,
   headerStyle: {
-    backgroundColor: Colors.productivityNav,
+    backgroundColor: Colors.surfaceContainerLow,
     borderBottomWidth: 0,
     elevation: 0,
     shadowOpacity: 0,
   },
-  headerTintColor: Colors.white,
+  headerTintColor: Colors.text,
   headerTitleStyle: {
-    color: Colors.white,
+    color: Colors.text,
     fontWeight: "600" as const,
   },
 } as const;
