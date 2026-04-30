@@ -13,12 +13,13 @@ export default function ListsLayout() {
         headerLeft: () => <DrawerMenuButton />,
         ...(isDesktop
           ? {
+              headerTitleAlign: "left",
               headerTitle: (props) => (
                 <DesktopBrandedHeaderTitle
                   subtitle={
                     typeof props.children === "string"
                       ? props.children
-                      : "Lists"
+                      : undefined
                   }
                 />
               ),

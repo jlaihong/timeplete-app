@@ -12,14 +12,6 @@ export default function TabsLayout() {
 
   const headerLeft = () => <DrawerMenuButton />;
 
-  const routeSubtitle: Record<string, string> = {
-    index: "Tasks",
-    goals: "Trackables",
-    calendar: "Calendar",
-    analytics: "Analytics",
-    reviews: "Reviews",
-  };
-
   return (
     <Tabs
       screenOptions={({ route }) => ({
@@ -39,11 +31,8 @@ export default function TabsLayout() {
         headerLeft,
         ...(isDesktop
           ? {
-              headerTitle: () => (
-                <DesktopBrandedHeaderTitle
-                  subtitle={routeSubtitle[route.name] ?? route.name}
-                />
-              ),
+              headerTitleAlign: "left",
+              headerTitle: () => <DesktopBrandedHeaderTitle />,
             }
           : {}),
       })}

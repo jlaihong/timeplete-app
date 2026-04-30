@@ -2,34 +2,41 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../constants/colors";
 
-/** Desktop-only: app name in the header, below the screen title line. */
+/**
+ * Desktop-only header title: brand on the left, optional context to the right.
+ * Omit `subtitle` when only the app name should show.
+ */
 export function DesktopBrandedHeaderTitle({
   subtitle,
 }: {
-  subtitle: string;
+  subtitle?: string;
 }) {
   return (
-    <View style={styles.wrap}>
-      <Text style={styles.subtitle}>{subtitle}</Text>
+    <View style={styles.row}>
       <Text style={styles.brand}>Timeplete</Text>
+      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { justifyContent: "center" },
-  subtitle: {
-    fontSize: 17,
-    fontWeight: "600",
-    color: Colors.text,
-    lineHeight: 22,
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "nowrap",
+    paddingRight: 8,
   },
   brand: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: Colors.textTertiary,
-    letterSpacing: 0.2,
-    textTransform: "uppercase",
-    marginTop: 2,
+    fontSize: 20,
+    fontWeight: "700",
+    color: Colors.text,
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 20,
+    fontWeight: "500",
+    color: Colors.textSecondary,
+    letterSpacing: -0.2,
+    marginLeft: 10,
   },
 });
