@@ -36,9 +36,8 @@ export default function SharedScreen() {
             headerLeft: () => <DrawerMenuButton />,
             ...(isDesktop
               ? {
-                  headerTitle: () => (
-                    <DesktopBrandedHeaderTitle subtitle="Shared with Me" />
-                  ),
+                  headerTitleAlign: "left",
+                  headerTitle: () => <DesktopBrandedHeaderTitle />,
                 }
               : {}),
           }}
@@ -81,9 +80,8 @@ export default function SharedScreen() {
           headerLeft: () => <DrawerMenuButton />,
           ...(isDesktop
             ? {
-                headerTitle: () => (
-                  <DesktopBrandedHeaderTitle subtitle="Shared with Me" />
-                ),
+                headerTitleAlign: "left",
+                headerTitle: () => <DesktopBrandedHeaderTitle />,
               }
             : {}),
         }}

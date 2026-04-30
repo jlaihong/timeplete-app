@@ -68,9 +68,8 @@ export default function TagsScreen() {
           headerLeft: () => <DrawerMenuButton />,
           ...(isDesktop
             ? {
-                headerTitle: () => (
-                  <DesktopBrandedHeaderTitle subtitle="Tags" />
-                ),
+                headerTitleAlign: "left",
+                headerTitle: () => <DesktopBrandedHeaderTitle />,
               }
             : {}),
         }}
