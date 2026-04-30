@@ -18,8 +18,11 @@ import { ColorPicker } from "../../components/ui/ColorPicker";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Stack } from "expo-router";
 import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
+import { useIsDesktop } from "../../hooks/useIsDesktop";
+import { DesktopBrandedHeaderTitle } from "../../components/layout/DesktopBrandedHeaderTitle";
 
 export default function TagsScreen() {
+  const isDesktop = useIsDesktop();
   const tags = useQuery(api.tags.search);
   const upsertTag = useMutation(api.tags.upsert);
   const removeTag = useMutation(api.tags.remove);
@@ -63,6 +66,13 @@ export default function TagsScreen() {
           headerShown: true,
           title: "Tags",
           headerLeft: () => <DrawerMenuButton />,
+          ...(isDesktop
+            ? {
+                headerTitle: () => (
+                  <DesktopBrandedHeaderTitle subtitle="Tags" />
+                ),
+              }
+            : {}),
         }}
       />
 

@@ -36,9 +36,11 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
 
   return (
     <DrawerContentScrollView {...props} style={styles.drawer}>
-      <View style={styles.drawerHeader}>
-        <Text style={styles.drawerTitle}>Timeplete</Text>
-      </View>
+      {!isDesktop && (
+        <View style={styles.drawerHeader}>
+          <Text style={styles.drawerTitle}>Timeplete</Text>
+        </View>
+      )}
 
       <DrawerItem
         label="Home"

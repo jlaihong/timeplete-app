@@ -1,13 +1,29 @@
 import { Stack } from "expo-router";
-import { Colors, stackHeaderChromeOptions } from "../../../constants/colors";
+import { stackHeaderChromeOptions } from "../../../constants/colors";
 import { DrawerMenuButton } from "../../../components/layout/DrawerMenuButton";
+import { useIsDesktop } from "../../../hooks/useIsDesktop";
+import { DesktopBrandedHeaderTitle } from "../../../components/layout/DesktopBrandedHeaderTitle";
 
 export default function ListsLayout() {
+  const isDesktop = useIsDesktop();
   return (
     <Stack
       screenOptions={{
         ...stackHeaderChromeOptions,
         headerLeft: () => <DrawerMenuButton />,
+        ...(isDesktop
+          ? {
+              headerTitle: (props) => (
+                <DesktopBrandedHeaderTitle
+                  subtitle={
+                    typeof props.children === "string"
+                      ? props.children
+                      : "Lists"
+                  }
+                />
+              ),
+            }
+          : {}),
       }}
     />
   );
