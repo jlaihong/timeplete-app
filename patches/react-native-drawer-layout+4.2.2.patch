@@ -1,8 +1,8 @@
 diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js
-index af7d7a9..5765288 100644
+index af7d7a9..7bc5ae0 100644
 --- a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js
 +++ b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.js
-@@ -46,15 +46,19 @@ export function Drawer({
+@@ -46,8 +46,9 @@ export function Drawer({
        element?.removeEventListener('transitionend', onTransitionEndLatest);
      };
    }, [onTransitionEndLatest, onTransitionStartLatest]);
@@ -13,19 +13,34 @@ index af7d7a9..5765288 100644
    const drawerTranslateX =
    // The drawer stays in place at open position when `drawerType` is `back`
    open || drawerType === 'back' ? drawerPosition === 'left' ? '100%' : '-100%' : 0;
-   const drawerAnimatedStyle = drawerType !== 'permanent' ? {
+@@ -55,6 +56,22 @@ export function Drawer({
      transition: 'transform 0.3s',
      transform: `translateX(${drawerTranslateX})`
--  } : null;
-+  } : {
-+    transition: 'width 0.38s cubic-bezier(0.4, 0, 0.2, 1)',
-+    minWidth: 0
-+  };
+   } : null;
++  /** Permanent: clip outer width while inner panel slides left (no content squish). */
++  const permOuterSlide = drawerType === 'permanent' ? {
++    width: permCollapsed ? 0 : drawerWidth,
++    overflow: 'hidden',
++    transition: 'width 0.36s cubic-bezier(0.4, 0, 0.2, 1)',
++    minWidth: 0,
++    pointerEvents: permCollapsed ? 'none' : 'auto'
++  } : null;
++  const permInnerSlide = drawerType === 'permanent' ? {
++    width: drawerWidth,
++    maxWidth: drawerWidth,
++    flexShrink: 0,
++    alignSelf: 'flex-start',
++    transform: permCollapsed ? 'translateX(-100%)' : 'translateX(0)',
++    transition: 'transform 0.36s cubic-bezier(0.4, 0, 0.2, 1)'
++  } : null;
    const contentTranslateX = open ?
    // The screen content stays in place when `drawerType` is `front`
    drawerType === 'front' ? 0 : `calc(${drawerWidth} * ${drawerPosition === 'left' ? 1 : -1})` : 0;
-@@ -70,7 +74,9 @@ export function Drawer({
+@@ -68,9 +85,12 @@ export function Drawer({
+       position: drawerType === 'permanent' ? 'relative' : 'absolute',
+       zIndex: drawerType === 'back' ? -1 : 1
      },
++    drawerType === 'permanent' ? permOuterSlide :
      // FIXME: width contains `px` on web
      {
 -      width: drawerWidth
@@ -35,17 +50,14 @@ index af7d7a9..5765288 100644
      },
      // @ts-expect-error offset contains `calc` for web
      drawerType !== 'permanent' ?
-@@ -81,13 +87,27 @@ export function Drawer({
+@@ -81,13 +101,26 @@ export function Drawer({
        right: `calc(${drawerWidth} * -1)`
      } : {
        left: `calc(${drawerWidth} * -1)`
 -    } : null, drawerAnimatedStyle, drawerStyle],
-+    } : null, drawerStyle, drawerAnimatedStyle,
-+    // Animate width to 0 without maxWidth:flex clamps — they snap shut and skip the transition.
-+    permCollapsed ? {
-+      width: 0,
-+      minWidth: 0,
-+      overflow: 'hidden',
+-    children: renderDrawerContent()
++    } : null, drawerStyle, drawerType === 'permanent' ? null : drawerAnimatedStyle,
++    drawerType === 'permanent' && permCollapsed ? {
 +      padding: 0,
 +      margin: 0,
 +      borderWidth: 0,
@@ -53,7 +65,10 @@ index af7d7a9..5765288 100644
 +      borderLeftWidth: 0,
 +      backgroundColor: 'transparent'
 +    } : null],
-     children: renderDrawerContent()
++    children: drawerType === 'permanent' ? /*#__PURE__*/_jsx(View, {
++      style: permInnerSlide,
++      children: renderDrawerContent()
++    }) : renderDrawerContent()
    }, "drawer");
    const mainContent = /*#__PURE__*/_jsxs(View, {
      style: [styles.content, contentAnimatedStyle],
@@ -65,7 +80,7 @@ index af7d7a9..5765288 100644
        style: styles.content,
        children: children
      }), drawerType !== 'permanent' ? /*#__PURE__*/_jsx(Overlay, {
-@@ -115,10 +135,11 @@ const styles = StyleSheet.create({
+@@ -115,10 +148,11 @@ const styles = StyleSheet.create({
      top: 0,
      bottom: 0,
      maxWidth: '100%',
@@ -80,7 +95,7 @@ index af7d7a9..5765288 100644
  });
  //# sourceMappingURL=Drawer.js.map
 diff --git a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
-index c5882f9..1a2f177 100644
+index c5882f9..aef4f66 100644
 --- a/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
 +++ b/node_modules/react-native-drawer-layout/lib/module/views/Drawer.native.js
 @@ -2,7 +2,7 @@
@@ -92,26 +107,31 @@ index c5882f9..1a2f177 100644
  import useLatestCallback from 'use-latest-callback';
  import { DrawerGestureContext } from "../utils/DrawerGestureContext.js";
  import { DrawerProgressContext } from "../utils/DrawerProgressContext.js";
-@@ -53,6 +53,18 @@ export function Drawer({
+@@ -53,6 +53,23 @@ export function Drawer({
      layout,
      drawerStyle
    });
 +  const permDrawerWidth = useSharedValue(
 +    drawerType === 'permanent' ? (open ? drawerWidth : 0) : drawerWidth
 +  );
++  const permDrawerInnerX = useSharedValue(
++    drawerType === 'permanent' ? (open ? 0 : -drawerWidth) : 0
++  );
 +  React.useEffect(() => {
 +    if (drawerType !== 'permanent') {
 +      return;
 +    }
-+    permDrawerWidth.value = withTiming(open ? drawerWidth : 0, {
++    const timing = {
 +      duration: 360,
 +      easing: Easing.bezier(0.4, 0, 0.2, 1)
-+    });
++    };
++    permDrawerWidth.value = withTiming(open ? drawerWidth : 0, timing);
++    permDrawerInnerX.value = withTiming(open ? 0 : -drawerWidth, timing);
 +  }, [open, drawerWidth, drawerType]);
    const isOpen = drawerType === 'permanent' ? true : open;
    const isRight = drawerPosition === 'right';
    const getDrawerTranslationX = React.useCallback(open => {
-@@ -113,7 +125,9 @@ export function Drawer({
+@@ -113,7 +130,9 @@ export function Drawer({
    }, [isRight, isOpen, swipeEdgeWidth]);
    const touchStartX = useSharedValue(0);
    const touchX = useSharedValue(0);
@@ -122,7 +142,7 @@ index c5882f9..1a2f177 100644
    const gestureState = useSharedValue(GestureState.UNDETERMINED);
    const onAnimationStart = useLatestCallback(open => {
      onTransitionStart?.(!open);
-@@ -149,7 +163,12 @@ export function Drawer({
+@@ -149,7 +168,12 @@ export function Drawer({
        runOnJS(onClose)();
      }
    }, [getDrawerTranslationX, onAnimationEnd, onAnimationStart, onClose, onOpen, touchStartX, touchX, translationX]);
@@ -136,23 +156,20 @@ index c5882f9..1a2f177 100644
    const startX = useSharedValue(0);
    const pan = React.useMemo(() => {
      let panGesture = Gesture?.Pan().onBegin(event => {
-@@ -220,6 +239,15 @@ export function Drawer({
+@@ -220,6 +244,12 @@ export function Drawer({
    });
    const drawerAnimatedStyle = useAnimatedStyle(() => {
      const distanceFromEdge = layout.width - drawerWidth;
 +    if (drawerType === 'permanent') {
 +      return {
 +        zIndex: translateX.get() === 0 ? 0 : 1,
-+        transform: [],
-+        width: permDrawerWidth.value,
-+        minWidth: 0,
-+        overflow: permDrawerWidth.value < 0.5 ? 'hidden' : 'visible'
++        transform: []
 +      };
 +    }
      return {
        // FIXME: Reanimated skips committing to the shadow tree if no layout props are animated
        // This results in pressables not getting their correct position and can't be pressed
-@@ -227,10 +255,7 @@ export function Drawer({
+@@ -227,16 +257,33 @@ export function Drawer({
        // For 'back' type: always keep drawer behind content (-1 when open, 0 when closed/animating)
        // For other types: 0 when open, 1 when closed/animating
        zIndex: drawerType === 'back' ? translateX.get() === 0 ? -1 : 0 : translateX.get() === 0 ? 0 : 1,
@@ -164,7 +181,33 @@ index c5882f9..1a2f177 100644
          translateX:
          // The drawer stays in place when `drawerType` is `back`
          (drawerType === 'back' ? 0 : translateX.value) + (direction === 'rtl' ? drawerPosition === 'left' ? -distanceFromEdge : 0 : drawerPosition === 'left' ? 0 : distanceFromEdge)
-@@ -269,7 +294,7 @@ export function Drawer({
+       }]
+     };
+   }, [direction, drawerPosition, drawerType, drawerWidth, layout.width, translateX]);
++  const permClipStyle = useAnimatedStyle(() => {
++    if (drawerType !== 'permanent') {
++      return {};
++    }
++    return {
++      width: permDrawerWidth.value,
++      overflow: 'hidden',
++      minWidth: 0
++    };
++  }, [drawerType]);
++  const permInnerSlideStyle = useAnimatedStyle(() => {
++    if (drawerType !== 'permanent') {
++      return {};
++    }
++    return {
++      transform: [{
++        translateX: permDrawerInnerX.value
++      }]
++    };
++  }, [drawerType]);
+   const contentAnimatedStyle = useAnimatedStyle(() => {
+     return {
+       // FIXME: Force Reanimated to commit to the shadow tree
+@@ -269,7 +316,7 @@ export function Drawer({
              children: [/*#__PURE__*/_jsxs(Animated.View, {
                style: [styles.content, contentAnimatedStyle],
                children: [/*#__PURE__*/_jsx(View, {
@@ -173,14 +216,27 @@ index c5882f9..1a2f177 100644
                  style: styles.content,
                  children: children
                }), drawerType !== 'permanent' ? /*#__PURE__*/_jsx(Overlay, {
-@@ -281,9 +306,11 @@ export function Drawer({
+@@ -279,11 +326,24 @@ export function Drawer({
+                 style: overlayStyle,
+                 accessibilityLabel: overlayAccessibilityLabel
                }) : null]
-             }), /*#__PURE__*/_jsx(Animated.View, {
+-            }), /*#__PURE__*/_jsx(Animated.View, {
++            }), drawerType === 'permanent' ? /*#__PURE__*/_jsx(Animated.View, {
++              removeClippedSubviews: Platform.OS !== 'ios',
++              style: [styles.drawer, {
++                position: 'relative',
++                zIndex: 1
++              }, drawerStyle, permClipStyle],
++              children: /*#__PURE__*/_jsx(Animated.View, {
++                style: [{
++                  width: drawerWidth,
++                  flexShrink: 0
++                }, permInnerSlideStyle],
++                children: renderDrawerContent()
++              })
++            }) : /*#__PURE__*/_jsx(Animated.View, {
                removeClippedSubviews: Platform.OS !== 'ios',
--              style: [styles.drawer, {
-+              style: drawerType === 'permanent' ? [styles.drawer, {
-+                position: 'relative'
-+              }, drawerStyle, drawerAnimatedStyle] : [styles.drawer, {
+               style: [styles.drawer, {
                  width: drawerWidth,
 -                position: drawerType === 'permanent' ? 'relative' : 'absolute'
 +                position: 'absolute'
