@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -20,6 +20,12 @@ import {
   formatYYYYMMDDtoDDMMM,
   hhmmToSeconds,
 } from "../../../../lib/dates";
+import {
+  defaultStartTimeQuarterHour,
+  quarterHourStartTimeOptions,
+  TRACKABLE_DURATION_PRESETS,
+} from "../../../../lib/trackableLogPresets";
+import { CrossPlatformHhMmSelect } from "./CrossPlatformHhMmSelect";
 
 interface TrackTrackerDialogProps {
   trackableId: Id<"trackables">;
@@ -53,10 +59,23 @@ export function TrackTrackerDialog({
   isRatingTracker,
   onClose,
 }: TrackTrackerDialogProps) {
+  const startOptions = useMemo(
+    () =>
+      quarterHourStartTimeOptions().map((v) => ({ value: v, label: v })),
+    []
+  );
+  const durationOptions = useMemo(
+    () => [
+      { value: "", label: "None" },
+      ...TRACKABLE_DURATION_PRESETS.map((v) => ({ value: v, label: v })),
+    ],
+    []
+  );
+
   const [count, setCount] = useState<number | null>(
     isRatingTracker ? null : 1
   );
-  const [startTime, setStartTime] = useState(defaultStartTime());
+  const [startTime, setStartTime] = useState(defaultStartTimeQuarterHour);
   const [durationHhmm, setDurationHhmm] = useState("");
   const [comments, setComments] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -192,28 +211,20 @@ export function TrackTrackerDialog({
 
           {trackTime && (
             <View style={styles.row}>
-              <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Start time (HH:MM)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={startTime}
-                  onChangeText={setStartTime}
-                  placeholder="09:00"
-                  placeholderTextColor={Colors.textTertiary}
-                  autoCapitalize="none"
-                />
-              </View>
-              <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Duration (HH:MM)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={durationHhmm}
-                  onChangeText={setDurationHhmm}
-                  placeholder="0:30"
-                  placeholderTextColor={Colors.textTertiary}
-                  autoCapitalize="none"
-                />
-              </View>
+              <CrossPlatformHhMmSelect
+                fieldLabel="Start time"
+                ariaLabel="Start time"
+                value={startTime}
+                onChange={setStartTime}
+                options={startOptions}
+              />
+              <CrossPlatformHhMmSelect
+                fieldLabel="Duration"
+                ariaLabel="Duration"
+                value={durationHhmm}
+                onChange={setDurationHhmm}
+                options={durationOptions}
+              />
             </View>
           )}
 
@@ -238,13 +249,6 @@ export function TrackTrackerDialog({
       </Pressable>
     </Pressable>
   );
-}
-
-function defaultStartTime(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, "0")}:${String(
-    d.getMinutes()
-  ).padStart(2, "0")}`;
 }
 
 const styles = StyleSheet.create({
@@ -338,23 +342,12 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
   },
-  row: { flexDirection: "row", gap: 12 },
-  field: { flex: 1, marginBottom: 16 },
+  row: { flexDirection: "row", gap: 12, flexWrap: "wrap", marginBottom: 16 },
   fieldLabel: {
     fontSize: 13,
     fontWeight: "600",
     color: Colors.textSecondary,
     marginBottom: 6,
-  },
-  input: {
-    backgroundColor: Colors.surfaceContainer,
-    borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: Colors.text,
   },
   commentInput: {
     backgroundColor: Colors.surfaceContainer,
