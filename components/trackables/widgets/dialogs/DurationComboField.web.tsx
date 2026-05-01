@@ -92,12 +92,15 @@ export function DurationComboField({
   }, []);
 
   const pickPreset = useCallback(
-    (opt: string) => {
+    (opt: string, closeAfter = false) => {
       cancelHide();
       onChange(opt);
       setHighlightIndex(0);
       userNavigatedRef.current = false;
-      requestAnimationFrame(() => inputRef.current?.focus());
+      requestAnimationFrame(() => {
+        if (closeAfter) inputRef.current?.blur();
+        else inputRef.current?.focus();
+      });
     },
     [cancelHide, onChange]
   );
@@ -123,6 +126,11 @@ export function DurationComboField({
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter") {
         e.preventDefault();
+        if (userNavigatedRef.current && filteredOptions.length > 0) {
+          const opt = filteredOptions[highlightIndex] ?? filteredOptions[0];
+          pickPreset(opt.value, true);
+          return;
+        }
         if (allowNone && !value.trim()) {
           onChange("");
           inputRef.current?.blur();
@@ -133,11 +141,6 @@ export function DurationComboField({
           assessDurationHhMmInput(value, allowNone) === "valid"
         ) {
           inputRef.current?.blur();
-          return;
-        }
-        if (userNavigatedRef.current && filteredOptions.length > 0) {
-          const opt = filteredOptions[highlightIndex] ?? filteredOptions[0];
-          pickPreset(opt.value);
         }
       } else if (e.key === "Escape") {
         e.preventDefault();
@@ -163,7 +166,7 @@ export function DurationComboField({
     (opt: DurationComboOption, e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      pickPreset(opt.value);
+      pickPreset(opt.value, true);
     },
     [pickPreset]
   );

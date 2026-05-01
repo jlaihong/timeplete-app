@@ -93,12 +93,15 @@ export function StartTimeComboField({
   }, []);
 
   const pickPreset = useCallback(
-    (opt: string) => {
+    (opt: string, closeAfter = false) => {
       cancelHide();
       onChange(opt);
       setHighlightIndex(0);
       userNavigatedRef.current = false;
-      requestAnimationFrame(() => inputRef.current?.focus());
+      requestAnimationFrame(() => {
+        if (closeAfter) inputRef.current?.blur();
+        else inputRef.current?.focus();
+      });
     },
     [cancelHide, onChange]
   );
@@ -124,19 +127,20 @@ export function StartTimeComboField({
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter") {
         e.preventDefault();
+        // Arrow-key list navigation takes precedence: commit highlighted preset
+        // (even when the input still has filter text — matches mat-autocomplete).
+        if (userNavigatedRef.current && filteredOptions.length > 0) {
+          pickPreset(
+            filteredOptions[highlightIndex] ?? filteredOptions[0],
+            true
+          );
+          return;
+        }
         const typed = value.trim();
         if (typed && assessClockHhMmInput(value) === "valid") {
           const n = normalizeClockHhMm(value);
           if (n) onChange(n);
           inputRef.current?.blur();
-          return;
-        }
-        if (
-          userNavigatedRef.current &&
-          filteredOptions.length > 0 &&
-          !typed
-        ) {
-          pickPreset(filteredOptions[highlightIndex] ?? filteredOptions[0]);
         }
       } else if (e.key === "Escape") {
         e.preventDefault();
@@ -162,7 +166,7 @@ export function StartTimeComboField({
     (opt: string, e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      pickPreset(opt);
+      pickPreset(opt, true);
     },
     [pickPreset]
   );
