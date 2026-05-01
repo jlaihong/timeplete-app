@@ -3,7 +3,7 @@ import { View } from "react-native";
 import { ProgressBarWithText } from "./atoms/ProgressBarWithText";
 import { DayOfWeekCompletion } from "./atoms/DayOfWeekCompletion";
 import { WidgetTimerRow } from "./atoms/WidgetTimerRow";
-import { getEffectiveCumulativeTarget } from "../../../lib/requiredProgress";
+import { getPeriodicCommittedWeekCount } from "../../../lib/requiredProgress";
 import type { WidgetBodyProps } from "./types";
 
 const minutesFormat = (n: number) => `${Math.round(n)}m`;
@@ -11,26 +11,28 @@ const minutesFormat = (n: number) => `${Math.round(n)}m`;
 /**
  * Mirror of productivity-one's `GoalWidgetPeriodic` with the
  * `COUPLE_MINUTES_A_WEEK` frequency: timer row + 7-day pill + weekly progress
- * bar (`weeklyMinutes / targetNumberOfMinutesAWeek`) + lifetime bar (total
- * minutes / commitment total from `getEffectiveCumulativeTarget`). Uses
- * `periodicOverallProgress` (weekly minutes capped per week) for the numerator.
+ * bar (`weeklyMinutes / targetNumberOfMinutesAWeek`) + **overall** bar on a
+ * **week scale** (`periodicOverallProgress / targetNumberOfMinutesAWeek` vs
+ * `getPeriodicCommittedWeekCount`). The weekly bar still uses `Xm`; overall
+ * uses the default numeric formatter (fractional weeks).
  * Tapping a day opens `TrackTimeDialog` for that day.
  */
 export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
   const targetMinutes = goal.targetNumberOfMinutesAWeek ?? 0;
   const weekMinutes = Math.floor(goal.weeklySeconds / 60);
-  const overallTarget = getEffectiveCumulativeTarget({
+  const overallWeeksDenom = getPeriodicCommittedWeekCount({
     trackableType: "MINUTES_A_WEEK",
     startDayYYYYMMDD: goal.startDayYYYYMMDD,
     endDayYYYYMMDD: goal.endDayYYYYMMDD,
-    targetNumberOfMinutesAWeek: goal.targetNumberOfMinutesAWeek,
     targetNumberOfWeeks: goal.targetNumberOfWeeks,
   });
-  const overallNumerator =
+  const minuteCredits =
     typeof goal.periodicOverallProgress === "number" &&
     Number.isFinite(goal.periodicOverallProgress)
       ? goal.periodicOverallProgress
       : 0;
+  const overallWeeksNumerator =
+    targetMinutes > 0 ? minuteCredits / targetMinutes : 0;
 
   return (
     <View style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}>
@@ -49,13 +51,12 @@ export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
         colour={goal.colour}
         format={minutesFormat}
       />
-      {overallTarget > 0 && (
+      {overallWeeksDenom > 0 && targetMinutes > 0 && (
         <ProgressBarWithText
           caption="Overall"
-          numerator={overallNumerator}
-          denominator={overallTarget}
+          numerator={overallWeeksNumerator}
+          denominator={overallWeeksDenom}
           colour={goal.colour}
-          format={minutesFormat}
         />
       )}
     </View>

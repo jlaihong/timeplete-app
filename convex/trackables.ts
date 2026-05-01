@@ -559,9 +559,9 @@ export const getGoalDetails = query({
           ? args.today
           : trackable.endDayYYYYMMDD;
 
-      // Per-week capped credits for the home "Overall" bar — only days/minutes
-      // toward each week's quota count (mirrors productivity-one periodic
-      // widgets; raw `totalDayCount` over-counts when a week exceeds the cap).
+      // Per-week capped credits (day-count or minutes) summed through today.
+      // The home widget divides by the weekly target and shows progress vs
+      // `targetNumberOfWeeks` — productivity-one's week-scale overall bar.
       let periodicOverallProgress = 0;
       if (
         trackable.trackableType === "DAYS_A_WEEK" &&
