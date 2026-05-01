@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -17,9 +17,19 @@ import { Colors } from "../../../../constants/colors";
 import { Card } from "../../../ui/Card";
 import { Button } from "../../../ui/Button";
 import {
+  assessClockHhMmInput,
+  assessDurationHhMmInput,
   formatYYYYMMDDtoDDMMM,
   hhmmToSeconds,
+  normalizeClockHhMm,
 } from "../../../../lib/dates";
+import {
+  defaultStartTimeQuarterHour,
+} from "../../../../lib/trackableLogPresets";
+import {
+  TrackableLogDurationBlock,
+  TrackableLogStartTimeBlock,
+} from "./TrackableLogHhMmFields";
 
 interface TrackTrackerDialogProps {
   trackableId: Id<"trackables">;
@@ -56,12 +66,42 @@ export function TrackTrackerDialog({
   const [count, setCount] = useState<number | null>(
     isRatingTracker ? null : 1
   );
-  const [startTime, setStartTime] = useState(defaultStartTime());
+  const [startTime, setStartTime] = useState(defaultStartTimeQuarterHour);
   const [durationHhmm, setDurationHhmm] = useState("");
   const [comments, setComments] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const upsertEntry = useMutation(api.trackerEntries.upsert);
+
+  const startStatus = useMemo(
+    () => assessClockHhMmInput(startTime),
+    [startTime]
+  );
+  const durationStatus = useMemo(
+    () => assessDurationHhMmInput(durationHhmm, true),
+    [durationHhmm]
+  );
+  const hasValidDuration = trackTime && durationStatus === "valid";
+  const durationDirty = trackTime && durationHhmm.trim() !== "";
+  const durationIncomplete =
+    durationDirty && !hasValidDuration;
+
+  const canSubmit = useMemo(() => {
+    if (isRatingTracker && (count == null || count <= 0)) return false;
+    if (durationIncomplete) return false;
+
+    const hasCount = trackCount && count != null && count > 0;
+    if (!hasCount && !hasValidDuration) return false;
+    if (hasValidDuration && startStatus !== "valid") return false;
+    return true;
+  }, [
+    isRatingTracker,
+    count,
+    durationIncomplete,
+    trackCount,
+    hasValidDuration,
+    startStatus,
+  ]);
 
   const onSave = async () => {
     setError(null);
@@ -71,19 +111,29 @@ export function TrackTrackerDialog({
     }
 
     const hasCount = trackCount && count != null && count > 0;
-    const hasDuration = trackTime && !!durationHhmm;
 
-    if (!hasCount && !hasDuration) {
+    if (!hasCount && !hasValidDuration) {
       return setError("Enter at least a count or a duration");
     }
 
+    if (durationIncomplete) {
+      return setError("Enter a valid duration or choose None.");
+    }
+
     let durationSeconds: number | undefined;
-    if (hasDuration) {
+    if (hasValidDuration) {
       durationSeconds = hhmmToSeconds(durationHhmm);
       if (!isFinite(durationSeconds) || durationSeconds <= 0) {
         return setError("Duration must be greater than zero");
       }
-      if (!startTime) return setError("Start time is required when logging time");
+      if (startStatus !== "valid") {
+        return setError("Start time is required when logging time");
+      }
+    }
+
+    const normalizedStart = normalizeClockHhMm(startTime);
+    if (hasValidDuration && !normalizedStart) {
+      return setError("Enter a valid start time (24-hour HH:MM).");
     }
 
     setSaving(true);
@@ -93,7 +143,8 @@ export function TrackTrackerDialog({
         dayYYYYMMDD,
         countValue: trackCount ? count ?? undefined : undefined,
         durationSeconds: trackTime ? durationSeconds : undefined,
-        startTimeHHMM: trackTime ? startTime || undefined : undefined,
+        startTimeHHMM:
+          hasValidDuration && normalizedStart ? normalizedStart : undefined,
         comments: comments || undefined,
       });
       onClose();
@@ -191,30 +242,17 @@ export function TrackTrackerDialog({
           )}
 
           {trackTime && (
-            <View style={styles.row}>
-              <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Start time (HH:MM)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={startTime}
-                  onChangeText={setStartTime}
-                  placeholder="09:00"
-                  placeholderTextColor={Colors.textTertiary}
-                  autoCapitalize="none"
-                />
-              </View>
-              <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Duration (HH:MM)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={durationHhmm}
-                  onChangeText={setDurationHhmm}
-                  placeholder="0:30"
-                  placeholderTextColor={Colors.textTertiary}
-                  autoCapitalize="none"
-                />
-              </View>
-            </View>
+            <>
+              <TrackableLogStartTimeBlock
+                value={startTime}
+                onChange={setStartTime}
+              />
+              <TrackableLogDurationBlock
+                value={durationHhmm}
+                onChange={setDurationHhmm}
+                allowNone
+              />
+            </>
           )}
 
           <Text style={styles.fieldLabel}>Comments</Text>
@@ -231,20 +269,18 @@ export function TrackTrackerDialog({
 
           <View style={styles.actions}>
             <Button title="Cancel" variant="outline" onPress={onClose} />
-            <Button title="Save" onPress={onSave} loading={saving} />
+            <Button
+              title="Save"
+              onPress={onSave}
+              loading={saving}
+              disabled={!canSubmit}
+            />
           </View>
         </ScrollView>
         </Card>
       </Pressable>
     </Pressable>
   );
-}
-
-function defaultStartTime(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, "0")}:${String(
-    d.getMinutes()
-  ).padStart(2, "0")}`;
 }
 
 const styles = StyleSheet.create({
@@ -338,23 +374,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
   },
-  row: { flexDirection: "row", gap: 12 },
-  field: { flex: 1, marginBottom: 16 },
   fieldLabel: {
     fontSize: 13,
     fontWeight: "600",
     color: Colors.textSecondary,
     marginBottom: 6,
-  },
-  input: {
-    backgroundColor: Colors.surfaceContainer,
-    borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: Colors.text,
   },
   commentInput: {
     backgroundColor: Colors.surfaceContainer,
