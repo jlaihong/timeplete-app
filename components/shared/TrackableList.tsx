@@ -116,6 +116,9 @@ export function TrackableList({
     null
   );
 
+  /** Trackables-page grid: measured row width so tile sizes match padded shell (fixes 4th card wrapping). */
+  const [trackablesPageGridWidth, setTrackablesPageGridWidth] = useState(0);
+
   const openAddTrackable = () => {
     if (onRequestAddTrackable) {
       onRequestAddTrackable();
@@ -142,10 +145,32 @@ export function TrackableList({
 
   if (variant === "trackables-page") {
     const pageTitle = title ?? "Trackables";
+    /** Viewport-based column count — matches productivity-one `goals-page.css` media queries. */
     const cols = trackablesPageColumnCount(windowWidth);
     const gridGap = 8;
-    const innerBudget = Math.min(1200, Math.max(280, windowWidth * 0.8));
-    const tileWidth = (innerBudget - gridGap * (cols - 1)) / cols;
+    /**
+     * goals.tsx uses `maxWidth: min(1200, 80vw)` + `padding: 24`. Until `onLayout`
+     * runs, approximate inner row width so SSR/first paint matches ~4 tiles when allowed.
+     */
+    const goalsShellHorizontalPadding = 48;
+    const maxShell =
+      isDesktop && windowWidth >= 900
+        ? Math.min(1200, windowWidth * 0.8)
+        : Math.min(1200, windowWidth);
+    const fallbackRowWidth = Math.max(
+      240,
+      maxShell - goalsShellHorizontalPadding
+    );
+    const rowWidth =
+      trackablesPageGridWidth > 0 ? trackablesPageGridWidth : fallbackRowWidth;
+    const tileWidth = (rowWidth - gridGap * (cols - 1)) / cols;
+
+    const onTrackablesGridLayout = (w: number) => {
+      if (w > 0 && Math.abs(w - trackablesPageGridWidth) > 0.5) {
+        setTrackablesPageGridWidth(w);
+      }
+    };
+
     const hasMoreActive = goalDetails.activeCount > goalDetails.active.length;
     const hasMoreArchived =
       goalDetails.archivedCount > goalDetails.archived.length;
@@ -200,7 +225,12 @@ export function TrackableList({
           {goalDetails.active.length === 0 ? (
             <Text style={styles.trackablesPageEmpty}>No active trackables</Text>
           ) : (
-            <View style={[styles.trackablesPageGrid, { gap: gridGap }]}>
+            <View
+              style={[styles.trackablesPageGrid, { gap: gridGap }]}
+              onLayout={(e) =>
+                onTrackablesGridLayout(e.nativeEvent.layout.width)
+              }
+            >
               {goalDetails.active.map(renderGoalTile)}
             </View>
           )}
@@ -227,7 +257,12 @@ export function TrackableList({
               No archived trackables
             </Text>
           ) : (
-            <View style={[styles.trackablesPageGrid, { gap: gridGap }]}>
+            <View
+              style={[styles.trackablesPageGrid, { gap: gridGap }]}
+              onLayout={(e) =>
+                onTrackablesGridLayout(e.nativeEvent.layout.width)
+              }
+            >
               {goalDetails.archived.map(renderGoalTile)}
             </View>
           )}
