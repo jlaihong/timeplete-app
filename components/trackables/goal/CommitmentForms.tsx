@@ -24,6 +24,7 @@ import {
   hoursBetweenYYYYMMDD,
   formatYYYYMMDDtoDDMMM,
 } from "../../../lib/dates";
+import { suggestedWeeksWithGrace } from "../../../lib/requiredProgress";
 import { ColourSwatchPicker } from "../ColourSwatchPicker";
 import { LabeledField, TextField, NumberField, DateField } from "./atoms";
 
@@ -207,19 +208,9 @@ interface FormProps {
  * to `suggestedWeeksWithGrace` whenever the date range changes, with
  * a special-case forcing `targetNumberOfWeeks = 1` when the user
  * picks a 1-week range (otherwise grace would zero it out and the
- * form would be invalid). We mirror that here.
+ * form would be invalid). We mirror that here. Implementation is
+ * shared with `lib/requiredProgress.ts`.
  */
-function suggestedGracePeriod(weeksBetween: number): number {
-  if (weeksBetween <= 4) return 0;
-  return Math.round(weeksBetween * 0.2);
-}
-
-function suggestedWeeksWithGrace(weeksBetween: number): number {
-  if (weeksBetween <= 0) return 0;
-  if (weeksBetween === 1) return 1;
-  return Math.max(1, weeksBetween - suggestedGracePeriod(weeksBetween));
-}
-
 const WEEKS_BASED_VARIANTS = new Set<CommitmentVariant>([
   "periodic",
   "reading",
