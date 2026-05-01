@@ -192,6 +192,68 @@ export function hhmmToSeconds(hhmm: string): number {
   return h * 3600 + m * 60;
 }
 
+/** Live validation state for HH:MM text fields (clock or duration). */
+export type HhMmInputStatus = "empty" | "typing" | "valid" | "invalid";
+
+/**
+ * Clock time (24-hour wall time): hours 0–23, minutes 0–59.
+ * Matches productivity-one / native `<input type="time">` validity.
+ */
+export function assessClockHhMmInput(raw: string): HhMmInputStatus {
+  const t = raw.trim();
+  if (!t) return "empty";
+  if (!t.includes(":")) {
+    if (/^\d{1,2}$/.test(t)) return "typing";
+    return "invalid";
+  }
+  const [hStr, mStr] = t.split(":");
+  if (!/^\d{1,2}$/.test(hStr)) return "invalid";
+  if (mStr === "") return "typing";
+  if (!/^\d{1,2}$/.test(mStr)) return "invalid";
+  if (mStr.length === 1) return "typing";
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return "invalid";
+  if (h > 23 || m > 59) return "invalid";
+  return "valid";
+}
+
+/** Pads to canonical `HH:MM` for Convex after `assessClockHhMmInput` is `valid`. */
+export function normalizeClockHhMm(raw: string): string | null {
+  if (assessClockHhMmInput(raw) !== "valid") return null;
+  const [hStr, mStr] = raw.trim().split(":");
+  return `${String(parseInt(hStr, 10)).padStart(2, "0")}:${mStr.padStart(2, "0")}`;
+}
+
+/**
+ * Duration `H:MM` / `HH:MM` — non-negative hours, minutes 0–59, total > 0.
+ * `allowEmpty`: when true, blank is `empty` (valid for optional tracker duration).
+ */
+export function assessDurationHhMmInput(
+  raw: string,
+  allowEmpty: boolean
+): HhMmInputStatus {
+  const t = raw.trim();
+  if (!t) return allowEmpty ? "empty" : "typing";
+  if (!t.includes(":")) {
+    if (/^\d+$/.test(t)) return "typing";
+    return "invalid";
+  }
+  const [hStr, mStr] = t.split(":");
+  if (hStr === "" || !/^\d+$/.test(hStr)) return "invalid";
+  if (mStr === "") return "typing";
+  if (!/^\d{1,2}$/.test(mStr)) return "invalid";
+  if (mStr.length === 1) return "typing";
+  const h = parseInt(hStr, 10);
+  const m = parseInt(mStr, 10);
+  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || m > 59) {
+    return "invalid";
+  }
+  const secs = h * 3600 + m * 60;
+  if (secs <= 0) return "invalid";
+  return "valid";
+}
+
 const MONTH_NAMES_SHORT = [
   "Jan",
   "Feb",
