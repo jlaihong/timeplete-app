@@ -106,7 +106,9 @@ export function EditTrackableDialog({
         targetNumberOfDaysAWeek: targetDaysAWeek
           ? parseInt(targetDaysAWeek, 10)
           : undefined,
-        targetNumberOfWeeks: targetWeeks ? parseInt(targetWeeks, 10) : undefined,
+        targetNumberOfWeeks: targetWeeks.trim()
+          ? parseInt(targetWeeks, 10)
+          : trackable.targetNumberOfWeeks,
         targetNumberOfMinutesAWeek: targetMinutesAWeek
           ? parseInt(targetMinutesAWeek, 10)
           : undefined,
