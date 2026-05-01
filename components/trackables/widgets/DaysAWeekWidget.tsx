@@ -9,7 +9,8 @@ import type { WidgetBodyProps } from "./types";
  * Mirror of productivity-one's `GoalWidgetPeriodic` with the
  * `COUPLE_DAYS_A_WEEK` frequency: 7-day pill + weekly progress bar
  * (`currentWeekCompletedDays / targetNumberOfDaysAWeek`) + lifetime bar
- * (`totalDayCount /` projected total from `required-progress.utils.ts`).
+ * (`totalDayCount /` total commitment: `targetNumberOfDaysAWeek ×
+ * targetNumberOfWeeks` when weeks is set, else calendar projection).
  * Tapping a day opens `TrackPeriodicDialog` for that day.
  */
 export function DaysAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
@@ -19,6 +20,7 @@ export function DaysAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
     startDayYYYYMMDD: goal.startDayYYYYMMDD,
     endDayYYYYMMDD: goal.endDayYYYYMMDD,
     targetNumberOfDaysAWeek: goal.targetNumberOfDaysAWeek,
+    targetNumberOfWeeks: goal.targetNumberOfWeeks,
   });
 
   return (
