@@ -12,7 +12,8 @@ const minutesFormat = (n: number) => `${Math.round(n)}m`;
  * Mirror of productivity-one's `GoalWidgetPeriodic` with the
  * `COUPLE_MINUTES_A_WEEK` frequency: timer row + 7-day pill + weekly progress
  * bar (`weeklyMinutes / targetNumberOfMinutesAWeek`) + lifetime bar (total
- * minutes / projected total from `required-progress.utils.ts`). Tapping a day
+ * minutes / `targetNumberOfMinutesAWeek × targetNumberOfWeeks` when weeks is
+ * set, else calendar projection).
  * opens `TrackTimeDialog` for that day.
  */
 export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
@@ -24,6 +25,7 @@ export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
     startDayYYYYMMDD: goal.startDayYYYYMMDD,
     endDayYYYYMMDD: goal.endDayYYYYMMDD,
     targetNumberOfMinutesAWeek: goal.targetNumberOfMinutesAWeek,
+    targetNumberOfWeeks: goal.targetNumberOfWeeks,
   });
 
   return (
