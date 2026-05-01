@@ -7,11 +7,11 @@ import type { TrackableSeriesGoal } from "../components/analytics/widgets/types"
  *
  *   1. What's the *effective cumulative target* for this trackable?
  *      For per-week-target trackables (DAYS_A_WEEK / MINUTES_A_WEEK)
- *      we use the explicit commitment when `targetNumberOfWeeks` is
- *      set: `weekly × targetNumberOfWeeks`. Otherwise we project across
- *      the calendar span: `weekly × totalDaysInclusive / 7`. For all
- *      other types the absolute target field (`targetCount`,
- *      `targetNumberOfHours`) is the effective target as-is.
+ *      we use `weekly × targetNumberOfWeeks` when that field is set.
+ *      Otherwise we use the onboarding / P1 grace rule:
+ *      `weekly × suggestedWeeksWithGrace(floor(daysBetween(start,end)/7))`
+ *      — never `weekly × totalCalendarDays/7`, which inflates the cap when
+ *      the stored week count is missing.
  *
  *   2. At a given date `d`, what value should the cumulative actual
  *      have reached if the user is exactly on pace? Linear:
@@ -27,6 +27,18 @@ export interface RequiredProgressPoint {
   /** Bucket index (matches the actual series x-position). */
   x: number;
   y: number;
+}
+
+function suggestedGracePeriod(weeksBetween: number): number {
+  if (weeksBetween <= 4) return 0;
+  return Math.round(weeksBetween * 0.2);
+}
+
+/** Mirrors onboarding `CommitmentForms.suggestedWeeksWithGrace` / productivity-one. */
+export function suggestedWeeksWithGrace(weeksBetween: number): number {
+  if (weeksBetween <= 0) return 0;
+  if (weeksBetween === 1) return 1;
+  return Math.max(1, weeksBetween - suggestedGracePeriod(weeksBetween));
 }
 
 interface EffectiveTargetGoal {
@@ -48,28 +60,31 @@ interface EffectiveTargetGoal {
 export function getEffectiveCumulativeTarget(
   goal: EffectiveTargetGoal,
 ): number {
-  const totalDaysInclusive = totalDaysInclusiveOf(
-    goal.startDayYYYYMMDD,
-    goal.endDayYYYYMMDD,
-  );
-
   if (goal.trackableType === "DAYS_A_WEEK") {
     const weekly = goal.targetNumberOfDaysAWeek ?? 0;
     if (weekly <= 0) return 0;
-    const weeks = goal.targetNumberOfWeeks;
-    if (weeks != null && weeks > 0) {
-      return weekly * weeks;
-    }
-    return (weekly * totalDaysInclusive) / 7;
+    const weeksFloor = Math.floor(
+      daysBetweenYYYYMMDD(goal.startDayYYYYMMDD, goal.endDayYYYYMMDD) / 7,
+    );
+    const committedWeeks =
+      goal.targetNumberOfWeeks != null && goal.targetNumberOfWeeks > 0
+        ? goal.targetNumberOfWeeks
+        : suggestedWeeksWithGrace(weeksFloor > 0 ? weeksFloor : 1);
+    if (committedWeeks <= 0) return 0;
+    return weekly * committedWeeks;
   }
   if (goal.trackableType === "MINUTES_A_WEEK") {
     const weekly = goal.targetNumberOfMinutesAWeek ?? 0;
     if (weekly <= 0) return 0;
-    const weeks = goal.targetNumberOfWeeks;
-    if (weeks != null && weeks > 0) {
-      return weekly * weeks;
-    }
-    return (weekly * totalDaysInclusive) / 7;
+    const weeksFloor = Math.floor(
+      daysBetweenYYYYMMDD(goal.startDayYYYYMMDD, goal.endDayYYYYMMDD) / 7,
+    );
+    const committedWeeks =
+      goal.targetNumberOfWeeks != null && goal.targetNumberOfWeeks > 0
+        ? goal.targetNumberOfWeeks
+        : suggestedWeeksWithGrace(weeksFloor > 0 ? weeksFloor : 1);
+    if (committedWeeks <= 0) return 0;
+    return weekly * committedWeeks;
   }
   if (goal.trackableType === "NUMBER") return goal.targetCount ?? 0;
   if (goal.trackableType === "TIME_TRACK") return goal.targetNumberOfHours ?? 0;
