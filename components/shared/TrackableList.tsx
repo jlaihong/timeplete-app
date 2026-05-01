@@ -45,6 +45,11 @@ interface TrackableListProps {
    * tabs are omitted (home page behaviour). Defaults to true (e.g. Goals tab).
    */
   showArchivedToggle?: boolean;
+  /**
+   * Goals-tab chrome aligned with productivity-one `DayActionTaskComponent`:
+   * full-width blue Card header strip (#1787D8), plus icon row — replaces flat Material header when combined with `title`.
+   */
+  variant?: "default" | "productivity-one-goals";
 }
 
 /**
@@ -53,12 +58,16 @@ interface TrackableListProps {
  * (days-a-week pill, minutes-a-week timer pill, number stepper, etc.) and
  * wraps it in the shared `TrackableWidgetCard` chrome.
  */
+/** Matches `#1787D8` productivity-one Tasks panel (`DayActionTaskComponent.tsx`). */
+const P_ONE_TASKS_HEADER_BLUE = "#1787D8";
+
 export function TrackableList({
   title,
   onRequestAddTrackable,
   onRequestLog,
   onRequestEditTrackable,
   showArchivedToggle = true,
+  variant = "default",
 }: TrackableListProps) {
   const isDesktop = useIsDesktop();
 
@@ -112,17 +121,34 @@ export function TrackableList({
     ? goalDetails.archived
     : goalDetails.active;
 
+  const productivityGoalsChrome =
+    variant === "productivity-one-goals" && title;
+
   return (
     <View style={styles.container}>
-      {title && (
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{title}</Text>
-          {isDesktop && (
-            <TouchableOpacity onPress={openAddTrackable}>
-              <Ionicons name="add-circle" size={24} color={Colors.primary} />
-            </TouchableOpacity>
-          )}
+      {productivityGoalsChrome ? (
+        <View style={styles.pOneGoalsBanner}>
+          <TouchableOpacity
+            onPress={openAddTrackable}
+            accessibilityRole="button"
+            accessibilityLabel="Add trackable"
+          >
+            <Ionicons name="add-circle-outline" size={34} color={Colors.white} />
+          </TouchableOpacity>
+          <Text style={styles.pOneGoalsBannerTitle}>{title}</Text>
+          <View style={styles.pOneGoalsBannerSpacer} />
         </View>
+      ) : (
+        title && (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{title}</Text>
+            {isDesktop && (
+              <TouchableOpacity onPress={openAddTrackable}>
+                <Ionicons name="add-circle" size={24} color={Colors.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )
       )}
 
       {showArchivedToggle && (
@@ -147,7 +173,7 @@ export function TrackableList({
               Archived ({goalDetails.archivedCount})
             </Text>
           </TouchableOpacity>
-          {!title && isDesktop && (
+          {!title && !productivityGoalsChrome && isDesktop && (
             <TouchableOpacity
               onPress={openAddTrackable}
               style={styles.inlineAdd}
@@ -233,6 +259,25 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
+  pOneGoalsBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: P_ONE_TASKS_HEADER_BLUE,
+  },
+  pOneGoalsBannerTitle: {
+    flex: 1,
+    textAlign: "center",
+    color: Colors.white,
+    fontSize: 22,
+    fontWeight: "600",
+  },
+  pOneGoalsBannerSpacer: {
+    width: 34,
+    height: 34,
+  },
   tabs: {
     flexDirection: "row",
     paddingHorizontal: 16,
