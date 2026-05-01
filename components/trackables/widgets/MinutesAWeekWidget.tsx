@@ -26,6 +26,11 @@ export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
     targetNumberOfMinutesAWeek: goal.targetNumberOfMinutesAWeek,
     targetNumberOfWeeks: goal.targetNumberOfWeeks,
   });
+  const overallNumerator =
+    typeof goal.periodicOverallProgress === "number" &&
+    Number.isFinite(goal.periodicOverallProgress)
+      ? goal.periodicOverallProgress
+      : 0;
 
   return (
     <View style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}>
@@ -47,7 +52,7 @@ export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
       {overallTarget > 0 && (
         <ProgressBarWithText
           caption="Overall"
-          numerator={goal.periodicOverallProgress}
+          numerator={overallNumerator}
           denominator={overallTarget}
           colour={goal.colour}
           format={minutesFormat}
