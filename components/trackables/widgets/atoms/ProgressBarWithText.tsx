@@ -8,6 +8,8 @@ interface ProgressBarWithTextProps {
   colour: string;
   /** Optional formatter for both numerator and denominator. */
   format?: (n: number) => string;
+  /** Caption above the fraction row (e.g. "This week" / "Overall"). */
+  caption?: string;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -24,6 +26,7 @@ export function ProgressBarWithText({
   denominator,
   colour,
   format,
+  caption,
   style,
 }: ProgressBarWithTextProps) {
   const fmt = format ?? defaultFormat;
@@ -31,6 +34,7 @@ export function ProgressBarWithText({
   const pct = Math.min(100, Math.max(0, (numerator / safeDenom) * 100));
   return (
     <View style={[styles.container, style]}>
+      {caption ? <Text style={styles.caption}>{caption}</Text> : null}
       <Text style={styles.label}>
         {fmt(numerator)}/{fmt(denominator)}
       </Text>
@@ -56,6 +60,13 @@ function defaultFormat(n: number): string {
 
 const styles = StyleSheet.create({
   container: { width: "100%", alignSelf: "stretch" },
+  caption: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.textTertiary,
+    marginBottom: 2,
+    textAlign: "center",
+  },
   label: {
     fontSize: 12,
     color: Colors.textSecondary,
