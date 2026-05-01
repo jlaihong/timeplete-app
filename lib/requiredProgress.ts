@@ -7,11 +7,11 @@ import type { TrackableSeriesGoal } from "../components/analytics/widgets/types"
  *
  *   1. What's the *effective cumulative target* for this trackable?
  *      For per-week-target trackables (DAYS_A_WEEK / MINUTES_A_WEEK)
- *      we use `weekly × targetNumberOfWeeks` when that field is set.
- *      Otherwise we use the onboarding / P1 grace rule:
- *      `weekly × suggestedWeeksWithGrace(floor(daysBetween(start,end)/7))`
- *      — never `weekly × totalCalendarDays/7`, which inflates the cap when
- *      the stored week count is missing.
+ *      the *analytics* cumulative target is still `weekly × committedWeeks`
+ *      (see `getPeriodicCommittedWeekCount`). The *home widget* "Overall"
+ *      bar in productivity-one uses a **week scale**: denominator =
+ *      `targetNumberOfWeeks`, numerator = normalized per-week progress
+ *      (`periodicOverallProgress / weekly`).
  *
  *   2. At a given date `d`, what value should the cumulative actual
  *      have reached if the user is exactly on pace? Linear:
@@ -54,6 +54,32 @@ interface EffectiveTargetGoal {
 }
 
 /**
+ * Committed week count for periodic goals — same base used for analytics
+ * cumulative targets and for the home widget overall bar *denominator*.
+ */
+export function getPeriodicCommittedWeekCount(
+  goal: Pick<
+    EffectiveTargetGoal,
+    "trackableType" | "startDayYYYYMMDD" | "endDayYYYYMMDD" | "targetNumberOfWeeks"
+  >,
+): number {
+  if (
+    goal.trackableType !== "DAYS_A_WEEK" &&
+    goal.trackableType !== "MINUTES_A_WEEK"
+  ) {
+    return 0;
+  }
+  const weeksFloor = Math.floor(
+    daysBetweenYYYYMMDD(goal.startDayYYYYMMDD, goal.endDayYYYYMMDD) / 7,
+  );
+  const committed =
+    goal.targetNumberOfWeeks != null && goal.targetNumberOfWeeks > 0
+      ? goal.targetNumberOfWeeks
+      : suggestedWeeksWithGrace(weeksFloor > 0 ? weeksFloor : 1);
+  return committed > 0 ? committed : 0;
+}
+
+/**
  * Effective lifetime target the cumulative line chases. Returns 0
  * when there's no usable target so callers can simply skip drawing.
  */
@@ -63,28 +89,16 @@ export function getEffectiveCumulativeTarget(
   if (goal.trackableType === "DAYS_A_WEEK") {
     const weekly = goal.targetNumberOfDaysAWeek ?? 0;
     if (weekly <= 0) return 0;
-    const weeksFloor = Math.floor(
-      daysBetweenYYYYMMDD(goal.startDayYYYYMMDD, goal.endDayYYYYMMDD) / 7,
-    );
-    const committedWeeks =
-      goal.targetNumberOfWeeks != null && goal.targetNumberOfWeeks > 0
-        ? goal.targetNumberOfWeeks
-        : suggestedWeeksWithGrace(weeksFloor > 0 ? weeksFloor : 1);
-    if (committedWeeks <= 0) return 0;
-    return weekly * committedWeeks;
+    const weeks = getPeriodicCommittedWeekCount(goal);
+    if (weeks <= 0) return 0;
+    return weekly * weeks;
   }
   if (goal.trackableType === "MINUTES_A_WEEK") {
     const weekly = goal.targetNumberOfMinutesAWeek ?? 0;
     if (weekly <= 0) return 0;
-    const weeksFloor = Math.floor(
-      daysBetweenYYYYMMDD(goal.startDayYYYYMMDD, goal.endDayYYYYMMDD) / 7,
-    );
-    const committedWeeks =
-      goal.targetNumberOfWeeks != null && goal.targetNumberOfWeeks > 0
-        ? goal.targetNumberOfWeeks
-        : suggestedWeeksWithGrace(weeksFloor > 0 ? weeksFloor : 1);
-    if (committedWeeks <= 0) return 0;
-    return weekly * committedWeeks;
+    const weeks = getPeriodicCommittedWeekCount(goal);
+    if (weeks <= 0) return 0;
+    return weekly * weeks;
   }
   if (goal.trackableType === "NUMBER") return goal.targetCount ?? 0;
   if (goal.trackableType === "TIME_TRACK") return goal.targetNumberOfHours ?? 0;
