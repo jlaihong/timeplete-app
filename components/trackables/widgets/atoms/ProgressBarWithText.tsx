@@ -30,13 +30,15 @@ export function ProgressBarWithText({
   style,
 }: ProgressBarWithTextProps) {
   const fmt = format ?? defaultFormat;
-  const safeDenom = denominator || 1;
-  const pct = Math.min(100, Math.max(0, (numerator / safeDenom) * 100));
+  const safeNum = Number.isFinite(numerator) ? numerator : 0;
+  const safeDenom =
+    Number.isFinite(denominator) && denominator > 0 ? denominator : 1;
+  const pct = Math.min(100, Math.max(0, (safeNum / safeDenom) * 100));
   return (
     <View style={[styles.container, style]}>
       {caption ? <Text style={styles.caption}>{caption}</Text> : null}
       <Text style={styles.label}>
-        {fmt(numerator)}/{fmt(denominator)}
+        {fmt(safeNum)}/{fmt(safeDenom)}
       </Text>
       <View style={styles.track}>
         <View
@@ -51,6 +53,7 @@ export function ProgressBarWithText({
 }
 
 function defaultFormat(n: number): string {
+  if (!Number.isFinite(n)) return "0";
   // 1 decimal, trailing ".0" stripped — matches productivity-one's
   // `formatNumber()` helper inside ProgressBarWithText.
   const rounded = Math.round(n * 10) / 10;
