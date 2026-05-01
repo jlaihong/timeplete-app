@@ -9,28 +9,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { Colors } from "../../constants/colors";
 import { hhmmToSeconds, secondsToDurationString } from "../../lib/dates";
-
-const PRESET_OPTIONS = [
-  "0:05",
-  "0:10",
-  "0:15",
-  "0:20",
-  "0:25",
-  "0:30",
-  "0:45",
-  "1:00",
-  "1:15",
-  "1:30",
-  "1:45",
-  "2:00",
-  "2:30",
-  "3:00",
-  "4:00",
-  "5:00",
-  "6:00",
-  "7:00",
-  "8:00",
-];
+import { TRACKABLE_DURATION_PRESETS } from "../../lib/trackableLogPresets";
 
 export interface DurationPickerDesktopProps {
   durationSeconds: number;
@@ -82,13 +61,13 @@ export function DurationPickerDesktop({
 
   const filteredOptions = useMemo(() => {
     const q = text.trim().toLowerCase();
-    if (!q) return PRESET_OPTIONS;
-    const matches = PRESET_OPTIONS.filter((o) =>
+    if (!q) return TRACKABLE_DURATION_PRESETS;
+    const matches = TRACKABLE_DURATION_PRESETS.filter((o) =>
       o.toLowerCase().includes(q)
     );
     // Fallback: if the typed value doesn't match any preset (e.g. "00:01"),
     // still show the full list so the dropdown is never invisibly empty.
-    return matches.length > 0 ? matches : PRESET_OPTIONS;
+    return matches.length > 0 ? matches : TRACKABLE_DURATION_PRESETS;
   }, [text]);
 
   const startEditing = useCallback(
