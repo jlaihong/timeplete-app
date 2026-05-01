@@ -74,7 +74,11 @@ export const upsert = mutation({
       if (!existing || existing.userId !== user._id)
         throw new Error("Trackable not found");
 
-      const { id, ...updateFields } = args;
+      const { id, ...rest } = args;
+      const updateFields: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(rest)) {
+        if (val !== undefined) (updateFields as Record<string, unknown>)[key] = val;
+      }
       await ctx.db.patch(args.id, {
         ...updateFields,
         isCumulative: args.isCumulative ?? existing.isCumulative,
@@ -227,6 +231,21 @@ export const remove = mutation({
     await ctx.db.delete(args.id);
   },
 });
+
+/** Monday 00:00 boundary (productivity-one week), YYYYMMDD. */
+function startOfWeekYYYYMMDD(yyyymmdd: string): string {
+  const y = parseInt(yyyymmdd.substring(0, 4));
+  const m = parseInt(yyyymmdd.substring(4, 6)) - 1;
+  const d = parseInt(yyyymmdd.substring(6, 8));
+  const date = new Date(y, m, d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  date.setDate(diff);
+  const yy = date.getFullYear().toString();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yy}${mm}${dd}`;
+}
 
 /** Add `days` to an 8-char YYYYMMDD string, returning another YYYYMMDD. */
 function addDaysYYYYMMDD(yyyymmdd: string, days: number): string {
@@ -532,6 +551,83 @@ export const getGoalDetails = query({
           ? totalEntryCount
           : totalDayCount;
 
+      const progressCap =
+        args.today &&
+        args.today.length === 8 &&
+        args.today >= trackable.startDayYYYYMMDD &&
+        args.today <= trackable.endDayYYYYMMDD
+          ? args.today
+          : trackable.endDayYYYYMMDD;
+
+      // Per-week capped credits for the home "Overall" bar — only days/minutes
+      // toward each week's quota count (mirrors productivity-one periodic
+      // widgets; raw `totalDayCount` over-counts when a week exceeds the cap).
+      let periodicOverallProgress = 0;
+      if (
+        trackable.trackableType === "DAYS_A_WEEK" &&
+        progressCap >= trackable.startDayYYYYMMDD
+      ) {
+        const perWeekTarget = trackable.targetNumberOfDaysAWeek ?? 0;
+        if (perWeekTarget > 0) {
+          const byDay = new Map(
+            trackableDays.map((d) => [d.dayYYYYMMDD, d])
+          );
+          let monday = startOfWeekYYYYMMDD(trackable.startDayYYYYMMDD);
+          while (monday <= progressCap) {
+            let daysWithActivity = 0;
+            for (let i = 0; i < 7; i++) {
+              const day = addDaysYYYYMMDD(monday, i);
+              if (
+                day < trackable.startDayYYYYMMDD ||
+                day > trackable.endDayYYYYMMDD ||
+                day > progressCap
+              )
+                continue;
+              const row = byDay.get(day);
+              const tc = getCompletedTaskCount(
+                taskCountsByTrackableDay,
+                trackable._id,
+                day
+              );
+              if ((row?.numCompleted ?? 0) + tc > 0) daysWithActivity++;
+            }
+            periodicOverallProgress += Math.min(
+              daysWithActivity,
+              perWeekTarget
+            );
+            monday = addDaysYYYYMMDD(monday, 7);
+          }
+        }
+      } else if (
+        trackable.trackableType === "MINUTES_A_WEEK" &&
+        progressCap >= trackable.startDayYYYYMMDD
+      ) {
+        const perWeekMin = trackable.targetNumberOfMinutesAWeek ?? 0;
+        if (perWeekMin > 0) {
+          let monday = startOfWeekYYYYMMDD(trackable.startDayYYYYMMDD);
+          while (monday <= progressCap) {
+            const weekEnd = addDaysYYYYMMDD(monday, 6);
+            let weekSeconds = 0;
+            for (const w of attributedWindows) {
+              if (
+                w.startDayYYYYMMDD >= monday &&
+                w.startDayYYYYMMDD <= weekEnd &&
+                w.startDayYYYYMMDD >= trackable.startDayYYYYMMDD &&
+                w.startDayYYYYMMDD <= trackable.endDayYYYYMMDD &&
+                w.startDayYYYYMMDD <= progressCap
+              ) {
+                weekSeconds += w.durationSeconds;
+              }
+            }
+            periodicOverallProgress += Math.min(
+              Math.floor(weekSeconds / 60),
+              perWeekMin
+            );
+            monday = addDaysYYYYMMDD(monday, 7);
+          }
+        }
+      }
+
       result.push({
         ...trackable,
         totalTimeSeconds: totalSeconds,
@@ -548,6 +644,7 @@ export const getGoalDetails = query({
         todayEntryCount,
         dailyTimeAverageSeconds,
         dailyCountAverage,
+        periodicOverallProgress,
       });
     }
 
