@@ -7,10 +7,11 @@ import type { TrackableSeriesGoal } from "../components/analytics/widgets/types"
  *
  *   1. What's the *effective cumulative target* for this trackable?
  *      For per-week-target trackables (DAYS_A_WEEK / MINUTES_A_WEEK)
- *      we project the weekly target out across the goal's full
- *      duration: `weekly × totalDaysInclusive / 7`. For all others
- *      the absolute target field (`targetCount`, `targetNumberOfHours`)
- *      is the effective target as-is.
+ *      we use the explicit commitment when `targetNumberOfWeeks` is
+ *      set: `weekly × targetNumberOfWeeks`. Otherwise we project across
+ *      the calendar span: `weekly × totalDaysInclusive / 7`. For all
+ *      other types the absolute target field (`targetCount`,
+ *      `targetNumberOfHours`) is the effective target as-is.
  *
  *   2. At a given date `d`, what value should the cumulative actual
  *      have reached if the user is exactly on pace? Linear:
@@ -34,6 +35,8 @@ interface EffectiveTargetGoal {
   endDayYYYYMMDD: string;
   targetNumberOfDaysAWeek?: number;
   targetNumberOfMinutesAWeek?: number;
+  /** When set, lifetime target is `weekly × weeks` (matches edit UI). */
+  targetNumberOfWeeks?: number;
   targetCount?: number;
   targetNumberOfHours?: number;
 }
@@ -53,11 +56,19 @@ export function getEffectiveCumulativeTarget(
   if (goal.trackableType === "DAYS_A_WEEK") {
     const weekly = goal.targetNumberOfDaysAWeek ?? 0;
     if (weekly <= 0) return 0;
+    const weeks = goal.targetNumberOfWeeks;
+    if (weeks != null && weeks > 0) {
+      return weekly * weeks;
+    }
     return (weekly * totalDaysInclusive) / 7;
   }
   if (goal.trackableType === "MINUTES_A_WEEK") {
     const weekly = goal.targetNumberOfMinutesAWeek ?? 0;
     if (weekly <= 0) return 0;
+    const weeks = goal.targetNumberOfWeeks;
+    if (weeks != null && weeks > 0) {
+      return weekly * weeks;
+    }
     return (weekly * totalDaysInclusive) / 7;
   }
   if (goal.trackableType === "NUMBER") return goal.targetCount ?? 0;
