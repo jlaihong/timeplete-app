@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   RefreshControl,
   Platform,
+  ScrollView,
+  useWindowDimensions,
 } from "react-native";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -42,14 +44,17 @@ interface TrackableListProps {
   onRequestEditTrackable?: (trackableId: string) => void;
   /**
    * When false, only active trackables are listed and the Active / Archived
-   * tabs are omitted (home page behaviour). Defaults to true (e.g. Goals tab).
+   * tabs are omitted (home page behaviour). Defaults to true on list variants
+   * that use the Active / Archived toggle (not `trackables-page`).
    */
   showArchivedToggle?: boolean;
   /**
-   * Goals-tab chrome aligned with productivity-one `DayActionTaskComponent`:
-   * full-width blue Card header strip (#1787D8), plus icon row — replaces flat Material header when combined with `title`.
+   * - `productivity-one-goals`: blue Tasks-style header strip + centered title.
+   * - `trackables-page`: productivity-one `goals-page.html` — page title + add,
+   *   "Current trackables" / "Archived trackables" sections, responsive grid
+   *   (no Active/Archived tab strip).
    */
-  variant?: "default" | "productivity-one-goals";
+  variant?: "default" | "productivity-one-goals" | "trackables-page";
 }
 
 /**
@@ -61,6 +66,14 @@ interface TrackableListProps {
 /** Matches `#1787D8` productivity-one Tasks panel (`DayActionTaskComponent.tsx`). */
 const P_ONE_TASKS_HEADER_BLUE = "#1787D8";
 
+/** Breakpoints aligned with productivity-one `goals-page.css` grid rules. */
+function trackablesPageColumnCount(windowWidth: number): number {
+  if (windowWidth <= 600) return 1;
+  if (windowWidth <= 900) return 2;
+  if (windowWidth <= 1200) return 3;
+  return 4;
+}
+
 export function TrackableList({
   title,
   onRequestAddTrackable,
@@ -70,6 +83,7 @@ export function TrackableList({
   variant = "default",
 }: TrackableListProps) {
   const isDesktop = useIsDesktop();
+  const { width: windowWidth } = useWindowDimensions();
 
   // Compute today / weekStart once per render. The query depends on these
   // values, so the cache key changes only when the day rolls over — which is
@@ -77,9 +91,19 @@ export function TrackableList({
   const today = useMemo(() => todayYYYYMMDD(), []);
   const weekStart = useMemo(() => startOfWeek(today), [today]);
 
+  const [activePageLimit, setActivePageLimit] = useState(20);
+  const [archivedPageLimit, setArchivedPageLimit] = useState(20);
+  const trackablesPageFetchLimit =
+    variant === "trackables-page"
+      ? Math.max(activePageLimit, archivedPageLimit)
+      : undefined;
+
   const goalDetails = useQuery(api.trackables.getGoalDetails, {
     today,
     weekStart,
+    ...(trackablesPageFetchLimit != null
+      ? { limit: trackablesPageFetchLimit }
+      : {}),
   });
 
   const [refreshing, setRefreshing] = useState(false);
@@ -112,6 +136,124 @@ export function TrackableList({
     return (
       <View style={styles.loading}>
         <Text style={styles.loadingText}>Loading trackables...</Text>
+      </View>
+    );
+  }
+
+  if (variant === "trackables-page") {
+    const pageTitle = title ?? "Trackables";
+    const cols = trackablesPageColumnCount(windowWidth);
+    const gridGap = 8;
+    const innerBudget = Math.min(1200, Math.max(280, windowWidth * 0.8));
+    const tileWidth = (innerBudget - gridGap * (cols - 1)) / cols;
+    const hasMoreActive = goalDetails.activeCount > goalDetails.active.length;
+    const hasMoreArchived =
+      goalDetails.archivedCount > goalDetails.archived.length;
+
+    const renderGoalTile = (goal: (typeof goalDetails.active)[0]) => (
+      <View
+        key={goal._id}
+        style={[styles.trackablesPageTile, { width: tileWidth }]}
+      >
+        <TrackableWidgetFactory
+          goal={goal}
+          today={today}
+          onRequestLog={handleRequestLog}
+          onRequestEditTrackable={onRequestEditTrackable}
+        />
+      </View>
+    );
+
+    return (
+      <View style={styles.container}>
+        <ScrollView
+          style={styles.trackablesPageScroll}
+          contentContainerStyle={styles.trackablesPageScrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                setTimeout(() => setRefreshing(false), 500);
+              }}
+              tintColor={Colors.primary}
+            />
+          }
+        >
+          <View style={styles.trackablesPageTitleRow}>
+            <Text style={styles.trackablesPageTitle}>{pageTitle}</Text>
+            <TouchableOpacity
+              onPress={openAddTrackable}
+              accessibilityRole="button"
+              accessibilityLabel="Add trackable"
+            >
+              <Ionicons name="add-circle" size={28} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.trackablesPageSectionHeading}>
+            Current trackables
+          </Text>
+          <View style={styles.trackablesPageDivider} />
+          <View style={styles.trackablesPageSectionSpacer} />
+
+          {goalDetails.active.length === 0 ? (
+            <Text style={styles.trackablesPageEmpty}>No active trackables</Text>
+          ) : (
+            <View style={[styles.trackablesPageGrid, { gap: gridGap }]}>
+              {goalDetails.active.map(renderGoalTile)}
+            </View>
+          )}
+
+          {hasMoreActive && (
+            <TouchableOpacity
+              style={styles.trackablesPageLoadMore}
+              onPress={() => setActivePageLimit((n) => n + 20)}
+            >
+              <Text style={styles.trackablesPageLoadMoreText}>
+                Load more active trackables
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <Text style={styles.trackablesPageSectionHeadingArchived}>
+            Archived trackables
+          </Text>
+          <View style={styles.trackablesPageDivider} />
+          <View style={styles.trackablesPageSectionSpacer} />
+
+          {goalDetails.archived.length === 0 ? (
+            <Text style={styles.trackablesPageEmpty}>
+              No archived trackables
+            </Text>
+          ) : (
+            <View style={[styles.trackablesPageGrid, { gap: gridGap }]}>
+              {goalDetails.archived.map(renderGoalTile)}
+            </View>
+          )}
+
+          {hasMoreArchived && (
+            <TouchableOpacity
+              style={styles.trackablesPageLoadMore}
+              onPress={() => setArchivedPageLimit((n) => n + 20)}
+            >
+              <Text style={styles.trackablesPageLoadMoreText}>
+                Load more archived trackables
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={styles.trackablesPageBottomSpacer} />
+        </ScrollView>
+
+        {localShowAdd && (
+          <AddTrackableFlow onClose={() => setLocalShowAdd(false)} />
+        )}
+
+        <TrackableDialogHost
+          request={localLogRequest}
+          onClose={() => setLocalLogRequest(null)}
+        />
       </View>
     );
   }
@@ -295,6 +437,85 @@ const styles = StyleSheet.create({
   activeTabText: { color: Colors.onPrimary },
   inlineAdd: { marginLeft: "auto" },
   listContent: { padding: 16, paddingBottom: 80 },
+  trackablesPageScroll: { flex: 1 },
+  trackablesPageScrollContent: {
+    paddingBottom: 32,
+    alignItems: "center",
+    width: "100%",
+  },
+  trackablesPageTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 20,
+    paddingHorizontal: 8,
+  },
+  trackablesPageTitle: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: Colors.text,
+    textAlign: "center",
+  },
+  trackablesPageSectionHeading: {
+    alignSelf: "stretch",
+    maxWidth: 1200,
+    width: "100%",
+    fontSize: 20,
+    fontWeight: "600",
+    color: Colors.text,
+    marginBottom: 4,
+    paddingHorizontal: 4,
+  },
+  trackablesPageSectionHeadingArchived: {
+    alignSelf: "stretch",
+    maxWidth: 1200,
+    width: "100%",
+    fontSize: 20,
+    fontWeight: "600",
+    color: Colors.text,
+    marginTop: 28,
+    marginBottom: 4,
+    paddingHorizontal: 4,
+  },
+  trackablesPageDivider: {
+    alignSelf: "stretch",
+    maxWidth: 1200,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.outlineVariant,
+  },
+  trackablesPageSectionSpacer: { height: 8 },
+  trackablesPageGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignSelf: "stretch",
+    maxWidth: 1200,
+    width: "100%",
+    justifyContent: "flex-start",
+  },
+  trackablesPageTile: { minWidth: 0 },
+  trackablesPageEmpty: {
+    alignSelf: "stretch",
+    maxWidth: 1200,
+    color: Colors.textTertiary,
+    fontSize: 15,
+    paddingHorizontal: 4,
+  },
+  trackablesPageLoadMore: {
+    alignSelf: "center",
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: Colors.outline,
+  },
+  trackablesPageLoadMoreText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  trackablesPageBottomSpacer: { height: 24 },
   fab: {
     position: "absolute",
     right: 20,
