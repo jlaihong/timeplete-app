@@ -1,8 +1,7 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet, Platform } from "react-native";
 import { Colors } from "../../../../constants/colors";
-import { TimeField } from "../../../ui/TimeField";
-import { Input } from "../../../ui/Input";
+import { StartTimeComboField } from "./StartTimeComboField";
 import {
   assessDurationHhMmInput,
 } from "../../../../lib/dates";
@@ -10,14 +9,10 @@ import {
   applyDurationHhmmMask,
 } from "../../../../lib/durationHhmmMask";
 import {
-  quarterHourStartTimeOptions,
   TRACKABLE_DURATION_PRESETS,
 } from "../../../../lib/trackableLogPresets";
 import { CrossPlatformHhMmSelect, type HhMmSelectOption } from "./CrossPlatformHhMmSelect";
-
-const START_OPTIONS: HhMmSelectOption[] = quarterHourStartTimeOptions().map(
-  (v) => ({ value: v, label: v })
-);
+import { Input } from "../../../ui/Input";
 
 function durationPresetOptions(allowNone: boolean): HhMmSelectOption[] {
   if (allowNone) {
@@ -29,7 +24,7 @@ function durationPresetOptions(allowNone: boolean): HhMmSelectOption[] {
   return TRACKABLE_DURATION_PRESETS.map((v) => ({ value: v, label: v }));
 }
 
-/** Start time: quick preset select + browser-native / validated manual entry. */
+/** Start: one combobox — type + preset dropdown (P1 / DurationPicker pattern). */
 export function TrackableLogStartTimeBlock({
   value,
   onChange,
@@ -39,21 +34,7 @@ export function TrackableLogStartTimeBlock({
 }) {
   return (
     <View style={styles.block}>
-      <Text style={styles.sectionLabel}>Start time</Text>
-      <CrossPlatformHhMmSelect
-        fieldLabel="Quick pick"
-        ariaLabel="Start time preset"
-        value={value}
-        onChange={onChange}
-        options={START_OPTIONS}
-      />
-      <Text style={styles.hint}>Or type a time (24-hour)</Text>
-      <TimeField
-        label="Time"
-        value={value}
-        onChange={onChange}
-        stepSeconds={900}
-      />
+      <StartTimeComboField label="Start time" value={value} onChange={onChange} />
     </View>
   );
 }
