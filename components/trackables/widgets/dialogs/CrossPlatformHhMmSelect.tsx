@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -41,10 +41,20 @@ const webSelectStyle = {
   cursor: "pointer",
 };
 
+function augmentOptionsWithCustom(
+  options: HhMmSelectOption[],
+  value: string
+): HhMmSelectOption[] {
+  if (!value) return options;
+  if (options.some((o) => o.value === value)) return options;
+  return [...options, { value, label: `${value} (custom)` }];
+}
+
 /**
- * Cross-platform HH:MM field: native `<select>` on web (keyboard, scroll,
- * accessibility); Modal list on iOS/Android — same pattern as `ListPicker`
- * so options aren’t clipped inside nested dialogs.
+ * Cross-platform HH:MM preset picker: native `<select>` on web; Modal list
+ * on iOS/Android. Does **not** coerce free-typed values — if `value` is not
+ * in `options`, a synthetic “(custom)” row is shown so the control stays
+ * aligned with manual entry fields beside it.
  */
 export function CrossPlatformHhMmSelect({
   fieldLabel,
@@ -53,18 +63,16 @@ export function CrossPlatformHhMmSelect({
   options,
   ariaLabel,
 }: CrossPlatformHhMmSelectProps) {
-  useEffect(() => {
-    if (options.length === 0) return;
-    if (!options.some((o) => o.value === value)) {
-      onChange(options[0]!.value);
-    }
-  }, [value, options, onChange]);
+  const augmentedOptions = useMemo(
+    () => augmentOptionsWithCustom(options, value),
+    [options, value]
+  );
 
   const resolved = useMemo(() => {
-    const hit = options.find((o) => o.value === value);
+    const hit = augmentedOptions.find((o) => o.value === value);
     if (hit) return hit;
-    return options[0] ?? { value: "", label: "" };
-  }, [options, value]);
+    return augmentedOptions[0] ?? { value: "", label: "" };
+  }, [augmentedOptions, value]);
 
   if (Platform.OS === "web") {
     return (
@@ -79,10 +87,13 @@ export function CrossPlatformHhMmSelect({
             style: webSelectStyle,
             "aria-label": ariaLabel ?? fieldLabel,
           },
-          options.map((opt) =>
+          augmentedOptions.map((opt) =>
             React.createElement(
               "option",
-              { key: opt.value === "" ? "__empty__" : opt.value, value: opt.value },
+              {
+                key: opt.value === "" ? "__empty__" : opt.value,
+                value: opt.value,
+              },
               opt.label
             )
           )
@@ -97,7 +108,7 @@ export function CrossPlatformHhMmSelect({
       value={value}
       displayLabel={resolved.label}
       onChange={onChange}
-      options={options}
+      options={augmentedOptions}
       ariaLabel={ariaLabel ?? fieldLabel}
     />
   );
@@ -154,7 +165,11 @@ function NativeHhMmSelect({
               }
               style={styles.list}
               keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => {
+              renderItem={({
+                item,
+              }: {
+                item: HhMmSelectOption;
+              }) => {
                 const active = item.value === value;
                 return (
                   <TouchableOpacity
@@ -188,7 +203,7 @@ function NativeHhMmSelect({
 }
 
 const styles = StyleSheet.create({
-  field: { flex: 1, minWidth: 140 },
+  field: { width: "100%", minWidth: 140, alignSelf: "stretch" },
   fieldLabel: {
     fontSize: 13,
     fontWeight: "600",

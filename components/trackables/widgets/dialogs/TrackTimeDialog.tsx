@@ -15,15 +15,17 @@ import { Colors } from "../../../../constants/colors";
 import { Card } from "../../../ui/Card";
 import { Button } from "../../../ui/Button";
 import {
+  assessClockHhMmInput,
+  assessDurationHhMmInput,
   formatYYYYMMDDtoDDMMM,
   hhmmToSeconds,
+  normalizeClockHhMm,
 } from "../../../../lib/dates";
+import { defaultStartTimeQuarterHour } from "../../../../lib/trackableLogPresets";
 import {
-  defaultStartTimeQuarterHour,
-  quarterHourStartTimeOptions,
-  TRACKABLE_DURATION_PRESETS,
-} from "../../../../lib/trackableLogPresets";
-import { CrossPlatformHhMmSelect } from "./CrossPlatformHhMmSelect";
+  TrackableLogDurationBlock,
+  TrackableLogStartTimeBlock,
+} from "./TrackableLogHhMmFields";
 
 interface TrackTimeDialogProps {
   trackableId: Id<"trackables">;
@@ -47,17 +49,6 @@ export function TrackTimeDialog({
   dayYYYYMMDD,
   onClose,
 }: TrackTimeDialogProps) {
-  const startOptions = useMemo(
-    () =>
-      quarterHourStartTimeOptions().map((v) => ({ value: v, label: v })),
-    []
-  );
-  const durationOptions = useMemo(
-    () =>
-      TRACKABLE_DURATION_PRESETS.map((v) => ({ value: v, label: v })),
-    []
-  );
-
   const [startTime, setStartTime] = useState(defaultStartTimeQuarterHour);
   const [durationHhmm, setDurationHhmm] = useState("0:30");
   const [comments, setComments] = useState("");
@@ -65,18 +56,37 @@ export function TrackTimeDialog({
   const [saving, setSaving] = useState(false);
   const upsertWindow = useMutation(api.timeWindows.upsert);
 
+  const startStatus = useMemo(
+    () => assessClockHhMmInput(startTime),
+    [startTime]
+  );
+  const durationStatus = useMemo(
+    () => assessDurationHhMmInput(durationHhmm, false),
+    [durationHhmm]
+  );
+  const canSave = startStatus === "valid" && durationStatus === "valid";
+
   const onSave = async () => {
     setError(null);
-    if (!startTime) return setError("Start time is required");
-    if (!durationHhmm) return setError("Duration is required");
+    if (startStatus !== "valid") {
+      return setError("Enter a valid start time (24-hour HH:MM).");
+    }
+    if (durationStatus !== "valid") {
+      return setError("Enter a valid duration (greater than zero).");
+    }
+    const normalizedStart = normalizeClockHhMm(startTime);
+    if (!normalizedStart) {
+      return setError("Enter a valid start time (24-hour HH:MM).");
+    }
     const seconds = hhmmToSeconds(durationHhmm);
-    if (!isFinite(seconds) || seconds <= 0)
+    if (!isFinite(seconds) || seconds <= 0) {
       return setError("Duration must be greater than zero");
+    }
 
     setSaving(true);
     try {
       await upsertWindow({
-        startTimeHHMM: startTime,
+        startTimeHHMM: normalizedStart,
         startDayYYYYMMDD: dayYYYYMMDD,
         durationSeconds: seconds,
         budgetType: "ACTUAL",
@@ -117,22 +127,12 @@ export function TrackTimeDialog({
               {formatYYYYMMDDtoDDMMM(dayYYYYMMDD)} — log time
             </Text>
 
-            <View style={styles.row}>
-              <CrossPlatformHhMmSelect
-                fieldLabel="Start time"
-                ariaLabel="Start time"
-                value={startTime}
-                onChange={setStartTime}
-                options={startOptions}
-              />
-              <CrossPlatformHhMmSelect
-                fieldLabel="Duration"
-                ariaLabel="Duration"
-                value={durationHhmm}
-                onChange={setDurationHhmm}
-                options={durationOptions}
-              />
-            </View>
+            <TrackableLogStartTimeBlock value={startTime} onChange={setStartTime} />
+            <TrackableLogDurationBlock
+              value={durationHhmm}
+              onChange={setDurationHhmm}
+              allowNone={false}
+            />
 
             <Text style={styles.fieldLabel}>Comments</Text>
             <TextInput
@@ -148,7 +148,12 @@ export function TrackTimeDialog({
 
             <View style={styles.actions}>
               <Button title="Cancel" variant="outline" onPress={onClose} />
-              <Button title="Save" onPress={onSave} loading={saving} />
+              <Button
+                title="Save"
+                onPress={onSave}
+                loading={saving}
+                disabled={!canSave}
+              />
             </View>
           </ScrollView>
         </Card>
@@ -183,13 +188,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     marginTop: 2,
-    marginBottom: 16,
-  },
-  row: {
-    flexDirection: "row",
-    gap: 12,
-    flexWrap: "wrap",
-    marginBottom: 16,
+    marginBottom: 8,
   },
   fieldLabel: {
     fontSize: 13,
