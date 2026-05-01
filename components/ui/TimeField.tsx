@@ -26,6 +26,7 @@
 import React, { useState } from "react";
 import { Platform, View, Text, StyleSheet, Pressable } from "react-native";
 import { Colors } from "../../constants/colors";
+import { assessClockHhMmInput } from "../../lib/dates";
 import { Input } from "./Input";
 
 interface TimeFieldProps {
@@ -112,9 +113,17 @@ export function TimeField({
       </View>
     );
   }
-  // Native fallback — no built-in time picker, so we accept HH:MM
-  // as text. Mobile parity with Productivity-One isn't part of this
-  // task; the web input is what matters for now.
+  // Native fallback — validate 24-hour HH:MM while typing (matches web
+  // `<input type="time">` behaviour where invalid times cannot be committed).
+  const status = assessClockHhMmInput(value);
+  const nativeError =
+    status === "invalid"
+      ? "Enter a valid 24-hour time (HH:MM)."
+      : undefined;
+  const nativeHelper =
+    !nativeError && status === "typing" && value.length > 0
+      ? "24-hour format, e.g. 09:30"
+      : undefined;
   return (
     <Input
       label={label}
@@ -122,6 +131,8 @@ export function TimeField({
       onChangeText={onChange}
       placeholder="HH:MM"
       autoCapitalize="none"
+      error={nativeError}
+      helperText={nativeHelper}
       containerStyle={{ marginBottom: 0 }}
     />
   );

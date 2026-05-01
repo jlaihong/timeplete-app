@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   ScrollView,
   Pressable,
   Platform,
-  TouchableOpacity,
 } from "react-native";
 import { useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
@@ -16,9 +15,17 @@ import { Colors } from "../../../../constants/colors";
 import { Card } from "../../../ui/Card";
 import { Button } from "../../../ui/Button";
 import {
+  assessClockHhMmInput,
+  assessDurationHhMmInput,
   formatYYYYMMDDtoDDMMM,
   hhmmToSeconds,
+  normalizeClockHhMm,
 } from "../../../../lib/dates";
+import { defaultStartTimeQuarterHour } from "../../../../lib/trackableLogPresets";
+import {
+  TrackableLogDurationBlock,
+  TrackableLogStartTimeBlock,
+} from "./TrackableLogHhMmFields";
 
 interface TrackTimeDialogProps {
   trackableId: Id<"trackables">;
@@ -42,25 +49,44 @@ export function TrackTimeDialog({
   dayYYYYMMDD,
   onClose,
 }: TrackTimeDialogProps) {
-  const [startTime, setStartTime] = useState(defaultStartTime());
+  const [startTime, setStartTime] = useState(defaultStartTimeQuarterHour);
   const [durationHhmm, setDurationHhmm] = useState("0:30");
   const [comments, setComments] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const upsertWindow = useMutation(api.timeWindows.upsert);
 
+  const startStatus = useMemo(
+    () => assessClockHhMmInput(startTime),
+    [startTime]
+  );
+  const durationStatus = useMemo(
+    () => assessDurationHhMmInput(durationHhmm, false),
+    [durationHhmm]
+  );
+  const canSave = startStatus === "valid" && durationStatus === "valid";
+
   const onSave = async () => {
     setError(null);
-    if (!startTime) return setError("Start time is required");
-    if (!durationHhmm) return setError("Duration is required");
+    if (startStatus !== "valid") {
+      return setError("Enter a valid start time (24-hour HH:MM).");
+    }
+    if (durationStatus !== "valid") {
+      return setError("Enter a valid duration (greater than zero).");
+    }
+    const normalizedStart = normalizeClockHhMm(startTime);
+    if (!normalizedStart) {
+      return setError("Enter a valid start time (24-hour HH:MM).");
+    }
     const seconds = hhmmToSeconds(durationHhmm);
-    if (!isFinite(seconds) || seconds <= 0)
+    if (!isFinite(seconds) || seconds <= 0) {
       return setError("Duration must be greater than zero");
+    }
 
     setSaving(true);
     try {
       await upsertWindow({
-        startTimeHHMM: startTime,
+        startTimeHHMM: normalizedStart,
         startDayYYYYMMDD: dayYYYYMMDD,
         durationSeconds: seconds,
         budgetType: "ACTUAL",
@@ -85,141 +111,54 @@ export function TrackTimeDialog({
         style={styles.dialogWrap}
       >
         <Card style={styles.dialog}>
-        <ScrollView>
-          <View style={styles.header}>
-            <View
-              style={[styles.colourDot, { backgroundColor: trackableColour }]}
-            />
-            <Text style={styles.title} numberOfLines={1}>
-              {trackableName}
+          <ScrollView>
+            <View style={styles.header}>
+              <View
+                style={[
+                  styles.colourDot,
+                  { backgroundColor: trackableColour },
+                ]}
+              />
+              <Text style={styles.title} numberOfLines={1}>
+                {trackableName}
+              </Text>
+            </View>
+            <Text style={styles.subtitle}>
+              {formatYYYYMMDDtoDDMMM(dayYYYYMMDD)} — log time
             </Text>
-          </View>
-          <Text style={styles.subtitle}>
-            {formatYYYYMMDDtoDDMMM(dayYYYYMMDD)} — log time
-          </Text>
 
-          <View style={styles.row}>
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Start time (HH:MM)</Text>
-              <TextInput
-                style={styles.input}
-                value={startTime}
-                onChangeText={setStartTime}
-                placeholder="09:00"
-                placeholderTextColor={Colors.textTertiary}
-                autoCapitalize="none"
+            <TrackableLogStartTimeBlock value={startTime} onChange={setStartTime} />
+            <TrackableLogDurationBlock
+              value={durationHhmm}
+              onChange={setDurationHhmm}
+              allowNone={false}
+            />
+
+            <Text style={styles.fieldLabel}>Comments</Text>
+            <TextInput
+              style={styles.commentInput}
+              value={comments}
+              onChangeText={(t) => setComments(t.slice(0, 1024))}
+              placeholder="What did you do?"
+              placeholderTextColor={Colors.textTertiary}
+              multiline
+            />
+
+            {error && <Text style={styles.error}>{error}</Text>}
+
+            <View style={styles.actions}>
+              <Button title="Cancel" variant="outline" onPress={onClose} />
+              <Button
+                title="Save"
+                onPress={onSave}
+                loading={saving}
+                disabled={!canSave}
               />
-              <View style={styles.presetWrap}>
-                {START_TIME_PRESETS.map((p) => (
-                  <Preset
-                    key={p}
-                    label={p}
-                    selected={p === startTime}
-                    onPress={() => setStartTime(p)}
-                  />
-                ))}
-              </View>
             </View>
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>Duration (HH:MM)</Text>
-              <TextInput
-                style={styles.input}
-                value={durationHhmm}
-                onChangeText={setDurationHhmm}
-                placeholder="0:30"
-                placeholderTextColor={Colors.textTertiary}
-                autoCapitalize="none"
-              />
-              <View style={styles.presetWrap}>
-                {DURATION_PRESETS.map((p) => (
-                  <Preset
-                    key={p}
-                    label={p}
-                    selected={p === durationHhmm}
-                    onPress={() => setDurationHhmm(p)}
-                  />
-                ))}
-              </View>
-            </View>
-          </View>
-
-          <Text style={styles.fieldLabel}>Comments</Text>
-          <TextInput
-            style={styles.commentInput}
-            value={comments}
-            onChangeText={(t) => setComments(t.slice(0, 1024))}
-            placeholder="What did you do?"
-            placeholderTextColor={Colors.textTertiary}
-            multiline
-          />
-
-          {error && <Text style={styles.error}>{error}</Text>}
-
-          <View style={styles.actions}>
-            <Button title="Cancel" variant="outline" onPress={onClose} />
-            <Button title="Save" onPress={onSave} loading={saving} />
-          </View>
-        </ScrollView>
+          </ScrollView>
         </Card>
       </Pressable>
     </Pressable>
-  );
-}
-
-function defaultStartTime(): string {
-  const d = new Date();
-  // Snap to the nearest previous 15-minute mark — same UX as productivity-one's
-  // start-time grid, which only offers HH:00 / HH:15 / HH:30 / HH:45 presets.
-  const minutes = Math.floor(d.getMinutes() / 15) * 15;
-  return `${String(d.getHours()).padStart(2, "0")}:${String(minutes).padStart(
-    2,
-    "0"
-  )}`;
-}
-
-const DURATION_PRESETS = ["0:15", "0:30", "0:45", "1:00", "1:30", "2:00"];
-
-const START_TIME_PRESETS = (() => {
-  // Build a 15-min grid from 06:00 to 22:00 (limited to nearby 6 entries
-  // around "now" to avoid swamping the dialog).
-  const now = new Date();
-  const baseMinute = Math.floor(now.getMinutes() / 15) * 15;
-  const out: string[] = [];
-  for (let i = -1; i < 5; i++) {
-    const d = new Date(now);
-    d.setMinutes(baseMinute + i * 15, 0, 0);
-    out.push(
-      `${String(d.getHours()).padStart(2, "0")}:${String(
-        d.getMinutes()
-      ).padStart(2, "0")}`
-    );
-  }
-  return out;
-})();
-
-function Preset({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.preset, selected && styles.presetSelected]}
-      onPress={onPress}
-    >
-      <Text
-        style={[
-          styles.presetText,
-          selected && styles.presetTextSelected,
-        ]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
   );
 }
 
@@ -249,50 +188,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     marginTop: 2,
-    marginBottom: 16,
+    marginBottom: 8,
   },
-  row: { flexDirection: "row", gap: 12 },
-  field: { flex: 1, marginBottom: 16 },
   fieldLabel: {
     fontSize: 13,
     fontWeight: "600",
     color: Colors.textSecondary,
     marginBottom: 6,
   },
-  input: {
-    backgroundColor: Colors.surfaceContainer,
-    borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: Colors.text,
-  },
-  presetWrap: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: 6,
-  },
-  preset: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: Colors.surfaceContainerHighest,
-    borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-  },
-  presetSelected: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  presetText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-  },
-  presetTextSelected: { color: Colors.onPrimary },
   commentInput: {
     backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
