@@ -12,14 +12,13 @@ const minutesFormat = (n: number) => `${Math.round(n)}m`;
  * Mirror of productivity-one's `GoalWidgetPeriodic` with the
  * `COUPLE_MINUTES_A_WEEK` frequency: timer row + 7-day pill + weekly progress
  * bar (`weeklyMinutes / targetNumberOfMinutesAWeek`) + lifetime bar (total
- * minutes / `targetNumberOfMinutesAWeek × targetNumberOfWeeks` when weeks is
- * set, else calendar projection).
- * opens `TrackTimeDialog` for that day.
+ * minutes / commitment total from `getEffectiveCumulativeTarget`). Uses
+ * `periodicOverallProgress` (weekly minutes capped per week) for the numerator.
+ * Tapping a day opens `TrackTimeDialog` for that day.
  */
 export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
   const targetMinutes = goal.targetNumberOfMinutesAWeek ?? 0;
   const weekMinutes = Math.floor(goal.weeklySeconds / 60);
-  const lifetimeMinutes = Math.floor(goal.totalTimeSeconds / 60);
   const overallTarget = getEffectiveCumulativeTarget({
     trackableType: "MINUTES_A_WEEK",
     startDayYYYYMMDD: goal.startDayYYYYMMDD,
@@ -48,7 +47,7 @@ export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
       {overallTarget > 0 && (
         <ProgressBarWithText
           caption="Overall"
-          numerator={lifetimeMinutes}
+          numerator={goal.periodicOverallProgress}
           denominator={overallTarget}
           colour={goal.colour}
           format={minutesFormat}
