@@ -10,6 +10,9 @@ import { createPortal } from "react-dom";
 import { Colors } from "../../constants/colors";
 import { hhmmToSeconds, secondsToDurationString } from "../../lib/dates";
 import { TRACKABLE_DURATION_PRESETS } from "../../lib/trackableLogPresets";
+import {
+  applyDurationHhmmMask,
+} from "../../lib/durationHhmmMask";
 
 export interface DurationPickerDesktopProps {
   durationSeconds: number;
@@ -144,7 +147,7 @@ export function DurationPickerDesktop({
     (raw: string) => {
       if (committedRef.current) return;
       committedRef.current = true;
-      const masked = applyMask(unmask(raw));
+      const masked = applyDurationHhmmMask(raw);
       const secs = hhmmToSeconds(masked);
       setIsEditing(false);
       // Only fire if the value actually changed.
@@ -165,8 +168,7 @@ export function DurationPickerDesktop({
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = e.target.value;
-      const digits = unmask(raw).slice(0, 5); // up to HHHMM (5 digits)
-      const masked = applyMask(digits);
+      const masked = applyDurationHhmmMask(raw);
       setText(masked);
       setHighlightIndex(0);
       // Typing resets the "I navigated to a preset" intent — Enter
@@ -391,22 +393,4 @@ export function DurationPickerDesktop({
         )}
     </div>
   );
-}
-
-/* ---------- masking helpers (port of `duration-picker-mask.directive`) ---------- */
-
-function unmask(value: string): string {
-  return value.replace(/[^\d]/g, "");
-}
-
-/**
- * Insert a colon two characters from the right once we have at least 3 digits.
- * Examples: "130" → "1:30", "1230" → "12:30", "5" → "5", "" → "".
- */
-function applyMask(value: string): string {
-  const digits = unmask(value);
-  if (digits.length >= 3) {
-    return digits.slice(0, digits.length - 2) + ":" + digits.slice(-2);
-  }
-  return digits;
 }
