@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -85,11 +85,13 @@ export function TrackableList({
   const isDesktop = useIsDesktop();
   const { width: windowWidth } = useWindowDimensions();
 
-  // Compute today / weekStart once per render. The query depends on these
-  // values, so the cache key changes only when the day rolls over — which is
-  // the productivity-one behaviour (week pill resets at midnight Monday).
-  const today = useMemo(() => todayYYYYMMDD(), []);
-  const weekStart = useMemo(() => startOfWeek(today), [today]);
+  // Recompute each render so long-lived sessions advance past midnight and
+  // past a goal's `startDayYYYYMMDD`. `getGoalDetails` clamps
+  // `periodicOverallProgress` with `today`; freezing the first-mount date
+  // (previous `useMemo(..., [])`) left the overall bar at 0 forever when that
+  // snapshot was before the goal started.
+  const today = todayYYYYMMDD();
+  const weekStart = startOfWeek(today);
 
   const [activePageLimit, setActivePageLimit] = useState(20);
   const [archivedPageLimit, setArchivedPageLimit] = useState(20);
