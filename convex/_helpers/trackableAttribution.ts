@@ -182,6 +182,7 @@ export function buildCompletedTaskCountsByTrackableDay(
       out.set(tid, dayMap);
     }
     const compactDay = toCompactYYYYMMDD(task.dateCompleted);
+    if (!compactDay || compactDay.length !== 8) continue;
     dayMap.set(compactDay, (dayMap.get(compactDay) ?? 0) + 1);
   }
   return out;
