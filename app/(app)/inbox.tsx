@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   StyleSheet,
@@ -20,11 +20,18 @@ import { Id } from "../../convex/_generated/dataModel";
 
 /**
  * Inbox — default capture list for tasks (productivity-one parity).
- * Uses the system `lists.isInbox` row; tasks are filtered with `tasks.search`.
+ * Derives the system list from `lists.search` so this screen works against a
+ * deployment that already has `lists:search` (no separate Convex publish step).
  */
 export default function InboxScreen() {
   const isDesktop = useIsDesktop();
-  const inbox = useQuery(api.lists.getInboxList, {});
+  const lists = useQuery(api.lists.search, {});
+  const inbox = useMemo(() => {
+    if (lists === undefined) return undefined;
+    const candidates = lists.filter((l) => l.isInbox && !l.archived);
+    if (candidates.length === 0) return null;
+    return [...candidates].sort((a, b) => a.orderIndex - b.orderIndex)[0];
+  }, [lists]);
   const [showAddTask, setShowAddTask] = useState(false);
   const [addTaskDay, setAddTaskDay] = useState<string | undefined>();
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(
