@@ -7,7 +7,7 @@
  * `components/ui` because they are shaped to match the angular goal forms
  * specifically (mat-checkbox, mat-form-field, mat-table styling).
  */
-import React, { forwardRef } from "react";
+import React, { forwardRef, useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -17,6 +17,23 @@ import {
   Platform,
   TextInputProps,
 } from "react-native";
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Colors } from "../../../constants/colors";
 import { Input } from "../../ui/Input";
@@ -212,12 +229,107 @@ export function DateField({
   return <MaterialDateField value={value} onChange={onChange} label={label} />;
 }
 
+const isWeb = Platform.OS === "web";
+
+function generateRowId(): string {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+  } catch {
+    /* ignore */
+  }
+  return `row-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 /* ──────────────────────────────────────────────────────────────────── */
-/* DraggableTextList — port of the reasons/penalty `mat-table` list.    *
- * Drag-reorder is omitted (productivity-one uses cdkDrag); we keep the *
- * row + delete + "Add ..." button affordances which are the parity-    *
- * critical interactions.                                               */
+/* DraggableTextList — reasons / penalties rows with reorder.            *
+ * Web: @dnd-kit sortable (same stack as DesktopTaskList); drag handle   *
+ * only so text fields stay editable.                                    *
+ * Native: no DOM for dnd-kit — up/down controls beside the grip.        */
 /* ──────────────────────────────────────────────────────────────────── */
+
+function WebSortableRow({
+  id,
+  value,
+  index,
+  items,
+  onItemsChange,
+  onDeleteRow,
+  placeholder,
+  addLabel,
+}: {
+  id: string;
+  value: string;
+  index: number;
+  items: string[];
+  onItemsChange: (next: string[]) => void;
+  onDeleteRow: () => void;
+  placeholder: string;
+  addLabel: string;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.65 : 1,
+    flexDirection: "row" as const,
+    alignItems: "flex-start" as const,
+    gap: 6,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <div
+        {...attributes}
+        {...listeners}
+        style={{
+          width: 28,
+          minHeight: 36,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          touchAction: "none",
+          cursor: isDragging ? "grabbing" : "grab",
+          borderRadius: 6,
+        }}
+      >
+        <MaterialIcons
+          name="drag-indicator"
+          size={20}
+          color={Colors.textTertiary}
+        />
+      </div>
+      <TextInput
+        value={value}
+        onChangeText={(s) => {
+          const next = [...items];
+          next[index] = s;
+          onItemsChange(next);
+        }}
+        placeholder={placeholder}
+        placeholderTextColor={Colors.textTertiary}
+        multiline
+        style={[styles.listInput, { flex: 1 }]}
+      />
+      <Pressable
+        onPress={onDeleteRow}
+        style={styles.iconBtn}
+        accessibilityLabel={`Delete ${addLabel.toLowerCase()}`}
+      >
+        <MaterialIcons name="delete" size={20} color={Colors.textSecondary} />
+      </Pressable>
+    </div>
+  );
+}
 
 export function DraggableTextList({
   items,
@@ -232,16 +344,139 @@ export function DraggableTextList({
   addLabel: string;
   placeholder: string;
 }) {
+  const [sortIds, setSortIds] = useState<string[]>(() =>
+    items.map(() => generateRowId())
+  );
+
+  useEffect(() => {
+    setSortIds((prev) => {
+      if (prev.length === items.length) return prev;
+      return Array.from({ length: items.length }, () => generateRowId());
+    });
+  }, [items.length]);
+
+  const handleAdd = useCallback(() => {
+    setSortIds((ids) => [...ids, generateRowId()]);
+    onAdd();
+  }, [onAdd]);
+
+  const handleDeleteRow = useCallback(
+    (index: number) => {
+      setSortIds((ids) => ids.filter((_, j) => j !== index));
+      onChange(items.filter((_, j) => j !== index));
+    },
+    [items, onChange]
+  );
+
+  const moveRow = useCallback(
+    (from: number, to: number) => {
+      if (to < 0 || to >= items.length) return;
+      setSortIds((ids) => arrayMove(ids, from, to));
+      onChange(arrayMove(items, from, to));
+    },
+    [items, onChange]
+  );
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const onDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const oldIndex = sortIds.indexOf(String(active.id));
+      const newIndex = sortIds.indexOf(String(over.id));
+      if (oldIndex < 0 || newIndex < 0) return;
+      setSortIds((ids) => arrayMove(ids, oldIndex, newIndex));
+      onChange(arrayMove(items, oldIndex, newIndex));
+    },
+    [items, onChange, sortIds]
+  );
+
+  const listFooter = (
+    <Pressable onPress={handleAdd} style={styles.addBtn}>
+      <MaterialIcons name="add" size={18} color={Colors.primary} />
+      <Text style={styles.addBtnText}>{addLabel}</Text>
+    </Pressable>
+  );
+
+  if (isWeb) {
+    return (
+      <View style={styles.list}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onDragEnd}
+        >
+          <SortableContext items={sortIds} strategy={verticalListSortingStrategy}>
+            {items.map((item, i) => (
+              <WebSortableRow
+                key={sortIds[i] ?? String(i)}
+                id={sortIds[i]!}
+                value={item}
+                index={i}
+                items={items}
+                onItemsChange={onChange}
+                onDeleteRow={() => handleDeleteRow(i)}
+                placeholder={placeholder}
+                addLabel={addLabel}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
+        {listFooter}
+      </View>
+    );
+  }
+
   return (
     <View style={styles.list}>
       {items.map((item, i) => (
-        <View key={i} style={styles.listRow}>
-          <MaterialIcons
-            name="drag-indicator"
-            size={20}
-            color={Colors.textTertiary}
-            style={{ width: 24 }}
-          />
+        <View key={sortIds[i] ?? String(i)} style={styles.listRow}>
+          <View style={styles.nativeReorderCol}>
+            <Pressable
+              onPress={() => moveRow(i, i - 1)}
+              disabled={i === 0}
+              style={[
+                styles.reorderNudge,
+                i === 0 && styles.reorderNudgeDisabled,
+              ]}
+              accessibilityLabel="Move row up"
+            >
+              <MaterialIcons
+                name="keyboard-arrow-up"
+                size={22}
+                color={i === 0 ? Colors.textTertiary : Colors.textSecondary}
+              />
+            </Pressable>
+            <MaterialIcons
+              name="drag-indicator"
+              size={20}
+              color={Colors.textTertiary}
+              style={{ opacity: 0.35 }}
+            />
+            <Pressable
+              onPress={() => moveRow(i, i + 1)}
+              disabled={i >= items.length - 1}
+              style={[
+                styles.reorderNudge,
+                i >= items.length - 1 && styles.reorderNudgeDisabled,
+              ]}
+              accessibilityLabel="Move row down"
+            >
+              <MaterialIcons
+                name="keyboard-arrow-down"
+                size={22}
+                color={
+                  i >= items.length - 1
+                    ? Colors.textTertiary
+                    : Colors.textSecondary
+                }
+              />
+            </Pressable>
+          </View>
           <TextInput
             value={item}
             onChangeText={(s) => {
@@ -255,10 +490,7 @@ export function DraggableTextList({
             style={styles.listInput}
           />
           <Pressable
-            onPress={() => {
-              const next = items.filter((_, j) => j !== i);
-              onChange(next);
-            }}
+            onPress={() => handleDeleteRow(i)}
             style={styles.iconBtn}
             accessibilityLabel={`Delete ${addLabel.toLowerCase()}`}
           >
@@ -270,10 +502,7 @@ export function DraggableTextList({
           </Pressable>
         </View>
       ))}
-      <Pressable onPress={onAdd} style={styles.addBtn}>
-        <MaterialIcons name="add" size={18} color={Colors.primary} />
-        <Text style={styles.addBtnText}>{addLabel}</Text>
-      </Pressable>
+      {listFooter}
     </View>
   );
 }
@@ -350,6 +579,22 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 6,
   },
+  nativeReorderCol: {
+    alignItems: "center",
+    justifyContent: "flex-start",
+    paddingTop: 2,
+    width: 28,
+  },
+  reorderNudge: {
+    paddingVertical: 1,
+    paddingHorizontal: 2,
+    borderRadius: 4,
+    ...Platform.select({
+      web: { cursor: "pointer" } as any,
+      default: {},
+    }),
+  },
+  reorderNudgeDisabled: { opacity: 0.35 },
   listInput: {
     flex: 1,
     backgroundColor: Colors.surfaceContainer,
