@@ -9,7 +9,7 @@ import {
   sumCompletedTaskCounts,
   timeWindowAttributedToTrackable,
 } from "./_helpers/trackableAttribution";
-import { toCompactYYYYMMDD } from "./_helpers/compactYYYYMMDD";
+import { isYYYYMMDDCompact, toCompactYYYYMMDD } from "./_helpers/compactYYYYMMDD";
 
 export const search = query({
   args: { archived: v.optional(v.boolean()) },
@@ -400,11 +400,12 @@ export const getGoalDetails = query({
     // weekStart. Widgets use this to render the day-of-week pill even when
     // there is no row in trackableDays for a given day.
     const todayArg = args.today ? toCompactYYYYMMDD(args.today) : undefined;
+    const todayValid = todayArg !== undefined && isYYYYMMDDCompact(todayArg);
     const weekStartArg = args.weekStart
       ? toCompactYYYYMMDD(args.weekStart)
       : undefined;
     const weekDays: string[] = [];
-    if (weekStartArg && weekStartArg.length === 8) {
+    if (isYYYYMMDDCompact(weekStartArg ?? "")) {
       for (let i = 0; i < 7; i++) {
         weekDays.push(addDaysYYYYMMDD(weekStartArg, i));
       }
@@ -525,7 +526,7 @@ export const getGoalDetails = query({
 
       // Today values — only computed when caller passed `today`.
       const todaySeconds =
-        todayArg && todayArg.length === 8
+        todayValid
           ? attributedWindows
               .filter((w) => w.startDayYYYYMMDD === todayArg)
               .reduce((s, w) => s + w.durationSeconds, 0) +
@@ -537,7 +538,7 @@ export const getGoalDetails = query({
           : 0;
 
       const todayDayCount =
-        todayArg && todayArg.length === 8
+        todayValid
           ? trackableDays
               .filter((d) => d.dayYYYYMMDD === todayArg)
               .reduce((s, d) => s + d.numCompleted, 0) +
@@ -549,7 +550,7 @@ export const getGoalDetails = query({
           : 0;
 
       const todayEntryCount =
-        todayArg && todayArg.length === 8
+        todayValid
           ? trackerEntries
               .filter((e) => e.dayYYYYMMDD === todayArg)
               .reduce((s, e) => s + (e.countValue ?? 0), 0)
@@ -559,10 +560,10 @@ export const getGoalDetails = query({
       // clamped to at least 1 day so we never divide by zero.
       let dailyTimeAverageSeconds = 0;
       let dailyCountAverage = 0;
-      if (todayArg && todayArg.length === 8) {
+      if (todayValid && isYYYYMMDDCompact(startDay) && todayArg! >= startDay) {
         const elapsedDays = Math.max(
           1,
-          diffDaysYYYYMMDD(startDay, todayArg) + 1
+          diffDaysYYYYMMDD(startDay, todayArg!) + 1
         );
         dailyTimeAverageSeconds = totalSeconds / elapsedDays;
         // Use entry-count for trackers, day-count otherwise.
@@ -581,13 +582,22 @@ export const getGoalDetails = query({
           ? totalEntryCount
           : totalDayCount;
 
-      const progressCap =
-        todayArg &&
-        todayArg.length === 8 &&
-        todayArg >= startDay &&
-        todayArg <= endDay
-          ? todayArg
-          : endDay;
+      const boundsOk =
+        isYYYYMMDDCompact(startDay) &&
+        isYYYYMMDDCompact(endDay) &&
+        startDay <= endDay;
+
+      let periodicProgressCap: string | undefined;
+      if (boundsOk) {
+        if (todayValid) {
+          if (todayArg! < startDay) periodicProgressCap = undefined;
+          else periodicProgressCap = todayArg! <= endDay ? todayArg! : endDay;
+        } else {
+          periodicProgressCap = endDay;
+        }
+      } else {
+        periodicProgressCap = undefined;
+      }
 
       // Per-week capped credits (day-count or minutes) summed through today.
       // The home widget divides by the weekly target and shows progress vs
@@ -595,7 +605,8 @@ export const getGoalDetails = query({
       let periodicOverallProgress = 0;
       if (
         trackable.trackableType === "DAYS_A_WEEK" &&
-        progressCap >= startDay
+        periodicProgressCap !== undefined &&
+        periodicProgressCap >= startDay
       ) {
         const perWeekTarget = trackable.targetNumberOfDaysAWeek ?? 0;
         if (perWeekTarget > 0) {
@@ -603,11 +614,11 @@ export const getGoalDetails = query({
             trackableDays.map((d) => [d.dayYYYYMMDD, d])
           );
           let monday = startOfWeekYYYYMMDD(startDay);
-          while (monday <= progressCap) {
+          while (monday <= periodicProgressCap) {
             let daysWithActivity = 0;
             for (let i = 0; i < 7; i++) {
               const day = addDaysYYYYMMDD(monday, i);
-              if (day < startDay || day > endDay || day > progressCap)
+              if (day < startDay || day > endDay || day > periodicProgressCap)
                 continue;
               const row = byDay.get(day);
               const tc = getCompletedTaskCount(
@@ -626,12 +637,13 @@ export const getGoalDetails = query({
         }
       } else if (
         trackable.trackableType === "MINUTES_A_WEEK" &&
-        progressCap >= startDay
+        periodicProgressCap !== undefined &&
+        periodicProgressCap >= startDay
       ) {
         const perWeekMin = trackable.targetNumberOfMinutesAWeek ?? 0;
         if (perWeekMin > 0) {
           let monday = startOfWeekYYYYMMDD(startDay);
-          while (monday <= progressCap) {
+          while (monday <= periodicProgressCap) {
             const weekEndDay = addDaysYYYYMMDD(monday, 6);
             let weekSeconds = 0;
             for (const w of attributedWindows) {
@@ -640,7 +652,7 @@ export const getGoalDetails = query({
                 w.startDayYYYYMMDD <= weekEndDay &&
                 w.startDayYYYYMMDD >= startDay &&
                 w.startDayYYYYMMDD <= endDay &&
-                w.startDayYYYYMMDD <= progressCap
+                w.startDayYYYYMMDD <= periodicProgressCap
               ) {
                 weekSeconds += w.durationSeconds;
               }
