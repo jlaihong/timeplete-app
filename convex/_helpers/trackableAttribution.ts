@@ -17,6 +17,7 @@
  * trackable across all windows never double-counts.
  */
 import { Doc, Id } from "../_generated/dataModel";
+import { toCompactYYYYMMDD } from "./compactYYYYMMDD";
 
 export type TaskInfo = {
   trackableId?: Id<"trackables"> | null;
@@ -174,12 +175,14 @@ export function buildCompletedTaskCountsByTrackableDay(
       listIdToTrackableId,
     });
     if (!trackableId) continue;
-    let dayMap = out.get(trackableId);
+    const tid = String(trackableId);
+    let dayMap = out.get(tid);
     if (!dayMap) {
       dayMap = new Map<string, number>();
-      out.set(trackableId, dayMap);
+      out.set(tid, dayMap);
     }
-    dayMap.set(task.dateCompleted, (dayMap.get(task.dateCompleted) ?? 0) + 1);
+    const compactDay = toCompactYYYYMMDD(task.dateCompleted);
+    dayMap.set(compactDay, (dayMap.get(compactDay) ?? 0) + 1);
   }
   return out;
 }
@@ -194,7 +197,11 @@ export function getCompletedTaskCount(
   trackableId: Id<"trackables">,
   dayYYYYMMDD: string
 ): number {
-  return taskCountsByTrackableDay.get(trackableId)?.get(dayYYYYMMDD) ?? 0;
+  return (
+    taskCountsByTrackableDay
+      .get(String(trackableId))
+      ?.get(toCompactYYYYMMDD(dayYYYYMMDD)) ?? 0
+  );
 }
 
 /**
@@ -208,12 +215,16 @@ export function sumCompletedTaskCounts(
   fromDayYYYYMMDD: string | null,
   toDayYYYYMMDD: string | null
 ): number {
-  const dayMap = taskCountsByTrackableDay.get(trackableId);
+  const dayMap = taskCountsByTrackableDay.get(String(trackableId));
   if (!dayMap) return 0;
+  const from =
+    fromDayYYYYMMDD != null ? toCompactYYYYMMDD(fromDayYYYYMMDD) : null;
+  const to = toDayYYYYMMDD != null ? toCompactYYYYMMDD(toDayYYYYMMDD) : null;
   let total = 0;
   for (const [day, count] of dayMap) {
-    if (fromDayYYYYMMDD !== null && day < fromDayYYYYMMDD) continue;
-    if (toDayYYYYMMDD !== null && day > toDayYYYYMMDD) continue;
+    const cd = toCompactYYYYMMDD(day);
+    if (from !== null && cd < from) continue;
+    if (to !== null && cd > to) continue;
     total += count;
   }
   return total;
