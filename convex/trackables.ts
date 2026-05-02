@@ -617,11 +617,15 @@ export const getGoalDetails = query({
         periodicProgressCap = undefined;
       }
 
-      // Per-week capped credits (day-sum or minutes) through the cap date.
-      // DAYS_A_WEEK: weekly sum matches `weeklyDayCompletion` / P1 countWeeklyTotal;
-      // each week's credit is capped at `targetNumberOfDaysAWeek`, then summed.
-      // The home widget divides by the weekly target and shows progress vs
-      // `targetNumberOfWeeks` — productivity-one's week-scale overall bar.
+      // Overall bar (productivity-one `goal-widget.html`: `currentValue /
+      // targetValue` on week scale). P1 credits a full target-week only when
+      // weekly progress reaches the threshold:
+      //   • COUPLE_DAYS_A_WEEK: `countPeriodicCompleted` (days with
+      //     `numCompleted > 0`) meets `targetWeeklyValue` — see `periodicDiff`.
+      //   • COUPLE_MINUTES_A_WEEK: summed weekly minutes meets target — see
+      //     `buildMinutesAWeekGoalTimeChange`.
+      // We emit `periodicOverallProgress` as (succeededWeeks × weeklyTarget) so
+      // home widgets can keep dividing by weekly target to show whole-week units.
       let periodicOverallProgress = 0;
       if (
         trackable.trackableType === "DAYS_A_WEEK" &&
@@ -635,7 +639,7 @@ export const getGoalDetails = query({
           );
           let monday = startOfWeekYYYYMMDD(startDay);
           while (monday <= periodicProgressCap) {
-            let weeklyCreditSum = 0;
+            let distinctActiveDays = 0;
             for (let i = 0; i < 7; i++) {
               const day = addDaysYYYYMMDD(monday, i);
               if (day < startDay || day > endDay || day > periodicProgressCap)
@@ -646,12 +650,11 @@ export const getGoalDetails = query({
                 trackable._id,
                 day
               );
-              weeklyCreditSum += (row?.numCompleted ?? 0) + tc;
+              if ((row?.numCompleted ?? 0) + tc > 0) distinctActiveDays++;
             }
-            periodicOverallProgress += Math.min(
-              weeklyCreditSum,
-              perWeekTarget
-            );
+            if (distinctActiveDays >= perWeekTarget) {
+              periodicOverallProgress += perWeekTarget;
+            }
             monday = addDaysYYYYMMDD(monday, 7);
           }
         }
@@ -677,10 +680,10 @@ export const getGoalDetails = query({
                 weekSeconds += w.durationSeconds;
               }
             }
-            periodicOverallProgress += Math.min(
-              Math.floor(weekSeconds / 60),
-              perWeekMin
-            );
+            const weekMinutes = Math.floor(weekSeconds / 60);
+            if (weekMinutes >= perWeekMin) {
+              periodicOverallProgress += perWeekMin;
+            }
             monday = addDaysYYYYMMDD(monday, 7);
           }
         }

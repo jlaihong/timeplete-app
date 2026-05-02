@@ -10,8 +10,10 @@ import type { TrackableSeriesGoal } from "../components/analytics/widgets/types"
  *      the *analytics* cumulative target is still `weekly × committedWeeks`
  *      (see `getPeriodicCommittedWeekCount`). The *home widget* "Overall"
  *      bar in productivity-one uses a **week scale**: denominator =
- *      `targetNumberOfWeeks`, numerator = normalized per-week progress
- *      (`periodicOverallProgress / weekly`).
+ *      `targetNumberOfWeeks`; numerator = count of **successful** weeks
+ *      (weekly target met; `periodicDiff` / minute-threshold logic). Convex
+ *      mirrors that as `periodicOverallProgress = succeededWeeks × weekly`, so
+ *      UIs still compute `periodicOverallProgress / weekly` for the numerator.
  *
  *   2. At a given date `d`, what value should the cumulative actual
  *      have reached if the user is exactly on pace? Linear:

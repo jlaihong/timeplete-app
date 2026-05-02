@@ -9,10 +9,9 @@ import type { WidgetBodyProps } from "./types";
  * Mirror of productivity-one's `GoalWidgetPeriodic` with the
  * `COUPLE_DAYS_A_WEEK` frequency: 7-day pill + weekly progress bar
  * (sum of `numCompleted` this week / `targetNumberOfDaysAWeek`, matching P1
- * `countWeeklyTotal`) + **overall**
- * bar on a **week count** scale (`periodicOverallProgress /
- * targetNumberOfDaysAWeek` vs `getPeriodicCommittedWeekCount`), matching
- * P1's second bar (not raw day-slots `days × weeks`).
+ * `countWeeklyTotal`) + **overall** bar on the **committed-week** scale
+ * (`GoalWidget` outer bar): `periodicOverallProgress / targetNumberOfDaysAWeek`
+ * weeks succeeded vs `targetNumberOfWeeks` (P1 `currentValue / targetValue`).
  * Tapping a day opens `TrackPeriodicDialog` for that day.
  */
 export function DaysAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
