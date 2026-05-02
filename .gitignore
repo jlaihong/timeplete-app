@@ -33,6 +33,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Convex local backend + deployment metadata (link or copy from main clone)
+.convex/
+
 # typescript
 *.tsbuildinfo
 
