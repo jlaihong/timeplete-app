@@ -12,6 +12,7 @@ import type * as _admin_cleanup from "../_admin/cleanup.js";
 import type * as _admin_cognitoBridge from "../_admin/cognitoBridge.js";
 import type * as _admin_import from "../_admin/import.js";
 import type * as _helpers_auth from "../_helpers/auth.js";
+import type * as _helpers_compactYYYYMMDD from "../_helpers/compactYYYYMMDD.js";
 import type * as _helpers_eventColors from "../_helpers/eventColors.js";
 import type * as _helpers_ordering from "../_helpers/ordering.js";
 import type * as _helpers_permissions from "../_helpers/permissions.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   "_admin/cognitoBridge": typeof _admin_cognitoBridge;
   "_admin/import": typeof _admin_import;
   "_helpers/auth": typeof _helpers_auth;
+  "_helpers/compactYYYYMMDD": typeof _helpers_compactYYYYMMDD;
   "_helpers/eventColors": typeof _helpers_eventColors;
   "_helpers/ordering": typeof _helpers_ordering;
   "_helpers/permissions": typeof _helpers_permissions;

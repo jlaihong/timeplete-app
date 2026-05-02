@@ -405,9 +405,10 @@ export const getGoalDetails = query({
       ? toCompactYYYYMMDD(args.weekStart)
       : undefined;
     const weekDays: string[] = [];
-    if (isYYYYMMDDCompact(weekStartArg ?? "")) {
+    if (weekStartArg !== undefined && isYYYYMMDDCompact(weekStartArg)) {
+      const monday = weekStartArg;
       for (let i = 0; i < 7; i++) {
-        weekDays.push(addDaysYYYYMMDD(weekStartArg, i));
+        weekDays.push(addDaysYYYYMMDD(monday, i));
       }
     }
     const weekEnd = weekDays.length === 7 ? weekDays[6] : undefined;
