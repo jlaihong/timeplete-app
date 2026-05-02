@@ -32,17 +32,27 @@ const isWeb = Platform.OS === "web";
 
 interface TaskListProps {
   title?: string;
+  /** When set, only tasks in this list are shown (system Inbox page). */
+  listId?: Id<"lists">;
   onAddTask?: (day?: string) => void;
   onSelectTask?: (taskId: Id<"tasks">) => void;
 }
 
-export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
+export function TaskList({
+  title,
+  listId,
+  onAddTask,
+  onSelectTask,
+}: TaskListProps) {
   const isDesktop = useIsDesktop();
   const today = todayYYYYMMDD();
   const [visibleDays, setVisibleDays] = useState(7);
   const visibleEndDay = addDays(today, visibleDays - 1);
 
-  const tasks = useQuery(api.tasks.search, { includeCompleted: true });
+  const tasks = useQuery(
+    api.tasks.search,
+    listId ? { listId, includeCompleted: true } : { includeCompleted: true }
+  );
   const tags = useQuery(api.tags.search, {});
   const lists = useQuery(api.lists.search, {});
   const trackables = useQuery(api.trackables.search, {});
