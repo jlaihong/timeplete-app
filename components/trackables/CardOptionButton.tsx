@@ -51,9 +51,7 @@ export function CardOptionButton({
           style={styles.icon}
         />
         <View style={styles.copy}>
-          <Text style={styles.name} numberOfLines={1}>
-            {option.name}
-          </Text>
+          <Text style={styles.name}>{option.name}</Text>
           <Text style={styles.caption} numberOfLines={2}>
             {option.caption}
           </Text>
@@ -105,7 +103,7 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 12,
   },
   icon: { width: 64, height: 64, lineHeight: 64 },
