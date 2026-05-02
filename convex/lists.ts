@@ -90,6 +90,40 @@ export const search = query({
   },
 });
 
+/**
+ * Narrow inbox lookup (still deployed for backwards-compat with stale web
+ * bundles that reference `api.lists.getInboxList`). Prefer `lists:search`
+ * on the client when possible so one query powers drawer + inbox.
+ */
+export const getInboxList = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireApprovedUser(ctx);
+
+    const inboxRows = await ctx.db
+      .query("lists")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .filter((q) => q.eq(q.field("isInbox"), true))
+      .collect();
+
+    const candidates = inboxRows.filter((l) => !l.archived);
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => a.orderIndex - b.orderIndex);
+
+    const list = candidates[0];
+
+    const existingByList = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_list", (q) => q.eq("listId", list._id))
+      .unique();
+
+    return {
+      ...list,
+      trackableId: existingByList?.trackableId ?? null,
+    };
+  },
+});
+
 export const upsert = mutation({
   args: {
     id: v.optional(v.id("lists")),
