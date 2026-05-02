@@ -2,6 +2,7 @@ import { useSegments } from "expo-router";
 
 export type DrawerSelection = {
   home: boolean;
+  inbox: boolean;
   goals: boolean;
   calendar: boolean;
   analytics: boolean;
@@ -15,6 +16,7 @@ export type DrawerSelection = {
 
 const empty: DrawerSelection = {
   home: false,
+  inbox: false,
   goals: false,
   calendar: false,
   analytics: false,
@@ -47,6 +49,8 @@ export function useDrawerSelection(): DrawerSelection {
   }
 
   if (g1 === "tags") return { ...empty, tags: true };
+
+  if (g1 === "inbox") return { ...empty, inbox: true };
 
   if (g1 === "lists") {
     if (g2) return { ...empty, activeListId: g2 };
