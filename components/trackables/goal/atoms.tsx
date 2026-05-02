@@ -7,7 +7,14 @@
  * `components/ui` because they are shaped to match the angular goal forms
  * specifically (mat-checkbox, mat-form-field, mat-table styling).
  */
-import React, { forwardRef, useCallback, useEffect, useState } from "react";
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -258,6 +265,7 @@ function WebSortableRow({
   onDeleteRow,
   placeholder,
   addLabel,
+  inputRef,
 }: {
   id: string;
   value: string;
@@ -267,6 +275,7 @@ function WebSortableRow({
   onDeleteRow: () => void;
   placeholder: string;
   addLabel: string;
+  inputRef: (instance: TextInput | null) => void;
 }) {
   const {
     attributes,
@@ -277,23 +286,27 @@ function WebSortableRow({
     isDragging,
   } = useSortable({ id });
 
-  const style = {
+  const rowStyle: React.CSSProperties = {
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    width: "100%",
+    boxSizing: "border-box",
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.65 : 1,
-    flexDirection: "row" as const,
-    alignItems: "flex-start" as const,
-    gap: 6,
   };
 
   return (
-    <div ref={setNodeRef} style={style}>
+    <div ref={setNodeRef} style={rowStyle}>
       <div
         {...attributes}
         {...listeners}
         style={{
           width: 28,
           minHeight: 36,
+          flexShrink: 0,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -308,18 +321,27 @@ function WebSortableRow({
           color={Colors.textTertiary}
         />
       </div>
-      <TextInput
-        value={value}
-        onChangeText={(s) => {
-          const next = [...items];
-          next[index] = s;
-          onItemsChange(next);
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: "flex",
         }}
-        placeholder={placeholder}
-        placeholderTextColor={Colors.textTertiary}
-        multiline
-        style={[styles.listInput, { flex: 1 }]}
-      />
+      >
+        <TextInput
+          ref={inputRef}
+          value={value}
+          onChangeText={(s) => {
+            const next = [...items];
+            next[index] = s;
+            onItemsChange(next);
+          }}
+          placeholder={placeholder}
+          placeholderTextColor={Colors.textTertiary}
+          multiline
+          style={[styles.listInput, styles.listInputWebFlex]}
+        />
+      </div>
       <Pressable
         onPress={onDeleteRow}
         style={styles.iconBtn}
@@ -348,6 +370,12 @@ export function DraggableTextList({
     items.map(() => generateRowId())
   );
 
+  /** Slot i holds the focused row TextInput instance (sparse array). */
+  const inputRefs = useRef<Array<TextInput | null>>([]);
+
+  /** After "Add …", focus the newly appended TextInput once it mounts. */
+  const focusLatestInputAfterAddRef = useRef(false);
+
   useEffect(() => {
     setSortIds((prev) => {
       if (prev.length === items.length) return prev;
@@ -355,7 +383,18 @@ export function DraggableTextList({
     });
   }, [items.length]);
 
+  useLayoutEffect(() => {
+    if (!focusLatestInputAfterAddRef.current || items.length === 0) {
+      return;
+    }
+    focusLatestInputAfterAddRef.current = false;
+    const idx = items.length - 1;
+    const input = inputRefs.current[idx];
+    input?.focus?.();
+  }, [items.length]);
+
   const handleAdd = useCallback(() => {
+    focusLatestInputAfterAddRef.current = true;
     setSortIds((ids) => [...ids, generateRowId()]);
     onAdd();
   }, [onAdd]);
@@ -422,6 +461,9 @@ export function DraggableTextList({
                 onDeleteRow={() => handleDeleteRow(i)}
                 placeholder={placeholder}
                 addLabel={addLabel}
+                inputRef={(el) => {
+                  inputRefs.current[i] = el;
+                }}
               />
             ))}
           </SortableContext>
@@ -478,6 +520,9 @@ export function DraggableTextList({
             </Pressable>
           </View>
           <TextInput
+            ref={(el) => {
+              inputRefs.current[i] = el;
+            }}
             value={item}
             onChangeText={(s) => {
               const next = [...items];
@@ -606,6 +651,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.text,
     minHeight: 36,
+  },
+  /** Web flex row: textarea must fill the flex slot (block layout defaults break the row). */
+  listInputWebFlex: {
+    width: "100%",
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    alignSelf: "stretch",
   },
   iconBtn: {
     width: 36,
