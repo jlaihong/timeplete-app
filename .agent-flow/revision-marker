@@ -1,0 +1,3 @@
+# Agent-flow “dual bar” task — this file is committed so reviewers can find the right clone.
+# Branch: agent-flow/dual-bar-for-days-a-week-track-kx85xfbx
+# Example: git merge-base --is-ancestor a948f02 HEAD && echo "this worktree contains a948f02"
