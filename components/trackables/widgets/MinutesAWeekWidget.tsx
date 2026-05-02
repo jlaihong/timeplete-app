@@ -11,10 +11,10 @@ const minutesFormat = (n: number) => `${Math.round(n)}m`;
 /**
  * Mirror of productivity-one's `GoalWidgetPeriodic` with the
  * `COUPLE_MINUTES_A_WEEK` frequency: timer row + 7-day pill + weekly progress
- * bar (`weeklyMinutes / targetNumberOfMinutesAWeek`) + **overall** bar on a
- * **week scale** (`periodicOverallProgress / targetNumberOfMinutesAWeek` vs
- * `getPeriodicCommittedWeekCount`). The weekly bar still uses `Xm`; overall
- * uses the default numeric formatter (fractional weeks).
+ * bar (`weeklyMinutes / targetNumberOfMinutesAWeek`) + **overall** bar:
+ * successful full weeks (weekly minutes meeting target) × target, divided
+ * back by target for the numerator — P1 `currentValue / targetValue` on weeks.
+ * The weekly bar still uses `Xm`; overall uses the default numeric formatter.
  * Tapping a day opens `TrackTimeDialog` for that day.
  */
 export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
