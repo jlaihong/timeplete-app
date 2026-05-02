@@ -8,7 +8,8 @@ import type { WidgetBodyProps } from "./types";
 /**
  * Mirror of productivity-one's `GoalWidgetPeriodic` with the
  * `COUPLE_DAYS_A_WEEK` frequency: 7-day pill + weekly progress bar
- * (`currentWeekCompletedDays / targetNumberOfDaysAWeek`) + **overall**
+ * (sum of `numCompleted` this week / `targetNumberOfDaysAWeek`, matching P1
+ * `countWeeklyTotal`) + **overall**
  * bar on a **week count** scale (`periodicOverallProgress /
  * targetNumberOfDaysAWeek` vs `getPeriodicCommittedWeekCount`), matching
  * P1's second bar (not raw day-slots `days × weeks`).
@@ -16,6 +17,11 @@ import type { WidgetBodyProps } from "./types";
  */
 export function DaysAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
   const target = goal.targetNumberOfDaysAWeek ?? 0;
+  /** Same as P1 `GoalWidgetPeriodic.countWeeklyTotal` — sum of `numCompleted` across the week. */
+  const weeklyCompletionSum = goal.weeklyDayCompletion.reduce(
+    (s, d) => s + d.numCompleted,
+    0
+  );
   const overallWeeksDenom = getPeriodicCommittedWeekCount({
     trackableType: "DAYS_A_WEEK",
     startDayYYYYMMDD: goal.startDayYYYYMMDD,
@@ -49,7 +55,7 @@ export function DaysAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
       />
       <ProgressBarWithText
         caption="This week"
-        numerator={goal.currentWeekCompletedDays}
+        numerator={weeklyCompletionSum}
         denominator={target || 1}
         colour={goal.colour}
       />
