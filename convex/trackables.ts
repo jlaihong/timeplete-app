@@ -273,6 +273,15 @@ function diffDaysYYYYMMDD(start: string, end: string): number {
   return Math.round((b - a) / (1000 * 60 * 60 * 24));
 }
 
+/** UTC calendar day as YYYYMMDD — anchor for lifetime periodic caps when client `today` is stale. */
+function utcYYYYMMDDCompact(): string {
+  return new Date().toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+function lexMaxYYYYMMDD(a: string, b: string): string {
+  return a >= b ? a : b;
+}
+
 /**
  * Names of tasks the user marked complete on `dayYYYYMMDD` that attribute to
  * `trackableId` (via the same resolution chain as `timeWindowAttributedToTrackable`:
@@ -412,6 +421,8 @@ export const getGoalDetails = query({
       }
     }
     const weekEnd = weekDays.length === 7 ? weekDays[6] : undefined;
+
+    const utcTodayAnchor = utcYYYYMMDDCompact();
 
     const result = [];
     for (const trackable of [...active, ...archived]) {
@@ -590,17 +601,25 @@ export const getGoalDetails = query({
 
       let periodicProgressCap: string | undefined;
       if (boundsOk) {
-        if (todayValid) {
-          if (todayArg! < startDay) periodicProgressCap = undefined;
-          else periodicProgressCap = todayArg! <= endDay ? todayArg! : endDay;
-        } else {
+        if (!todayValid) {
           periodicProgressCap = endDay;
+        } else {
+          // Use max(client today, server UTC today) so a stale client snapshot
+          // before `startDay` (frozen date, bad cache, timezone edge) does not
+          // zero out lifetime periodic credit for an already-started goal.
+          const anchorThrough = lexMaxYYYYMMDD(todayArg!, utcTodayAnchor);
+          if (anchorThrough < startDay) periodicProgressCap = undefined;
+          else
+            periodicProgressCap =
+              anchorThrough <= endDay ? anchorThrough : endDay;
         }
       } else {
         periodicProgressCap = undefined;
       }
 
-      // Per-week capped credits (day-count or minutes) summed through today.
+      // Per-week capped credits (day-sum or minutes) through the cap date.
+      // DAYS_A_WEEK: weekly sum matches `weeklyDayCompletion` / P1 countWeeklyTotal;
+      // each week's credit is capped at `targetNumberOfDaysAWeek`, then summed.
       // The home widget divides by the weekly target and shows progress vs
       // `targetNumberOfWeeks` — productivity-one's week-scale overall bar.
       let periodicOverallProgress = 0;
@@ -616,7 +635,7 @@ export const getGoalDetails = query({
           );
           let monday = startOfWeekYYYYMMDD(startDay);
           while (monday <= periodicProgressCap) {
-            let daysWithActivity = 0;
+            let weeklyCreditSum = 0;
             for (let i = 0; i < 7; i++) {
               const day = addDaysYYYYMMDD(monday, i);
               if (day < startDay || day > endDay || day > periodicProgressCap)
@@ -627,10 +646,10 @@ export const getGoalDetails = query({
                 trackable._id,
                 day
               );
-              if ((row?.numCompleted ?? 0) + tc > 0) daysWithActivity++;
+              weeklyCreditSum += (row?.numCompleted ?? 0) + tc;
             }
             periodicOverallProgress += Math.min(
-              daysWithActivity,
+              weeklyCreditSum,
               perWeekTarget
             );
             monday = addDaysYYYYMMDD(monday, 7);
