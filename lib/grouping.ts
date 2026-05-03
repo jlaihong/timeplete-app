@@ -303,6 +303,59 @@ export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
   }
 }
 
+export function modesForTab(tab: string): GroupByMode[] {
+  switch (tab) {
+    case "DAILY":
+      return ["trackable", "list", "task", "tag", "trackable_type"];
+    case "WEEKLY":
+      return [
+        "trackable",
+        "list",
+        "task",
+        "date",
+        "tag",
+        "trackable_type",
+        "day_of_week",
+      ];
+    case "MONTHLY":
+      return [
+        "trackable",
+        "list",
+        "task",
+        "date",
+        "tag",
+        "trackable_type",
+        "day_of_week",
+        "month",
+      ];
+    case "YEARLY":
+      return [
+        "trackable",
+        "list",
+        "task",
+        "month",
+        "tag",
+        "trackable_type",
+        "day_of_week",
+        "year",
+        "date",
+      ];
+    default:
+      return ["trackable", "list", "task", "tag", "trackable_type"];
+  }
+}
+
+/** Next mode to append when adding a grouping slot (pool order, no duplicates). */
+export function nextModeToAppend(
+  tab: string,
+  levels: GroupByMode[]
+): GroupByMode | null {
+  for (const m of modesForTab(tab)) {
+    if (!levels.includes(m)) return m;
+  }
+  return null;
+}
+
 /** Modes allowed for slot `rowIndex` — duplicates forbidden across slots. */
 export function pickerChoicesForRow(
   tab: string,
@@ -316,19 +369,4 @@ export function pickerChoicesForRow(
       m === current ||
       !levels.some((picked, j) => j !== rowIndex && picked === m)
   );
-}
-
-export function modesForTab(tab: string): GroupByMode[] {
-  switch (tab) {
-    case "DAILY":
-      return ["trackable", "list", "task", "tag"];
-    case "WEEKLY":
-      return ["trackable", "list", "task", "date", "tag"];
-    case "MONTHLY":
-      return ["trackable", "list", "task", "date", "tag", "day_of_week"];
-    case "YEARLY":
-      return ["trackable", "list", "task", "month", "tag", "day_of_week"];
-    default:
-      return ["trackable", "list", "task", "tag"];
-  }
 }
