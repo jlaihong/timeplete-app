@@ -9,11 +9,15 @@ import {
   secondsToDurationString,
 } from "../../lib/dates";
 
+export type EditTrackableHistoryTabMode = "history" | "breakdown";
+
 interface EditTrackableHistoryTabProps {
   trackableId: Id<"trackables">;
   trackTime: boolean;
   trackCount: boolean;
   isRatingTracker: boolean;
+  mode: EditTrackableHistoryTabMode;
+  breakdownHint: string;
 }
 
 export function EditTrackableHistoryTab({
@@ -21,6 +25,8 @@ export function EditTrackableHistoryTab({
   trackTime,
   trackCount,
   isRatingTracker,
+  mode,
+  breakdownHint,
 }: EditTrackableHistoryTabProps) {
   const data = useQuery(api.trackables.getEditDialogTrackingHistory, {
     trackableId,
@@ -42,6 +48,38 @@ export function EditTrackableHistoryTab({
     );
   }
 
+  if (mode === "breakdown") {
+    const rows = data.timeBySource ?? [];
+    if (rows.length === 0) {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.muted}>No time breakdown yet.</Text>
+        </View>
+      );
+    }
+    return (
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.breakdownBlock}>
+          <Text style={styles.sectionTitle}>Time by source</Text>
+          <Text style={styles.sectionHint}>{breakdownHint}</Text>
+          {rows.map((row) => (
+            <View key={row.source} style={styles.breakdownRow}>
+              <Text style={styles.breakdownLabel}>{row.label}</Text>
+              <Text style={styles.breakdownValue}>
+                {secondsToDurationString(row.seconds)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // mode === "history"
   if (data.kind === "tracker") {
     if (data.entries.length === 0) {
       return (
@@ -63,11 +101,11 @@ export function EditTrackableHistoryTab({
               {formatYYYYMMDDtoDDMMM(e.dayYYYYMMDD)}
             </Text>
             {trackCount && e.countValue != null && (
-                <Text style={styles.cardLine}>
-                  {isRatingTracker ? "Rating: " : "Value: "}
-                  <Text style={styles.cardEmph}>{e.countValue}</Text>
-                </Text>
-              )}
+              <Text style={styles.cardLine}>
+                {isRatingTracker ? "Rating: " : "Value: "}
+                <Text style={styles.cardEmph}>{e.countValue}</Text>
+              </Text>
+            )}
             {trackTime && e.durationSeconds != null && e.durationSeconds > 0 && (
               <Text style={styles.cardLine}>
                 Duration:{" "}
@@ -87,9 +125,8 @@ export function EditTrackableHistoryTab({
   }
 
   const hasDays = data.days.length > 0;
-  const hasBreakdown = (data.timeBySource?.length ?? 0) > 0;
 
-  if (!hasDays && !hasBreakdown) {
+  if (!hasDays) {
     return (
       <View style={styles.center}>
         <Text style={styles.muted}>No tracking history yet.</Text>
@@ -103,49 +140,21 @@ export function EditTrackableHistoryTab({
       contentContainerStyle={styles.scrollContent}
       keyboardShouldPersistTaps="handled"
     >
-      {hasBreakdown && data.timeBySource ? (
-        <View style={styles.breakdownBlock}>
-          <Text style={styles.sectionTitle}>Time by source</Text>
-          <Text style={styles.sectionHint}>
-            Attributed time toward this goal between its start and end dates.
+      <Text style={styles.sectionTitle}>Daily log</Text>
+      {data.days.map((d) => (
+        <View key={d.dayYYYYMMDD} style={styles.card}>
+          <Text style={styles.cardDate}>
+            {formatYYYYMMDDtoDDMMM(d.dayYYYYMMDD)}
           </Text>
-          {data.timeBySource.map((row) => (
-            <View key={row.source} style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>{row.label}</Text>
-              <Text style={styles.breakdownValue}>
-                {secondsToDurationString(row.seconds)}
-              </Text>
-            </View>
-          ))}
+          <Text style={styles.cardLine}>
+            Logged:{" "}
+            <Text style={styles.cardEmph}>{d.numCompleted}</Text>
+          </Text>
+          {d.comments?.trim() ? (
+            <Text style={styles.cardComments}>{d.comments.trim()}</Text>
+          ) : null}
         </View>
-      ) : null}
-
-      {hasDays ? (
-        <>
-          <Text
-            style={[
-              styles.sectionTitle,
-              hasBreakdown && { marginTop: 16 },
-            ]}
-          >
-            Daily log
-          </Text>
-          {data.days.map((d) => (
-            <View key={d.dayYYYYMMDD} style={styles.card}>
-              <Text style={styles.cardDate}>
-                {formatYYYYMMDDtoDDMMM(d.dayYYYYMMDD)}
-              </Text>
-              <Text style={styles.cardLine}>
-                Logged:{" "}
-                <Text style={styles.cardEmph}>{d.numCompleted}</Text>
-              </Text>
-              {d.comments?.trim() ? (
-                <Text style={styles.cardComments}>{d.comments.trim()}</Text>
-              ) : null}
-            </View>
-          ))}
-        </>
-      ) : null}
+      ))}
     </ScrollView>
   );
 }
