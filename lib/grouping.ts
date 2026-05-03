@@ -1,4 +1,4 @@
-type TimeWindowLike = {
+export type TimeWindowLike = {
   startDayYYYYMMDD: string;
   durationSeconds: number;
   activityType: string;
@@ -272,17 +272,48 @@ export function groupTimeWindows(
   );
 }
 
-/**
- * Mode chain for sunburst drill-down: user's primary mode first, then other
- * tab-available modes in order (no duplicates).
- */
-export function buildSunburstModeChain(
+export const MAX_GROUP_BY_LEVELS = 5;
+
+/** Productivity-One style labels (Category / Project / Goal naming). */
+export const GROUP_BY_DISPLAY_LABEL: Record<GroupByMode, string> = {
+  trackable: "Goal",
+  trackable_type: "Category",
+  list: "Project",
+  task: "Task",
+  tag: "Tag",
+  date: "Date",
+  day_of_week: "Day of Week",
+  month: "Month",
+  year: "Year",
+};
+
+export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
+  return [defaultModeForTab(tab)];
+}
+
+/** Modes allowed for row `rowIndex` — duplicates forbidden across rows. */
+export function pickerChoicesForRow(
   tab: string,
-  primaryMode: GroupByMode
+  levels: GroupByMode[],
+  rowIndex: number
 ): GroupByMode[] {
-  const modes = modesForTab(tab);
-  const rest = modes.filter((m) => m !== primaryMode);
-  return [primaryMode, ...rest];
+  const pool = modesForTab(tab);
+  const current = levels[rowIndex];
+  return pool.filter(
+    (m) =>
+      m === current ||
+      !levels.some((picked, j) => j !== rowIndex && picked === m)
+  );
+}
+
+/** Next unused mode from the tab pool (stable pool order), or null if full. */
+export function nextAvailableMode(
+  tab: string,
+  levels: GroupByMode[]
+): GroupByMode | null {
+  const pool = modesForTab(tab);
+  const used = new Set(levels);
+  return pool.find((m) => !used.has(m)) ?? null;
 }
 
 export function modesForTab(tab: string): GroupByMode[] {
