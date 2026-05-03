@@ -6,14 +6,15 @@ import type { AnalyticsTab } from "../AnalyticsState";
 import {
   GROUP_BY_LABEL,
   GroupByMode,
-  nextModeToAppend,
-  pickerChoicesForRow,
+  modesAvailableToAdd,
 } from "../../../lib/grouping";
 import { AnalyticsSelect } from "./AnalyticsSelect";
 
+const ADD_PLACEHOLDER = "Add grouping…";
+
 /**
- * Productivity-One style Group By: first dimension is an inline select; each added
- * dimension is a plain label with × to remove; Add appends the next pool mode.
+ * Productivity-One style Group By: every selected dimension is a non-dropdown
+ * chip with ×; remaining dimensions are picked from an Add dropdown.
  */
 export function TimeBreakdownGroupBy({
   tab,
@@ -24,39 +25,30 @@ export function TimeBreakdownGroupBy({
   levels: GroupByMode[];
   onChange: (next: GroupByMode[]) => void;
 }) {
-  const setPrimary = useCallback(
-    (mode: GroupByMode) => {
-      const next = [...levels];
-      next[0] = mode;
-      onChange(next);
-    },
-    [levels, onChange]
-  );
-
   const removeAt = useCallback(
     (index: number) => {
-      if (levels.length <= 1) return;
       onChange(levels.filter((_, j) => j !== index));
     },
     [levels, onChange]
   );
 
-  const appendNext = useCallback(() => {
-    const m = nextModeToAppend(tab, levels);
-    if (m) onChange([...levels, m]);
-  }, [tab, levels, onChange]);
-
-  const canAppend = useMemo(
-    () => nextModeToAppend(tab, levels) !== null,
-    [tab, levels]
-  );
-
-  const appendLabel = useMemo(() => {
-    const m = nextModeToAppend(tab, levels);
-    return m ? GROUP_BY_LABEL[m] : "";
+  const addOptions = useMemo(() => {
+    return modesAvailableToAdd(tab, levels).map((m) => ({
+      value: m,
+      label: GROUP_BY_LABEL[m],
+    }));
   }, [tab, levels]);
 
   const webPointer = Platform.OS === "web" ? ({ cursor: "pointer" } as object) : null;
+
+  const appendMode = useCallback(
+    (raw: string) => {
+      const m = raw as GroupByMode;
+      if (!modesAvailableToAdd(tab, levels).includes(m)) return;
+      onChange([...levels, m]);
+    },
+    [tab, levels, onChange]
+  );
 
   return (
     <View style={styles.wrap}>
@@ -64,55 +56,37 @@ export function TimeBreakdownGroupBy({
       <View style={styles.row}>
         {levels.map((mode, i) => (
           <View key={`slot-${i}`} style={styles.levelUnit}>
-            {i === 0 ? (
-              <AnalyticsSelect
-                value={mode}
-                options={pickerChoicesForRow(tab, levels, 0).map((m) => ({
-                  value: m,
-                  label: GROUP_BY_LABEL[m],
-                }))}
-                onChange={(v) => setPrimary(v as GroupByMode)}
-              />
-            ) : (
-              <View style={styles.addedLevel}>
-                <Text style={styles.addedLevelText} numberOfLines={1}>
-                  {GROUP_BY_LABEL[mode]}
-                </Text>
-              </View>
-            )}
-            {levels.length > 1 ? (
-              <Pressable
-                onPress={() => removeAt(i)}
-                style={({ pressed }) => [
-                  styles.removeHit,
-                  pressed && styles.removeHitPressed,
-                  webPointer,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel={`Remove grouping ${GROUP_BY_LABEL[mode]}`}
-                hitSlop={10}
-              >
-                <Ionicons name="close" size={18} color={Colors.textSecondary} />
-              </Pressable>
-            ) : null}
+            <View style={styles.levelChip}>
+              <Text style={styles.levelChipText} numberOfLines={1}>
+                {GROUP_BY_LABEL[mode]}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => removeAt(i)}
+              style={({ pressed }) => [
+                styles.removeHit,
+                pressed && styles.removeHitPressed,
+                webPointer,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove grouping ${GROUP_BY_LABEL[mode]}`}
+              hitSlop={10}
+            >
+              <Ionicons name="close" size={18} color={Colors.textSecondary} />
+            </Pressable>
           </View>
         ))}
 
-        {canAppend ? (
-          <Pressable
-            onPress={appendNext}
-            style={({ pressed }) => [
-              styles.iconBtn,
-              pressed && styles.iconBtnPressed,
-              webPointer,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={`Add grouping: ${appendLabel}`}
-            hitSlop={8}
-          >
-            <Ionicons name="add-circle-outline" size={22} color={Colors.primary} />
-            <Text style={styles.iconBtnLabel}>Add</Text>
-          </Pressable>
+        {addOptions.length > 0 ? (
+          <AnalyticsSelect
+            value=""
+            placeholder={ADD_PLACEHOLDER}
+            ariaLabel="Add grouping dimension"
+            accessibilityLabel="Add grouping dimension"
+            sheetTitle="Add grouping"
+            options={addOptions}
+            onChange={appendMode}
+          />
         ) : null}
       </View>
     </View>
@@ -142,7 +116,7 @@ const styles = StyleSheet.create({
     gap: 2,
     maxWidth: "100%",
   },
-  addedLevel: {
+  levelChip: {
     height: 36,
     minWidth: 72,
     maxWidth: 160,
@@ -153,7 +127,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainerHigh,
   },
-  addedLevelText: {
+  levelChipText: {
     fontSize: 13,
     fontWeight: "600",
     color: Colors.text,
@@ -167,24 +141,5 @@ const styles = StyleSheet.create({
   },
   removeHitPressed: {
     opacity: 0.72,
-  },
-  iconBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainerHigh,
-  },
-  iconBtnPressed: {
-    opacity: 0.85,
-  },
-  iconBtnLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: Colors.primary,
   },
 });
