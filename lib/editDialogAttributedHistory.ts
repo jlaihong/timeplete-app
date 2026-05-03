@@ -225,3 +225,123 @@ export function buildEditDialogMergedHistory(opts: {
 
   return rows;
 }
+
+/**
+ * Productivity-one `TrackerDetailsDialog` history rows (`HistoryRow`): merged tracker
+ * entries + attributed time windows, sorted by day desc then start time desc.
+ */
+export type TrackerDetailsHistoryRow =
+  | {
+      source: "tracker_entry";
+      id: string;
+      sortKey: string;
+      dayYYYYMMDD: string;
+      startTimeHHMM?: string | null;
+      durationSeconds?: number | null;
+      countValue?: number | null;
+      comments?: string | null;
+    }
+  | {
+      source: "time_window";
+      id: string;
+      sortKey: string;
+      startDayYYYYMMDD: string;
+      startTimeHHMM: string;
+      durationSeconds: number;
+      /** `tw.title || tw.comments` in productivity-one (`convertTimeWindowToHistoryRow`) */
+      commentsUnified: string;
+      /** Present when trackCount && autoCountFromCalendar (value `1`). */
+      syntheticCount?: number;
+    };
+
+/** Match `tracker-details-dialog.ts:formatDuration`: `hours` + `:MM` minutes of hour only. */
+export function formatTrackerDialogDuration(seconds?: number | null): string {
+  if (seconds === undefined || seconds === null || seconds <= 0) return "-";
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return `${hours}:${minutes.toString().padStart(2, "0")}`;
+}
+
+export function mergeTrackerDetailsHistory(opts: {
+  trackableId: string;
+  trackCount: boolean;
+  autoCountFromCalendar: boolean;
+  timeBreakdown: AnalyticsBreakdownSubset | null | undefined;
+  trackerEntries: Doc<"trackerEntries">[];
+}): TrackerDetailsHistoryRow[] {
+  const trackerEntryIds = new Set(
+    opts.trackerEntries.map((e) => String(e._id)).filter(Boolean),
+  );
+
+  const rows: TrackerDetailsHistoryRow[] = [];
+
+  if (opts.timeBreakdown?.timeWindows?.length) {
+    const bd = opts.timeBreakdown;
+    const taskAttr = taskAttributionMap(bd.tasks);
+    const listToTrackable = linkMap(bd.listIdToTrackableId);
+
+    const attributed: TW[] = [];
+    for (const w of bd.timeWindows) {
+      if (
+        !windowAttributedToTrackableClient(
+          w,
+          opts.trackableId,
+          taskAttr,
+          listToTrackable,
+        )
+      ) {
+        continue;
+      }
+      attributed.push(w);
+    }
+
+    for (const tw of attributed) {
+      const src = tw.source ?? "timer";
+      // productivity-one: keep `time_window`-sourced rows always; omit `tracker_entry`
+      // windows whose id duplicates a fetched manual tracker row.
+      // Convex only types `tracker_entry`/`timer`/…; omit non-legacy overlaps defensively.
+      if (src === "tracker_entry" && trackerEntryIds.has(String(tw._id))) {
+        continue;
+      }
+
+      const titleOrComments =
+        typeof tw.title === "string" && tw.title.trim().length > 0
+          ? tw.title.trim()
+          : typeof tw.comments === "string" && tw.comments.trim().length > 0
+            ? tw.comments.trim()
+            : "";
+
+      rows.push({
+        source: "time_window",
+        id: String(tw._id),
+        sortKey: `${tw.startDayYYYYMMDD}\u0001${tw.startTimeHHMM ?? ""}\u0001${tw._id}`,
+        startDayYYYYMMDD: tw.startDayYYYYMMDD,
+        startTimeHHMM: tw.startTimeHHMM,
+        durationSeconds: tw.durationSeconds,
+        commentsUnified: titleOrComments,
+        syntheticCount:
+          opts.trackCount && opts.autoCountFromCalendar ? 1 : undefined,
+      });
+    }
+  }
+
+  for (const e of opts.trackerEntries) {
+    const day = compactDay(e.dayYYYYMMDD);
+    rows.push({
+      source: "tracker_entry",
+      id: String(e._id),
+      sortKey: `${day}\u0001${e.startTimeHHMM ?? ""}\u0001${e._id}`,
+      dayYYYYMMDD: e.dayYYYYMMDD,
+      startTimeHHMM: e.startTimeHHMM,
+      durationSeconds: e.durationSeconds ?? null,
+      countValue: e.countValue ?? null,
+      comments: e.comments ?? null,
+    });
+  }
+
+  rows.sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0));
+
+  return rows;
+}
+
+
