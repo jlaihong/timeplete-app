@@ -12,7 +12,6 @@ export type GroupByMode =
   | "tag"
   | "list"
   | "trackable"
-  | "trackable_type"
   | "date"
   | "day_of_week"
   | "month"
@@ -38,23 +37,6 @@ export type TrackableTypeLite =
   | "MINUTES_A_WEEK"
   | "TRACKER";
 
-const TRACKABLE_TYPE_LABEL: Record<TrackableTypeLite, string> = {
-  NUMBER: "Count",
-  TIME_TRACK: "Time",
-  DAYS_A_WEEK: "Days / Week",
-  MINUTES_A_WEEK: "Minutes / Week",
-  TRACKER: "Tracker",
-};
-
-/** Mirrors `Colors.trackable` — kept local to avoid importing UI constants. */
-const TRACKABLE_TYPE_COLOUR: Record<TrackableTypeLite, string> = {
-  NUMBER: "#6750A4",
-  TIME_TRACK: "#00DAF5",
-  DAYS_A_WEEK: "#02E600",
-  MINUTES_A_WEEK: "#F59E0B",
-  TRACKER: "#E91E63",
-};
-
 export interface GroupingLookups {
   tasks?: Record<
     string,
@@ -71,10 +53,7 @@ export interface GroupingLookups {
     { name: string; colour: string; trackableType?: TrackableTypeLite }
   >;
   listIdToTrackableId?: Record<string, string>;
-  /**
-   * Union attribution for trackable / trackable_type — matches
-   * `useAnalyticsDataset.resolveTrackableId`.
-   */
+  /** Union attribution for trackable — matches `useAnalyticsDataset.resolveTrackableId`. */
   resolveTrackableId?: (w: TimeWindowLike) => string | null;
 }
 
@@ -141,21 +120,6 @@ function getGroupKeys(
         return [{ key: tid, label: t.name, colour: t.colour }];
       }
       return [{ key: "no_trackable", label: "No Goal" }];
-    }
-
-    case "trackable_type": {
-      const tid = resolvedTrackableId(w, lookups);
-      if (tid && lookups.trackables?.[tid]?.trackableType) {
-        const tt = lookups.trackables[tid]!.trackableType!;
-        return [
-          {
-            key: tt,
-            label: TRACKABLE_TYPE_LABEL[tt] ?? tt,
-            colour: TRACKABLE_TYPE_COLOUR[tt],
-          },
-        ];
-      }
-      return [{ key: "unknown_type", label: "Unknown Type" }];
     }
 
     case "date":
@@ -277,7 +241,6 @@ export const GROUP_BY_LABEL: Record<GroupByMode, string> = {
   list: "List",
   task: "Task",
   tag: "Tag",
-  trackable_type: "Trackable Type",
   date: "Date",
   day_of_week: "Day of Week",
   month: "Month",
@@ -306,17 +269,9 @@ export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
 export function modesForTab(tab: string): GroupByMode[] {
   switch (tab) {
     case "DAILY":
-      return ["trackable", "list", "task", "tag", "trackable_type"];
+      return ["trackable", "list", "task", "tag"];
     case "WEEKLY":
-      return [
-        "trackable",
-        "list",
-        "task",
-        "date",
-        "tag",
-        "trackable_type",
-        "day_of_week",
-      ];
+      return ["trackable", "list", "task", "date", "tag", "day_of_week"];
     case "MONTHLY":
       return [
         "trackable",
@@ -324,7 +279,6 @@ export function modesForTab(tab: string): GroupByMode[] {
         "task",
         "date",
         "tag",
-        "trackable_type",
         "day_of_week",
         "month",
       ];
@@ -335,13 +289,12 @@ export function modesForTab(tab: string): GroupByMode[] {
         "task",
         "month",
         "tag",
-        "trackable_type",
         "day_of_week",
         "year",
         "date",
       ];
     default:
-      return ["trackable", "list", "task", "tag", "trackable_type"];
+      return ["trackable", "list", "task", "tag"];
   }
 }
 
