@@ -1,6 +1,6 @@
 import { query, mutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUser } from "./_helpers/auth";
 
 /**
@@ -258,6 +258,14 @@ export const remove = mutation({
   },
 });
 
+/** Matches productivity-one list section ordering (`list-page.store` / `task-group`). */
+function compareTasksForListView(a: Doc<"tasks">, b: Doc<"tasks">): number {
+  const aDone = a.dateCompleted != null && a.dateCompleted !== "";
+  const bDone = b.dateCompleted != null && b.dateCompleted !== "";
+  if (aDone !== bDone) return Number(aDone) - Number(bDone);
+  return a.sectionOrderIndex - b.sectionOrderIndex;
+}
+
 export const getPaginated = query({
   args: {
     listId: v.id("lists"),
@@ -319,8 +327,11 @@ export const getPaginated = query({
     });
 
     const result = [];
-    /** Default high limits so list/inbox views match P1 unless caller paginates explicitly. */
-    const taskLim = args.taskLimit ?? 500;
+    /**
+     * Default cap must exceed typical “all incomplete first” counts so completed tasks
+     * are not truncated entirely when show-completed is on (P1 stacks completed last).
+     */
+    const taskLim = args.taskLimit ?? 2500;
 
     for (const section of sortedSections) {
       const tasksForSection = eligible.filter((t) => {
@@ -333,7 +344,7 @@ export const getPaginated = query({
       });
 
       const sorted = [...tasksForSection]
-        .sort((a, b) => a.sectionOrderIndex - b.sectionOrderIndex)
+        .sort(compareTasksForListView)
         .slice(0, taskLim)
         .map(withTags);
 
