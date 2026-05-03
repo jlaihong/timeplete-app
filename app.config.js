@@ -129,12 +129,6 @@ function tcpListeningSync(port, opts = {}) {
   return r.stdout === "ok" && r.status === 0;
 }
 
-/** @type {ReadonlySet<string>} */
-const BUILTIN_LOOPBACK_CONVEX_PAIRS = new Set([
-  "3210,3211",
-  "3212,3213",
-]);
-
 /** @param {[number, number]} pair */
 function loopbackConvexPairOpens(pair) {
   const [c, s] = pair;
@@ -142,13 +136,13 @@ function loopbackConvexPairOpens(pair) {
 }
 
 /**
- * Convex dev often ends up on 3210/3211 (one toolchain) vs 3212/3213 (README
- * examples). README-copied `.env.local` tuples should not win probing when
- * *both* port pairs accidentally accept TCP (stale/other processes) — trial
- * the common live pairs before trusting env literals.
+ * Pick loopback Convex cloud+site URLs. Several processes may listen on the
+ * “usual” port pairs at once (e.g. agent-flow vs this app). If `.env.local`
+ * points at a pair that is actually up, we must prefer it — otherwise we
+ * attach to another stack and Better Auth returns “Failed to fetch”.
  *
- * Truly custom `[cloud, site]` from `.env` is still honoured after CLI
- * `.convex/.../config.json` because it won't match builtins.
+ * Order: `.convex/.../config.json` (this worktree) → env pair when both ports
+ * listen → then 3210/3211 → 3212/3213.
  *
  * @param {string | undefined} mergedCloud
  * @param {string | undefined} mergedSite
@@ -187,12 +181,11 @@ function resolveDiscoveredLoopbackConvexUrls(mergedCloud, mergedSite) {
     mergedCloud?.trim?.(),
     mergedSite?.trim?.(),
   );
-  const envKey = envPair && `${envPair[0]},${envPair[1]}`;
-  const envIsBuiltin =
-    envPair && envKey !== undefined && BUILTIN_LOOPBACK_CONVEX_PAIRS.has(envKey);
 
   if (fromFile) push(fromFile);
-  if (envPair && !envIsBuiltin) push(envPair);
+  if (envPair && loopbackConvexPairOpens(envPair)) {
+    push(envPair);
+  }
   push([3210, 3211]);
   push([3212, 3213]);
 
