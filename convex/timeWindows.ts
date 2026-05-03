@@ -8,7 +8,7 @@ import {
   resolveAttributedTrackableId,
   resolveSnapshotTrackableIdForTask,
 } from "./_helpers/trackableAttribution";
-import { deriveEventColors } from "./_helpers/eventColors";
+import { enrichTimeWindowsWithDisplayFields } from "./_helpers/timeWindowDisplayEnrichment";
 
 export const search = query({
   args: {
@@ -164,100 +164,13 @@ export const search = query({
       if (t) trackablesById.set(t._id, t);
     }
 
-    return filtered.map((w) => {
-      // ─── Title derivation ────────────────────────────────────────
-      // Single canonical priority ladder (matches productivity-one):
-      //
-      //   1. Explicit user-entered title  (w.title — persisted)
-      //   2. Linked list name             (direct listId, or task.listId)
-      //   3. Linked trackable name
-      //   4. For TASK rows only: task name
-      //   5. Fallback: "Untitled"  (or "Event" for EVENT activityType
-      //      so legacy rows keep their P1 label)
-      //
-      // The persisted `w.title` MUST flow through unchanged so the edit
-      // dialog can distinguish "explicit" (string) from "derived"
-      // (undefined) when re-saving. We compute `derivedTitle` and
-      // `displayTitle` as new fields rather than mutating `w.title`.
-      let trackableColour: string | undefined;
-      let listColour: string | undefined;
-      let derivedTitle: string | undefined;
-
-      // Resolve a list document for display, preferring the direct
-      // listId. For TASK rows, fall back to the task's listId so the
-      // colour-stripe rule still works.
-      const directListDoc = w.listId ? listsById.get(w.listId) : undefined;
-
-      if (w.activityType === "EVENT") {
-        // EVENT: allow direct trackable colour/title fallback parity with P1.
-        const eventTrackable = w.trackableId
-          ? trackablesById.get(w.trackableId)
-          : undefined;
-        if (directListDoc?.name) derivedTitle = directListDoc.name;
-        else if (eventTrackable?.name) derivedTitle = eventTrackable.name;
-        listColour = directListDoc?.colour;
-        trackableColour = eventTrackable?.colour;
-      } else if (w.activityType === "TRACKABLE" && w.trackableId) {
-        const trackable = trackablesById.get(w.trackableId);
-        // Hierarchy: list (if linked) → trackable.
-        if (directListDoc?.name) {
-          derivedTitle = directListDoc.name;
-        } else if (trackable?.name) {
-          derivedTitle = trackable.name;
-        }
-        trackableColour = trackable?.colour;
-        listColour = directListDoc?.colour;
-      } else if (w.activityType === "TASK") {
-        const task = w.taskId ? tasksById.get(w.taskId) : undefined;
-        const taskListDoc = task?.listId
-          ? listsById.get(task.listId)
-          : undefined;
-        // Hierarchy for TASK rows: task name → direct list → task
-        // list. The task name MUST win because the linked task is
-        // the canonical user-facing label for a TASK calendar block
-        // (matches productivity-one). The list/list-name fallbacks
-        // only fire if there's no task at all (defensive — in
-        // practice every TASK row has a non-empty task.name).
-        if (task?.name) {
-          derivedTitle = task.name;
-        } else if (directListDoc?.name) {
-          derivedTitle = directListDoc.name;
-        } else if (taskListDoc?.name) {
-          derivedTitle = taskListDoc.name;
-        }
-
-        const resolvedTrackableId = resolveAttributedTrackableId(
-          { trackableId: w.trackableId, taskId: w.taskId },
-          taskInfoMap,
-          listIdToTrackableId
-        );
-        trackableColour = resolvedTrackableId
-          ? trackablesById.get(resolvedTrackableId)?.colour
-          : undefined;
-        listColour = taskListDoc?.colour;
-      }
-
-      const { displayColor, secondaryColor } = deriveEventColors(
-        trackableColour,
-        listColour
-      );
-
-      const fallback = w.activityType === "EVENT" ? "Event" : "Untitled";
-      const displayTitle = w.title ?? derivedTitle ?? fallback;
-
-      return {
-        ...w,
-        // `title` is the PERSISTED value — flows through untouched.
-        // `displayTitle` is what the calendar renders.
-        // `derivedTitle` is what would render if no explicit title was
-        // set; the dialog uses this for the placeholder and to detect
-        // when a typed title duplicates the derived name.
-        displayTitle,
-        derivedTitle,
-        displayColor,
-        secondaryColor,
-      };
-    });
+    return enrichTimeWindowsWithDisplayFields(
+      filtered,
+      tasksById,
+      listsById,
+      trackablesById,
+      links
+    );
   },
 });
 
