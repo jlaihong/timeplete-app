@@ -257,22 +257,23 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
               )}
             </View>
 
-            {/* Optional col-3 row-2: assignee + date */}
-            {(initials || dateLabel) && (
-              <View style={styles.metaRow}>
-                {initials && (
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{initials}</Text>
-                  </View>
-                )}
-                {dateLabel && <Text style={styles.dateText}>{dateLabel}</Text>}
-              </View>
-            )}
           </View>
 
-          {/* Tags row */}
-          {(showTrackableTag || showListTag || (meta.tags?.length ?? 0) > 0) && (
+          {/* Meta + chips: keep date/assignee on the same row as trackable/tags */}
+          {(initials ||
+            dateLabel ||
+            showTrackableTag ||
+            showListTag ||
+            (meta.tags?.length ?? 0) > 0) && (
             <View style={styles.tagsRow}>
+              {initials && (
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </View>
+              )}
+              {dateLabel && (
+                <Text style={styles.dateTextInline}>{dateLabel}</Text>
+              )}
               {showTrackableTag && meta.trackable && (
                 <View style={styles.tagChip}>
                   <MaterialIcons
@@ -366,7 +367,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     columnGap: 8,
-    flexWrap: "wrap",
   },
   iconBtn: {
     width: 32,
@@ -425,15 +425,6 @@ const styles = StyleSheet.create({
     color: Colors.success,
     fontWeight: "600",
   },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 6,
-    paddingRight: 12,
-    width: "100%",
-    marginTop: 2,
-  },
   avatar: {
     width: 20,
     height: 20,
@@ -448,13 +439,19 @@ const styles = StyleSheet.create({
     color: Colors.onPrimaryContainer,
     lineHeight: 10,
   },
-  dateText: {
+  dateTextInline: {
     fontSize: 12,
     color: Colors.textTertiary,
+    marginRight: 4,
+    ...Platform.select({
+      web: { whiteSpace: "nowrap" } as object,
+      default: {},
+    }),
   },
   tagsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
+    alignItems: "center",
     gap: 12,
     paddingHorizontal: 16,
     paddingBottom: 10,
