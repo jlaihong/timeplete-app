@@ -17,6 +17,8 @@ interface AddTaskSheetProps {
   sectionId?: Id<"listSections">;
   parentId?: Id<"tasks">;
   trackableId?: Id<"trackables">;
+  /** Hide list picker — keeps tasks on the list/section that opened this sheet. */
+  lockListToContext?: boolean;
   onClose: () => void;
 }
 
@@ -26,6 +28,7 @@ export function AddTaskSheet({
   sectionId,
   parentId,
   trackableId: initialTrackableId,
+  lockListToContext = false,
   onClose,
 }: AddTaskSheetProps) {
   const [name, setName] = useState("");
@@ -50,6 +53,8 @@ export function AddTaskSheet({
   // manually picks a trackable in this dialog.
   const isTrackableLocked = !!initialTrackableId;
   const hasGoalSelected = !!trackableId;
+  const listPickerLocked =
+    lockListToContext && !!initialListId && !isTrackableLocked;
 
   // Mutual exclusion handlers — verbatim from P1's
   // `onGoalSelectionChange` / `onListSelectionChange`.
@@ -74,7 +79,9 @@ export function AddTaskSheet({
       //   3. else, fall back to inbox.
       const effectiveListId: Id<"lists"> | undefined = trackableId
         ? undefined
-        : (listId ?? inboxListId ?? undefined);
+        : listPickerLocked && initialListId
+          ? initialListId
+          : (listId ?? inboxListId ?? undefined);
 
       await upsertTask({
         name: name.trim(),
@@ -115,7 +122,7 @@ export function AddTaskSheet({
               trackable's backing list is used) or when this dialog was
               opened with a locked trackable. Mirrors P1's
               `@if (!hasGoalSelected() && !isTrackableLocked)`. */}
-          {!hasGoalSelected && !isTrackableLocked && (
+          {!hasGoalSelected && !isTrackableLocked && !listPickerLocked && (
             <ListPicker
               value={listId}
               onChange={handleListChange}
