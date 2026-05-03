@@ -7,7 +7,6 @@ export type DrawerSelection = {
   home: boolean;
   inbox: boolean;
   goals: boolean;
-  calendar: boolean;
   analytics: boolean;
   reviews: boolean;
   tags: boolean;
@@ -21,7 +20,6 @@ const empty: DrawerSelection = {
   home: false,
   inbox: false,
   goals: false,
-  calendar: false,
   analytics: false,
   reviews: false,
   tags: false,
@@ -54,7 +52,6 @@ export function useDrawerSelection(): DrawerSelection {
     const tab = g2;
     if (tab === undefined || tab === "index") return { ...empty, home: true };
     if (tab === "goals") return { ...empty, goals: true };
-    if (tab === "calendar") return { ...empty, calendar: true };
     if (tab === "analytics") return { ...empty, analytics: true };
     if (tab === "reviews") return { ...empty, reviews: true };
     return empty;
