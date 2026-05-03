@@ -47,7 +47,7 @@ type TrackableType =
 
 type GoalEditTab =
   | "progress"
-  | "tracking_history"
+  | "time_tracked"
   | "commitment"
   | "motivations"
   | "accountability";
@@ -56,7 +56,7 @@ type TrackerEditTab = "details" | "tracking_history";
 
 const GOAL_TAB_DEFS: { key: GoalEditTab; label: string }[] = [
   { key: "progress", label: "Progress" },
-  { key: "tracking_history", label: "Tracking History" },
+  { key: "time_tracked", label: "Time Tracked" },
   { key: "commitment", label: "My Commitment" },
   { key: "motivations", label: "My Motivations" },
   { key: "accountability", label: "Accountability" },
@@ -446,7 +446,7 @@ export function EditTrackableDialog({
             }} />
           </ScrollView>
         );
-      case "tracking_history":
+      case "time_tracked":
         return (
           <View style={styles.historyTabPane}>
             <EditTrackableHistoryTab
