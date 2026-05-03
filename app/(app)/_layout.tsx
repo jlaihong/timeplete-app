@@ -67,18 +67,6 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         onPress={() => go("/(app)/(tabs)/goals")}
       />
       <DrawerItem
-        label="Calendar"
-        focused={sel.calendar}
-        activeBackgroundColor={Colors.sidenavItemActive}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.white}
-        style={drawerItemStyle}
-        icon={({ size, color }) => (
-          <Ionicons name="calendar-outline" size={size} color={color} />
-        )}
-        onPress={() => go("/(app)/(tabs)/calendar")}
-      />
-      <DrawerItem
         label="Analytics"
         focused={sel.analytics}
         activeBackgroundColor={Colors.sidenavItemActive}
