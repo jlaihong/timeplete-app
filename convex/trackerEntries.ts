@@ -26,9 +26,15 @@ export const search = query({
       return true;
     });
 
-    entries.sort(
-      (a, b) => b._creationTime - a._creationTime
-    );
+    // Match productivity-one `TrackerDetailsDialog.mergeAndSortHistoryRows`:
+    // newest day first, then start time descending within a day.
+    entries.sort((a, b) => {
+      const d = b.dayYYYYMMDD.localeCompare(a.dayYYYYMMDD);
+      if (d !== 0) return d;
+      const ta = a.startTimeHHMM ?? "";
+      const tb = b.startTimeHHMM ?? "";
+      return tb.localeCompare(ta);
+    });
 
     const total = entries.length;
     const offset = args.offset ?? 0;

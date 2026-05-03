@@ -345,7 +345,7 @@ export function EditTrackableDialog({
                 />
                 <ChoiceChip
                   title="Rating"
-                  subtitle="Values at a point in time"
+                  subtitle="Values recorded at a point in time"
                   selected={isCumulative === false}
                   onPress={() => {
                     setIsCumulative(false);
@@ -398,7 +398,7 @@ export function EditTrackableDialog({
                   activeTab === tab && styles.tabTextActive,
                 ]}
               >
-                {tab === "details" ? "Details" : "Tracking history"}
+                {tab === "details" ? "Details" : "Tracking History"}
               </Text>
             </Pressable>
           ))}
@@ -420,7 +420,7 @@ export function EditTrackableDialog({
             endDayYYYYMMDD={endDay || trackable.endDayYYYYMMDD}
             trackTime={trackTime}
             trackCount={trackCount}
-            isRatingTracker={isRatingTracker}
+            autoCountFromCalendar={autoCountFromCalendar}
           />
         )}
 
