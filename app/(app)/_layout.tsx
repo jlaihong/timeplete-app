@@ -26,6 +26,11 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
   const isDesktop = useIsDesktop();
   const sel = useDrawerSelection();
   const lists = useQuery(api.lists.search, isAuthenticated ? {} : "skip");
+  const inboxList =
+    lists
+      ?.filter((l) => l.isInbox && !l.archived)
+      .slice()
+      .sort((a, b) => a.orderIndex - b.orderIndex)[0] ?? null;
 
   const go = (href: Href) => {
     router.push(href);
@@ -54,18 +59,20 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         )}
         onPress={() => go("/(app)/(tabs)")}
       />
-      <DrawerItem
-        label="Inbox"
-        focused={sel.inbox}
-        activeBackgroundColor={Colors.sidenavItemActive}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.white}
-        style={drawerItemStyle}
-        icon={({ size, color }) => (
-          <Ionicons name="file-tray-outline" size={size} color={color} />
-        )}
-        onPress={() => go("/(app)/inbox")}
-      />
+      {inboxList ? (
+        <DrawerItem
+          label="Inbox"
+          focused={sel.inbox}
+          activeBackgroundColor={Colors.sidenavItemActive}
+          inactiveTintColor={Colors.textSecondary}
+          activeTintColor={Colors.white}
+          style={drawerItemStyle}
+          icon={({ size, color }) => (
+            <Ionicons name="file-tray-outline" size={size} color={color} />
+          )}
+          onPress={() => go(`/(app)/lists/${inboxList._id}`)}
+        />
+      ) : null}
       <DrawerItem
         label="Trackables"
         focused={sel.goals}
