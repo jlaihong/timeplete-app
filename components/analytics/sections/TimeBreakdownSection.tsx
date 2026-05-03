@@ -2,69 +2,41 @@ import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Colors } from "../../../constants/colors";
 import { formatSecondsAsHM } from "../../../lib/dates";
-import { groupTimeWindows, GroupByMode } from "../../../lib/grouping";
+import {
+  groupTimeWindows,
+  GroupByMode,
+  modesForTab,
+  defaultModeForTab,
+  buildSunburstModeChain,
+  GroupingLookups,
+} from "../../../lib/grouping";
 import { SectionCard } from "../SectionCard";
 import { useAnalyticsDataset } from "../useAnalyticsDataset";
 import { useAnalyticsState } from "../AnalyticsState";
+import { TimeBreakdownSunburst } from "../widgets/TimeBreakdownSunburst";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * Time Breakdown — productivity-one's `analytics-time-breakdown-widget`.
- * P1 uses a sunburst + accordion driven by a `<group-by-widget>` chip
- * row. We render the same controls (chips per dimension) and a
- * percentage bar list. Default dimension differs per tab to match P1.
- *
- * Sub-filter (group-by) is **local to the section** and only changes
- * the *visualisation* — date filtering still flows from the global
- * AnalyticsState. This matches P1 exactly: changing groups never
- * overrides the analytics window.
+ * Chip row chooses the primary grouping; the sunburst rings drill through
+ * the tab's remaining dimensions in order (see `buildSunburstModeChain`).
  * ──────────────────────────────────────────────────────────────────── */
 
-const ALL_MODES: { id: GroupByMode; label: string }[] = [
-  { id: "trackable", label: "Trackable" },
-  { id: "list", label: "List" },
-  { id: "task", label: "Task" },
-  { id: "tag", label: "Tag" },
-  { id: "date", label: "Date" },
-  { id: "day_of_week", label: "Day of Week" },
-  { id: "month", label: "Month" },
-];
-
-function defaultModeForTab(tab: string): GroupByMode {
-  switch (tab) {
-    case "DAILY":
-      return "trackable";
-    case "WEEKLY":
-      return "trackable";
-    case "MONTHLY":
-      return "trackable";
-    case "YEARLY":
-      return "month";
-    default:
-      return "trackable";
-  }
-}
-
-function modesForTab(tab: string): GroupByMode[] {
-  switch (tab) {
-    case "DAILY":
-      return ["trackable", "list", "task", "tag"];
-    case "WEEKLY":
-      return ["trackable", "list", "task", "date", "tag"];
-    case "MONTHLY":
-      return ["trackable", "list", "task", "date", "tag", "day_of_week"];
-    case "YEARLY":
-      return ["trackable", "list", "task", "month", "tag", "day_of_week"];
-    default:
-      return ["trackable", "list", "task", "tag"];
-  }
-}
+const MODE_LABELS: Record<GroupByMode, string> = {
+  trackable: "Goal",
+  trackable_type: "Trackable Type",
+  list: "List",
+  task: "Task",
+  tag: "Tag",
+  date: "Date",
+  day_of_week: "Day of Week",
+  month: "Month",
+  year: "Year",
+};
 
 export function TimeBreakdownSection() {
   const { selectedTab } = useAnalyticsState();
   const dataset = useAnalyticsDataset();
 
-  // Reset the local group dimension when the user switches tab so we
-  // always land on P1's "default for this tab" first.
   const [overrideMode, setOverrideMode] = useState<GroupByMode | null>(null);
   const [lastTab, setLastTab] = useState<string>(selectedTab);
   if (lastTab !== selectedTab) {
@@ -75,26 +47,43 @@ export function TimeBreakdownSection() {
   const mode: GroupByMode = overrideMode ?? defaultModeForTab(selectedTab);
   const availableModes = modesForTab(selectedTab);
 
+  const groupingLookups: GroupingLookups = useMemo(
+    () => ({
+      tasks: dataset.tasks,
+      tags: dataset.tags,
+      lists: dataset.lists,
+      trackables: dataset.trackables as GroupingLookups["trackables"],
+      listIdToTrackableId: dataset.listIdToTrackableId,
+      resolveTrackableId: dataset.resolveTrackableId,
+    }),
+    [
+      dataset.tasks,
+      dataset.tags,
+      dataset.lists,
+      dataset.trackables,
+      dataset.listIdToTrackableId,
+      dataset.resolveTrackableId,
+    ]
+  );
+
+  const modeChain = useMemo(
+    () => buildSunburstModeChain(selectedTab, mode),
+    [selectedTab, mode]
+  );
+
   const items = useMemo(
     () =>
-      groupTimeWindows(dataset.timeWindows, mode, {
-        tasks: dataset.tasks as Record<string, { name: string; listId?: string }>,
-        tags: dataset.tags as Record<string, { name: string; colour: string }>,
-        lists: dataset.lists as Record<string, { name: string; colour: string }>,
-        trackables: dataset.trackables as Record<
-          string,
-          { name: string; colour: string }
-        >,
-      }),
-    [dataset, mode]
+      groupTimeWindows(dataset.timeWindows, mode, groupingLookups),
+    [dataset.timeWindows, mode, groupingLookups]
   );
+
+  const resetScheduleKey = `${selectedTab}-${mode}-${dataset.windowStart}-${dataset.windowEnd}`;
+  const dataSignature = `${dataset.windowStart}-${dataset.windowEnd}-${dataset.totalSeconds}-${dataset.timeWindows.length}`;
 
   return (
     <SectionCard title="Time Breakdown">
       <View style={styles.modeRow}>
         {availableModes.map((m) => {
-          const meta = ALL_MODES.find((x) => x.id === m);
-          if (!meta) return null;
           const active = mode === m;
           return (
             <TouchableOpacity
@@ -108,18 +97,24 @@ export function TimeBreakdownSection() {
                   active && styles.modeChipLabelActive,
                 ]}
               >
-                {meta.label}
+                {MODE_LABELS[m]}
               </Text>
             </TouchableOpacity>
           );
         })}
       </View>
 
-      {dataset.isLoading ? (
-        <Text style={styles.empty}>Loading…</Text>
-      ) : items.length === 0 ? (
-        <Text style={styles.empty}>No time recorded in this period.</Text>
-      ) : (
+      <TimeBreakdownSunburst
+        timeWindows={dataset.timeWindows}
+        totalSecondsDenominator={dataset.totalSeconds}
+        modeChain={modeChain}
+        lookups={groupingLookups}
+        isLoading={dataset.isLoading}
+        resetScheduleKey={resetScheduleKey}
+        dataSignature={dataSignature}
+      />
+
+      {!dataset.isLoading && items.length > 0 ? (
         <View>
           {items.map((item) => {
             const pct =
@@ -163,7 +158,7 @@ export function TimeBreakdownSection() {
             );
           })}
         </View>
-      )}
+      ) : null}
     </SectionCard>
   );
 }
@@ -187,14 +182,11 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.textSecondary,
   },
-  modeChipLabelActive: { color: Colors.onPrimary },
-  empty: {
-    fontSize: 13,
+  rowValuePct: {
+    fontSize: 12,
     color: Colors.textTertiary,
-    paddingVertical: 12,
-    textAlign: "center",
   },
-  row: {
+});
     paddingVertical: 6,
   },
   rowLabelRow: {
