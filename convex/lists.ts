@@ -259,7 +259,8 @@ export const remove = mutation({
 });
 
 function isTaskCompletedForListView(t: Doc<"tasks">): boolean {
-  return t.dateCompleted != null && t.dateCompleted !== "";
+  const d = t.dateCompleted;
+  return typeof d === "string" && d.trim().length > 0;
 }
 
 /** Matches productivity-one list section ordering (`list-page.store` / `task-group`). */
@@ -308,9 +309,15 @@ export const getPaginated = query({
       .withIndex("by_list", (q) => q.eq("listId", args.listId))
       .collect();
 
-    /** Other lists show recurring instances; inbox omits them (matches P1 / home overdue semantics). */
+    /**
+     * Inbox: suppress incomplete recurring instances (calendar noise). Always include
+     * completed recurring instances — they stay `isRecurringInstance: true` after
+     * check-off, and excluding them hid essentially all “done” work vs productivity-one.
+     */
     const eligible = list.isInbox
-      ? allOnList.filter((t) => !t.isRecurringInstance)
+      ? allOnList.filter(
+          (t) => !t.isRecurringInstance || isTaskCompletedForListView(t),
+        )
       : allOnList;
 
     const taskTagsAll = await ctx.db
