@@ -9,6 +9,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "web:clear": "expo start --web --clear --host localhost",
     "postinstall": "patch-package"
   },
   "dependencies": {

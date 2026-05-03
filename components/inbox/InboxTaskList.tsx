@@ -92,6 +92,14 @@ export function InboxTaskList({
         </View>
       )}
 
+      {!isGoalList && (
+        <View style={styles.modeHint} accessibilityHint="Separate from Tasks home calendar grouping">
+          <Text style={styles.modeHintText}>
+            Grouped by list section · not calendar day like Tasks home
+          </Text>
+        </View>
+      )}
+
       <SectionList
         style={styles.sectionList}
         sections={sections}
@@ -230,6 +238,18 @@ const styles = StyleSheet.create({
     zIndex: 40,
     elevation: 40,
     position: "relative",
+  },
+  modeHint: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: Colors.surfaceContainer,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.outlineVariant,
+  },
+  modeHintText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: Colors.textSecondary,
   },
   toolbarButton: {
     flexDirection: "row",
