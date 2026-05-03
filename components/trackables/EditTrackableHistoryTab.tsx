@@ -27,6 +27,7 @@ import {
   formatTrackerDialogDuration,
   mergeTrackerDetailsHistory,
 } from "../../lib/editDialogAttributedHistory";
+import { trackingHistoryScrollViewDomProps } from "../../lib/webScrollbarStyles";
 
 export type EditDialogTrackableType =
   | "NUMBER"
@@ -277,6 +278,7 @@ export function EditTrackableHistoryTab({
     return (
       <>
         <ScrollView
+          {...(trackingHistoryScrollViewDomProps() as object)}
           style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
@@ -461,6 +463,7 @@ export function EditTrackableHistoryTab({
 
     return (
       <ScrollView
+        {...(trackingHistoryScrollViewDomProps() as object)}
         style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
@@ -480,6 +483,7 @@ export function EditTrackableHistoryTab({
             <TableHeaderCell style={styles.colHistAction} bold />
           </View>
           <ScrollView
+            {...(trackingHistoryScrollViewDomProps() as object)}
             style={[
               styles.tableBodyScroll,
               Platform.OS === "web" ? styles.tableBodyScrollWeb : null,
@@ -607,6 +611,7 @@ export function EditTrackableHistoryTab({
 
   return (
     <ScrollView
+      {...(trackingHistoryScrollViewDomProps() as object)}
       style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
       nestedScrollEnabled
       keyboardShouldPersistTaps="handled"
@@ -620,6 +625,7 @@ export function EditTrackableHistoryTab({
           <TableHeaderCell style={styles.colNotesWide}>Comments</TableHeaderCell>
         </View>
         <ScrollView
+          {...(trackingHistoryScrollViewDomProps() as object)}
           style={[
             styles.tableBodyScroll,
             Platform.OS === "web" ? styles.tableBodyScrollWeb : null,
