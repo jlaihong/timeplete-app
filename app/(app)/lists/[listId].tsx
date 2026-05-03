@@ -209,6 +209,9 @@ export default function ListDetailScreen() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showAddSection, setShowAddSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
+  const [collapsedSectionKeys, setCollapsedSectionKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   useEffect(() => {
     if (!listId) return;
@@ -314,17 +317,21 @@ export default function ListDetailScreen() {
       if (!showCompleted) {
         items = items.filter((t) => !t.dateCompleted);
       }
+      const sectionKey = String(block.section._id);
+      const collapsed =
+        !block.section.isDefaultSection &&
+        collapsedSectionKeys.has(sectionKey);
       return {
-        sectionKey: String(block.section._id),
+        sectionKey,
         sectionId: block.section._id,
         title: block.section.name,
         isDefault: block.section.isDefaultSection,
         totalTasks: block.totalTasks,
         loadedTasks: block.tasks.length,
-        data: items,
+        data: collapsed ? [] : items,
       };
     });
-  }, [paginatedList, showCompleted, filterUserIds]);
+  }, [paginatedList, showCompleted, filterUserIds, collapsedSectionKeys]);
 
   const defaultSectionId = useMemo((): Id<"listSections"> | undefined => {
     if (!paginatedList?.sections.length) return undefined;
@@ -453,6 +460,15 @@ export default function ListDetailScreen() {
     setNewSectionName("");
     setShowAddSection(false);
   }, [listId, newSectionName, upsertSection]);
+
+  const toggleSectionCollapsed = useCallback((sectionKey: string) => {
+    setCollapsedSectionKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionKey)) next.delete(sectionKey);
+      else next.add(sectionKey);
+      return next;
+    });
+  }, []);
 
   const listTitle = paginatedList?.list.name ?? "List";
 
@@ -706,12 +722,31 @@ export default function ListDetailScreen() {
         }
         renderSectionHeader={({ section }) =>
           section.isDefault ? null : (
-            <View style={styles.sectionHeader}>
+            <TouchableOpacity
+              style={styles.sectionHeader}
+              onPress={() => toggleSectionCollapsed(section.sectionKey)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityState={{
+                expanded: !collapsedSectionKeys.has(section.sectionKey),
+              }}
+              accessibilityLabel={`${section.title}, ${collapsedSectionKeys.has(section.sectionKey) ? "collapsed" : "expanded"}`}
+            >
+              <MaterialIcons
+                name="arrow-forward-ios"
+                size={14}
+                color={Colors.textTertiary}
+                style={[
+                  styles.sectionExpandArrow,
+                  !collapsedSectionKeys.has(section.sectionKey) &&
+                    styles.sectionExpandArrowOpen,
+                ]}
+              />
               <Text style={styles.sectionTitle}>{section.title}</Text>
               <Text style={styles.sectionCount}>
                 {section.totalTasks} tasks
               </Text>
-            </View>
+            </TouchableOpacity>
           )
         }
         renderItem={({ item: task }) => {
@@ -985,12 +1020,27 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    gap: 6,
     paddingVertical: 12,
     paddingHorizontal: 4,
+    ...Platform.select({
+      web: { cursor: "pointer" } as object,
+      default: {},
+    }),
+  },
+  sectionExpandArrow: {
+    marginRight: 2,
+    ...Platform.select({
+      web: { transition: "transform 150ms ease" } as object,
+      default: {},
+    }),
+  },
+  sectionExpandArrowOpen: {
+    transform: [{ rotate: "90deg" }],
   },
   sectionTitle: {
+    flex: 1,
     fontSize: 14,
     fontWeight: "700",
     color: Colors.textSecondary,
