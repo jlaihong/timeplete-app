@@ -270,9 +270,10 @@ export function EditTrackableHistoryTab({
     return (
       <>
         <ScrollView
-          horizontal
           style={styles.scroll}
+          nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
+          showsHorizontalScrollIndicator={false}
         >
           <View style={styles.trackerTable}>
             <View style={[styles.trackerDataRow, styles.trackerHeadRowBg]}>
@@ -345,18 +346,17 @@ export function EditTrackableHistoryTab({
                   </>
                 ) : null}
 
-                <Text
-                  style={[styles.cellBody, styles.trackerCommentsCol]}
-                  numberOfLines={4}
-                >
-                  {row.source === "tracker_entry"
-                    ? row.comments?.trim()
-                      ? row.comments.trim()
-                      : "-"
-                    : row.commentsUnified.trim()
-                      ? row.commentsUnified
-                      : "-"}
-                </Text>
+                <View style={styles.trackerCommentsCol}>
+                  <Text style={styles.cellBody} numberOfLines={4}>
+                    {row.source === "tracker_entry"
+                      ? row.comments?.trim()
+                        ? row.comments.trim()
+                        : "-"
+                      : row.commentsUnified.trim()
+                        ? row.commentsUnified
+                        : "-"}
+                  </Text>
+                </View>
 
                 <View style={styles.trackerDeleteCol}>
                   <Pressable
@@ -371,7 +371,7 @@ export function EditTrackableHistoryTab({
                       }
                     }}
                   >
-                    <Ionicons name="trash-outline" size={22} color={Colors.text} />
+                    <Ionicons name="trash-outline" size={20} color={Colors.text} />
                   </Pressable>
                 </View>
               </View>
@@ -424,10 +424,11 @@ export function EditTrackableHistoryTab({
     return (
       <ScrollView
         style={styles.scroll}
-        horizontal
+        nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
+        showsHorizontalScrollIndicator={false}
       >
-        <View style={styles.tableMinWidth}>
+        <View style={styles.historyTable}>
           <View style={styles.headerRow}>
             <TableHeaderCell style={styles.colDate}>Date</TableHeaderCell>
             <TableHeaderCell style={styles.colTime}>Start</TableHeaderCell>
@@ -477,7 +478,7 @@ export function EditTrackableHistoryTab({
                           confirmDeleteTimeWindow(row._id as Id<"timeWindows">)
                         }
                       >
-                        <Ionicons name="trash-outline" size={22} color={Colors.text} />
+                        <Ionicons name="trash-outline" size={20} color={Colors.text} />
                       </Pressable>
                     </View>
                   </View>
@@ -564,10 +565,11 @@ export function EditTrackableHistoryTab({
   return (
     <ScrollView
       style={styles.scroll}
-      horizontal
+      nestedScrollEnabled
       keyboardShouldPersistTaps="handled"
+      showsHorizontalScrollIndicator={false}
     >
-      <View style={styles.tableMinWidthDaily}>
+      <View style={styles.historyTableDaily}>
         <View style={styles.headerRow}>
           <TableHeaderCell style={styles.colDate}>Date</TableHeaderCell>
           <TableHeaderCell style={styles.colProgress}>Logged</TableHeaderCell>
@@ -609,24 +611,29 @@ const styles = StyleSheet.create({
     gap: 0,
     minHeight: 200,
     marginTop: 8,
-    paddingHorizontal: 4,
+    paddingHorizontal: 0,
+    alignSelf: "stretch",
+    width: "100%",
+    overflow: "hidden",
   },
   trackerTable: {
-    minWidth: 600,
+    width: "100%",
+    maxWidth: "100%",
+    alignSelf: "stretch",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
     borderRadius: 4,
     overflow: "hidden",
-    alignSelf: "flex-start",
   },
   trackerDataRow: {
     flexDirection: "row",
     alignItems: "center",
+    width: "100%",
     minHeight: 40,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.outlineVariant,
-    columnGap: 12,
-    paddingHorizontal: 4,
+    columnGap: 6,
+    paddingHorizontal: 2,
     paddingVertical: 2,
   },
   trackerHeadRowBg: {
@@ -646,21 +653,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   trackerIconCol: {
-    width: 32,
+    width: 26,
+    flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
   },
   trackerDeleteCol: {
-    width: 48,
-    minWidth: 48,
+    width: 36,
+    minWidth: 36,
+    flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 4,
+    paddingVertical: 2,
+    marginLeft: 2,
   },
-  trackerDateCol: { width: 88 },
-  trackerMiniCol: { width: 52 },
-  trackerDurCol: { width: 56 },
-  trackerCommentsCol: { flexGrow: 1, flexShrink: 1, minWidth: 120, flexBasis: 0 },
+  trackerDateCol: {
+    width: 72,
+    flexShrink: 0,
+    minWidth: 0,
+  },
+  trackerMiniCol: {
+    width: 44,
+    flexShrink: 0,
+    minWidth: 0,
+    textAlign: "center" as const,
+  },
+  trackerDurCol: {
+    width: 48,
+    flexShrink: 0,
+    minWidth: 0,
+  },
+  trackerCommentsCol: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    marginRight: 2,
+  },
 
   loadMoreWrap: { alignItems: "center", paddingTop: 16, paddingBottom: 8 },
   loadMoreBtn: {
@@ -673,32 +701,35 @@ const styles = StyleSheet.create({
   },
   loadMoreLabel: { fontSize: 13, fontWeight: "600", color: Colors.text },
 
-  tableMinWidth: {
-    minWidth: 728,
+  historyTable: {
+    width: "100%",
+    maxWidth: "100%",
+    alignSelf: "stretch",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
     borderRadius: 4,
     overflow: "hidden",
-    alignSelf: "flex-start",
   },
-  tableMinWidthDaily: {
-    minWidth: 480,
+  historyTableDaily: {
+    width: "100%",
+    maxWidth: "100%",
+    alignSelf: "stretch",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
     borderRadius: 4,
     overflow: "hidden",
-    alignSelf: "flex-start",
   },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
+    width: "100%",
     backgroundColor: Colors.surfaceContainerHigh,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.outline,
   },
   thCell: {
-    paddingVertical: 10,
-    paddingHorizontal: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
     justifyContent: "center",
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: Colors.outlineVariant,
@@ -727,7 +758,8 @@ const styles = StyleSheet.create({
   },
   dataRow: {
     flexDirection: "row",
-    alignItems: "stretch",
+    alignItems: "center",
+    width: "100%",
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.outlineVariant,
     minHeight: 40,
@@ -736,8 +768,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainerLow,
   },
   tdCell: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
     justifyContent: "center",
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: Colors.outlineVariant,
@@ -747,19 +779,21 @@ const styles = StyleSheet.create({
     color: Colors.text,
     lineHeight: 18,
   },
-  colDate: { width: 92 },
-  colTime: { width: 52 },
-  colDesc: { flex: 1, minWidth: 140 },
-  colSource: { width: 96 },
-  colValue: { width: 56 },
-  colDuration: { width: 72 },
-  colNotes: { flex: 1, minWidth: 120 },
+  colDate: { width: 70, flexShrink: 0, minWidth: 0 },
+  colTime: { width: 44, flexShrink: 0, minWidth: 0 },
+  colDesc: { flex: 1, minWidth: 0 },
+  colSource: { width: 70, flexShrink: 0, minWidth: 0 },
+  colValue: { width: 48, flexShrink: 0 },
+  colDuration: { width: 52, flexShrink: 0, minWidth: 0 },
+  colNotes: { flex: 1, minWidth: 0 },
   colHistAction: {
-    width: 48,
-    minWidth: 48,
+    width: 40,
+    minWidth: 40,
+    maxWidth: 40,
+    flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
   },
-  colProgress: { width: 72 },
-  colNotesWide: { flex: 1, minWidth: 200 },
+  colProgress: { width: 64, flexShrink: 0 },
+  colNotesWide: { flex: 1, minWidth: 0 },
 });
