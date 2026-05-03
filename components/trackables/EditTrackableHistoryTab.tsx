@@ -277,9 +277,10 @@ export function EditTrackableHistoryTab({
     return (
       <>
         <ScrollView
-          style={styles.scroll}
+          style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator
           showsHorizontalScrollIndicator={false}
         >
           <View style={styles.trackerTable}>
@@ -460,9 +461,10 @@ export function EditTrackableHistoryTab({
 
     return (
       <ScrollView
-        style={styles.scroll}
+        style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator
         showsHorizontalScrollIndicator={false}
       >
         <View style={styles.historyTable}>
@@ -478,10 +480,14 @@ export function EditTrackableHistoryTab({
             <TableHeaderCell style={styles.colHistAction} bold />
           </View>
           <ScrollView
-            style={styles.tableBodyScroll}
+            style={[
+              styles.tableBodyScroll,
+              Platform.OS === "web" ? styles.tableBodyScrollWeb : null,
+            ]}
             contentContainerStyle={styles.tableBodyContent}
             keyboardShouldPersistTaps="handled"
             nestedScrollEnabled
+            showsVerticalScrollIndicator
           >
             {mergedGoalRows.map((row, i) => {
               const zebra = i % 2 === 1 ? styles.rowZebra : null;
@@ -601,9 +607,10 @@ export function EditTrackableHistoryTab({
 
   return (
     <ScrollView
-      style={styles.scroll}
+      style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
       nestedScrollEnabled
       keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator
       showsHorizontalScrollIndicator={false}
     >
       <View style={styles.historyTableDaily}>
@@ -613,10 +620,14 @@ export function EditTrackableHistoryTab({
           <TableHeaderCell style={styles.colNotesWide}>Comments</TableHeaderCell>
         </View>
         <ScrollView
-          style={styles.tableBodyScroll}
+          style={[
+            styles.tableBodyScroll,
+            Platform.OS === "web" ? styles.tableBodyScrollWeb : null,
+          ]}
           contentContainerStyle={styles.tableBodyContent}
           keyboardShouldPersistTaps="handled"
           nestedScrollEnabled
+          showsVerticalScrollIndicator
         >
           {dayRows.map((d, i) => (
             <View
@@ -641,7 +652,24 @@ export function EditTrackableHistoryTab({
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1 },
+  scroll: { flex: 1, minHeight: 0 },
+  /** Keeps scrollbar usable in flex layouts on web (`min-height:auto` collapse). */
+  historyScrollWeb:
+    Platform.OS === "web"
+      ? ({
+          overflowY: "scroll",
+          flexGrow: 1,
+        } as unknown as ViewStyle)
+      : ({} as ViewStyle),
+  /** Stronger scrollbar affordance inside the bordered table region (Firefox + layout). */
+  tableBodyScrollWeb:
+    Platform.OS === "web"
+      ? ({
+          overflowY: "scroll",
+          scrollbarWidth: "thin",
+          scrollbarColor: `${Colors.outlineVariant} ${Colors.surface}`,
+        } as unknown as ViewStyle)
+      : ({} as ViewStyle),
   center: { paddingVertical: 24, alignItems: "center" },
   muted: { fontSize: 14, color: Colors.textTertiary, textAlign: "center" },
   trackerTabWrap: {
@@ -799,6 +827,8 @@ const styles = StyleSheet.create({
 
   tableBodyScroll: {
     maxHeight: 346,
+    minHeight: 0,
+    flexGrow: 0,
     backgroundColor: Colors.surface,
   },
   tableBodyContent: {
