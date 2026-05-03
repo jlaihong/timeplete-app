@@ -284,23 +284,6 @@ export const GROUP_BY_LABEL: Record<GroupByMode, string> = {
   year: "Year",
 };
 
-/** Productivity-One parity: fixed number of ordered grouping slots per frequency. */
-export function groupBySlotCount(tab: string): number {
-  switch (tab) {
-    case "DAILY":
-      return 3;
-    case "WEEKLY":
-      return 4;
-    case "MONTHLY":
-      return 5;
-    case "YEARLY":
-      return 5;
-    default:
-      return 3;
-  }
-}
-
-/**
  * Default grouping chain per analytics frequency (matches productivity-one
  * analytics defaults — Daily: Trackable → List → Task).
  */
