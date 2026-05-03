@@ -55,12 +55,10 @@ export function TimeBreakdownGroupBy({
       <Text style={styles.label}>Group by</Text>
       <View style={styles.row}>
         {levels.map((mode, i) => (
-          <View key={`slot-${i}`} style={styles.levelUnit}>
-            <View style={styles.levelChip}>
-              <Text style={styles.levelChipText} numberOfLines={1}>
-                {GROUP_BY_LABEL[mode]}
-              </Text>
-            </View>
+          <View key={`slot-${i}`} style={styles.levelChip}>
+            <Text style={styles.levelChipText} numberOfLines={1}>
+              {GROUP_BY_LABEL[mode]}
+            </Text>
             <Pressable
               onPress={() => removeAt(i)}
               style={({ pressed }) => [
@@ -70,9 +68,9 @@ export function TimeBreakdownGroupBy({
               ]}
               accessibilityRole="button"
               accessibilityLabel={`Remove grouping ${GROUP_BY_LABEL[mode]}`}
-              hitSlop={10}
+              hitSlop={8}
             >
-              <Ionicons name="close" size={18} color={Colors.textSecondary} />
+              <Ionicons name="close" size={16} color={Colors.textSecondary} />
             </Pressable>
           </View>
         ))}
@@ -110,31 +108,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  levelUnit: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    maxWidth: "100%",
-  },
   levelChip: {
     height: 36,
     minWidth: 72,
-    maxWidth: 160,
-    paddingHorizontal: 12,
-    justifyContent: "center",
+    maxWidth: 200,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 12,
+    paddingRight: 4,
+    gap: 4,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainerHigh,
   },
   levelChipText: {
+    flex: 1,
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: "600",
     color: Colors.text,
   },
   removeHit: {
     padding: 4,
-    marginLeft: -2,
     borderRadius: 6,
     justifyContent: "center",
     alignItems: "center",
