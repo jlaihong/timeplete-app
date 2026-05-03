@@ -1,51 +1,40 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../../constants/colors";
 import { formatSecondsAsHM } from "../../../lib/dates";
 import {
   groupTimeWindows,
   GroupByMode,
-  modesForTab,
-  defaultModeForTab,
-  buildSunburstModeChain,
+  defaultGroupingLevelsForTab,
   GroupingLookups,
 } from "../../../lib/grouping";
 import { SectionCard } from "../SectionCard";
 import { useAnalyticsDataset } from "../useAnalyticsDataset";
 import { useAnalyticsState } from "../AnalyticsState";
 import { TimeBreakdownSunburst } from "../widgets/TimeBreakdownSunburst";
+import { GroupByLevelBuilder } from "../widgets/GroupByLevelBuilder";
 
 /* ──────────────────────────────────────────────────────────────────── *
- * Time Breakdown — productivity-one's `analytics-time-breakdown-widget`.
- * Chip row chooses the primary grouping; the sunburst rings drill through
- * the tab's remaining dimensions in order (see `buildSunburstModeChain`).
+ * Time Breakdown — productivity-one `analytics-time-breakdown-widget`.
+ * Users build an ordered multi-level Group by sequence (dropdown rows +
+ * add/remove); the sunburst drills Category → Tag → Goal → … exactly in
+ * that order (`sunburstRingBuckets` / `buildSunburstHierarchy`).
  * ──────────────────────────────────────────────────────────────────── */
-
-const MODE_LABELS: Record<GroupByMode, string> = {
-  trackable: "Trackable",
-  trackable_type: "Trackable Type",
-  list: "List",
-  task: "Task",
-  tag: "Tag",
-  date: "Date",
-  day_of_week: "Day of Week",
-  month: "Month",
-  year: "Year",
-};
 
 export function TimeBreakdownSection() {
   const { selectedTab } = useAnalyticsState();
   const dataset = useAnalyticsDataset();
 
-  const [overrideMode, setOverrideMode] = useState<GroupByMode | null>(null);
-  const [lastTab, setLastTab] = useState<string>(selectedTab);
+  const [groupingLevels, setGroupingLevels] = useState<GroupByMode[]>(() =>
+    defaultGroupingLevelsForTab(selectedTab)
+  );
+  const [lastTab, setLastTab] = useState(selectedTab);
   if (lastTab !== selectedTab) {
     setLastTab(selectedTab);
-    setOverrideMode(null);
+    setGroupingLevels(defaultGroupingLevelsForTab(selectedTab));
   }
 
-  const mode: GroupByMode = overrideMode ?? defaultModeForTab(selectedTab);
-  const availableModes = modesForTab(selectedTab);
+  const primaryMode = groupingLevels[0] ?? defaultGroupingLevelsForTab(selectedTab)[0]!;
 
   const groupingLookups: GroupingLookups = useMemo(
     () => ({
@@ -66,48 +55,27 @@ export function TimeBreakdownSection() {
     ]
   );
 
-  const modeChain = useMemo(
-    () => buildSunburstModeChain(selectedTab, mode),
-    [selectedTab, mode]
-  );
-
   const items = useMemo(
     () =>
-      groupTimeWindows(dataset.timeWindows, mode, groupingLookups),
-    [dataset.timeWindows, mode, groupingLookups]
+      groupTimeWindows(dataset.timeWindows, primaryMode, groupingLookups),
+    [dataset.timeWindows, primaryMode, groupingLookups]
   );
 
-  const resetScheduleKey = `${selectedTab}-${mode}-${dataset.windowStart}-${dataset.windowEnd}`;
+  const resetScheduleKey = `${selectedTab}-${groupingLevels.join("|")}-${dataset.windowStart}-${dataset.windowEnd}`;
   const dataSignature = `${dataset.windowStart}-${dataset.windowEnd}-${dataset.totalSeconds}-${dataset.timeWindows.length}`;
 
   return (
     <SectionCard title="Time Breakdown">
-      <View style={styles.modeRow}>
-        {availableModes.map((m) => {
-          const active = mode === m;
-          return (
-            <TouchableOpacity
-              key={m}
-              style={[styles.modeChip, active && styles.modeChipActive]}
-              onPress={() => setOverrideMode(m)}
-            >
-              <Text
-                style={[
-                  styles.modeChipLabel,
-                  active && styles.modeChipLabelActive,
-                ]}
-              >
-                {MODE_LABELS[m]}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      <GroupByLevelBuilder
+        tab={selectedTab}
+        levels={groupingLevels}
+        onChange={setGroupingLevels}
+      />
 
       <TimeBreakdownSunburst
         timeWindows={dataset.timeWindows}
         totalSecondsDenominator={dataset.totalSeconds}
-        modeChain={modeChain}
+        groupingLevels={groupingLevels}
         lookups={groupingLookups}
         isLoading={dataset.isLoading}
         resetScheduleKey={resetScheduleKey}
@@ -164,25 +132,6 @@ export function TimeBreakdownSection() {
 }
 
 const styles = StyleSheet.create({
-  modeRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 12,
-  },
-  modeChip: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    backgroundColor: Colors.surfaceVariant,
-  },
-  modeChipActive: { backgroundColor: Colors.primary },
-  modeChipLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-  },
-  modeChipLabelActive: { color: Colors.onPrimary },
   row: {
     paddingVertical: 6,
   },
