@@ -252,8 +252,8 @@ export const GROUP_BY_LABEL: Record<GroupByMode, string> = {
 };
 
 /**
- * Default grouping chain per analytics frequency (matches productivity-one
- * analytics defaults — Daily: Trackable → List → Task).
+ * Default grouping chain per analytics frequency (Daily/Weekly align with
+ * productivity-one; Monthly/Yearly omit Tag at the end — users can add it).
  */
 export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
   switch (tab) {
@@ -262,9 +262,9 @@ export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
     case "WEEKLY":
       return ["trackable", "list", "task", "date"];
     case "MONTHLY":
-      return ["trackable", "list", "task", "date", "tag"];
+      return ["trackable", "list", "task", "date"];
     case "YEARLY":
-      return ["trackable", "list", "task", "month", "tag"];
+      return ["trackable", "list", "task", "month"];
     default:
       return ["trackable", "list", "task"];
   }
