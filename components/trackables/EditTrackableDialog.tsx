@@ -42,7 +42,7 @@ type TrackableType =
   | "MINUTES_A_WEEK"
   | "TRACKER";
 
-type EditTab = "details" | "history" | "breakdown";
+type EditTab = "details" | "tracking_history";
 
 export function EditTrackableDialog({
   trackableId,
@@ -124,27 +124,10 @@ export function EditTrackableDialog({
     });
   }, [trackable?._id]);
 
-  const showBreakdownTab =
-    !!trackable &&
-    (trackable.trackableType === "TIME_TRACK" ||
-      trackable.trackableType === "MINUTES_A_WEEK" ||
-      (trackable.trackableType === "TRACKER" && trackTime));
-
-  useEffect(() => {
-    if (!showBreakdownTab && activeTab === "breakdown") {
-      setActiveTab("details");
-    }
-  }, [showBreakdownTab, activeTab]);
-
   if (!trackable) return null;
 
   const trackableType = trackable.trackableType as TrackableType;
   const isGoal = trackableType !== "TRACKER";
-
-  const breakdownHint =
-    trackableType === "TRACKER"
-      ? "Time attributed to this tracker from timers, tasks, calendar, and logged entry durations."
-      : "Attributed time toward this goal between its start and end dates.";
 
   const handleSave = async () => {
     const trimmed = name.trim();
@@ -403,13 +386,7 @@ export function EditTrackableDialog({
         <DialogHeader title="Edit Trackable" onClose={onClose} />
 
         <View style={styles.tabBar}>
-          {(
-            [
-              "details",
-              "history",
-              ...(showBreakdownTab ? (["breakdown"] as const) : []),
-            ] as EditTab[]
-          ).map((tab) => (
+          {(["details", "tracking_history"] as const).map((tab) => (
             <Pressable
               key={tab}
               style={[styles.tab, activeTab === tab && styles.tabActive]}
@@ -421,11 +398,7 @@ export function EditTrackableDialog({
                   activeTab === tab && styles.tabTextActive,
                 ]}
               >
-                {tab === "details"
-                  ? "Details"
-                  : tab === "history"
-                    ? "Tracking history"
-                    : "History breakdown"}
+                {tab === "details" ? "Details" : "Tracking history"}
               </Text>
             </Pressable>
           ))}
@@ -448,8 +421,6 @@ export function EditTrackableDialog({
             trackTime={trackTime}
             trackCount={trackCount}
             isRatingTracker={isRatingTracker}
-            mode={activeTab === "breakdown" ? "breakdown" : "history"}
-            breakdownHint={breakdownHint}
           />
         )}
 
