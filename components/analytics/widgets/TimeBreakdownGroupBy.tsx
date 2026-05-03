@@ -1,11 +1,5 @@
 import React, { useCallback, useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  Platform,
-} from "react-native";
+import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../../constants/colors";
 import type { AnalyticsTab } from "../AnalyticsState";
@@ -18,7 +12,8 @@ import {
 import { AnalyticsSelect } from "./AnalyticsSelect";
 
 /**
- * Productivity-One style Group By: ordered inline selects, add level, remove last level.
+ * Productivity-One style Group By: first dimension is an inline select; each added
+ * dimension is a plain label with × to remove; Add appends the next pool mode.
  */
 export function TimeBreakdownGroupBy({
   tab,
@@ -29,11 +24,19 @@ export function TimeBreakdownGroupBy({
   levels: GroupByMode[];
   onChange: (next: GroupByMode[]) => void;
 }) {
-  const setSlot = useCallback(
-    (index: number, mode: GroupByMode) => {
+  const setPrimary = useCallback(
+    (mode: GroupByMode) => {
       const next = [...levels];
-      next[index] = mode;
+      next[0] = mode;
       onChange(next);
+    },
+    [levels, onChange]
+  );
+
+  const removeAt = useCallback(
+    (index: number) => {
+      if (levels.length <= 1) return;
+      onChange(levels.filter((_, j) => j !== index));
     },
     [levels, onChange]
   );
@@ -42,11 +45,6 @@ export function TimeBreakdownGroupBy({
     const m = nextModeToAppend(tab, levels);
     if (m) onChange([...levels, m]);
   }, [tab, levels, onChange]);
-
-  const removeLast = useCallback(() => {
-    if (levels.length <= 1) return;
-    onChange(levels.slice(0, -1));
-  }, [levels, onChange]);
 
   const canAppend = useMemo(
     () => nextModeToAppend(tab, levels) !== null,
@@ -58,24 +56,46 @@ export function TimeBreakdownGroupBy({
     return m ? GROUP_BY_LABEL[m] : "";
   }, [tab, levels]);
 
+  const webPointer = Platform.OS === "web" ? ({ cursor: "pointer" } as object) : null;
+
   return (
     <View style={styles.wrap}>
       <Text style={styles.label}>Group by</Text>
       <View style={styles.row}>
         {levels.map((mode, i) => (
-          <React.Fragment key={`slot-${i}`}>
-            {i > 0 ? (
-              <Text style={styles.then}>then</Text>
+          <View key={`slot-${i}`} style={styles.levelUnit}>
+            {i === 0 ? (
+              <AnalyticsSelect
+                value={mode}
+                options={pickerChoicesForRow(tab, levels, 0).map((m) => ({
+                  value: m,
+                  label: GROUP_BY_LABEL[m],
+                }))}
+                onChange={(v) => setPrimary(v as GroupByMode)}
+              />
+            ) : (
+              <View style={styles.addedLevel}>
+                <Text style={styles.addedLevelText} numberOfLines={1}>
+                  {GROUP_BY_LABEL[mode]}
+                </Text>
+              </View>
+            )}
+            {levels.length > 1 ? (
+              <Pressable
+                onPress={() => removeAt(i)}
+                style={({ pressed }) => [
+                  styles.removeHit,
+                  pressed && styles.removeHitPressed,
+                  webPointer,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove grouping ${GROUP_BY_LABEL[mode]}`}
+                hitSlop={10}
+              >
+                <Ionicons name="close" size={18} color={Colors.textSecondary} />
+              </Pressable>
             ) : null}
-            <AnalyticsSelect
-              value={mode}
-              options={pickerChoicesForRow(tab, levels, i).map((m) => ({
-                value: m,
-                label: GROUP_BY_LABEL[m],
-              }))}
-              onChange={(v) => setSlot(i, v as GroupByMode)}
-            />
-          </React.Fragment>
+          </View>
         ))}
 
         {canAppend ? (
@@ -84,7 +104,7 @@ export function TimeBreakdownGroupBy({
             style={({ pressed }) => [
               styles.iconBtn,
               pressed && styles.iconBtnPressed,
-              Platform.OS === "web" ? ({ cursor: "pointer" } as object) : null,
+              webPointer,
             ]}
             accessibilityRole="button"
             accessibilityLabel={`Add grouping: ${appendLabel}`}
@@ -92,24 +112,6 @@ export function TimeBreakdownGroupBy({
           >
             <Ionicons name="add-circle-outline" size={22} color={Colors.primary} />
             <Text style={styles.iconBtnLabel}>Add</Text>
-          </Pressable>
-        ) : null}
-
-        {levels.length > 1 ? (
-          <Pressable
-            onPress={removeLast}
-            style={({ pressed }) => [
-              styles.iconBtn,
-              styles.iconBtnMuted,
-              pressed && styles.iconBtnPressed,
-              Platform.OS === "web" ? ({ cursor: "pointer" } as object) : null,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={`Remove grouping: ${GROUP_BY_LABEL[levels[levels.length - 1]!]}`}
-            hitSlop={8}
-          >
-            <Ionicons name="remove-circle-outline" size={22} color={Colors.textSecondary} />
-            <Text style={styles.iconBtnLabelMuted}>Remove</Text>
           </Pressable>
         ) : null}
       </View>
@@ -134,12 +136,37 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  then: {
-    fontSize: 12,
+  levelUnit: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    maxWidth: "100%",
+  },
+  addedLevel: {
+    height: 36,
+    minWidth: 72,
+    maxWidth: 160,
+    paddingHorizontal: 12,
+    justifyContent: "center",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    backgroundColor: Colors.surfaceContainerHigh,
+  },
+  addedLevelText: {
+    fontSize: 13,
     fontWeight: "600",
-    color: Colors.textTertiary,
-    marginRight: -4,
+    color: Colors.text,
+  },
+  removeHit: {
+    padding: 4,
     marginLeft: -2,
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  removeHitPressed: {
+    opacity: 0.72,
   },
   iconBtn: {
     flexDirection: "row",
@@ -152,10 +179,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainerHigh,
   },
-  iconBtnMuted: {
-    borderColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainer,
-  },
   iconBtnPressed: {
     opacity: 0.85,
   },
@@ -163,10 +186,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: Colors.primary,
-  },
-  iconBtnLabelMuted: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: Colors.textSecondary,
   },
 });
