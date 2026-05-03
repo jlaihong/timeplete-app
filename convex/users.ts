@@ -1,6 +1,40 @@
-import { query, mutation, action } from "./_generated/server";
+import { query, mutation, action, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { getCurrentUser, getCurrentUserOrNull } from "./_helpers/auth";
+
+/**
+ * productivity-backend `_create_inbox_list` inserts both `AppList` and a default
+ * `ListSection`. Convex previously inserted only the inbox row, so
+ * `lists.getPaginated` iterated zero sections and the Inbox screen stayed empty.
+ *
+ * Idempotent: safe on every login via `users.store`.
+ */
+async function ensureInboxSectionsForUser(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+): Promise<void> {
+  const lists = await ctx.db
+    .query("lists")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+
+  for (const list of lists) {
+    if (!list.isInbox || list.archived) continue;
+    const sections = await ctx.db
+      .query("listSections")
+      .withIndex("by_list", (q) => q.eq("listId", list._id))
+      .collect();
+    if (sections.length > 0) continue;
+    await ctx.db.insert("listSections", {
+      listId: list._id,
+      name: "Default",
+      orderIndex: 0,
+      isDefaultSection: true,
+      userId,
+    });
+  }
+}
 
 const DEFAULT_REVIEW_QUESTIONS = [
   { text: "What went well today?", frequency: "DAILY" as const },
@@ -25,7 +59,10 @@ export const store = mutation({
       )
       .unique();
 
-    if (existing) return existing._id;
+    if (existing) {
+      await ensureInboxSectionsForUser(ctx, existing._id);
+      return existing._id;
+    }
 
     // Migration adoption: if a row was pre-created by the productivity-app
     // -> Convex migration (it has a `legacy:<uuid>` placeholder
@@ -52,6 +89,7 @@ export const store = mutation({
           tokenIdentifier: identity.tokenIdentifier,
           name: identity.name ?? legacyMatch.name,
         });
+        await ensureInboxSectionsForUser(ctx, legacyMatch._id);
         return legacyMatch._id;
       }
     }
@@ -73,6 +111,8 @@ export const store = mutation({
       showInSidebar: true,
       isInbox: true,
     });
+
+    await ensureInboxSectionsForUser(ctx, userId);
 
     for (let i = 0; i < DEFAULT_REVIEW_QUESTIONS.length; i++) {
       const q = DEFAULT_REVIEW_QUESTIONS[i];
