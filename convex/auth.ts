@@ -69,6 +69,22 @@ function isLoopbackDevOrigin(origin: string): boolean {
   }
 }
 
+/** True when Better Auth `SITE_URL` is loopback HTTP (typical Expo web dev). */
+function isLoopbackHttpSiteUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "http:") return false;
+    return (
+      u.hostname === "localhost" ||
+      u.hostname === "127.0.0.1" ||
+      u.hostname === "::1" ||
+      u.hostname === "[::1]"
+    );
+  } catch {
+    return false;
+  }
+}
+
 const siteUrlRaw = process.env.SITE_URL?.trim();
 if (!siteUrlRaw) {
   throw new Error(
@@ -83,9 +99,10 @@ const staticTrustedOrigins = [
 
 /**
  * `true` ↔ the deployment is running locally for development. Convex's local
- * backend sets `CONVEX_CLOUD_URL` to a `127.0.0.1` URL; production deployments
- * have a `*.convex.cloud` URL. We deliberately do NOT widen trustedOrigins on
- * production, even though the function is request-scoped — defense in depth.
+ * backend sets `CONVEX_CLOUD_URL` to a `127.0.0.1` URL; hosted dev/prod
+ * deployments use `*.convex.cloud`. Dynamic loopback `Origin` headers are also
+ * allowed when `SITE_URL` is loopback HTTP (see `isLoopbackHttpSiteUrl`) so
+ * Expo web on an ephemeral port still works against a cloud Convex dev stack.
  */
 const isLocalDevDeployment = (() => {
   const cloud = process.env.CONVEX_CLOUD_URL ?? "";
@@ -98,9 +115,11 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
       const origins = [...staticTrustedOrigins];
       // Better Auth calls this with `undefined` during init (no live request yet)
       // and again per-request via corsRouter / origin-check middleware.
-      if (isLocalDevDeployment && request) {
+      if (request) {
         const reqOrigin = request.headers.get("origin");
-        if (reqOrigin && isLoopbackDevOrigin(reqOrigin)) {
+        const allowDynamicLoopback =
+          isLocalDevDeployment || isLoopbackHttpSiteUrl(siteUrl);
+        if (allowDynamicLoopback && reqOrigin && isLoopbackDevOrigin(reqOrigin)) {
           origins.push(reqOrigin);
         }
       }
