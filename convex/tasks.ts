@@ -1,6 +1,26 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { requireApprovedUser } from "./_helpers/auth";
+
+/**
+ * productivity-backend `upsert_task` sets `section_id` from `list_id` when the
+ * client omits a section. Convex lists use a real `listSections` row, so we
+ * resolve the list's default section instead.
+ */
+async function defaultSectionIdForList(
+  ctx: MutationCtx,
+  listId: Id<"lists">,
+): Promise<Id<"listSections"> | undefined> {
+  const sections = await ctx.db
+    .query("listSections")
+    .withIndex("by_list", (q) => q.eq("listId", listId))
+    .collect();
+  if (sections.length === 0) return undefined;
+  const sorted = sections.sort((a, b) => a.orderIndex - b.orderIndex);
+  const def = sorted.find((s) => s.isDefaultSection);
+  return (def ?? sorted[0])?._id;
+}
 
 export const search = query({
   args: {
@@ -305,6 +325,11 @@ export const upsert = mutation({
       return args.id;
     }
 
+    let resolvedSectionId = args.sectionId;
+    if (args.listId !== undefined && resolvedSectionId === undefined) {
+      resolvedSectionId = await defaultSectionIdForList(ctx, args.listId);
+    }
+
     const taskId = await ctx.db.insert("tasks", {
       name: args.name,
       parentId: args.parentId,
@@ -315,7 +340,7 @@ export const upsert = mutation({
       listId: args.listId,
       taskDay: args.taskDay,
       taskDayOrderIndex: args.taskDayOrderIndex ?? 0,
-      sectionId: args.sectionId,
+      sectionId: resolvedSectionId,
       sectionOrderIndex: args.sectionOrderIndex ?? 0,
       trackableId: args.trackableId ?? undefined,
       isRecurringInstance: false,
