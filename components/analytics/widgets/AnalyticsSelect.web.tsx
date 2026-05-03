@@ -10,17 +10,41 @@ export function AnalyticsSelect({
   value,
   options,
   onChange,
+  placeholder,
+  ariaLabel,
+  accessibilityLabel,
 }: {
   value: string;
   options: AnalyticsSelectOption[];
   onChange: (value: string) => void;
+  /** Shown as first disabled `<option value="">` when `value` is `""`. */
+  placeholder?: string;
+  ariaLabel?: string;
+  accessibilityLabel?: string;
 }) {
+  const children = [
+    placeholder
+      ? createElement(
+          "option",
+          { key: "__ph", value: "", disabled: true },
+          placeholder
+        )
+      : null,
+    ...options.map((o) =>
+      createElement("option", { key: o.value, value: o.value }, o.label)
+    ),
+  ].filter(Boolean) as ReturnType<typeof createElement>[];
+
   return createElement(
     "select",
     {
       value,
-      onChange: (e: { target: { value: string } }) =>
-        onChange(String(e.target.value)),
+      "aria-label": ariaLabel ?? accessibilityLabel,
+      onChange: (e: { target: { value: string } }) => {
+        const v = String(e.target.value);
+        if (v === "") return;
+        onChange(v);
+      },
       style: {
         height: 36,
         minWidth: 116,
@@ -38,8 +62,6 @@ export function AnalyticsSelect({
         cursor: "pointer",
       } as import("react").CSSProperties,
     },
-    options.map((o) =>
-      createElement("option", { key: o.value, value: o.value }, o.label)
-    )
+    children
   );
 }
