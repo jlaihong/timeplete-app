@@ -500,10 +500,88 @@ export const moveBetweenSections = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
-    await ctx.db.patch(args.taskId, {
-      sectionId: args.toSectionId,
-      sectionOrderIndex: args.newOrderIndex,
-    });
+    const task = await ctx.db.get(args.taskId);
+    if (!task?.listId) throw new Error("Task not found");
+    if (task.userId !== user._id) throw new Error("Not authorized");
+
+    const listId = task.listId;
+    const sections = await ctx.db
+      .query("listSections")
+      .withIndex("by_list", (q) => q.eq("listId", listId))
+      .collect();
+    if (sections.length === 0) throw new Error("No sections");
+
+    const sectionIdSet = new Set(sections.map((s) => s._id));
+    const toSection = await ctx.db.get(args.toSectionId);
+    if (!toSection || toSection.listId !== listId) {
+      throw new Error("Invalid section");
+    }
+
+    const canonicalDefault =
+      sections.find((s) => s.isDefaultSection) ?? sections[0]!;
+
+    const allOnList = await ctx.db
+      .query("tasks")
+      .withIndex("by_list", (q) => q.eq("listId", listId))
+      .collect();
+
+    const logicalSectionId = (t: (typeof allOnList)[number]) => {
+      const sid = t.sectionId;
+      if (sid && sectionIdSet.has(sid)) return sid;
+      return canonicalDefault._id;
+    };
+    const bySec = new Map<
+      (typeof sections)[number]["_id"],
+      typeof allOnList
+    >();
+    for (const s of sections) {
+      bySec.set(s._id, []);
+    }
+    for (const t of allOnList) {
+      const lid = logicalSectionId(t);
+      const arr = bySec.get(lid);
+      if (arr) arr.push(t);
+    }
+    for (const [, arr] of bySec) {
+      arr.sort((a, b) => a.sectionOrderIndex - b.sectionOrderIndex);
+    }
+
+    const fromSectionId = logicalSectionId(task);
+    const fromArr = [...(bySec.get(fromSectionId) ?? [])];
+    const fromIdx = fromArr.findIndex((t) => t._id === args.taskId);
+    if (fromIdx === -1) throw new Error("Task not in list");
+
+    const [moved] = fromArr.splice(fromIdx, 1);
+
+    if (fromSectionId !== args.toSectionId) {
+      for (let i = 0; i < fromArr.length; i++) {
+        await ctx.db.patch(fromArr[i]._id, {
+          sectionOrderIndex: i,
+          sectionId: fromSectionId,
+        });
+      }
+    }
+
+    const toArr =
+      fromSectionId === args.toSectionId
+        ? fromArr
+        : [...(bySec.get(args.toSectionId) ?? [])].filter(
+            (t) => t._id !== args.taskId,
+          );
+
+    const insertAt = Math.min(
+      Math.max(0, args.newOrderIndex),
+      toArr.length,
+    );
+    toArr.splice(insertAt, 0, moved);
+
+    for (let i = 0; i < toArr.length; i++) {
+      const t = toArr[i];
+      await ctx.db.patch(t._id, {
+        sectionOrderIndex: i,
+        sectionId: args.toSectionId,
+      });
+    }
   },
 });
 

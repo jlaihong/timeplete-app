@@ -279,7 +279,7 @@ export const getPaginated = query({
     );
     const sortedSections = allSectionsSorted.slice(
       0,
-      args.sectionLimit ?? 20,
+      args.sectionLimit ?? 500,
     );
 
     const sectionIdSet = new Set(allSectionsSorted.map((s) => s._id));
@@ -296,7 +296,8 @@ export const getPaginated = query({
       .withIndex("by_list", (q) => q.eq("listId", args.listId))
       .collect();
 
-    const eligible = allOnList.filter((t) => !t.isRecurringInstance);
+    /** Match productivity-one list views: recurring *instances* on this list are shown. */
+    const eligible = allOnList;
 
     const taskTagsAll = await ctx.db
       .query("taskTags")
@@ -316,7 +317,8 @@ export const getPaginated = query({
     });
 
     const result = [];
-    const taskLim = args.taskLimit ?? 50;
+    /** Default high limits so list/inbox views match P1 unless caller paginates explicitly. */
+    const taskLim = args.taskLimit ?? 500;
 
     for (const section of sortedSections) {
       const tasksForSection = eligible.filter((t) => {
