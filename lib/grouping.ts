@@ -298,28 +298,10 @@ export function modesForTab(tab: string): GroupByMode[] {
   }
 }
 
-/** Next mode to append when adding a grouping slot (pool order, no duplicates). */
-export function nextModeToAppend(
+/** Modes from the tab pool not yet used (order preserved). */
+export function modesAvailableToAdd(
   tab: string,
   levels: GroupByMode[]
-): GroupByMode | null {
-  for (const m of modesForTab(tab)) {
-    if (!levels.includes(m)) return m;
-  }
-  return null;
-}
-
-/** Modes allowed for slot `rowIndex` — duplicates forbidden across slots. */
-export function pickerChoicesForRow(
-  tab: string,
-  levels: GroupByMode[],
-  rowIndex: number
 ): GroupByMode[] {
-  const pool = modesForTab(tab);
-  const current = levels[rowIndex];
-  return pool.filter(
-    (m) =>
-      m === current ||
-      !levels.some((picked, j) => j !== rowIndex && picked === m)
-  );
+  return modesForTab(tab).filter((m) => !levels.includes(m));
 }
