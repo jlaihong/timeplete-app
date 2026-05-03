@@ -1,6 +1,5 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUser } from "./_helpers/auth";
 import {
   buildCompletedTaskCountsByTrackableDay,
@@ -8,10 +7,8 @@ import {
   buildTaskInfoMap,
   getCompletedTaskCount,
   sumCompletedTaskCounts,
-  resolveAttributedTrackableId,
   timeWindowAttributedToTrackable,
 } from "./_helpers/trackableAttribution";
-import { enrichTimeWindowsWithDisplayFields } from "./_helpers/timeWindowDisplayEnrichment";
 import { isYYYYMMDDCompact, toCompactYYYYMMDD } from "./_helpers/compactYYYYMMDD";
 
 export const search = query({
@@ -28,193 +25,6 @@ export const search = query({
     }
 
     return trackables.sort((a, b) => a.orderIndex - b.orderIndex);
-  },
-});
-
-/**
- * Unified “tracking history” for the Edit Trackable dialog: every ACTUAL time
- * window attributed to this trackable (timers / manual task time / calendar)
- * plus, for TRACKER types, tracker entry rows — matching productivity-one’s
- * single history tab rather than separate summary breakdown.
- */
-export const getEditDialogTrackingHistory = query({
-  args: {
-    trackableId: v.id("trackables"),
-    startDay: v.string(),
-    endDay: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
-    const trackable = await ctx.db.get(args.trackableId);
-    if (!trackable || trackable.userId !== user._id) {
-      return { timeWindows: [] as const, trackerEntries: [] as const };
-    }
-
-    const [allWindows, allUserTasks, links] = await Promise.all([
-      ctx.db
-        .query("timeWindows")
-        .withIndex("by_user", (q) => q.eq("userId", user._id))
-        .collect(),
-      ctx.db
-        .query("tasks")
-        .withIndex("by_user", (q) => q.eq("userId", user._id))
-        .collect(),
-      ctx.db
-        .query("listTrackableLinks")
-        .withIndex("by_user", (q) => q.eq("userId", user._id))
-        .collect(),
-    ]);
-
-    const listIdToTrackableId = buildListIdToTrackableId(links);
-    const taskInfoMap = buildTaskInfoMap(allUserTasks);
-
-    const inRange = allWindows.filter(
-      (w) =>
-        w.budgetType === "ACTUAL" &&
-        w.startDayYYYYMMDD >= args.startDay &&
-        w.startDayYYYYMMDD <= args.endDay
-    );
-
-    const attributed = inRange.filter((w) =>
-      timeWindowAttributedToTrackable(
-        w,
-        args.trackableId,
-        taskInfoMap,
-        listIdToTrackableId
-      )
-    );
-
-    const attributedForDisplay =
-      trackable.trackableType === "TRACKER" && !trackable.trackTime
-        ? ([] as Doc<"timeWindows">[])
-        : attributed;
-
-    const taskIds = new Set<string>();
-    const trackableIds = new Set<string>();
-    const directListIds = new Set<string>();
-    for (const w of attributedForDisplay) {
-      if (w.activityType === "TASK" && w.taskId) taskIds.add(w.taskId);
-      if (w.trackableId) trackableIds.add(w.trackableId);
-      if (w.listId) directListIds.add(w.listId);
-    }
-
-    const taskDocs = await Promise.all(
-      Array.from(taskIds).map((id) => ctx.db.get(id as Id<"tasks">))
-    );
-
-    const tasksById = new Map<string, NonNullable<(typeof taskDocs)[number]>>();
-    const listIds = new Set<string>(directListIds);
-    for (const t of taskDocs) {
-      if (!t) continue;
-      tasksById.set(t._id, t);
-      if (t.listId) listIds.add(t.listId);
-    }
-
-    const listDocs = await Promise.all(
-      Array.from(listIds).map((id) => ctx.db.get(id as Id<"lists">))
-    );
-    const listsById = new Map<string, NonNullable<(typeof listDocs)[number]>>();
-    for (const l of listDocs) {
-      if (l) listsById.set(l._id, l);
-    }
-
-    const allTrackableIds = new Set<string>(trackableIds);
-    for (const w of attributedForDisplay) {
-      if (w.activityType !== "TASK") continue;
-      const resolved = resolveAttributedTrackableId(
-        { trackableId: w.trackableId, taskId: w.taskId },
-        taskInfoMap,
-        listIdToTrackableId
-      );
-      if (resolved) allTrackableIds.add(resolved);
-    }
-
-    const trackableDocs = await Promise.all(
-      Array.from(allTrackableIds).map((id) =>
-        ctx.db.get(id as Id<"trackables">)
-      )
-    );
-    const trackablesById = new Map<
-      string,
-      NonNullable<(typeof trackableDocs)[number]>
-    >();
-    for (const t of trackableDocs) {
-      if (t) trackablesById.set(t._id, t);
-    }
-
-    const enriched =
-      attributedForDisplay.length === 0
-        ? []
-        : enrichTimeWindowsWithDisplayFields(
-            attributedForDisplay,
-            tasksById,
-            listsById,
-            trackablesById,
-            links
-          );
-
-    const timeWindowsOut = enriched.map((w) => ({
-      kind: "time_window" as const,
-      _id: w._id,
-      sortKey: `${w.startDayYYYYMMDD}\u0001${w.startTimeHHMM}\u0001${w._id}`,
-      startDayYYYYMMDD: w.startDayYYYYMMDD,
-      startTimeHHMM: w.startTimeHHMM,
-      durationSeconds: w.durationSeconds,
-      displayTitle: w.displayTitle,
-      source:
-        (w.source ?? "timer") as
-          | "timer"
-          | "manual"
-          | "calendar"
-          | "tracker_entry",
-      comments: w.comments,
-    }));
-
-    let trackerEntriesOut: Array<{
-      kind: "tracker_entry";
-      _id: Id<"trackerEntries">;
-      sortKey: string;
-      dayYYYYMMDD: string;
-      startTimeHHMM?: string;
-      durationSeconds?: number | null;
-      countValue?: number | null;
-      comments?: string | null;
-    }> = [];
-
-    if (trackable.trackableType === "TRACKER") {
-      const raw = await ctx.db
-        .query("trackerEntries")
-        .withIndex("by_trackable", (q) =>
-          q.eq("trackableId", args.trackableId)
-        )
-        .collect();
-      trackerEntriesOut = raw
-        .map((e) => ({
-          ...e,
-          dayYYYYMMDD: toCompactYYYYMMDD(e.dayYYYYMMDD),
-        }))
-        .filter((e) => {
-          const d = e.dayYYYYMMDD;
-          return d >= args.startDay && d <= args.endDay;
-        })
-        .map((e) => ({
-          kind: "tracker_entry" as const,
-          _id: e._id,
-          sortKey: `${e.dayYYYYMMDD}\u0001${e.startTimeHHMM ?? ""}\u0001${e._id}`,
-          dayYYYYMMDD: e.dayYYYYMMDD,
-          startTimeHHMM: e.startTimeHHMM,
-          durationSeconds: e.durationSeconds ?? null,
-          countValue: e.countValue ?? null,
-          comments: e.comments ?? null,
-        }))
-        .sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0));
-    }
-
-    const twSorted = [...timeWindowsOut].sort((a, b) =>
-      a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0
-    );
-
-    return { timeWindows: twSorted, trackerEntries: trackerEntriesOut };
   },
 });
 
