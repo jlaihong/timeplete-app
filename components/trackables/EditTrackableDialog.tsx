@@ -32,7 +32,6 @@ import {
 } from "./goal/GoalAccountabilityForm";
 import { EditTrackableHistoryTab } from "./EditTrackableHistoryTab";
 import { EditTrackableProgressTab } from "./EditTrackableProgressTab";
-import { EditTrackableTimeTrackedTab } from "./EditTrackableTimeTrackedTab";
 
 interface EditTrackableDialogProps {
   trackableId: Id<"trackables">;
@@ -48,24 +47,19 @@ type TrackableType =
 
 type GoalEditTab =
   | "progress"
-  | "time_tracked"
+  | "tracking_history"
   | "commitment"
   | "motivations"
-  | "accountability"
-  | "history_breakdown";
+  | "accountability";
 
 type TrackerEditTab = "details" | "tracking_history";
 
 const GOAL_TAB_DEFS: { key: GoalEditTab; label: string }[] = [
   { key: "progress", label: "Progress" },
-  { key: "time_tracked", label: "Time Tracked" },
+  { key: "tracking_history", label: "Tracking History" },
   { key: "commitment", label: "My Commitment" },
   { key: "motivations", label: "My Motivations" },
   { key: "accountability", label: "Accountability" },
-  {
-    key: "history_breakdown",
-    label: "Tracking History Breakdown",
-  },
 ];
 
 const TRACKER_TAB_DEFS: { key: TrackerEditTab; label: string }[] = [
@@ -452,19 +446,16 @@ export function EditTrackableDialog({
             }} />
           </ScrollView>
         );
-      case "time_tracked":
+      case "tracking_history":
         return (
-          <EditTrackableTimeTrackedTab
-            trackableId={trackableId}
-            targetHoursBanner={
-              trackableType === "TIME_TRACK"
-                ? coercePreviewInt(
-                    targetHours,
-                    trackable.targetNumberOfHours
-                  )
-                : undefined
-            }
-          />
+          <View style={styles.historyTabPane}>
+            <EditTrackableHistoryTab
+              trackableId={trackableId}
+              trackTime={trackTime}
+              trackCount={trackCount}
+              autoCountFromCalendar={autoCountFromCalendar}
+            />
+          </View>
         );
       case "commitment":
         return (
@@ -505,20 +496,6 @@ export function EditTrackableDialog({
             />
           </ScrollView>
         );
-      case "history_breakdown":
-        return (
-          <View style={styles.historyTabPane}>
-            <EditTrackableHistoryTab
-              trackableId={trackableId}
-              trackableType={trackableType}
-              startDayYYYYMMDD={startDay || trackable.startDayYYYYMMDD}
-              endDayYYYYMMDD={endDay || trackable.endDayYYYYMMDD}
-              trackTime={trackTime}
-              trackCount={trackCount}
-              autoCountFromCalendar={autoCountFromCalendar}
-            />
-          </View>
-        );
       default:
         return null;
     }
@@ -540,9 +517,6 @@ export function EditTrackableDialog({
       <View style={styles.historyTabPane}>
         <EditTrackableHistoryTab
           trackableId={trackableId}
-          trackableType={trackableType}
-          startDayYYYYMMDD={startDay || trackable.startDayYYYYMMDD}
-          endDayYYYYMMDD={endDay || trackable.endDayYYYYMMDD}
           trackTime={trackTime}
           trackCount={trackCount}
           autoCountFromCalendar={autoCountFromCalendar}
