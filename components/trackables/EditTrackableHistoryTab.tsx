@@ -437,7 +437,7 @@ export function EditTrackableHistoryTab({
               <TableHeaderCell style={styles.colDuration}>Duration</TableHeaderCell>
             ) : null}
             <TableHeaderCell style={styles.colNotes}>Comments</TableHeaderCell>
-            <TableHeaderCell style={[styles.thCell, styles.colHistAction]} bold />
+            <TableHeaderCell style={styles.colHistAction} bold />
           </View>
           <ScrollView
             style={styles.tableBodyScroll}
@@ -480,6 +480,7 @@ export function EditTrackableHistoryTab({
                         <Ionicons name="trash-outline" size={22} color={Colors.text} />
                       </Pressable>
                     </View>
+                  </View>
                 );
               }
 
@@ -520,6 +521,7 @@ export function EditTrackableHistoryTab({
                     {e.comments?.trim() || "—"}
                   </TableDataCell>
                   <TableDataCell style={styles.colHistAction}>{" "}</TableDataCell>
+                </View>
               );
             })}
           </ScrollView>
