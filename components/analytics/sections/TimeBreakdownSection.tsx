@@ -16,8 +16,7 @@ import { TimeBreakdownGroupBy } from "../widgets/TimeBreakdownGroupBy";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * Time Breakdown — productivity-one `analytics-time-breakdown-widget`.
- * Inline Group by selects (one per frequency slot); multi-ring sunburst
- * partition applies every ordered level simultaneously (`buildPartitionArcs`).
+ * Non-dropdown grouping chips + Add select; multi-ring sunburst uses `levels`.
  * ──────────────────────────────────────────────────────────────────── */
 
 export function TimeBreakdownSection() {
@@ -33,7 +32,7 @@ export function TimeBreakdownSection() {
     setGroupingLevels(defaultGroupingLevelsForTab(selectedTab));
   }
 
-  const primaryMode = groupingLevels[0] ?? defaultGroupingLevelsForTab(selectedTab)[0]!;
+  const primaryMode = groupingLevels[0];
 
   const groupingLookups: GroupingLookups = useMemo(
     () => ({
@@ -56,7 +55,13 @@ export function TimeBreakdownSection() {
 
   const items = useMemo(
     () =>
-      groupTimeWindows(dataset.timeWindows, primaryMode, groupingLookups),
+      primaryMode === undefined
+        ? []
+        : groupTimeWindows(
+            dataset.timeWindows,
+            primaryMode,
+            groupingLookups
+          ),
     [dataset.timeWindows, primaryMode, groupingLookups]
   );
 

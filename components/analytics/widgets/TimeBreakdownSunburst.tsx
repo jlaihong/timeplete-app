@@ -208,6 +208,16 @@ export function TimeBreakdownSunburst({
     );
   }
 
+  if (groupingLevels.length === 0) {
+    return (
+      <View style={styles.wrap}>
+        <Text style={styles.muted}>
+          Add at least one grouping to view the chart.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.wrap}>
       <View style={styles.breadcrumbRow}>
