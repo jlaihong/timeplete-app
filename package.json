@@ -3,11 +3,14 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "scripts": {
+    "convex-push-local": "node scripts/convex-push-local.mjs",
     "dev": "convex dev --start 'npm run start'",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "web:preview": "node scripts/web-preview.mjs",
+    "web:clear": "node scripts/web-preview.mjs",
     "postinstall": "patch-package"
   },
   "dependencies": {

@@ -1,6 +1,6 @@
 import { query, mutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUser } from "./_helpers/auth";
 
 /**
@@ -87,6 +87,40 @@ export const search = query({
         ...list,
         trackableId: linkMap.get(list._id) ?? null,
       }));
+  },
+});
+
+/**
+ * Narrow inbox lookup (still deployed for backwards-compat with stale web
+ * bundles that reference `api.lists.getInboxList`). Prefer `lists:search`
+ * on the client when possible so one query powers drawer + inbox.
+ */
+export const getInboxList = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireApprovedUser(ctx);
+
+    const inboxRows = await ctx.db
+      .query("lists")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .filter((q) => q.eq(q.field("isInbox"), true))
+      .collect();
+
+    const candidates = inboxRows.filter((l) => !l.archived);
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => a.orderIndex - b.orderIndex);
+
+    const list = candidates[0];
+
+    const existingByList = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_list", (q) => q.eq("listId", list._id))
+      .unique();
+
+    return {
+      ...list,
+      trackableId: existingByList?.trackableId ?? null,
+    };
   },
 });
 
@@ -224,6 +258,19 @@ export const remove = mutation({
   },
 });
 
+function isTaskCompletedForListView(t: Doc<"tasks">): boolean {
+  const d = t.dateCompleted;
+  return typeof d === "string" && d.trim().length > 0;
+}
+
+/** Matches productivity-one list section ordering (`list-page.store` / `task-group`). */
+function compareTasksForListView(a: Doc<"tasks">, b: Doc<"tasks">): number {
+  const aDone = isTaskCompletedForListView(a);
+  const bDone = isTaskCompletedForListView(b);
+  if (aDone !== bDone) return Number(aDone) - Number(bDone);
+  return a.sectionOrderIndex - b.sectionOrderIndex;
+}
+
 export const getPaginated = query({
   args: {
     listId: v.id("lists"),
@@ -240,28 +287,85 @@ export const getPaginated = query({
       .withIndex("by_list", (q) => q.eq("listId", args.listId))
       .collect();
 
-    const sortedSections = sections
-      .sort((a, b) => a.orderIndex - b.orderIndex)
-      .slice(0, args.sectionLimit ?? 20);
+    const allSectionsSorted = sections.sort(
+      (a, b) => a.orderIndex - b.orderIndex,
+    );
+    const sortedSections = allSectionsSorted.slice(
+      0,
+      args.sectionLimit ?? 500,
+    );
+
+    const sectionIdSet = new Set(allSectionsSorted.map((s) => s._id));
+    const canonicalDefault =
+      allSectionsSorted.find((s) => s.isDefaultSection) ??
+      allSectionsSorted[0];
+    /** Where to show tasks with missing or foreign sectionIds (migration / bugs). */
+    const orphanBucket =
+      sortedSections.find((s) => s._id === canonicalDefault?._id) ??
+      sortedSections[0];
+
+    const allOnList = await ctx.db
+      .query("tasks")
+      .withIndex("by_list", (q) => q.eq("listId", args.listId))
+      .collect();
+
+    /**
+     * Inbox: suppress incomplete recurring instances (calendar noise). Always include
+     * completed recurring instances — they stay `isRecurringInstance: true` after
+     * check-off, and excluding them hid essentially all “done” work vs productivity-one.
+     */
+    const eligible = list.isInbox
+      ? allOnList.filter(
+          (t) => !t.isRecurringInstance || isTaskCompletedForListView(t),
+        )
+      : allOnList;
+
+    const taskTagsAll = await ctx.db
+      .query("taskTags")
+      .withIndex("by_task")
+      .collect();
+    const eligibleIds = new Set(eligible.map((t) => t._id));
+    const tagMap = new Map<Id<"tasks">, Id<"tags">[]>();
+    for (const tt of taskTagsAll) {
+      if (!eligibleIds.has(tt.taskId)) continue;
+      const prev = tagMap.get(tt.taskId) ?? [];
+      prev.push(tt.tagId);
+      tagMap.set(tt.taskId, prev);
+    }
+    const withTags = (t: (typeof eligible)[number]) => ({
+      ...t,
+      tagIds: tagMap.get(t._id) ?? [],
+    });
 
     const result = [];
-    const taskLim = args.taskLimit ?? 50;
+    /**
+     * `taskLimit` caps incomplete rows only. Completed tasks always follow (P1 stacks them
+     * last); slicing the combined array would hide every completion whenever incomplete
+     * count exceeds the cap — especially bad for inbox with long-open tasks.
+     */
+    const taskLim = args.taskLimit ?? 2500;
 
     for (const section of sortedSections) {
-      const tasks = await ctx.db
-        .query("tasks")
-        .withIndex("by_section", (q) => q.eq("sectionId", section._id))
-        .collect();
+      const tasksForSection = eligible.filter((t) => {
+        const sid = t.sectionId;
+        if (sid && sectionIdSet.has(sid)) {
+          return sid === section._id;
+        }
+        if (!orphanBucket) return false;
+        return section._id === orphanBucket._id;
+      });
 
-      const sorted = tasks
-        .filter((t) => !t.isRecurringInstance)
-        .sort((a, b) => a.sectionOrderIndex - b.sectionOrderIndex)
-        .slice(0, taskLim);
+      const sorted = [...tasksForSection].sort(compareTasksForListView);
+      const incomplete = sorted.filter((t) => !isTaskCompletedForListView(t));
+      const complete = sorted.filter((t) => isTaskCompletedForListView(t));
+      const pageTasks = [...incomplete.slice(0, taskLim), ...complete].map(
+        withTags,
+      );
 
       result.push({
         section,
-        tasks: sorted,
-        totalTasks: tasks.filter((t) => !t.isRecurringInstance).length,
+        tasks: pageTasks,
+        totalTasks: tasksForSection.length,
       });
     }
 
