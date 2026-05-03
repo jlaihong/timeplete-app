@@ -1,5 +1,12 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  type TextStyle,
+  type ViewStyle,
+} from "react-native";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
@@ -31,6 +38,40 @@ interface EditTrackableHistoryTabProps {
   trackTime: boolean;
   trackCount: boolean;
   isRatingTracker: boolean;
+}
+
+function TableHeaderCell({
+  children,
+  style,
+}: {
+  children: string;
+  style?: ViewStyle;
+}) {
+  return (
+    <View style={[styles.thCell, style]}>
+      <Text style={styles.thText}>{children}</Text>
+    </View>
+  );
+}
+
+function TableDataCell({
+  children,
+  style,
+  textStyle,
+  numberOfLines = 4,
+}: {
+  children: string;
+  style?: ViewStyle;
+  textStyle?: TextStyle;
+  numberOfLines?: number;
+}) {
+  return (
+    <View style={[styles.tdCell, style]}>
+      <Text style={[styles.tdText, textStyle]} numberOfLines={numberOfLines}>
+        {children}
+      </Text>
+    </View>
+  );
 }
 
 export function EditTrackableHistoryTab({
@@ -120,6 +161,10 @@ export function EditTrackableHistoryTab({
     trackTime,
   ]);
 
+  const trackerHasValueColumn = trackCount;
+  const showDurationColumn =
+    trackableType !== "TRACKER" || trackTime || needsBreakdownWindows;
+
   const renderMerged = () => {
     if (!needsServerHistory) return null;
     if (needsBreakdownWindows && timeBreakdown === undefined) {
@@ -143,70 +188,109 @@ export function EditTrackableHistoryTab({
         </View>
       );
     }
+
     return (
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        horizontal
         keyboardShouldPersistTaps="handled"
       >
-        {mergedRows.map((row) => {
-          if (row.kind === "time_window") {
-            return (
-              <View key={`tw-${row._id}`} style={styles.card}>
-                <Text style={styles.cardDate}>
-                  {formatYYYYMMDDtoDDMMM(row.startDayYYYYMMDD)}
-                  {row.startTimeHHMM ? ` · ${row.startTimeHHMM}` : ""}
-                </Text>
-                <Text style={styles.cardTitle} numberOfLines={2}>
-                  {row.displayTitle}
-                </Text>
-                <Text style={styles.cardMeta}>
-                  <Text style={styles.sourcePill}>
-                    {labelForEditDialogTimeSource(row.source)}
-                  </Text>
-                  {" · "}
-                  <Text style={styles.cardEmph}>
-                    {secondsToDurationString(row.durationSeconds)}
-                  </Text>
-                </Text>
-                {row.comments?.trim() ? (
-                  <Text style={styles.cardComments}>{row.comments.trim()}</Text>
-                ) : null}
-              </View>
-            );
-          }
-          const e = row;
-          return (
-            <View key={`te-${e._id}`} style={styles.card}>
-              <Text style={styles.cardDate}>
-                {formatYYYYMMDDtoDDMMM(e.dayYYYYMMDD)}
-                {e.startTimeHHMM ? ` · ${e.startTimeHHMM}` : ""}
-              </Text>
-              <Text style={styles.cardMeta}>
-                <Text style={styles.sourcePill}>Manual log</Text>
-              </Text>
-              {trackCount && e.countValue != null ? (
-                <Text style={styles.cardLine}>
-                  {isRatingTracker ? "Rating: " : "Value: "}
-                  <Text style={styles.cardEmph}>{e.countValue}</Text>
-                </Text>
-              ) : null}
-              {trackTime &&
-              e.durationSeconds != null &&
-              e.durationSeconds > 0 ? (
-                <Text style={styles.cardLine}>
-                  Duration:{" "}
-                  <Text style={styles.cardEmph}>
-                    {secondsToDurationString(e.durationSeconds)}
-                  </Text>
-                </Text>
-              ) : null}
-              {e.comments?.trim() ? (
-                <Text style={styles.cardComments}>{e.comments.trim()}</Text>
-              ) : null}
-            </View>
-          );
-        })}
+        <View style={styles.tableMinWidth}>
+          <View style={styles.headerRow}>
+            <TableHeaderCell style={styles.colDate}>Date</TableHeaderCell>
+            <TableHeaderCell style={styles.colTime}>Start</TableHeaderCell>
+            <TableHeaderCell style={styles.colDesc}>Description</TableHeaderCell>
+            <TableHeaderCell style={styles.colSource}>Source</TableHeaderCell>
+            {trackerHasValueColumn ? (
+              <TableHeaderCell style={styles.colValue}>
+                {isRatingTracker ? "Rating" : "Value"}
+              </TableHeaderCell>
+            ) : null}
+            {showDurationColumn ? (
+              <TableHeaderCell style={styles.colDuration}>
+                Duration
+              </TableHeaderCell>
+            ) : null}
+            <TableHeaderCell style={styles.colNotes}>Comments</TableHeaderCell>
+          </View>
+          <ScrollView
+            style={styles.tableBodyScroll}
+            contentContainerStyle={styles.tableBodyContent}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+          >
+            {mergedRows.map((row, i) => {
+              const zebra = i % 2 === 1 ? styles.rowZebra : null;
+              if (row.kind === "time_window") {
+                const dateStr = formatYYYYMMDDtoDDMMM(row.startDayYYYYMMDD);
+                const timeStr = row.startTimeHHMM || "—";
+                return (
+                  <View key={`tw-${row._id}`} style={[styles.dataRow, zebra]}>
+                    <TableDataCell style={styles.colDate}>{dateStr}</TableDataCell>
+                    <TableDataCell style={styles.colTime}>{timeStr}</TableDataCell>
+                    <TableDataCell style={styles.colDesc}>
+                      {row.displayTitle}
+                    </TableDataCell>
+                    <TableDataCell style={styles.colSource}>
+                      {labelForEditDialogTimeSource(row.source)}
+                    </TableDataCell>
+                    {trackerHasValueColumn ? (
+                      <TableDataCell style={styles.colValue}>—</TableDataCell>
+                    ) : null}
+                    {showDurationColumn ? (
+                      <TableDataCell style={styles.colDuration}>
+                        {secondsToDurationString(row.durationSeconds)}
+                      </TableDataCell>
+                    ) : null}
+                    <TableDataCell style={styles.colNotes}>
+                      {row.comments?.trim() || "—"}
+                    </TableDataCell>
+                  </View>
+                );
+              }
+
+              const e = row;
+              const dateStr = formatYYYYMMDDtoDDMMM(e.dayYYYYMMDD);
+              const timeStr = e.startTimeHHMM || "—";
+              const dur =
+                trackTime &&
+                e.durationSeconds != null &&
+                e.durationSeconds > 0
+                  ? secondsToDurationString(e.durationSeconds)
+                  : "—";
+              const val =
+                trackCount && e.countValue != null ? String(e.countValue) : "—";
+              const desc =
+                trackTime && dur !== "—" && trackCount && val !== "—"
+                  ? "Manual entry"
+                  : trackCount && val !== "—"
+                    ? isRatingTracker
+                      ? "Manual rating"
+                      : "Manual value"
+                    : trackTime && dur !== "—"
+                      ? "Manual time"
+                      : "Manual entry";
+
+              return (
+                <View key={`te-${e._id}`} style={[styles.dataRow, zebra]}>
+                  <TableDataCell style={styles.colDate}>{dateStr}</TableDataCell>
+                  <TableDataCell style={styles.colTime}>{timeStr}</TableDataCell>
+                  <TableDataCell style={styles.colDesc}>{desc}</TableDataCell>
+                  <TableDataCell style={styles.colSource}>Manual log</TableDataCell>
+                  {trackerHasValueColumn ? (
+                    <TableDataCell style={styles.colValue}>{val}</TableDataCell>
+                  ) : null}
+                  {showDurationColumn ? (
+                    <TableDataCell style={styles.colDuration}>{dur}</TableDataCell>
+                  ) : null}
+                  <TableDataCell style={styles.colNotes}>
+                    {e.comments?.trim() || "—"}
+                  </TableDataCell>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
       </ScrollView>
     );
   };
@@ -241,66 +325,121 @@ export function EditTrackableHistoryTab({
   return (
     <ScrollView
       style={styles.scroll}
-      contentContainerStyle={styles.scrollContent}
+      horizontal
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.sectionTitle}>Daily log</Text>
-      {dayRows.map((d) => (
-        <View key={d.dayYYYYMMDD} style={styles.card}>
-          <Text style={styles.cardDate}>
-            {formatYYYYMMDDtoDDMMM(d.dayYYYYMMDD)}
-          </Text>
-          <Text style={styles.cardLine}>
-            Logged: <Text style={styles.cardEmph}>{d.numCompleted}</Text>
-          </Text>
-          {d.comments?.trim() ? (
-            <Text style={styles.cardComments}>{d.comments.trim()}</Text>
-          ) : null}
+      <View style={styles.tableMinWidthDaily}>
+        <View style={styles.headerRow}>
+          <TableHeaderCell style={styles.colDate}>Date</TableHeaderCell>
+          <TableHeaderCell style={styles.colProgress}>Logged</TableHeaderCell>
+          <TableHeaderCell style={styles.colNotesWide}>Comments</TableHeaderCell>
         </View>
-      ))}
+        <ScrollView
+          style={styles.tableBodyScroll}
+          contentContainerStyle={styles.tableBodyContent}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled
+        >
+          {dayRows.map((d, i) => (
+            <View
+              key={d.dayYYYYMMDD}
+              style={[styles.dataRow, i % 2 === 1 ? styles.rowZebra : null]}
+            >
+              <TableDataCell style={styles.colDate}>
+                {formatYYYYMMDDtoDDMMM(d.dayYYYYMMDD)}
+              </TableDataCell>
+              <TableDataCell style={styles.colProgress}>
+                {String(d.numCompleted)}
+              </TableDataCell>
+              <TableDataCell style={styles.colNotesWide}>
+                {d.comments?.trim() || "—"}
+              </TableDataCell>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
     </ScrollView>
   );
 }
 
+/** Material-style dense data table (~productivity-one mat-table parity). */
 const styles = StyleSheet.create({
   scroll: { maxHeight: 420 },
-  scrollContent: { paddingBottom: 12 },
   center: { paddingVertical: 24, alignItems: "center" },
   muted: { fontSize: 14, color: Colors.textTertiary, textAlign: "center" },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-    marginBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
-  card: {
-    borderWidth: 1,
+  tableMinWidth: {
+    minWidth: 640,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
+    borderRadius: 4,
+    overflow: "hidden",
+    alignSelf: "flex-start",
+  },
+  tableMinWidthDaily: {
+    minWidth: 480,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.outlineVariant,
+    borderRadius: 4,
+    overflow: "hidden",
+    alignSelf: "flex-start",
+  },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.outline,
+  },
+  thCell: {
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    justifyContent: "center",
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: Colors.outlineVariant,
+  },
+  thText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  tableBodyScroll: {
+    maxHeight: 346,
+    backgroundColor: Colors.surface,
+  },
+  tableBodyContent: {
+    paddingBottom: 4,
+  },
+  dataRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.outlineVariant,
+    minHeight: 40,
+  },
+  rowZebra: {
     backgroundColor: Colors.surfaceContainerLow,
   },
-  cardDate: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 4,
+  tdCell: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    justifyContent: "center",
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: Colors.outlineVariant,
   },
-  cardTitle: { fontSize: 14, fontWeight: "600", color: Colors.text },
-  cardLine: { fontSize: 13, color: Colors.textSecondary, marginTop: 4 },
-  cardMeta: { fontSize: 13, color: Colors.textSecondary, marginTop: 4 },
-  cardEmph: { fontWeight: "600", color: Colors.text },
-  sourcePill: {
-    fontWeight: "600",
-    color: Colors.primary,
-  },
-  cardComments: {
+  tdText: {
     fontSize: 13,
     color: Colors.text,
-    marginTop: 8,
-    fontStyle: "italic",
+    lineHeight: 18,
   },
+  colDate: { width: 92 },
+  colTime: { width: 52 },
+  colDesc: { flex: 1, minWidth: 140 },
+  colSource: { width: 96 },
+  colValue: { width: 56 },
+  colDuration: { width: 72 },
+  colNotes: { flex: 1, minWidth: 120 },
+  colProgress: { width: 72 },
+  colNotesWide: { flex: 1, minWidth: 200 },
 });
