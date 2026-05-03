@@ -89,6 +89,14 @@ export const upsert = mutation({
           | "TRACKER";
       if (effectiveType === "TRACKER") {
         (updateFields as Record<string, unknown>).targetCount = undefined;
+        (updateFields as Record<string, unknown>).targetNumberOfHours =
+          undefined;
+        (updateFields as Record<string, unknown>).targetNumberOfDaysAWeek =
+          undefined;
+        (updateFields as Record<string, unknown>).targetNumberOfWeeks =
+          undefined;
+        (updateFields as Record<string, unknown>).targetNumberOfMinutesAWeek =
+          undefined;
       }
       await ctx.db.patch(args.id, {
         ...updateFields,
@@ -109,16 +117,22 @@ export const upsert = mutation({
       ? Math.max(...all.map((t) => t.orderIndex))
       : -1;
 
+    const isTracker = args.trackableType === "TRACKER";
+
     const trackableId = await ctx.db.insert("trackables", {
       name: args.name,
       colour: args.colour,
       trackableType: args.trackableType,
       frequency: args.frequency,
-      targetNumberOfHours: args.targetNumberOfHours,
-      targetNumberOfDaysAWeek: args.targetNumberOfDaysAWeek,
-      targetNumberOfMinutesAWeek: args.targetNumberOfMinutesAWeek,
-      targetNumberOfWeeks: args.targetNumberOfWeeks,
-      targetCount: args.targetCount,
+      targetNumberOfHours: isTracker ? undefined : args.targetNumberOfHours,
+      targetNumberOfDaysAWeek: isTracker
+        ? undefined
+        : args.targetNumberOfDaysAWeek,
+      targetNumberOfMinutesAWeek: isTracker
+        ? undefined
+        : args.targetNumberOfMinutesAWeek,
+      targetNumberOfWeeks: isTracker ? undefined : args.targetNumberOfWeeks,
+      targetCount: isTracker ? undefined : args.targetCount,
       startDayYYYYMMDD: args.startDayYYYYMMDD,
       endDayYYYYMMDD: args.endDayYYYYMMDD,
       orderIndex: maxOrder + 1,
@@ -1055,10 +1069,37 @@ export const getTrackableAnalyticsSeries = query({
   },
 });
 
+function labelForEditDialogTimeSource(key: string): string {
+  switch (key) {
+    case "timer":
+      return "Timer";
+    case "manual":
+      return "Manual entry";
+    case "calendar":
+      return "Calendar";
+    case "tracker_entry":
+      return "Tracker";
+    default:
+      return key;
+  }
+}
+
+function timeBySourceRowsFromBuckets(
+  buckets: Map<string, number>
+): Array<{ source: string; label: string; seconds: number }> {
+  return [...buckets.entries()]
+    .filter(([, sec]) => sec > 0)
+    .map(([source, seconds]) => ({
+      source,
+      label: labelForEditDialogTimeSource(source),
+      seconds,
+    }))
+    .sort((a, b) => b.seconds - a.seconds);
+}
+
 /**
- * Tracking log + attributed-time breakdown for the Edit Trackable dialog's
- * "Tracking history" tab — mirrors productivity-one's per-entry history
- * list and (for time-based goals) source breakdown.
+ * Payload for the Edit Trackable dialog history / breakdown tabs — mirrors
+ * productivity-one's entry list, daily log, and attributed-time breakdown.
  */
 export const getEditDialogTrackingHistory = query({
   args: { trackableId: v.id("trackables") },
@@ -1077,6 +1118,56 @@ export const getEditDialogTrackingHistory = query({
         )
         .collect();
       entries.sort((a, b) => b._creationTime - a._creationTime);
+
+      let timeBySource:
+        | Array<{ source: string; label: string; seconds: number }>
+        | undefined;
+      if (trackable.trackTime !== false) {
+        const userTasks = await ctx.db
+          .query("tasks")
+          .withIndex("by_user", (q) => q.eq("userId", user._id))
+          .collect();
+        const taskInfoMap = buildTaskInfoMap(userTasks);
+
+        const userLinks = await ctx.db
+          .query("listTrackableLinks")
+          .withIndex("by_user", (q) => q.eq("userId", user._id))
+          .collect();
+        const listIdToTrackableId = buildListIdToTrackableId(userLinks);
+
+        const allWindows = await ctx.db
+          .query("timeWindows")
+          .withIndex("by_user", (q) => q.eq("userId", user._id))
+          .collect();
+
+        const attributed = allWindows.filter(
+          (w) =>
+            w.budgetType === "ACTUAL" &&
+            timeWindowAttributedToTrackable(
+              w,
+              args.trackableId,
+              taskInfoMap,
+              listIdToTrackableId
+            )
+        );
+
+        const buckets = new Map<string, number>();
+        for (const w of attributed) {
+          const raw = w.source ?? "timer";
+          buckets.set(raw, (buckets.get(raw) ?? 0) + w.durationSeconds);
+        }
+        for (const e of entries) {
+          const sec = e.durationSeconds ?? 0;
+          if (sec > 0) {
+            buckets.set(
+              "tracker_entry",
+              (buckets.get("tracker_entry") ?? 0) + sec
+            );
+          }
+        }
+        timeBySource = timeBySourceRowsFromBuckets(buckets);
+      }
+
       return {
         kind: "tracker" as const,
         entries: entries.map((e) => ({
@@ -1088,6 +1179,7 @@ export const getEditDialogTrackingHistory = query({
           comments: e.comments,
           _creationTime: e._creationTime,
         })),
+        timeBySource,
       };
     }
 
@@ -1154,29 +1246,7 @@ export const getEditDialogTrackingHistory = query({
         buckets.set(raw, (buckets.get(raw) ?? 0) + w.durationSeconds);
       }
 
-      const labelFor = (key: string) => {
-        switch (key) {
-          case "timer":
-            return "Timer";
-          case "manual":
-            return "Manual entry";
-          case "calendar":
-            return "Calendar";
-          case "tracker_entry":
-            return "Tracker";
-          default:
-            return key;
-        }
-      };
-
-      timeBySource = [...buckets.entries()]
-        .filter(([, sec]) => sec > 0)
-        .map(([source, seconds]) => ({
-          source,
-          label: labelFor(source),
-          seconds,
-        }))
-        .sort((a, b) => b.seconds - a.seconds);
+      timeBySource = timeBySourceRowsFromBuckets(buckets);
     }
 
     return {
