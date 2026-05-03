@@ -258,10 +258,14 @@ export const remove = mutation({
   },
 });
 
+function isTaskCompletedForListView(t: Doc<"tasks">): boolean {
+  return t.dateCompleted != null && t.dateCompleted !== "";
+}
+
 /** Matches productivity-one list section ordering (`list-page.store` / `task-group`). */
 function compareTasksForListView(a: Doc<"tasks">, b: Doc<"tasks">): number {
-  const aDone = a.dateCompleted != null && a.dateCompleted !== "";
-  const bDone = b.dateCompleted != null && b.dateCompleted !== "";
+  const aDone = isTaskCompletedForListView(a);
+  const bDone = isTaskCompletedForListView(b);
   if (aDone !== bDone) return Number(aDone) - Number(bDone);
   return a.sectionOrderIndex - b.sectionOrderIndex;
 }
@@ -328,8 +332,9 @@ export const getPaginated = query({
 
     const result = [];
     /**
-     * Default cap must exceed typical “all incomplete first” counts so completed tasks
-     * are not truncated entirely when show-completed is on (P1 stacks completed last).
+     * `taskLimit` caps incomplete rows only. Completed tasks always follow (P1 stacks them
+     * last); slicing the combined array would hide every completion whenever incomplete
+     * count exceeds the cap — especially bad for inbox with long-open tasks.
      */
     const taskLim = args.taskLimit ?? 2500;
 
@@ -343,14 +348,16 @@ export const getPaginated = query({
         return section._id === orphanBucket._id;
       });
 
-      const sorted = [...tasksForSection]
-        .sort(compareTasksForListView)
-        .slice(0, taskLim)
-        .map(withTags);
+      const sorted = [...tasksForSection].sort(compareTasksForListView);
+      const incomplete = sorted.filter((t) => !isTaskCompletedForListView(t));
+      const complete = sorted.filter((t) => isTaskCompletedForListView(t));
+      const pageTasks = [...incomplete.slice(0, taskLim), ...complete].map(
+        withTags,
+      );
 
       result.push({
         section,
-        tasks: sorted,
+        tasks: pageTasks,
         totalTasks: tasksForSection.length,
       });
     }
