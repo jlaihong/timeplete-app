@@ -42,7 +42,7 @@ type TrackableType =
   | "MINUTES_A_WEEK"
   | "TRACKER";
 
-type EditTab = "details" | "history";
+type EditTab = "details" | "history" | "breakdown";
 
 export function EditTrackableDialog({
   trackableId,
@@ -85,13 +85,21 @@ export function EditTrackableDialog({
     setColour(trackable.colour);
     setStartDay(trackable.startDayYYYYMMDD);
     setEndDay(trackable.endDayYYYYMMDD);
-    setTargetCount(trackable.targetCount?.toString() ?? "");
-    setTargetHours(trackable.targetNumberOfHours?.toString() ?? "");
-    setTargetDaysAWeek(trackable.targetNumberOfDaysAWeek?.toString() ?? "");
-    setTargetWeeks(trackable.targetNumberOfWeeks?.toString() ?? "");
-    setTargetMinutesAWeek(
-      trackable.targetNumberOfMinutesAWeek?.toString() ?? ""
-    );
+    if (trackable.trackableType === "TRACKER") {
+      setTargetCount("");
+      setTargetHours("");
+      setTargetDaysAWeek("");
+      setTargetWeeks("");
+      setTargetMinutesAWeek("");
+    } else {
+      setTargetCount(trackable.targetCount?.toString() ?? "");
+      setTargetHours(trackable.targetNumberOfHours?.toString() ?? "");
+      setTargetDaysAWeek(trackable.targetNumberOfDaysAWeek?.toString() ?? "");
+      setTargetWeeks(trackable.targetNumberOfWeeks?.toString() ?? "");
+      setTargetMinutesAWeek(
+        trackable.targetNumberOfMinutesAWeek?.toString() ?? ""
+      );
+    }
     setTrackTime(trackable.trackTime);
     setTrackCount(trackable.trackCount);
     setAutoCountFromCalendar(trackable.autoCountFromCalendar);
@@ -116,10 +124,27 @@ export function EditTrackableDialog({
     });
   }, [trackable?._id]);
 
+  const showBreakdownTab =
+    !!trackable &&
+    (trackable.trackableType === "TIME_TRACK" ||
+      trackable.trackableType === "MINUTES_A_WEEK" ||
+      (trackable.trackableType === "TRACKER" && trackTime));
+
+  useEffect(() => {
+    if (!showBreakdownTab && activeTab === "breakdown") {
+      setActiveTab("details");
+    }
+  }, [showBreakdownTab, activeTab]);
+
   if (!trackable) return null;
 
   const trackableType = trackable.trackableType as TrackableType;
   const isGoal = trackableType !== "TRACKER";
+
+  const breakdownHint =
+    trackableType === "TRACKER"
+      ? "Time attributed to this tracker from timers, tasks, calendar, and logged entry durations."
+      : "Attributed time toward this goal between its start and end dates.";
 
   const handleSave = async () => {
     const trimmed = name.trim();
@@ -149,18 +174,30 @@ export function EditTrackableDialog({
             : targetCount
               ? parseInt(targetCount, 10)
               : undefined,
-        targetNumberOfHours: targetHours
-          ? parseInt(targetHours, 10)
-          : undefined,
-        targetNumberOfDaysAWeek: targetDaysAWeek
-          ? parseInt(targetDaysAWeek, 10)
-          : undefined,
-        targetNumberOfWeeks: targetWeeks.trim()
-          ? parseInt(targetWeeks, 10)
-          : trackable.targetNumberOfWeeks,
-        targetNumberOfMinutesAWeek: targetMinutesAWeek
-          ? parseInt(targetMinutesAWeek, 10)
-          : undefined,
+        targetNumberOfHours:
+          trackableType === "TRACKER"
+            ? undefined
+            : targetHours
+              ? parseInt(targetHours, 10)
+              : undefined,
+        targetNumberOfDaysAWeek:
+          trackableType === "TRACKER"
+            ? undefined
+            : targetDaysAWeek
+              ? parseInt(targetDaysAWeek, 10)
+              : undefined,
+        targetNumberOfWeeks:
+          trackableType === "TRACKER"
+            ? undefined
+            : targetWeeks.trim()
+              ? parseInt(targetWeeks, 10)
+              : trackable.targetNumberOfWeeks,
+        targetNumberOfMinutesAWeek:
+          trackableType === "TRACKER"
+            ? undefined
+            : targetMinutesAWeek
+              ? parseInt(targetMinutesAWeek, 10)
+              : undefined,
         isCumulative,
         trackTime,
         trackCount,
@@ -244,7 +281,7 @@ export function EditTrackableDialog({
         </View>
       ) : null}
 
-      {trackableType === "NUMBER" && (
+      {isGoal && trackableType === "NUMBER" && (
         <Input
           label="Target Count"
           value={targetCount}
@@ -254,7 +291,7 @@ export function EditTrackableDialog({
         />
       )}
 
-      {trackableType === "TIME_TRACK" && (
+      {isGoal && trackableType === "TIME_TRACK" && (
         <Input
           label="Target Hours"
           value={targetHours}
@@ -264,7 +301,7 @@ export function EditTrackableDialog({
         />
       )}
 
-      {trackableType === "DAYS_A_WEEK" && (
+      {isGoal && trackableType === "DAYS_A_WEEK" && (
         <>
           <Input
             label="Target Days per Week"
@@ -283,7 +320,7 @@ export function EditTrackableDialog({
         </>
       )}
 
-      {trackableType === "MINUTES_A_WEEK" && (
+      {isGoal && trackableType === "MINUTES_A_WEEK" && (
         <Input
           label="Target Minutes per Week"
           value={targetMinutesAWeek}
@@ -366,7 +403,13 @@ export function EditTrackableDialog({
         <DialogHeader title="Edit Trackable" onClose={onClose} />
 
         <View style={styles.tabBar}>
-          {(["details", "history"] as EditTab[]).map((tab) => (
+          {(
+            [
+              "details",
+              "history",
+              ...(showBreakdownTab ? (["breakdown"] as const) : []),
+            ] as EditTab[]
+          ).map((tab) => (
             <Pressable
               key={tab}
               style={[styles.tab, activeTab === tab && styles.tabActive]}
@@ -378,7 +421,11 @@ export function EditTrackableDialog({
                   activeTab === tab && styles.tabTextActive,
                 ]}
               >
-                {tab === "details" ? "Details" : "Tracking history"}
+                {tab === "details"
+                  ? "Details"
+                  : tab === "history"
+                    ? "Tracking history"
+                    : "History breakdown"}
               </Text>
             </Pressable>
           ))}
@@ -398,6 +445,8 @@ export function EditTrackableDialog({
             trackTime={trackTime}
             trackCount={trackCount}
             isRatingTracker={isRatingTracker}
+            mode={activeTab === "breakdown" ? "breakdown" : "history"}
+            breakdownHint={breakdownHint}
           />
         )}
 
