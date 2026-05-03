@@ -182,6 +182,10 @@ function accumulateWindow(
       existing.totalSeconds += w.durationSeconds;
       existing.count += 1;
       existing.windows.push(w);
+      const incoming = colour?.trim();
+      if (incoming && !existing.colour?.trim()) {
+        existing.colour = incoming;
+      }
     } else {
       buckets.set(key, {
         label,
