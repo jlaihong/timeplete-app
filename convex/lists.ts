@@ -298,6 +298,23 @@ export const getPaginated = query({
 
     const eligible = allOnList.filter((t) => !t.isRecurringInstance);
 
+    const taskTagsAll = await ctx.db
+      .query("taskTags")
+      .withIndex("by_task")
+      .collect();
+    const eligibleIds = new Set(eligible.map((t) => t._id));
+    const tagMap = new Map<Id<"tasks">, Id<"tags">[]>();
+    for (const tt of taskTagsAll) {
+      if (!eligibleIds.has(tt.taskId)) continue;
+      const prev = tagMap.get(tt.taskId) ?? [];
+      prev.push(tt.tagId);
+      tagMap.set(tt.taskId, prev);
+    }
+    const withTags = (t: (typeof eligible)[number]) => ({
+      ...t,
+      tagIds: tagMap.get(t._id) ?? [],
+    });
+
     const result = [];
     const taskLim = args.taskLimit ?? 50;
 
@@ -313,7 +330,8 @@ export const getPaginated = query({
 
       const sorted = [...tasksForSection]
         .sort((a, b) => a.sectionOrderIndex - b.sectionOrderIndex)
-        .slice(0, taskLim);
+        .slice(0, taskLim)
+        .map(withTags);
 
       result.push({
         section,
