@@ -66,6 +66,10 @@ function radiusBand(
 /**
  * Multi-ring partition: inner ring = first grouping level; each outer ring breaks
  * down the parent wedge by the next level (Productivity-One style).
+ *
+ * Segment colours: buckets that define their own colour (trackable, list, tag,
+ * …) keep it; deeper buckets without a colour (e.g. task) reuse the resolved
+ * colour from the parent wedge — matching productivity-one sunburst behaviour.
  */
 export function buildPartitionArcs(
   windows: TimeWindowLike[],
@@ -82,7 +86,9 @@ export function buildPartitionArcs(
     depth: number,
     a0: number,
     a1: number,
-    pathKey: string
+    pathKey: string,
+    /** Effective paint colour from the containing wedge (for inheritance). */
+    inheritedColour?: string
   ) {
     if (depth >= L || sliceWindows.length === 0) return;
     const mode = groupingLevels[depth]!;
@@ -95,23 +101,24 @@ export function buildPartitionArcs(
     buckets.forEach((b, i) => {
       const { a0: ta0, a1: ta1 } = angles[i]!;
       const key = `${pathKey}@${depth}:${b.key}`;
+      const effectiveColour = b.colour ?? inheritedColour;
       arcs.push({
         key,
         depth,
         mode,
         label: b.label,
         seconds: b.totalSeconds,
-        colour: b.colour,
+        colour: effectiveColour,
         windows: b.windows,
         a0: ta0,
         a1: ta1,
         rInner,
         rOuter,
       });
-      recur(b.windows, depth + 1, ta0, ta1, key);
+      recur(b.windows, depth + 1, ta0, ta1, key, effectiveColour);
     });
   }
 
-  recur(windows, 0, 0, Math.PI * 2, "root");
+  recur(windows, 0, 0, Math.PI * 2, "root", undefined);
   return arcs;
 }
