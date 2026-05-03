@@ -274,28 +274,51 @@ export const getPaginated = query({
       .withIndex("by_list", (q) => q.eq("listId", args.listId))
       .collect();
 
-    const sortedSections = sections
-      .sort((a, b) => a.orderIndex - b.orderIndex)
-      .slice(0, args.sectionLimit ?? 20);
+    const allSectionsSorted = sections.sort(
+      (a, b) => a.orderIndex - b.orderIndex,
+    );
+    const sortedSections = allSectionsSorted.slice(
+      0,
+      args.sectionLimit ?? 20,
+    );
+
+    const sectionIdSet = new Set(allSectionsSorted.map((s) => s._id));
+    const canonicalDefault =
+      allSectionsSorted.find((s) => s.isDefaultSection) ??
+      allSectionsSorted[0];
+    /** Where to show tasks with missing or foreign sectionIds (migration / bugs). */
+    const orphanBucket =
+      sortedSections.find((s) => s._id === canonicalDefault?._id) ??
+      sortedSections[0];
+
+    const allOnList = await ctx.db
+      .query("tasks")
+      .withIndex("by_list", (q) => q.eq("listId", args.listId))
+      .collect();
+
+    const eligible = allOnList.filter((t) => !t.isRecurringInstance);
 
     const result = [];
     const taskLim = args.taskLimit ?? 50;
 
     for (const section of sortedSections) {
-      const tasks = await ctx.db
-        .query("tasks")
-        .withIndex("by_section", (q) => q.eq("sectionId", section._id))
-        .collect();
+      const tasksForSection = eligible.filter((t) => {
+        const sid = t.sectionId;
+        if (sid && sectionIdSet.has(sid)) {
+          return sid === section._id;
+        }
+        if (!orphanBucket) return false;
+        return section._id === orphanBucket._id;
+      });
 
-      const sorted = tasks
-        .filter((t) => !t.isRecurringInstance)
+      const sorted = [...tasksForSection]
         .sort((a, b) => a.sectionOrderIndex - b.sectionOrderIndex)
         .slice(0, taskLim);
 
       result.push({
         section,
         tasks: sorted,
-        totalTasks: tasks.filter((t) => !t.isRecurringInstance).length,
+        totalTasks: tasksForSection.length,
       });
     }
 
