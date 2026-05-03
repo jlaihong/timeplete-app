@@ -27,9 +27,10 @@ import { ListDialog } from "../../../components/lists/ListDialog";
 import { AddTaskSheet } from "../../../components/tasks/AddTaskSheet";
 import { TaskDetailSheet } from "../../../components/tasks/TaskDetailSheet";
 import {
-  TaskRowDesktop,
   type TaskRowMeta,
+  type TaskRowTask,
 } from "../../../components/tasks/TaskRowDesktop";
+import { ListDetailWebDnd } from "../../../components/lists/ListDetailWebDnd";
 import { useTimer } from "../../../hooks/useTimer";
 import { todayYYYYMMDD, formatSecondsAsHM } from "../../../lib/dates";
 import type { Id, Doc } from "../../../convex/_generated/dataModel";
@@ -48,6 +49,22 @@ function showCompletedStorageKey(listId: string) {
 
 function listFilterUsersStorageKey(listId: string) {
   return `listFilterUsers:${listId}`;
+}
+
+function toTaskRowTask(task: ListPageTask): TaskRowTask {
+  return {
+    _id: task._id,
+    name: task.name,
+    dateCompleted: task.dateCompleted,
+    taskDay: task.taskDay,
+    timeSpentInSecondsUnallocated: task.timeSpentInSecondsUnallocated,
+    trackableId: task.trackableId,
+    listId: task.listId,
+    tagIds: task.tagIds as string[] | undefined,
+    assignedToUserName: (task as { assignedToUserName?: string })
+      .assignedToUserName,
+    isRecurringInstance: task.isRecurringInstance,
+  };
 }
 
 function buildMeta(
@@ -72,6 +89,7 @@ function buildMeta(
 interface ListSection {
   /** SectionList key */
   sectionKey: string;
+  sectionId: Id<"listSections">;
   title: string;
   isDefault: boolean;
   totalTasks: number;
@@ -151,8 +169,8 @@ export default function ListDetailScreen() {
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
   const canQueryLists = !authLoading && isAuthenticated;
 
-  const [sectionLimit, setSectionLimit] = useState(20);
-  const [taskLimit, setTaskLimit] = useState(50);
+  const [sectionLimit, setSectionLimit] = useState(500);
+  const [taskLimit, setTaskLimit] = useState(500);
 
   const paginatedList = useQuery(
     api.lists.getPaginated,
@@ -175,6 +193,7 @@ export default function ListDetailScreen() {
   const deleteRecurringInstance = useMutation(api.recurringTasks.deleteInstance);
   const setTimeSpentMutation = useMutation(api.tasks.setTimeSpent);
   const upsertSection = useMutation(api.listSections.upsert);
+  const moveBetweenSections = useMutation(api.tasks.moveBetweenSections);
 
   const timer = useTimer();
 
@@ -296,6 +315,7 @@ export default function ListDetailScreen() {
       }
       return {
         sectionKey: String(block.section._id),
+        sectionId: block.section._id,
         title: block.section.name,
         isDefault: block.section.isDefaultSection,
         totalTasks: block.totalTasks,
@@ -320,6 +340,23 @@ export default function ListDetailScreen() {
   }, [paginatedList]);
 
   const isFilterActive = !showCompleted || filterUserIds.length > 0;
+
+  const canDragReorder = useMemo(() => {
+    if (!paginatedList || isFilterActive) return false;
+    return paginatedList.sections.every(
+      (s) => s.tasks.length >= s.totalTasks,
+    );
+  }, [paginatedList, isFilterActive]);
+
+  const webDndSections = useMemo(() => {
+    return filteredSections.map((s) => ({
+      sectionId: s.sectionId,
+      title: s.title,
+      isDefault: s.isDefault,
+      totalTasks: s.totalTasks,
+      tasks: s.data.map(toTaskRowTask),
+    }));
+  }, [filteredSections]);
 
   const persistShowCompleted = useCallback(
     async (checked: boolean) => {
@@ -455,6 +492,31 @@ export default function ListDetailScreen() {
 
   const noSections = paginatedList.sections.length === 0;
 
+  const listFooter = (
+    <View style={styles.listFooter}>
+      {hasMoreSections ? (
+        <Button
+          title="Load more sections"
+          variant="secondary"
+          onPress={() => setSectionLimit((n) => n + 100)}
+        />
+      ) : null}
+      {hasMoreTasks ? (
+        <Button
+          title="Load more tasks"
+          variant="secondary"
+          onPress={() => setTaskLimit((n) => n + 200)}
+        />
+      ) : null}
+      <Button
+        title="Add section"
+        variant="ghost"
+        onPress={() => setShowAddSection(true)}
+      />
+      <View style={{ height: 88 }} />
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       <Stack.Screen
@@ -580,6 +642,49 @@ export default function ListDetailScreen() {
         </Pressable>
       </Modal>
 
+      {isWeb ? (
+        <View style={styles.sectionList}>
+          <ListDetailWebDnd
+            sections={webDndSections}
+            buildMeta={(task) =>
+              buildMeta(task as ListPageTask, tagMap, listMap, trackableMap)
+            }
+            canDrag={canDragReorder}
+            isTicking={(id) => timer.isRunning && timer.taskId === id}
+            timerElapsed={timer.elapsed}
+            onSelectTask={setSelectedTaskId}
+            onToggleComplete={(id) => {
+              const task = allTasksInPage.find((t) => t._id === id);
+              if (task) {
+                void toggleComplete(id, task.name, !!task.dateCompleted);
+              }
+            }}
+            onToggleTimer={handleToggleTimer}
+            onSetTimeSpent={handleSetTimeSpent}
+            onRequestContextMenu={openContextMenu}
+            moveBetweenSections={async (args) => {
+              await moveBetweenSections(args);
+            }}
+            listContentStyle={
+              noSections
+                ? [styles.listContent, styles.listContentEmpty]
+                : styles.listContent
+            }
+            footer={listFooter}
+            ListEmptyComponent={
+              noSections ? (
+                <View style={styles.emptyListWrap}>
+                  <EmptyState
+                    fillScreen={false}
+                    title="No sections found"
+                    message=""
+                  />
+                </View>
+              ) : undefined
+            }
+          />
+        </View>
+      ) : (
       <SectionList
         style={styles.sectionList}
         sections={filteredSections}
@@ -611,44 +716,6 @@ export default function ListDetailScreen() {
         renderItem={({ item: task }) => {
           const meta = buildMeta(task, tagMap, listMap, trackableMap);
           const isTicking = timer.isRunning && timer.taskId === task._id;
-
-          if (isWeb) {
-            return (
-              <View style={styles.taskCardWrap}>
-                <TaskRowDesktop
-                  task={{
-                    _id: task._id,
-                    name: task.name,
-                    dateCompleted: task.dateCompleted,
-                    taskDay: task.taskDay,
-                    timeSpentInSecondsUnallocated:
-                      task.timeSpentInSecondsUnallocated,
-                    trackableId: task.trackableId,
-                    listId: task.listId,
-                    tagIds: task.tagIds as string[] | undefined,
-                    assignedToUserName: (task as { assignedToUserName?: string })
-                      .assignedToUserName,
-                    isRecurringInstance: task.isRecurringInstance,
-                  }}
-                  meta={meta}
-                  isTicking={isTicking}
-                  timerElapsedSeconds={timer.elapsed}
-                  showDate
-                  onSelect={setSelectedTaskId}
-                  onToggleComplete={(id) =>
-                    void toggleComplete(
-                      id,
-                      task.name,
-                      !!task.dateCompleted,
-                    )
-                  }
-                  onToggleTimer={handleToggleTimer}
-                  onSetTimeSpent={handleSetTimeSpent}
-                  onRequestContextMenu={openContextMenu}
-                />
-              </View>
-            );
-          }
 
           const isCompleted = !!task.dateCompleted;
           const timeSpent = task.timeSpentInSecondsUnallocated ?? 0;
@@ -778,30 +845,7 @@ export default function ListDetailScreen() {
             </Card>
           );
         }}
-        ListFooterComponent={() => (
-          <View style={styles.listFooter}>
-            {hasMoreSections ? (
-              <Button
-                title={paginatedList ? "Load more sections" : "Load more"}
-                variant="secondary"
-                onPress={() => setSectionLimit((n) => n + 20)}
-              />
-            ) : null}
-            {hasMoreTasks ? (
-              <Button
-                title="Load more tasks"
-                variant="secondary"
-                onPress={() => setTaskLimit((n) => n + 50)}
-              />
-            ) : null}
-            <Button
-              title="Add section"
-              variant="ghost"
-              onPress={() => setShowAddSection(true)}
-            />
-            <View style={{ height: 88 }} />
-          </View>
-        )}
+        ListFooterComponent={() => listFooter}
         contentContainerStyle={[
           styles.listContent,
           noSections && styles.listContentEmpty,
@@ -809,6 +853,7 @@ export default function ListDetailScreen() {
         stickySectionHeadersEnabled={false}
         keyboardShouldPersistTaps="handled"
       />
+      )}
 
       <TouchableOpacity
         style={styles.fab}
