@@ -22,7 +22,7 @@ import { TimeBreakdownSunburst } from "../widgets/TimeBreakdownSunburst";
  * ──────────────────────────────────────────────────────────────────── */
 
 const MODE_LABELS: Record<GroupByMode, string> = {
-  trackable: "Goal",
+  trackable: "Trackable",
   trackable_type: "Trackable Type",
   list: "List",
   task: "Task",
