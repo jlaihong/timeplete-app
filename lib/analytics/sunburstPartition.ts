@@ -3,6 +3,21 @@ import { groupTimeWindowsWithBuckets } from "../grouping";
 
 const PAD_RAD = 0.008;
 
+/**
+ * Bucket colours may be `undefined`, `null`, or `""` from Convex/UI — treat those as
+ * “no colour” so wedges inherit the parent segment colour (productivity-one).
+ */
+function resolveArcColour(
+  bucketColour: string | undefined | null,
+  inheritedColour: string | undefined | null
+): string | undefined {
+  const fromBucket = bucketColour?.trim();
+  if (fromBucket) return fromBucket;
+  const fromParent = inheritedColour?.trim();
+  if (fromParent) return fromParent;
+  return undefined;
+}
+
 export interface PartitionArc {
   key: string;
   depth: number;
@@ -67,9 +82,9 @@ function radiusBand(
  * Multi-ring partition: inner ring = first grouping level; each outer ring breaks
  * down the parent wedge by the next level (Productivity-One style).
  *
- * Segment colours: buckets that define their own colour (trackable, list, tag,
- * …) keep it; deeper buckets without a colour (e.g. task) reuse the resolved
- * colour from the parent wedge — matching productivity-one sunburst behaviour.
+ * Segment colours: explicit colours from buckets (when present and non-blank) win;
+ * otherwise the wedge inherits from its parent — lists/tasks/tags/dates without a colour
+ * all chain upward until the chart fallback palette applies at paint time.
  */
 export function buildPartitionArcs(
   windows: TimeWindowLike[],
@@ -101,7 +116,7 @@ export function buildPartitionArcs(
     buckets.forEach((b, i) => {
       const { a0: ta0, a1: ta1 } = angles[i]!;
       const key = `${pathKey}@${depth}:${b.key}`;
-      const effectiveColour = b.colour ?? inheritedColour;
+      const effectiveColour = resolveArcColour(b.colour, inheritedColour);
       arcs.push({
         key,
         depth,
