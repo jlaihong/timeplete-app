@@ -272,26 +272,54 @@ export function groupTimeWindows(
   );
 }
 
-export const MAX_GROUP_BY_LEVELS = 5;
-
-/** Productivity-One style labels (Category / Project / Goal naming). */
-export const GROUP_BY_DISPLAY_LABEL: Record<GroupByMode, string> = {
-  trackable: "Goal",
-  trackable_type: "Category",
-  list: "Project",
+export const GROUP_BY_LABEL: Record<GroupByMode, string> = {
+  trackable: "Trackable",
+  list: "List",
   task: "Task",
   tag: "Tag",
+  trackable_type: "Trackable Type",
   date: "Date",
   day_of_week: "Day of Week",
   month: "Month",
   year: "Year",
 };
 
-export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
-  return [defaultModeForTab(tab)];
+/** Productivity-One parity: fixed number of ordered grouping slots per frequency. */
+export function groupBySlotCount(tab: string): number {
+  switch (tab) {
+    case "DAILY":
+      return 3;
+    case "WEEKLY":
+      return 4;
+    case "MONTHLY":
+      return 5;
+    case "YEARLY":
+      return 5;
+    default:
+      return 3;
+  }
 }
 
-/** Modes allowed for row `rowIndex` — duplicates forbidden across rows. */
+/**
+ * Default grouping chain per analytics frequency (matches productivity-one
+ * analytics defaults — Daily: Trackable → List → Task).
+ */
+export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
+  switch (tab) {
+    case "DAILY":
+      return ["trackable", "list", "task"];
+    case "WEEKLY":
+      return ["trackable", "list", "task", "date"];
+    case "MONTHLY":
+      return ["trackable", "list", "task", "date", "tag"];
+    case "YEARLY":
+      return ["trackable", "list", "task", "month", "tag"];
+    default:
+      return ["trackable", "list", "task"];
+  }
+}
+
+/** Modes allowed for slot `rowIndex` — duplicates forbidden across slots. */
 export function pickerChoicesForRow(
   tab: string,
   levels: GroupByMode[],
@@ -306,65 +334,17 @@ export function pickerChoicesForRow(
   );
 }
 
-/** Next unused mode from the tab pool (stable pool order), or null if full. */
-export function nextAvailableMode(
-  tab: string,
-  levels: GroupByMode[]
-): GroupByMode | null {
-  const pool = modesForTab(tab);
-  const used = new Set(levels);
-  return pool.find((m) => !used.has(m)) ?? null;
-}
-
 export function modesForTab(tab: string): GroupByMode[] {
   switch (tab) {
     case "DAILY":
-      return [
-        "trackable",
-        "trackable_type",
-        "list",
-        "task",
-        "tag",
-      ];
+      return ["trackable", "list", "task", "tag"];
     case "WEEKLY":
-      return [
-        "trackable",
-        "trackable_type",
-        "list",
-        "task",
-        "date",
-        "tag",
-      ];
+      return ["trackable", "list", "task", "date", "tag"];
     case "MONTHLY":
-      return [
-        "trackable",
-        "trackable_type",
-        "list",
-        "task",
-        "date",
-        "tag",
-        "day_of_week",
-      ];
+      return ["trackable", "list", "task", "date", "tag", "day_of_week"];
     case "YEARLY":
-      return [
-        "trackable",
-        "trackable_type",
-        "list",
-        "task",
-        "month",
-        "tag",
-        "day_of_week",
-      ];
+      return ["trackable", "list", "task", "month", "tag", "day_of_week"];
     default:
-      return ["trackable", "trackable_type", "list", "task", "tag"];
-  }
-}
-
-export function defaultModeForTab(tab: string): GroupByMode {
-  switch (tab) {
-    case "YEARLY":
-      return "month";
-    default:
-      return "trackable";
+      return ["trackable", "list", "task", "tag"];
   }
 }
