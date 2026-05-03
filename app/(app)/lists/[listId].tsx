@@ -318,9 +318,7 @@ export default function ListDetailScreen() {
         items = items.filter((t) => !t.dateCompleted);
       }
       const sectionKey = String(block.section._id);
-      const collapsed =
-        !block.section.isDefaultSection &&
-        collapsedSectionKeys.has(sectionKey);
+      const collapsed = collapsedSectionKeys.has(sectionKey);
       return {
         sectionKey,
         sectionId: block.section._id,
@@ -720,35 +718,33 @@ export default function ListDetailScreen() {
               )
             : undefined
         }
-        renderSectionHeader={({ section }) =>
-          section.isDefault ? null : (
-            <TouchableOpacity
-              style={styles.sectionHeader}
-              onPress={() => toggleSectionCollapsed(section.sectionKey)}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityState={{
-                expanded: !collapsedSectionKeys.has(section.sectionKey),
-              }}
-              accessibilityLabel={`${section.title}, ${collapsedSectionKeys.has(section.sectionKey) ? "collapsed" : "expanded"}`}
-            >
-              <MaterialIcons
-                name="arrow-forward-ios"
-                size={14}
-                color={Colors.textTertiary}
-                style={[
-                  styles.sectionExpandArrow,
-                  !collapsedSectionKeys.has(section.sectionKey) &&
-                    styles.sectionExpandArrowOpen,
-                ]}
-              />
-              <Text style={styles.sectionTitle}>{section.title}</Text>
-              <Text style={styles.sectionCount}>
-                {section.totalTasks} tasks
-              </Text>
-            </TouchableOpacity>
-          )
-        }
+        renderSectionHeader={({ section }) => (
+          <TouchableOpacity
+            style={styles.sectionHeader}
+            onPress={() => toggleSectionCollapsed(section.sectionKey)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityState={{
+              expanded: !collapsedSectionKeys.has(section.sectionKey),
+            }}
+            accessibilityLabel={`${section.title}, ${collapsedSectionKeys.has(section.sectionKey) ? "collapsed" : "expanded"}`}
+          >
+            <MaterialIcons
+              name="arrow-forward-ios"
+              size={14}
+              color={Colors.textTertiary}
+              style={[
+                styles.sectionExpandArrow,
+                !collapsedSectionKeys.has(section.sectionKey) &&
+                  styles.sectionExpandArrowOpen,
+              ]}
+            />
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+            <Text style={styles.sectionCount}>
+              {section.totalTasks} tasks
+            </Text>
+          </TouchableOpacity>
+        )}
         renderItem={({ item: task }) => {
           const meta = buildMeta(task, tagMap, listMap, trackableMap);
           const isTicking = timer.isRunning && timer.taskId === task._id;
@@ -1007,7 +1003,18 @@ const styles = StyleSheet.create({
   },
   filterLabel: { fontSize: 15, color: Colors.text, flex: 1 },
   filterUserScroll: { maxHeight: 220 },
-  sectionList: { flex: 1, zIndex: 0 },
+  sectionList: {
+    flex: 1,
+    zIndex: 0,
+    ...Platform.select({
+      web: {
+        width: "100%",
+        maxWidth: 672,
+        alignSelf: "center",
+      },
+      default: {},
+    }),
+  },
   listContent: { padding: 16, paddingBottom: 24 },
   listContentEmpty: {
     flexGrow: 1,
