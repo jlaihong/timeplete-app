@@ -442,6 +442,9 @@ export function EditTrackableDialog({
         ) : (
           <EditTrackableHistoryTab
             trackableId={trackableId}
+            trackableType={trackableType}
+            startDayYYYYMMDD={startDay || trackable.startDayYYYYMMDD}
+            endDayYYYYMMDD={endDay || trackable.endDayYYYYMMDD}
             trackTime={trackTime}
             trackCount={trackCount}
             isRatingTracker={isRatingTracker}
