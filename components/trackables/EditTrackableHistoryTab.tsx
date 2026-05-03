@@ -62,9 +62,7 @@ export function EditTrackableHistoryTab({
             <Text style={styles.cardDate}>
               {formatYYYYMMDDtoDDMMM(e.dayYYYYMMDD)}
             </Text>
-            {trackCount &&
-              e.countValue != null &&
-              e.countValue !== 0 && (
+            {trackCount && e.countValue != null && (
                 <Text style={styles.cardLine}>
                   {isRatingTracker ? "Rating: " : "Value: "}
                   <Text style={styles.cardEmph}>{e.countValue}</Text>
