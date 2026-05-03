@@ -29,6 +29,8 @@ import {
   type GoalAccountabilityValue,
 } from "./goal/GoalAccountabilityForm";
 import { EditTrackableHistoryTab } from "./EditTrackableHistoryTab";
+import { EditTrackableProgressTab } from "./EditTrackableProgressTab";
+import { EditTrackableTimeTrackedTab } from "./EditTrackableTimeTrackedTab";
 
 interface EditTrackableDialogProps {
   trackableId: Id<"trackables">;
@@ -42,7 +44,32 @@ type TrackableType =
   | "MINUTES_A_WEEK"
   | "TRACKER";
 
-type EditTab = "details" | "tracking_history";
+type GoalEditTab =
+  | "progress"
+  | "time_tracked"
+  | "commitment"
+  | "motivations"
+  | "accountability"
+  | "history_breakdown";
+
+type TrackerEditTab = "details" | "tracking_history";
+
+const GOAL_TAB_DEFS: { key: GoalEditTab; label: string }[] = [
+  { key: "progress", label: "Progress" },
+  { key: "time_tracked", label: "Time Tracked" },
+  { key: "commitment", label: "My Commitment" },
+  { key: "motivations", label: "My Motivations" },
+  { key: "accountability", label: "Accountability" },
+  {
+    key: "history_breakdown",
+    label: "Tracking History Breakdown",
+  },
+];
+
+const TRACKER_TAB_DEFS: { key: TrackerEditTab; label: string }[] = [
+  { key: "details", label: "Details" },
+  { key: "tracking_history", label: "Tracking History" },
+];
 
 export function EditTrackableDialog({
   trackableId,
@@ -54,7 +81,8 @@ export function EditTrackableDialog({
   const archiveTrackable = useMutation(api.trackables.archive);
   const deleteTrackable = useMutation(api.trackables.remove);
 
-  const [activeTab, setActiveTab] = useState<EditTab>("details");
+  const [goalTab, setGoalTab] = useState<GoalEditTab>("progress");
+  const [trackerTab, setTrackerTab] = useState<TrackerEditTab>("details");
   const [name, setName] = useState("");
   const [colour, setColour] = useState("#4A90D9");
   const [startDay, setStartDay] = useState("");
@@ -76,7 +104,8 @@ export function EditTrackableDialog({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setActiveTab("details");
+    setGoalTab("progress");
+    setTrackerTab("details");
   }, [trackableId]);
 
   useEffect(() => {
@@ -100,11 +129,11 @@ export function EditTrackableDialog({
         trackable.targetNumberOfMinutesAWeek?.toString() ?? ""
       );
     }
-    setTrackTime(trackable.trackTime);
-    setTrackCount(trackable.trackCount);
-    setAutoCountFromCalendar(trackable.autoCountFromCalendar);
+    setTrackTime(trackable.trackTime ?? true);
+    setTrackCount(trackable.trackCount ?? true);
+    setAutoCountFromCalendar(trackable.autoCountFromCalendar ?? true);
     setIsCumulative(trackable.isCumulative);
-    setIsRatingTracker(trackable.isRatingTracker);
+    setIsRatingTracker(trackable.isRatingTracker ?? false);
     setGoalReasons(
       trackable.goalReasons?.length ? [...trackable.goalReasons] : []
     );
@@ -122,7 +151,7 @@ export function EditTrackableDialog({
         ? [...trackable.otherPenalties]
         : [],
     });
-  }, [trackable?._id]);
+  }, [trackable]);
 
   if (!trackable) return null;
 
@@ -132,7 +161,11 @@ export function EditTrackableDialog({
   const handleSave = async () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    if (trackableType === "TRACKER" && trackCount && isCumulative === undefined) {
+    if (
+      trackableType === "TRACKER" &&
+      trackCount &&
+      isCumulative === undefined
+    ) {
       return;
     }
 
@@ -235,25 +268,16 @@ export function EditTrackableDialog({
     );
   };
 
-  const renderDetailsForm = () => (
+  /** `my-commitment-form-*` parity — trackers never show numeric targets/dates here. */
+  const renderMyCommitmentBody = () => (
     <>
-      <Input
-        label="Name"
-        value={name}
-        onChangeText={setName}
-        placeholder="Trackable name"
-        autoFocus
-      />
+      <Input label="Name" value={name} onChangeText={setName} placeholder="Name" />
 
       <View style={styles.fieldBlock}>
         <ColourSwatchPicker value={colour} onChange={setColour} label="Color" />
       </View>
 
-      <Text style={styles.typeLabel}>
-        Type: {trackableType.replace(/_/g, " ").toLowerCase()}
-      </Text>
-
-      {trackableType !== "TRACKER" ? (
+      {isGoal ? (
         <View style={styles.row}>
           <View style={styles.flex1}>
             <DateField label="Start Date" value={startDay} onChange={setStartDay} />
@@ -264,7 +288,7 @@ export function EditTrackableDialog({
         </View>
       ) : null}
 
-      {isGoal && trackableType === "NUMBER" && (
+      {isGoal && trackableType === "NUMBER" ? (
         <Input
           label="Target Count"
           value={targetCount}
@@ -272,9 +296,9 @@ export function EditTrackableDialog({
           keyboardType="numeric"
           placeholder="e.g. 100"
         />
-      )}
+      ) : null}
 
-      {isGoal && trackableType === "TIME_TRACK" && (
+      {isGoal && trackableType === "TIME_TRACK" ? (
         <Input
           label="Target Hours"
           value={targetHours}
@@ -282,9 +306,9 @@ export function EditTrackableDialog({
           keyboardType="numeric"
           placeholder="e.g. 50"
         />
-      )}
+      ) : null}
 
-      {isGoal && trackableType === "DAYS_A_WEEK" && (
+      {isGoal && trackableType === "DAYS_A_WEEK" ? (
         <>
           <Input
             label="Target Days per Week"
@@ -301,9 +325,9 @@ export function EditTrackableDialog({
             placeholder="e.g. 8"
           />
         </>
-      )}
+      ) : null}
 
-      {isGoal && trackableType === "MINUTES_A_WEEK" && (
+      {isGoal && trackableType === "MINUTES_A_WEEK" ? (
         <Input
           label="Target Minutes per Week"
           value={targetMinutesAWeek}
@@ -311,9 +335,9 @@ export function EditTrackableDialog({
           keyboardType="numeric"
           placeholder="e.g. 300"
         />
-      )}
+      ) : null}
 
-      {trackableType === "TRACKER" && (
+      {trackableType === "TRACKER" ? (
         <View style={styles.trackerBlock}>
           <CheckboxRow
             label="Track time"
@@ -356,63 +380,113 @@ export function EditTrackableDialog({
             </View>
           ) : null}
         </View>
-      )}
-
-      {isGoal ? (
-        <View style={styles.goalExtras}>
-          <Text style={styles.subsectionTitle}>
-            Why is this important to me?
-          </Text>
-          <GoalReasonsForm
-            value={{ reasons: goalReasons }}
-            onChange={(v) => setGoalReasons(v.reasons)}
-          />
-
-          <Text style={[styles.subsectionTitle, { marginTop: 20 }]}>
-            Accountability
-          </Text>
-          <GoalAccountabilityForm
-            value={accountability}
-            onChange={setAccountability}
-          />
-        </View>
       ) : null}
     </>
   );
 
-  return (
-    <DialogOverlay onBackdropPress={onClose} align="center">
-      <DialogCard desktopWidth={560}>
-        <DialogHeader title="Edit Trackable" onClose={onClose} />
+  const coercePreviewInt = (
+    raw: string,
+    fallback?: number
+  ): number | undefined => {
+    const trimmed = raw.trim();
+    if (trimmed === "") return fallback;
+    const n = parseInt(trimmed, 10);
+    return Number.isFinite(n) ? n : fallback;
+  };
 
-        <View style={styles.tabBar}>
-          {(["details", "tracking_history"] as const).map((tab) => (
-            <Pressable
-              key={tab}
-              style={[styles.tab, activeTab === tab && styles.tabActive]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === tab && styles.tabTextActive,
-                ]}
-              >
-                {tab === "details" ? "Details" : "Tracking History"}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {activeTab === "details" ? (
+  const renderGoalTabContents = () => {
+    switch (goalTab) {
+      case "progress":
+        return (
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            {renderDetailsForm()}
+            <EditTrackableProgressTab trackable={{
+              _id: trackableId,
+              trackableType: trackableType as
+                | "NUMBER"
+                | "TIME_TRACK"
+                | "DAYS_A_WEEK"
+                | "MINUTES_A_WEEK",
+              startDayYYYYMMDD: trackable.startDayYYYYMMDD,
+              endDayYYYYMMDD: trackable.endDayYYYYMMDD,
+              targetCount: coercePreviewInt(targetCount, trackable.targetCount),
+              targetNumberOfHours: coercePreviewInt(
+                targetHours,
+                trackable.targetNumberOfHours
+              ),
+              targetNumberOfDaysAWeek: coercePreviewInt(
+                targetDaysAWeek,
+                trackable.targetNumberOfDaysAWeek
+              ),
+              targetNumberOfMinutesAWeek: coercePreviewInt(
+                targetMinutesAWeek,
+                trackable.targetNumberOfMinutesAWeek
+              ),
+              targetNumberOfWeeks: coercePreviewInt(
+                targetWeeks,
+                trackable.targetNumberOfWeeks
+              ),
+            }} />
           </ScrollView>
-        ) : (
+        );
+      case "time_tracked":
+        return (
+          <EditTrackableTimeTrackedTab
+            trackableId={trackableId}
+            targetHoursBanner={
+              trackableType === "TIME_TRACK"
+                ? coercePreviewInt(
+                    targetHours,
+                    trackable.targetNumberOfHours
+                  )
+                : undefined
+            }
+          />
+        );
+      case "commitment":
+        return (
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {renderMyCommitmentBody()}
+          </ScrollView>
+        );
+      case "motivations":
+        return (
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.subsectionTitle}>
+              Why is this important to me?
+            </Text>
+            <GoalReasonsForm
+              value={{ reasons: goalReasons }}
+              onChange={(v) => setGoalReasons(v.reasons)}
+            />
+          </ScrollView>
+        );
+      case "accountability":
+        return (
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <GoalAccountabilityForm
+              value={accountability}
+              onChange={setAccountability}
+            />
+          </ScrollView>
+        );
+      case "history_breakdown":
+        return (
           <View style={styles.historyTabPane}>
             <EditTrackableHistoryTab
               trackableId={trackableId}
@@ -424,7 +498,90 @@ export function EditTrackableDialog({
               autoCountFromCalendar={autoCountFromCalendar}
             />
           </View>
-        )}
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderTrackerTabContents = () => {
+    if (trackerTab === "details") {
+      return (
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {renderMyCommitmentBody()}
+        </ScrollView>
+      );
+    }
+    return (
+      <View style={styles.historyTabPane}>
+        <EditTrackableHistoryTab
+          trackableId={trackableId}
+          trackableType={trackableType}
+          startDayYYYYMMDD={startDay || trackable.startDayYYYYMMDD}
+          endDayYYYYMMDD={endDay || trackable.endDayYYYYMMDD}
+          trackTime={trackTime}
+          trackCount={trackCount}
+          autoCountFromCalendar={autoCountFromCalendar}
+        />
+      </View>
+    );
+  };
+
+  return (
+    <DialogOverlay onBackdropPress={onClose} align="center">
+      <DialogCard desktopWidth={640}>
+        <DialogHeader title={trackable.name} onClose={onClose} />
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabBarScroll}
+          contentContainerStyle={styles.tabBarContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {isGoal
+            ? GOAL_TAB_DEFS.map(({ key, label }) => (
+                <Pressable
+                  key={key}
+                  style={[styles.tab, goalTab === key && styles.tabActive]}
+                  onPress={() => setGoalTab(key)}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      goalTab === key && styles.tabTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              ))
+            : TRACKER_TAB_DEFS.map(({ key, label }) => (
+                <Pressable
+                  key={key}
+                  style={[
+                    styles.tab,
+                    trackerTab === key && styles.tabActive,
+                  ]}
+                  onPress={() => setTrackerTab(key)}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      trackerTab === key && styles.tabTextActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              ))}
+        </ScrollView>
+
+        {isGoal ? renderGoalTabContents() : renderTrackerTabContents()}
 
         <DialogFooter>
           <Button title="Delete" variant="outline" onPress={confirmDelete} />
@@ -478,7 +635,12 @@ function ChoiceChip({
       style={[styles.choiceChip, selected && styles.choiceChipSelected]}
       onPress={onPress}
     >
-      <Text style={[styles.choiceChipTitle, selected && styles.choiceChipTitleSelected]}>
+      <Text
+        style={[
+          styles.choiceChipTitle,
+          selected && styles.choiceChipTitleSelected,
+        ]}
+      >
         {title}
       </Text>
       <Text
@@ -494,20 +656,33 @@ function ChoiceChip({
 }
 
 const styles = StyleSheet.create({
-  tabBar: {
-    flexDirection: "row",
+  tabBarScroll: {
+    flexGrow: 0,
+    maxHeight: 48,
     borderBottomWidth: 1,
     borderBottomColor: Colors.outlineVariant,
   },
+  tabBarContent: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    minWidth: "100%",
+  },
   tab: {
-    flex: 1,
+    flexGrow: 0,
+    flexShrink: 1,
     paddingVertical: 10,
+    paddingHorizontal: 14,
     alignItems: "center",
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
   tabActive: { borderBottomColor: Colors.primary },
-  tabText: { fontSize: 13, fontWeight: "500", color: Colors.textSecondary },
+  tabText: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: Colors.textSecondary,
+    textAlign: "center",
+  },
   tabTextActive: { color: Colors.primary, fontWeight: "600" },
   scroll: { maxHeight: 500 },
   scrollContent: { paddingBottom: 8 },
@@ -522,19 +697,12 @@ const styles = StyleSheet.create({
   fieldBlock: { marginBottom: 16 },
   row: { flexDirection: "row", gap: 12, marginBottom: 4 },
   flex1: { flex: 1 },
-  typeLabel: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    textTransform: "capitalize",
-    marginBottom: 10,
-  },
   subsectionTitle: {
     fontSize: 15,
     fontWeight: "600",
     color: Colors.text,
     marginBottom: 8,
   },
-  goalExtras: { marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.outlineVariant },
   trackerBlock: {
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
