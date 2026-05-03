@@ -22,22 +22,35 @@ export function AnalyticsSelect({
   value,
   options,
   onChange,
+  placeholder,
+  sheetTitle,
+  accessibilityLabel,
+  ariaLabel,
 }: {
   value: string;
   options: AnalyticsSelectOption[];
   onChange: (value: string) => void;
+  placeholder?: string;
+  sheetTitle?: string;
+  accessibilityLabel?: string;
+  ariaLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((o) => o.value === value);
+  const shellLabel =
+    selected?.label ??
+    (placeholder !== undefined && value === "" ? placeholder : value);
 
   return (
     <>
       <Pressable
         style={({ pressed }) => [styles.shell, pressed && styles.shellPressed]}
         onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? ariaLabel}
       >
         <Text style={styles.shellText} numberOfLines={1}>
-          {selected?.label ?? value}
+          {shellLabel}
         </Text>
         <Ionicons name="chevron-down" size={16} color={Colors.textSecondary} />
       </Pressable>
@@ -53,7 +66,7 @@ export function AnalyticsSelect({
             <View style={styles.modalHit} />
           </TouchableWithoutFeedback>
           <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>Group by</Text>
+            <Text style={styles.sheetTitle}>{sheetTitle ?? "Group by"}</Text>
             <ScrollView keyboardShouldPersistTaps="handled">
               {options.map((o) => (
                 <TouchableOpacity
