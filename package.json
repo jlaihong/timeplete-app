@@ -9,7 +9,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "web:clear": "expo start --web --clear --host localhost --port 33339",
+    "web:preview": "node scripts/web-preview.mjs",
+    "web:clear": "node scripts/web-preview.mjs",
     "postinstall": "patch-package"
   },
   "dependencies": {
