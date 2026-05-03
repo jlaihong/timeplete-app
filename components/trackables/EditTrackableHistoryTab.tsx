@@ -11,6 +11,10 @@ import {
   todayYYYYMMDD,
 } from "../../lib/dates";
 import { labelForEditDialogTimeSource } from "../../lib/editDialogTrackingHistory";
+import {
+  buildEditDialogMergedHistory,
+  type EditDialogMergedHistoryRow,
+} from "../../lib/editDialogAttributedHistory";
 
 export type EditDialogTrackableType =
   | "NUMBER"
@@ -28,29 +32,6 @@ interface EditTrackableHistoryTabProps {
   trackCount: boolean;
   isRatingTracker: boolean;
 }
-
-type MergedHistoryRow =
-  | {
-      kind: "time_window";
-      _id: string;
-      sortKey: string;
-      startDayYYYYMMDD: string;
-      startTimeHHMM: string;
-      durationSeconds: number;
-      displayTitle: string;
-      source: "timer" | "manual" | "calendar" | "tracker_entry";
-      comments?: string;
-    }
-  | {
-      kind: "tracker_entry";
-      _id: string;
-      sortKey: string;
-      dayYYYYMMDD: string;
-      startTimeHHMM?: string;
-      durationSeconds?: number | null;
-      countValue?: number | null;
-      comments?: string | null;
-    };
 
 export function EditTrackableHistoryTab({
   trackableId,
@@ -82,59 +63,73 @@ export function EditTrackableHistoryTab({
   const historyRange =
     trackableType === "TRACKER" ? wideRange : compactGoalRange;
 
-  const serverHistory = useQuery(
-    api.trackables.getEditDialogTrackingHistory,
-    needsServerHistory
+  const needsBreakdownWindows =
+    trackableType === "TIME_TRACK" ||
+    trackableType === "MINUTES_A_WEEK" ||
+    (trackableType === "TRACKER" && trackTime);
+
+  const timeBreakdown = useQuery(
+    api.analytics.getTimeBreakdown,
+    needsServerHistory && needsBreakdownWindows
+      ? {
+          startDay: historyRange.startDay,
+          endDay: historyRange.endDay,
+        }
+      : "skip",
+  );
+
+  const trackerSearch = useQuery(
+    api.trackerEntries.search,
+    needsServerHistory && trackableType === "TRACKER"
       ? {
           trackableId,
           startDay: historyRange.startDay,
           endDay: historyRange.endDay,
+          limit: 2000,
         }
-      : "skip"
+      : "skip",
   );
 
   const daysSearch = useQuery(
     api.trackableDays.search,
-    trackableType !== "TRACKER" ? { trackableIds: [trackableId] } : "skip"
+    trackableType !== "TRACKER" ? { trackableIds: [trackableId] } : "skip",
   );
 
-  const mergedRows = useMemo((): MergedHistoryRow[] | undefined => {
+  const mergedRows = useMemo((): EditDialogMergedHistoryRow[] | undefined => {
     if (!needsServerHistory) return undefined;
-    if (serverHistory === undefined) return undefined;
+    if (needsBreakdownWindows && timeBreakdown === undefined) return undefined;
+    if (trackableType === "TRACKER" && trackerSearch === undefined) {
+      return undefined;
+    }
 
-    const out: MergedHistoryRow[] = [];
-    for (const w of serverHistory.timeWindows) {
-      out.push({
-        kind: "time_window",
-        _id: String(w._id),
-        sortKey: w.sortKey,
-        startDayYYYYMMDD: w.startDayYYYYMMDD,
-        startTimeHHMM: w.startTimeHHMM,
-        durationSeconds: w.durationSeconds,
-        displayTitle: w.displayTitle,
-        source: w.source,
-        comments: w.comments,
-      });
-    }
-    for (const e of serverHistory.trackerEntries) {
-      out.push({
-        kind: "tracker_entry",
-        _id: String(e._id),
-        sortKey: e.sortKey,
-        dayYYYYMMDD: e.dayYYYYMMDD,
-        startTimeHHMM: e.startTimeHHMM,
-        durationSeconds: e.durationSeconds,
-        countValue: e.countValue,
-        comments: e.comments,
-      });
-    }
-    out.sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0));
-    return out;
-  }, [needsServerHistory, serverHistory]);
+    return buildEditDialogMergedHistory({
+      trackableId: String(trackableId),
+      trackableType:
+        trackableType as "TIME_TRACK" | "MINUTES_A_WEEK" | "TRACKER",
+      trackTime,
+      timeBreakdown: needsBreakdownWindows ? timeBreakdown : undefined,
+      trackerSearch: trackableType === "TRACKER" ? trackerSearch : undefined,
+    });
+  }, [
+    needsServerHistory,
+    needsBreakdownWindows,
+    timeBreakdown,
+    trackerSearch,
+    trackableId,
+    trackableType,
+    trackTime,
+  ]);
 
   const renderMerged = () => {
     if (!needsServerHistory) return null;
-    if (serverHistory === undefined) {
+    if (needsBreakdownWindows && timeBreakdown === undefined) {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.muted}>Loading…</Text>
+        </View>
+      );
+    }
+    if (trackableType === "TRACKER" && trackerSearch === undefined) {
       return (
         <View style={styles.center}>
           <Text style={styles.muted}>Loading…</Text>
@@ -231,7 +226,7 @@ export function EditTrackableHistoryTab({
   const dayRows = daysSearch
     .filter(
       (d) =>
-        d.numCompleted !== 0 || (d.comments && d.comments.trim().length > 0)
+        d.numCompleted !== 0 || (d.comments && d.comments.trim().length > 0),
     )
     .sort((a, b) => b.dayYYYYMMDD.localeCompare(a.dayYYYYMMDD));
 

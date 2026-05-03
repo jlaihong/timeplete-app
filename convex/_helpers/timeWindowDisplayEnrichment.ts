@@ -1,6 +1,6 @@
 /**
  * Batch-enrichment for calendar / edit-history display (parity with productivity-one).
- * Shared by `timeWindows.search` and `trackables.getEditDialogTrackingHistory`.
+ * Shared by `timeWindows.search`.
  */
 import type { Doc, Id } from "../_generated/dataModel";
 import { deriveEventColors } from "./eventColors";
