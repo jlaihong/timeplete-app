@@ -296,8 +296,10 @@ export const getPaginated = query({
       .withIndex("by_list", (q) => q.eq("listId", args.listId))
       .collect();
 
-    /** Match productivity-one list views: recurring *instances* on this list are shown. */
-    const eligible = allOnList;
+    /** Other lists show recurring instances; inbox omits them (matches P1 / home overdue semantics). */
+    const eligible = list.isInbox
+      ? allOnList.filter((t) => !t.isRecurringInstance)
+      : allOnList;
 
     const taskTagsAll = await ctx.db
       .query("taskTags")
