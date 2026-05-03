@@ -46,7 +46,9 @@ export type ListDetailDndSection = {
   sectionId: Id<"listSections">;
   title: string;
   isDefault: boolean;
-  totalTasks: number;
+  /** Completed / total for the section header (not tied to the “show completed” row filter). */
+  headerCompletedCount: number;
+  headerTotalCount: number;
   tasks: TaskRowTask[];
 };
 
@@ -201,7 +203,8 @@ type LocalGroup = {
   sectionId: Id<"listSections">;
   title: string;
   isDefault: boolean;
-  totalTasks: number;
+  headerCompletedCount: number;
+  headerTotalCount: number;
   tasks: TaskRowTask[];
 };
 
@@ -231,15 +234,12 @@ export interface ListDetailWebDndProps {
 
 const DEFAULT_DURATION_SEC = 1800;
 
-function sectionCountSuffix(
-  isCollapsed: boolean,
-  totalTasks: number,
-  tasks: TaskRowTask[],
+function sectionHeaderCountSuffix(
+  completed: number,
+  total: number,
 ): string {
-  if (isCollapsed) return ` (${totalTasks})`;
-  if (tasks.length === 0) return "";
-  const c = tasks.filter((t) => !!t.dateCompleted).length;
-  return ` ${c}/${tasks.length}`;
+  if (total === 0) return "";
+  return ` ${completed}/${total}`;
 }
 
 export function ListDetailWebDnd({
@@ -277,7 +277,8 @@ export function ListDetailWebDnd({
         sectionId: s.sectionId,
         title: s.title,
         isDefault: s.isDefault,
-        totalTasks: s.totalTasks,
+        headerCompletedCount: s.headerCompletedCount,
+        headerTotalCount: s.headerTotalCount,
         tasks: s.tasks.map((t) => ({ ...t })),
       })),
     );
@@ -290,7 +291,8 @@ export function ListDetailWebDnd({
         sectionId: s.sectionId,
         title: s.title,
         isDefault: s.isDefault,
-        totalTasks: s.totalTasks,
+        headerCompletedCount: s.headerCompletedCount,
+        headerTotalCount: s.headerTotalCount,
         tasks: s.tasks.map((t) => ({ ...t })),
       })),
     [sections],
@@ -527,10 +529,9 @@ export function ListDetailWebDnd({
           ? ListEmptyComponent
           : localGroups.map((group) => {
               const isCollapsed = collapsedSectionIds.has(group.id);
-              const countSuffix = sectionCountSuffix(
-                isCollapsed,
-                group.totalTasks,
-                group.tasks,
+              const countSuffix = sectionHeaderCountSuffix(
+                group.headerCompletedCount,
+                group.headerTotalCount,
               );
               return (
                 <View key={group.id} style={styles.sectionBlock}>
@@ -684,6 +685,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginTop: 2,
   },
+  expandArrow: {
     marginRight: 0,
     ...Platform.select({
       web: { transition: "transform 150ms ease" } as object,
