@@ -9,7 +9,7 @@ import React, {
   useMemo,
   useRef,
 } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from "react-native";
 import {
   DndContext,
   DragOverlay,
@@ -30,6 +30,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { MaterialIcons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
 import {
   TaskRowDesktop,
@@ -314,6 +315,18 @@ export function ListDetailWebDnd({
     fromIndex: number;
   } | null>(null);
 
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleSectionCollapsed = useCallback((sectionKey: string) => {
+    setCollapsedSectionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionKey)) next.delete(sectionKey);
+      else next.add(sectionKey);
+      return next;
+    });
+  }, []);
+
   const onDragStart = useCallback(
     (event: DragStartEvent) => {
       const taskId = String(event.active.id);
@@ -496,52 +509,72 @@ export function ListDetailWebDnd({
       >
         {noSections
           ? ListEmptyComponent
-          : localGroups.map((group) => (
-              <View key={group.id} style={styles.sectionBlock}>
-                {!group.isDefault ? (
-                  <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>{group.title}</Text>
-                    <Text style={styles.sectionCount}>
-                      {group.totalTasks} tasks
-                    </Text>
-                  </View>
-                ) : null}
-                <SortableContext
-                  items={group.tasks.map((t) => t._id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <DroppableGroupBody
-                    groupId={group.id}
-                    disabled={!canDrag}
-                    isEmpty={group.tasks.length === 0}
-                  >
-                    {group.tasks.map((task) => {
-                      const meta = buildMeta(task);
-                      const tick = isTicking(task._id);
-                      return (
-                        <View key={task._id} style={styles.rowWrap}>
-                          <SortableRow
-                            task={task}
-                            meta={meta}
-                            groupId={group.id}
-                            isTicking={tick}
-                            timerElapsed={timerElapsed}
-                            canDrag={canDrag}
-                            displayColor={deriveDisplayColor(task, meta)}
-                            durationSec={deriveDurationSec(task)}
-                            onSelect={onSelectTask}
-                            onToggleComplete={onToggleComplete}
-                            onToggleTimer={onToggleTimer}
-                            onSetTimeSpent={onSetTimeSpent}
-                            onRequestContextMenu={onRequestContextMenu}
-                          />
-                        </View>
-                      );
-                    })}
-                  </DroppableGroupBody>
-                </SortableContext>
-              </View>
-            ))}
+          : localGroups.map((group) => {
+              const isCollapsed = collapsedSectionIds.has(group.id);
+              return (
+                <View key={group.id} style={styles.sectionBlock}>
+                  {!group.isDefault ? (
+                    <Pressable
+                      style={styles.sectionHeaderPressable}
+                      onPress={() => toggleSectionCollapsed(group.id)}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: !isCollapsed }}
+                      accessibilityLabel={`${group.title}, ${isCollapsed ? "collapsed" : "expanded"}`}
+                    >
+                      <MaterialIcons
+                        name="arrow-forward-ios"
+                        size={14}
+                        color={Colors.textTertiary}
+                        style={[
+                          styles.expandArrow,
+                          !isCollapsed && styles.expandArrowOpen,
+                        ]}
+                      />
+                      <Text style={styles.sectionTitle}>{group.title}</Text>
+                      <Text style={styles.sectionCount}>
+                        {group.totalTasks} tasks
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  {!isCollapsed ? (
+                    <SortableContext
+                      items={group.tasks.map((t) => t._id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <DroppableGroupBody
+                        groupId={group.id}
+                        disabled={!canDrag}
+                        isEmpty={group.tasks.length === 0}
+                      >
+                        {group.tasks.map((task) => {
+                          const meta = buildMeta(task);
+                          const tick = isTicking(task._id);
+                          return (
+                            <View key={task._id} style={styles.rowWrap}>
+                              <SortableRow
+                                task={task}
+                                meta={meta}
+                                groupId={group.id}
+                                isTicking={tick}
+                                timerElapsed={timerElapsed}
+                                canDrag={canDrag}
+                                displayColor={deriveDisplayColor(task, meta)}
+                                durationSec={deriveDurationSec(task)}
+                                onSelect={onSelectTask}
+                                onToggleComplete={onToggleComplete}
+                                onToggleTimer={onToggleTimer}
+                                onSetTimeSpent={onSetTimeSpent}
+                                onRequestContextMenu={onRequestContextMenu}
+                              />
+                            </View>
+                          );
+                        })}
+                      </DroppableGroupBody>
+                    </SortableContext>
+                  ) : null}
+                </View>
+              );
+            })}
         {footer}
       </ScrollView>
       <DragOverlay dropAnimation={null}>
@@ -566,14 +599,29 @@ const styles = StyleSheet.create({
   scroll: { flex: 1, zIndex: 0 },
   listContent: { padding: 16, paddingBottom: 24 },
   sectionBlock: { marginBottom: 8 },
-  sectionHeader: {
+  sectionHeaderPressable: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    gap: 6,
     paddingVertical: 12,
     paddingHorizontal: 4,
+    ...Platform.select({
+      web: { cursor: "pointer" } as object,
+      default: {},
+    }),
+  },
+  expandArrow: {
+    marginRight: 2,
+    ...Platform.select({
+      web: { transition: "transform 150ms ease" } as object,
+      default: {},
+    }),
+  },
+  expandArrowOpen: {
+    transform: [{ rotate: "90deg" }],
   },
   sectionTitle: {
+    flex: 1,
     fontSize: 14,
     fontWeight: "700",
     color: Colors.textSecondary,
