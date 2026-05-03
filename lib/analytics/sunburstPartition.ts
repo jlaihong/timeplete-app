@@ -57,14 +57,15 @@ function radiusBand(
   const gaps = Math.max(0, L - 1) * ringGap;
   const radialUsable = rOuterMax - hubR - gaps;
   const band = L > 0 ? radialUsable / L : 0;
-  const rOuter = rOuterMax - depth * (band + ringGap);
-  const rInner = rOuter - band;
+  // Innermost ring = depth 0 (first grouping); each outer ring = next level.
+  const rInner = hubR + depth * (band + ringGap);
+  const rOuter = rInner + band;
   return { rOuter, rInner };
 }
 
 /**
- * Multi-ring partition: outer rings = earlier grouping levels; each wedge
- * recursively subdivides angular range for deeper levels (Productivity-One style).
+ * Multi-ring partition: inner ring = first grouping level; each outer ring breaks
+ * down the parent wedge by the next level (Productivity-One style).
  */
 export function buildPartitionArcs(
   windows: TimeWindowLike[],
