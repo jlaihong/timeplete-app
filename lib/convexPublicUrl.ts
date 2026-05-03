@@ -28,7 +28,12 @@ export function convexPublicUrlForClient(url: string | undefined): string | unde
       return url;
     }
     u.hostname = pageHost;
-    return u.toString();
+    // `URL.toString()` normalizes an origin-only URL (no path) by adding `/`
+    // — e.g. `new URL("http://x:3212").toString()` → `"http://x:3212/"`.
+    // The Convex client builds its WS URI as `${origin}/api/<v>/sync`, so a
+    // trailing `/` produces `ws://x:3212//api/<v>/sync` (double slash → 404
+    // → infinite reconnect loop, login spinner forever). Strip it.
+    return u.toString().replace(/\/+$/, "");
   } catch {
     return url;
   }
