@@ -56,8 +56,6 @@ const UNSCHEDULED_GROUP_ID = "unscheduled";
 
 interface DesktopTaskListProps {
   title?: string;
-  /** When set, mirrors productivity-one Inbox: tasks for this list only. */
-  listId?: Id<"lists">;
   onAddTask?: (day?: string) => void;
   onSelectTask?: (taskId: Id<"tasks">) => void;
 }
@@ -232,36 +230,20 @@ function DroppableGroupBody({
 
 export function DesktopTaskList({
   title,
-  listId,
   onAddTask,
   onSelectTask,
 }: DesktopTaskListProps) {
   const today = todayYYYYMMDD();
-  const isListScoped = listId != null;
   // Server-driven pagination. Initial render = today only (rangeEndDays=0).
   // Each "Load More" click extends the window by 7 days into the future,
   // triggering a fresh query – we never preload future days client-side.
   const [rangeEndDays, setRangeEndDays] = useState(0);
   const visibleEndDay = addDays(today, rangeEndDays);
 
-  const homeTasks = useQuery(
-    api.tasks.getHomeTasks,
-    !isListScoped
-      ? {
-          todayYYYYMMDD: today,
-          rangeEndYYYYMMDD: visibleEndDay,
-        }
-      : "skip"
-  );
-
-  const listTasks = useQuery(
-    api.tasks.search,
-    isListScoped && listId
-      ? { listId, includeCompleted: true }
-      : "skip"
-  );
-
-  const tasks = isListScoped ? listTasks : homeTasks;
+  const tasks = useQuery(api.tasks.getHomeTasks, {
+    todayYYYYMMDD: today,
+    rangeEndYYYYMMDD: visibleEndDay,
+  });
   const tags = useQuery(api.tags.search, {});
   const lists = useQuery(api.lists.search, {});
   const trackables = useQuery(api.trackables.search, {});
@@ -275,9 +257,6 @@ export function DesktopTaskList({
    * `(ruleId, taskDay)` rows. Once the rows exist, the reactive
    * `getHomeTasks` query above pulls them in like any other task — no
    * synthetic-id branches anywhere downstream.
-   *
-   * List-scoped views (Inbox) use `tasks.search` with { listId } instead;
-   * materialized rows still appear once they exist.
    *
    * Idempotency note: `generateInstances` de-dupes against existing
    * `(recurringTaskId, taskDay)` so calling it on every range change (or
@@ -347,46 +326,6 @@ export function DesktopTaskList({
         const next = [...value];
         next[idx] = patched;
         localStore.setQuery(api.tasks.getHomeTasks, q.args, next);
-      }
-
-      for (const q of localStore.getAllQueries(api.tasks.search)) {
-        const value = q.value;
-        if (!value) continue;
-        const listIdArg =
-          q.args &&
-          typeof q.args === "object" &&
-          q.args !== null &&
-          "listId" in q.args &&
-          (q.args as { listId?: Id<"lists"> }).listId
-            ? (q.args as { listId: Id<"lists"> }).listId
-            : undefined;
-        if (!listIdArg) continue;
-        const idx = value.findIndex((t) => t._id === args.id);
-        if (idx === -1) continue;
-
-        const existing = value[idx];
-        const patched = { ...existing };
-        if (args.name !== undefined) patched.name = args.name;
-        if (args.dateCompleted !== undefined) {
-          patched.dateCompleted = args.dateCompleted ?? undefined;
-        }
-        if (args.taskDay !== undefined) patched.taskDay = args.taskDay;
-        if (args.taskDayOrderIndex !== undefined) {
-          patched.taskDayOrderIndex = args.taskDayOrderIndex;
-        }
-        if (args.listId !== undefined) patched.listId = args.listId ?? undefined;
-        if (args.dueDateYYYYMMDD !== undefined) {
-          patched.dueDateYYYYMMDD = args.dueDateYYYYMMDD;
-        }
-        if (args.timeSpentInSecondsUnallocated !== undefined) {
-          patched.timeSpentInSecondsUnallocated =
-            args.timeSpentInSecondsUnallocated;
-        }
-        if (args.tagIds !== undefined) patched.tagIds = args.tagIds;
-
-        const next = [...value];
-        next[idx] = patched;
-        localStore.setQuery(api.tasks.search, q.args, next);
       }
     }
   );
