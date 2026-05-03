@@ -247,19 +247,13 @@ export function ListDetailWebDnd({
   );
 
   const [localGroups, setLocalGroups] = useState<LocalGroup[]>([]);
-
-  const sectionsKey = useMemo(
-    () =>
-      JSON.stringify(
-        sections.map((s) => ({
-          id: s.sectionId,
-          tasks: s.tasks.map((t) => t._id),
-        })),
-      ),
-    [sections],
-  );
+  const isDraggingRef = useRef(false);
 
   useEffect(() => {
+    // Mirror `DesktopTaskList`: resync from server whenever `sections` changes.
+    // A key that only tracked task ids missed field edits (e.g. `taskDay` from
+    // TaskDetailSheet), so the list showed stale dates until full remount/refresh.
+    if (isDraggingRef.current) return;
     setLocalGroups(
       sections.map((s) => ({
         id: String(s.sectionId),
@@ -270,7 +264,7 @@ export function ListDetailWebDnd({
         tasks: s.tasks.map((t) => ({ ...t })),
       })),
     );
-  }, [sectionsKey]);
+  }, [sections]);
 
   const serverGroups = useMemo(
     () =>
@@ -319,8 +313,6 @@ export function ListDetailWebDnd({
     fromGroupId: string;
     fromIndex: number;
   } | null>(null);
-
-  const isDraggingRef = useRef(false);
 
   const onDragStart = useCallback(
     (event: DragStartEvent) => {
