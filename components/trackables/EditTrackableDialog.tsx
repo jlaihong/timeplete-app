@@ -413,15 +413,17 @@ export function EditTrackableDialog({
             {renderDetailsForm()}
           </ScrollView>
         ) : (
-          <EditTrackableHistoryTab
-            trackableId={trackableId}
-            trackableType={trackableType}
-            startDayYYYYMMDD={startDay || trackable.startDayYYYYMMDD}
-            endDayYYYYMMDD={endDay || trackable.endDayYYYYMMDD}
-            trackTime={trackTime}
-            trackCount={trackCount}
-            autoCountFromCalendar={autoCountFromCalendar}
-          />
+          <View style={styles.historyTabPane}>
+            <EditTrackableHistoryTab
+              trackableId={trackableId}
+              trackableType={trackableType}
+              startDayYYYYMMDD={startDay || trackable.startDayYYYYMMDD}
+              endDayYYYYMMDD={endDay || trackable.endDayYYYYMMDD}
+              trackTime={trackTime}
+              trackCount={trackCount}
+              autoCountFromCalendar={autoCountFromCalendar}
+            />
+          </View>
         )}
 
         <DialogFooter>
@@ -509,6 +511,14 @@ const styles = StyleSheet.create({
   tabTextActive: { color: Colors.primary, fontWeight: "600" },
   scroll: { maxHeight: 500 },
   scrollContent: { paddingBottom: 8 },
+  historyTabPane: {
+    alignSelf: "stretch",
+    width: "100%",
+    maxWidth: "100%",
+    paddingHorizontal: 8,
+    minHeight: 200,
+    overflow: "hidden",
+  },
   fieldBlock: { marginBottom: 16 },
   row: { flexDirection: "row", gap: 12, marginBottom: 4 },
   flex1: { flex: 1 },
