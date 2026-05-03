@@ -8,6 +8,7 @@ import {
   Platform,
   Alert,
   type ViewStyle,
+  type TextStyle,
 } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { Ionicons } from "@expo/vector-icons";
@@ -58,7 +59,13 @@ function TableHeaderCell({
   return (
     <View style={[styles.thCell, style]}>
       {children !== undefined ? (
-        <Text style={[styles.thText, bold && styles.thTextBold]}>{children}</Text>
+        <Text
+          style={[styles.thText, bold && styles.thTextBold]}
+          numberOfLines={1}
+          ellipsizeMode="clip"
+        >
+          {children}
+        </Text>
       ) : null}
     </View>
   );
@@ -278,17 +285,47 @@ export function EditTrackableHistoryTab({
           <View style={styles.trackerTable}>
             <View style={[styles.trackerDataRow, styles.trackerHeadRowBg]}>
               <View style={styles.trackerIconCol} />
-              <Text style={[styles.cellHead, styles.trackerDateCol]}>Date</Text>
+              <Text
+                style={[styles.cellHead, styles.trackerDateCol]}
+                numberOfLines={1}
+                ellipsizeMode="clip"
+              >
+                Date
+              </Text>
               {trackerShowValueCol ? (
-                <Text style={[styles.cellHead, styles.trackerMiniCol]}>Value</Text>
+                <Text
+                  style={[styles.cellHead, styles.trackerMiniCol]}
+                  numberOfLines={1}
+                  ellipsizeMode="clip"
+                >
+                  Value
+                </Text>
               ) : null}
               {trackerShowTimeCols ? (
                 <>
-                  <Text style={[styles.cellHead, styles.trackerDurCol]}>Duration</Text>
-                  <Text style={[styles.cellHead, styles.trackerMiniCol]}>Start</Text>
+                  <Text
+                    style={[styles.cellHead, styles.trackerDurCol]}
+                    numberOfLines={1}
+                    ellipsizeMode="clip"
+                  >
+                    Duration
+                  </Text>
+                  <Text
+                    style={[styles.cellHead, styles.trackerMiniCol]}
+                    numberOfLines={1}
+                    ellipsizeMode="clip"
+                  >
+                    Start
+                  </Text>
                 </>
               ) : null}
-              <Text style={[styles.cellHead, styles.trackerCommentsCol]}>Comments</Text>
+              <Text
+                style={[styles.cellHead, styles.trackerCommentsHeader]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                Comments
+              </Text>
               <View style={styles.trackerDeleteCol} />
             </View>
 
@@ -645,6 +682,9 @@ const styles = StyleSheet.create({
     color: Colors.text,
     paddingVertical: 8,
     paddingHorizontal: 2,
+    ...(Platform.OS === "web"
+      ? ({ whiteSpace: "nowrap" } as TextStyle)
+      : {}),
   },
   cellBody: {
     fontSize: 13,
@@ -679,14 +719,20 @@ const styles = StyleSheet.create({
     textAlign: "center" as const,
   },
   trackerDurCol: {
-    width: 48,
+    width: 64,
     flexShrink: 0,
-    minWidth: 0,
+    minWidth: 64,
   },
   trackerCommentsCol: {
     flex: 1,
     flexShrink: 1,
     minWidth: 0,
+    marginRight: 2,
+  },
+  trackerCommentsHeader: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 72,
     marginRight: 2,
   },
 
@@ -740,6 +786,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+    ...(Platform.OS === "web" ? ({ whiteSpace: "nowrap" } as TextStyle) : {}),
   },
   thTextBold: {
     fontSize: 13,
@@ -784,7 +831,7 @@ const styles = StyleSheet.create({
   colDesc: { flex: 1, minWidth: 0 },
   colSource: { width: 70, flexShrink: 0, minWidth: 0 },
   colValue: { width: 48, flexShrink: 0 },
-  colDuration: { width: 52, flexShrink: 0, minWidth: 0 },
+  colDuration: { width: 68, flexShrink: 0, minWidth: 68 },
   colNotes: { flex: 1, minWidth: 0 },
   colHistAction: {
     width: 40,
