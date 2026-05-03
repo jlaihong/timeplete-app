@@ -9,22 +9,16 @@ import { Stack } from "expo-router";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
-import { useIsDesktop } from "../../hooks/useIsDesktop";
-import { DesktopTaskList } from "../../components/tasks/DesktopTaskList";
-import { TaskList } from "../../components/shared/TaskList";
-import { AddTaskSheet } from "../../components/tasks/AddTaskSheet";
-import { TaskDetailSheet } from "../../components/tasks/TaskDetailSheet";
-import { HomeDndProvider } from "../../components/dnd/HomeDndProvider";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { Id } from "../../convex/_generated/dataModel";
+import { AddTaskSheet } from "../../components/tasks/AddTaskSheet";
+import { InboxTaskList } from "../../components/inbox/InboxTaskList";
 
 /**
- * Inbox — default capture list for tasks (productivity-one parity).
- * Derives the system list from `lists.search` so this screen works against a
- * deployment that already has `lists:search` (no separate Convex publish step).
+ * Inbox — system capture list (`lists.isInbox`). Mirrors productivity-one's
+ * Inbox list view (`lists.getPaginated`): section buckets only, never the
+ * day-of-week grouping used on Tasks home.
  */
 export default function InboxScreen() {
-  const isDesktop = useIsDesktop();
   const lists = useQuery(api.lists.search, {});
   const inbox = useMemo(() => {
     if (lists === undefined) return undefined;
@@ -32,13 +26,15 @@ export default function InboxScreen() {
     if (candidates.length === 0) return null;
     return [...candidates].sort((a, b) => a.orderIndex - b.orderIndex)[0];
   }, [lists]);
-  const [showAddTask, setShowAddTask] = useState(false);
-  const [addTaskDay, setAddTaskDay] = useState<string | undefined>();
-  const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(
-    null
+
+  const paginatedList = useQuery(
+    api.lists.getPaginated,
+    inbox ? { listId: inbox._id } : "skip",
   );
 
-  if (inbox === undefined) {
+  const [showAddTask, setShowAddTask] = useState(false);
+
+  if (lists === undefined || inbox === undefined) {
     return (
       <View style={styles.centered}>
         <Stack.Screen options={{ title: "Inbox" }} />
@@ -60,42 +56,13 @@ export default function InboxScreen() {
     );
   }
 
-  const listId = inbox._id;
-
-  if (isDesktop) {
+  if (paginatedList === undefined) {
     return (
-      <HomeDndProvider>
-        <View style={styles.fill}>
-          <Stack.Screen
-            options={{
-              title: "Inbox",
-              headerStyle: { backgroundColor: Colors.surface },
-            }}
-          />
-          <DesktopTaskList
-            title="Inbox"
-            listId={listId}
-            onAddTask={(day) => {
-              setAddTaskDay(day);
-              setShowAddTask(true);
-            }}
-            onSelectTask={setSelectedTaskId}
-          />
-          {showAddTask && (
-            <AddTaskSheet
-              day={addTaskDay}
-              listId={listId}
-              onClose={() => setShowAddTask(false)}
-            />
-          )}
-          {selectedTaskId && (
-            <TaskDetailSheet
-              taskId={selectedTaskId}
-              onClose={() => setSelectedTaskId(null)}
-            />
-          )}
-        </View>
-      </HomeDndProvider>
+      <View style={styles.centered}>
+        <Stack.Screen options={{ title: "Inbox" }} />
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.muted}>Loading Inbox…</Text>
+      </View>
     );
   }
 
@@ -107,26 +74,16 @@ export default function InboxScreen() {
           headerStyle: { backgroundColor: Colors.surface },
         }}
       />
-      <TaskList
-        title="Inbox"
-        listId={listId}
-        onAddTask={(day) => {
-          setAddTaskDay(day);
-          setShowAddTask(true);
-        }}
-        onSelectTask={setSelectedTaskId}
+      <InboxTaskList
+        fullList={inbox}
+        paginatedList={paginatedList}
+        onPressAdd={() => setShowAddTask(true)}
       />
+
       {showAddTask && (
         <AddTaskSheet
-          day={addTaskDay}
-          listId={listId}
+          listId={inbox._id}
           onClose={() => setShowAddTask(false)}
-        />
-      )}
-      {selectedTaskId && (
-        <TaskDetailSheet
-          taskId={selectedTaskId}
-          onClose={() => setSelectedTaskId(null)}
         />
       )}
     </View>
