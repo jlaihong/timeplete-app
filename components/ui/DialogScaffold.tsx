@@ -72,20 +72,31 @@ export function DialogCard({
 interface DialogHeaderProps {
   title: string;
   onClose: () => void;
+  /** Productivity-one-style icon actions before the close button (e.g. archive, delete). */
+  headerActions?: React.ReactNode;
 }
 
-export function DialogHeader({ title, onClose }: DialogHeaderProps) {
+export function DialogHeader({
+  title,
+  onClose,
+  headerActions,
+}: DialogHeaderProps) {
   return (
     <View style={styles.header}>
-      <Text style={styles.headerTitle}>{title}</Text>
-      <Pressable
-        onPress={onClose}
-        style={styles.closeBtn}
-        accessibilityLabel="Close dialog"
-        hitSlop={8}
-      >
-        <MaterialIcons name="close" size={20} color={Colors.text} />
-      </Pressable>
+      <Text style={styles.headerTitle} numberOfLines={2}>
+        {title}
+      </Text>
+      <View style={styles.headerRight}>
+        {headerActions}
+        <Pressable
+          onPress={onClose}
+          style={styles.closeBtn}
+          accessibilityLabel="Close dialog"
+          hitSlop={8}
+        >
+          <MaterialIcons name="close" size={20} color={Colors.text} />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -138,15 +149,25 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
+    gap: 12,
     marginBottom: 16,
+    flexShrink: 0,
   },
   headerTitle: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 22,
     fontWeight: "600",
     color: Colors.text,
-    paddingRight: 16,
+    paddingRight: 4,
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 0,
   },
   closeBtn: {
     width: 32,
@@ -168,5 +189,6 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     borderTopWidth: 1,
     borderTopColor: Colors.outlineVariant,
+    flexShrink: 0,
   },
 });

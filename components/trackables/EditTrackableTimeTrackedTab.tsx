@@ -128,7 +128,7 @@ export function EditTrackableTimeTrackedTab({
 }
 
 const styles = StyleSheet.create({
-  scroll: { maxHeight: 420 },
+  scroll: { flex: 1 },
   center: { paddingVertical: 24, alignItems: "center" },
   muted: { fontSize: 14, color: Colors.textTertiary },
   hoursMuted: {
