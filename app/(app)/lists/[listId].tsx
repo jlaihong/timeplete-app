@@ -51,6 +51,11 @@ function listFilterUsersStorageKey(listId: string) {
   return `listFilterUsers:${listId}`;
 }
 
+function taskCompletedForSectionHeader(task: ListPageTask): boolean {
+  const d = task.dateCompleted;
+  return typeof d === "string" && d.trim().length > 0;
+}
+
 function toTaskRowTask(task: ListPageTask): TaskRowTask {
   return {
     _id: task._id,
@@ -94,18 +99,15 @@ interface ListSection {
   isDefault: boolean;
   totalTasks: number;
   loadedTasks: number;
+  /** Header counts: ignore “show completed” row filter; optional user filter only. */
+  headerCompletedCount: number;
+  headerTotalCount: number;
   data: ListPageTask[];
 }
 
-function listSectionCountSuffix(
-  isCollapsed: boolean,
-  totalTasks: number,
-  tasks: ListPageTask[],
-): string {
-  if (isCollapsed) return ` (${totalTasks})`;
-  if (tasks.length === 0) return "";
-  const c = tasks.filter((t) => !!t.dateCompleted).length;
-  return ` ${c}/${tasks.length}`;
+function listSectionCountSuffix(completed: number, total: number): string {
+  if (total === 0) return "";
+  return ` ${completed}/${total}`;
 }
 
 interface ContextMenuState {
@@ -316,9 +318,10 @@ export default function ListDetailScreen() {
     if (!paginatedList) return [];
     const hasUser = filterUserIds.length > 0;
     return paginatedList.sections.map((block) => {
-      let items = block.tasks as ListPageTask[];
+      const blockTasks = block.tasks as ListPageTask[];
+      let forUserFilter = blockTasks;
       if (hasUser) {
-        items = items.filter((task) => {
+        forUserFilter = forUserFilter.filter((task) => {
           const c = task.createdBy;
           const a = task.assignedToUserId;
           return (
@@ -327,6 +330,14 @@ export default function ListDetailScreen() {
           );
         });
       }
+      const headerCompletedCount = forUserFilter.filter(
+        taskCompletedForSectionHeader,
+      ).length;
+      const headerTotalCount = hasUser
+        ? forUserFilter.length
+        : block.totalTasks;
+
+      let items = forUserFilter;
       if (!showCompleted) {
         items = items.filter((t) => !t.dateCompleted);
       }
@@ -339,6 +350,8 @@ export default function ListDetailScreen() {
         isDefault: block.section.isDefaultSection,
         totalTasks: block.totalTasks,
         loadedTasks: block.tasks.length,
+        headerCompletedCount,
+        headerTotalCount,
         data: collapsed ? [] : items,
       };
     });
@@ -372,7 +385,8 @@ export default function ListDetailScreen() {
       sectionId: s.sectionId,
       title: s.title,
       isDefault: s.isDefault,
-      totalTasks: s.totalTasks,
+      headerCompletedCount: s.headerCompletedCount,
+      headerTotalCount: s.headerTotalCount,
       tasks: s.data.map(toTaskRowTask),
     }));
   }, [filteredSections]);
@@ -735,9 +749,8 @@ export default function ListDetailScreen() {
         renderSectionHeader={({ section }) => {
           const collapsed = collapsedSectionKeys.has(section.sectionKey);
           const countSuffix = listSectionCountSuffix(
-            collapsed,
-            section.totalTasks,
-            section.data,
+            section.headerCompletedCount,
+            section.headerTotalCount,
           );
           return (
             <View style={styles.sectionHeaderRow}>
