@@ -182,11 +182,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.textSecondary,
   },
-  rowValuePct: {
-    fontSize: 12,
-    color: Colors.textTertiary,
-  },
-});
+  modeChipLabelActive: { color: Colors.onPrimary },
+  row: {
     paddingVertical: 6,
   },
   rowLabelRow: {
