@@ -3,9 +3,16 @@
  * preview / agents that bundle without gitignored env files). Values are also
  * exposed via `expo.extra` for runtime fallback in `lib/convexEnv.ts`.
  *
- * When env points at loopback but the ports are stale (Convex picked a fresh
- * pair like 3210/3211 vs an old 3212/3213 `.env`), we probe for an open TCP
- * pair before Metro bundles — fixes Better Auth/WebSocket "Failed to fetch".
+ * When `.env.local` lists a stale pair (Convex moved to another port), we
+ * usually probe localhost for an OPEN pair before Metro bundles.
+ *
+ * Metro sometimes evaluates config in a sandbox where **loopback TCP probes
+ * silently fail**. In that case we still pick a deterministic order:
+ * `.convex/.../config.json` → **3210/3211** (shared agent-flow local Convex) →
+ * env literals → legacy **3212/3213**.
+ *
+ * Without that blind fallback Metro would embed unreachable ports from `.env.local`
+ * and Better Auth/login shows only `"Failed to fetch"`.
  */
 const fs = require("fs");
 const path = require("path");
@@ -136,23 +143,26 @@ function loopbackConvexPairOpens(pair) {
 }
 
 /**
- * Pick loopback Convex cloud+site URLs. Several processes may listen on the
- * “usual” port pairs at once (e.g. agent-flow vs this app). If `.env.local`
- * points at a pair that is actually up, we must prefer it — otherwise we
- * attach to another stack and Better Auth returns “Failed to fetch”.
+ * Pick localhost Convex `{ cloud, site }` ports for bundled `expo.extra`.
  *
- * Order: `.convex/.../config.json` (this worktree) → env pair when both ports
- * listen → then 3210/3211 → 3212/3213.
+ * Prefer pairs that successfully answer a TCP handshake; if probing is not
+ * available (Metro sandbox / hardened CI), fall back to deterministic order
+ * so we do **not** trust stale `.env.local` blindly.
+ *
+ * Returns `null` when `mergedCloud` / `mergedSite` are absent or clearly not a
+ * loopback dev deployment (hosted Convex HTTPS), so callers keep raw env URLs.
  *
  * @param {string | undefined} mergedCloud
  * @param {string | undefined} mergedSite
  * @returns {{ convexUrl: string, convexSiteUrl: string } | null}
  */
-function resolveDiscoveredLoopbackConvexUrls(mergedCloud, mergedSite) {
+function pickResolvedLoopbackConvexUrls(mergedCloud, mergedSite) {
   try {
     if (!mergedCloud?.trim?.() || !mergedSite?.trim?.()) return null;
     const c = new URL(mergedCloud.trim());
     const s = new URL(mergedSite.trim());
+    if (!(c.protocol === "http:" || c.protocol === "https:")) return null;
+    if (!(s.protocol === "http:" || s.protocol === "https:")) return null;
     if (
       !isLoopbackHostname(c.hostname) ||
       !isLoopbackHostname(s.hostname)
@@ -164,32 +174,32 @@ function resolveDiscoveredLoopbackConvexUrls(mergedCloud, mergedSite) {
   }
 
   /** @type {Array<[number, number]>} */
-  const pairs = [];
-  const seen = new Set();
+  const probeOrder = [];
+  const probeSeen = new Set();
 
-  function push(pair) {
+  /** @param {[number, number] | null} pair */
+  function pushProbe(pair) {
+    if (!pair) return;
     const [a, b] = pair;
     if (!Number.isFinite(a) || !Number.isFinite(b)) return;
     const k = `${a},${b}`;
-    if (seen.has(k)) return;
-    seen.add(k);
-    pairs.push([a, b]);
+    if (probeSeen.has(k)) return;
+    probeSeen.add(k);
+    probeOrder.push([a, b]);
   }
 
-  const fromFile = readConvexPortsFromConfigFile();
+  const filePair = readConvexPortsFromConfigFile();
   const envPair = parseLoopbackPortPair(
-    mergedCloud?.trim?.(),
-    mergedSite?.trim?.(),
+    mergedCloud.trim(),
+    mergedSite.trim(),
   );
 
-  if (fromFile) push(fromFile);
-  if (envPair && loopbackConvexPairOpens(envPair)) {
-    push(envPair);
-  }
-  push([3210, 3211]);
-  push([3212, 3213]);
+  pushProbe(filePair);
+  pushProbe(envPair);
+  pushProbe([3210, 3211]);
+  pushProbe([3212, 3213]);
 
-  for (const pair of pairs) {
+  for (const pair of probeOrder) {
     if (!loopbackConvexPairOpens(pair)) continue;
     const [cloudP, siteP] = pair;
     return {
@@ -197,7 +207,38 @@ function resolveDiscoveredLoopbackConvexUrls(mergedCloud, mergedSite) {
       convexSiteUrl: `http://127.0.0.1:${siteP}`,
     };
   }
-  return null;
+
+  /** Probes unreliable — deterministic preference without trusting env first. */
+  const blindSeen = new Set();
+  /** @type {Array<[number, number]>} */
+  const blindOrder = [];
+  /** @param {[number, number] | null} pair */
+  function pushBlind(pair) {
+    if (!pair) return;
+    const [a, b] = pair;
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return;
+    const k = `${a},${b}`;
+    if (blindSeen.has(k)) return;
+    blindSeen.add(k);
+    blindOrder.push([a, b]);
+  }
+
+  pushBlind(filePair);
+  pushBlind([3210, 3211]);
+  pushBlind(envPair);
+  pushBlind([3212, 3213]);
+
+  const fbPorts = convexPortsFallbackOnly();
+  pushBlind([fbPorts.cloud, fbPorts.site]);
+
+  const chosen = blindOrder[0];
+  if (!chosen) return null;
+
+  const [cloudP, siteP] = chosen;
+  return {
+    convexUrl: `http://127.0.0.1:${cloudP}`,
+    convexSiteUrl: `http://127.0.0.1:${siteP}`,
+  };
 }
 
 /** @type {import('@expo/config').ExpoConfig} */
@@ -216,17 +257,17 @@ module.exports = () => {
 
   const ports = convexPortsFallbackOnly();
 
-  const discovered = resolveDiscoveredLoopbackConvexUrls(
+  const pickedLoopback = pickResolvedLoopbackConvexUrls(
     mergedCloud || undefined,
     mergedSite || undefined,
   );
 
   const convexUrl =
-    discovered?.convexUrl ||
+    pickedLoopback?.convexUrl ||
     mergedCloud ||
     `http://127.0.0.1:${ports.cloud}`;
   const convexSiteUrl =
-    discovered?.convexSiteUrl ||
+    pickedLoopback?.convexSiteUrl ||
     mergedSite ||
     `http://127.0.0.1:${ports.site}`;
 
