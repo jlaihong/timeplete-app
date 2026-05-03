@@ -35,7 +35,7 @@ const CY = CHART / 2;
 const R_OUTERMOST = CHART / 2 - 6;
 /** Partition geometry inner bound — matches hub circle. */
 const HUB_R = 54;
-const RING_GAP = 2;
+const RING_GAP = 1;
 
 interface ZoomFrame {
   windows: TimeWindowLite[];

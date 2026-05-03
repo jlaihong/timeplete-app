@@ -1,7 +1,7 @@
 import type { GroupByMode, GroupedBucket, GroupingLookups, TimeWindowLike } from "../grouping";
 import { groupTimeWindowsWithBuckets } from "../grouping";
 
-const PAD_RAD = 0.008;
+const PAD_RAD = 0.004;
 
 /**
  * Bucket colours may be `undefined`, `null`, or `""` from Convex/UI — treat those as
