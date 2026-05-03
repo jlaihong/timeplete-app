@@ -170,7 +170,8 @@ export default function ListDetailScreen() {
   const canQueryLists = !authLoading && isAuthenticated;
 
   const [sectionLimit, setSectionLimit] = useState(500);
-  const [taskLimit, setTaskLimit] = useState(500);
+  /** Keep in sync with `lists.getPaginated` default so completed rows are not silently truncated. */
+  const [taskLimit, setTaskLimit] = useState(2500);
 
   const paginatedList = useQuery(
     api.lists.getPaginated,
@@ -505,7 +506,7 @@ export default function ListDetailScreen() {
         <Button
           title="Load more tasks"
           variant="secondary"
-          onPress={() => setTaskLimit((n) => n + 200)}
+          onPress={() => setTaskLimit((n) => n + 500)}
         />
       ) : null}
       <Button
