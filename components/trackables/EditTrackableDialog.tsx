@@ -635,9 +635,7 @@ export function EditTrackableDialog({
           <View
             style={[
               styles.dialogBody,
-              Platform.OS !== "web"
-                ? { maxHeight: Math.min(windowHeight * 0.62, 520) }
-                : null,
+              { maxHeight: Math.min(windowHeight * 0.62, 520) },
             ]}
           >
             {isGoal ? renderGoalTabContents() : renderTrackerTabContents()}
