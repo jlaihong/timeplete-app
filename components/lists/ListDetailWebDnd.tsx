@@ -40,6 +40,8 @@ import {
 } from "../tasks/TaskRowDesktop";
 import type { Id } from "../../convex/_generated/dataModel";
 
+const isWeb = Platform.OS === "web";
+
 export type ListDetailDndSection = {
   sectionId: Id<"listSections">;
   title: string;
@@ -503,7 +505,7 @@ export function ListDetailWebDnd({
         onDragCancel={onDragCancel}
       />
       <ScrollView
-        style={styles.scroll}
+        style={[styles.scroll, isWeb && styles.scrollColumnBounded]}
         contentContainerStyle={[styles.listContent, listContentStyle]}
         keyboardShouldPersistTaps="handled"
       >
@@ -513,29 +515,27 @@ export function ListDetailWebDnd({
               const isCollapsed = collapsedSectionIds.has(group.id);
               return (
                 <View key={group.id} style={styles.sectionBlock}>
-                  {!group.isDefault ? (
-                    <Pressable
-                      style={styles.sectionHeaderPressable}
-                      onPress={() => toggleSectionCollapsed(group.id)}
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded: !isCollapsed }}
-                      accessibilityLabel={`${group.title}, ${isCollapsed ? "collapsed" : "expanded"}`}
-                    >
-                      <MaterialIcons
-                        name="arrow-forward-ios"
-                        size={14}
-                        color={Colors.textTertiary}
-                        style={[
-                          styles.expandArrow,
-                          !isCollapsed && styles.expandArrowOpen,
-                        ]}
-                      />
-                      <Text style={styles.sectionTitle}>{group.title}</Text>
-                      <Text style={styles.sectionCount}>
-                        {group.totalTasks} tasks
-                      </Text>
-                    </Pressable>
-                  ) : null}
+                  <Pressable
+                    style={styles.sectionHeaderPressable}
+                    onPress={() => toggleSectionCollapsed(group.id)}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: !isCollapsed }}
+                    accessibilityLabel={`${group.title}, ${isCollapsed ? "collapsed" : "expanded"}`}
+                  >
+                    <MaterialIcons
+                      name="arrow-forward-ios"
+                      size={14}
+                      color={Colors.textTertiary}
+                      style={[
+                        styles.expandArrow,
+                        !isCollapsed && styles.expandArrowOpen,
+                      ]}
+                    />
+                    <Text style={styles.sectionTitle}>{group.title}</Text>
+                    <Text style={styles.sectionCount}>
+                      {group.totalTasks} tasks
+                    </Text>
+                  </Pressable>
                   {!isCollapsed ? (
                     <SortableContext
                       items={group.tasks.map((t) => t._id)}
@@ -579,7 +579,7 @@ export function ListDetailWebDnd({
       </ScrollView>
       <DragOverlay dropAnimation={null}>
         {activeDrag ? (
-          <View style={{ width: "100%", maxWidth: 720, opacity: 0.95 }}>
+          <View style={{ width: "100%", maxWidth: 672, opacity: 0.95 }}>
             <TaskRowDesktop
               task={activeDrag.task}
               meta={activeDrag.meta}
@@ -597,6 +597,11 @@ export function ListDetailWebDnd({
 
 const styles = StyleSheet.create({
   scroll: { flex: 1, zIndex: 0 },
+  scrollColumnBounded: {
+    width: "100%",
+    maxWidth: 672,
+    alignSelf: "center",
+  },
   listContent: { padding: 16, paddingBottom: 24 },
   sectionBlock: { marginBottom: 8 },
   sectionHeaderPressable: {
