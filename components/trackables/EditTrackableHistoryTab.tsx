@@ -278,12 +278,13 @@ export function EditTrackableHistoryTab({
     return (
       <>
         <ScrollView
-          {...(trackingHistoryScrollViewDomProps() as object)}
+          {...trackingHistoryScrollViewDomProps()}
           style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator
-          showsHorizontalScrollIndicator={false}
+          /** RN Web: any `false` here applies `scrollbarWidth: 'none'` and hides the bar in Chrome. */
+          showsHorizontalScrollIndicator
         >
           <View style={styles.trackerTable}>
             <View style={[styles.trackerDataRow, styles.trackerHeadRowBg]}>
@@ -463,12 +464,12 @@ export function EditTrackableHistoryTab({
 
     return (
       <ScrollView
-        {...(trackingHistoryScrollViewDomProps() as object)}
+        {...trackingHistoryScrollViewDomProps()}
         style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
-        showsHorizontalScrollIndicator={false}
+        showsHorizontalScrollIndicator
       >
         <View style={styles.historyTable}>
           <View style={styles.headerRow}>
@@ -483,7 +484,7 @@ export function EditTrackableHistoryTab({
             <TableHeaderCell style={styles.colHistAction} bold />
           </View>
           <ScrollView
-            {...(trackingHistoryScrollViewDomProps() as object)}
+            {...trackingHistoryScrollViewDomProps()}
             style={[
               styles.tableBodyScroll,
               Platform.OS === "web" ? styles.tableBodyScrollWeb : null,
@@ -492,6 +493,7 @@ export function EditTrackableHistoryTab({
             keyboardShouldPersistTaps="handled"
             nestedScrollEnabled
             showsVerticalScrollIndicator
+            showsHorizontalScrollIndicator
           >
             {mergedGoalRows.map((row, i) => {
               const zebra = i % 2 === 1 ? styles.rowZebra : null;
@@ -611,12 +613,12 @@ export function EditTrackableHistoryTab({
 
   return (
     <ScrollView
-      {...(trackingHistoryScrollViewDomProps() as object)}
+      {...trackingHistoryScrollViewDomProps()}
       style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
       nestedScrollEnabled
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator
-      showsHorizontalScrollIndicator={false}
+      showsHorizontalScrollIndicator
     >
       <View style={styles.historyTableDaily}>
         <View style={styles.headerRow}>
@@ -625,7 +627,7 @@ export function EditTrackableHistoryTab({
           <TableHeaderCell style={styles.colNotesWide}>Comments</TableHeaderCell>
         </View>
         <ScrollView
-          {...(trackingHistoryScrollViewDomProps() as object)}
+          {...trackingHistoryScrollViewDomProps()}
           style={[
             styles.tableBodyScroll,
             Platform.OS === "web" ? styles.tableBodyScrollWeb : null,
@@ -634,6 +636,7 @@ export function EditTrackableHistoryTab({
           keyboardShouldPersistTaps="handled"
           nestedScrollEnabled
           showsVerticalScrollIndicator
+          showsHorizontalScrollIndicator
         >
           {dayRows.map((d, i) => (
             <View
@@ -664,6 +667,7 @@ const styles = StyleSheet.create({
     Platform.OS === "web"
       ? ({
           overflowY: "scroll",
+          overflowX: "hidden",
           flexGrow: 1,
         } as unknown as ViewStyle)
       : ({} as ViewStyle),

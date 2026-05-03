@@ -4,13 +4,21 @@ import { Colors } from "@/constants/colors";
 const STYLE_ID = "timeplete-nonmac-scrollbar";
 const HISTORY_SCROLL_STYLE_ID = "timeplete-tracking-history-scrollbar";
 
-/** DOM marker for Tracking history grids so CSS can pin always-visible thumbs (must match stylesheet). */
+/**
+ * DOM marker for Tracking history grids (CSS selector below).
+ * react-native-web `View`/ScrollView strips arbitrary `data-*` props — use `dataSet` so it reaches the DOM.
+ */
 export const TRACKING_HISTORY_SCROLL_ATTR_NAME = "data-tracking-history-scroll";
 
-/** Web: spread onto Tracking history tab `ScrollView`s (react-native-web forwards to scroll div). */
-export function trackingHistoryScrollViewDomProps(): Record<string, string> {
+/** Web: spread onto Tracking history tab `ScrollView`s. */
+export function trackingHistoryScrollViewDomProps(): {
+  dataSet?: { trackingHistoryScroll: string };
+} {
   if (Platform.OS !== "web") return {};
-  return { [TRACKING_HISTORY_SCROLL_ATTR_NAME]: "true" };
+  return {
+    /** → `data-tracking-history-scroll` on the scroll node (hyphenated from camelCase). */
+    dataSet: { trackingHistoryScroll: "true" },
+  };
 }
 
 /** Applied to overflow elements while (or briefly after) the user scrolls them. */
