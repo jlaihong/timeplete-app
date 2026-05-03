@@ -10,22 +10,6 @@ export interface SunburstHierarchyNode {
   children: SunburstHierarchyNode[];
 }
 
-/**
- * Buckets for one ring at drill depth `depth`, using `groupingLevels[depth]`.
- * This is what the interactive chart consumes while drilling (incremental).
- */
-export function sunburstRingBuckets(
-  windows: TimeWindowLike[],
-  depth: number,
-  groupingLevels: GroupByMode[],
-  lookups: GroupingLookups
-) {
-  if (depth < 0 || depth >= groupingLevels.length) return [];
-  const mode = groupingLevels[depth];
-  if (!mode) return [];
-  return groupTimeWindowsWithBuckets(windows, mode, lookups);
-}
-
 function buildLevel(
   windows: TimeWindowLike[],
   levels: GroupByMode[],
@@ -44,8 +28,7 @@ function buildLevel(
 }
 
 /**
- * Full nested hierarchy for the ordered grouping sequence.
- * Materializes every branch — typical analytics sizes only.
+ * Full nested hierarchy for the ordered grouping sequence (recursive buckets).
  */
 export function buildSunburstHierarchy(
   windows: TimeWindowLike[],
