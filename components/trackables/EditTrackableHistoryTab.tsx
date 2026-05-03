@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Pressable,
   Platform,
   Alert,
@@ -27,7 +26,7 @@ import {
   formatTrackerDialogDuration,
   mergeTrackerDetailsHistory,
 } from "../../lib/editDialogAttributedHistory";
-import { trackingHistoryScrollViewDomProps } from "../../lib/webScrollbarStyles";
+import { TrackingHistoryScroller } from "./TrackingHistoryScroller";
 
 export type EditDialogTrackableType =
   | "NUMBER"
@@ -277,13 +276,11 @@ export function EditTrackableHistoryTab({
 
     return (
       <>
-        <ScrollView
-          {...trackingHistoryScrollViewDomProps()}
+        <TrackingHistoryScroller
           style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator
-          /** RN Web: any `false` here applies `scrollbarWidth: 'none'` and hides the bar in Chrome. */
           showsHorizontalScrollIndicator
         >
           <View style={styles.trackerTable}>
@@ -418,7 +415,7 @@ export function EditTrackableHistoryTab({
               </View>
             ))}
           </View>
-        </ScrollView>
+        </TrackingHistoryScroller>
 
         {trackerSearch !== undefined &&
         trackerMergeLimit < trackerSearch.totalCount ? (
@@ -463,8 +460,7 @@ export function EditTrackableHistoryTab({
     const showDurationColumn = trackTime !== false;
 
     return (
-      <ScrollView
-        {...trackingHistoryScrollViewDomProps()}
+      <TrackingHistoryScroller
         style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
@@ -483,8 +479,7 @@ export function EditTrackableHistoryTab({
             <TableHeaderCell style={styles.colNotes}>Comments</TableHeaderCell>
             <TableHeaderCell style={styles.colHistAction} bold />
           </View>
-          <ScrollView
-            {...trackingHistoryScrollViewDomProps()}
+          <TrackingHistoryScroller
             style={[
               styles.tableBodyScroll,
               Platform.OS === "web" ? styles.tableBodyScrollWeb : null,
@@ -574,9 +569,9 @@ export function EditTrackableHistoryTab({
                 </View>
               );
             })}
-          </ScrollView>
+          </TrackingHistoryScroller>
         </View>
-      </ScrollView>
+      </TrackingHistoryScroller>
     );
   };
 
@@ -612,8 +607,7 @@ export function EditTrackableHistoryTab({
   }
 
   return (
-    <ScrollView
-      {...trackingHistoryScrollViewDomProps()}
+    <TrackingHistoryScroller
       style={[styles.scroll, Platform.OS === "web" ? styles.historyScrollWeb : null]}
       nestedScrollEnabled
       keyboardShouldPersistTaps="handled"
@@ -626,8 +620,7 @@ export function EditTrackableHistoryTab({
           <TableHeaderCell style={styles.colProgress}>Logged</TableHeaderCell>
           <TableHeaderCell style={styles.colNotesWide}>Comments</TableHeaderCell>
         </View>
-        <ScrollView
-          {...trackingHistoryScrollViewDomProps()}
+        <TrackingHistoryScroller
           style={[
             styles.tableBodyScroll,
             Platform.OS === "web" ? styles.tableBodyScrollWeb : null,
@@ -654,9 +647,9 @@ export function EditTrackableHistoryTab({
               </TableDataCell>
             </View>
           ))}
-        </ScrollView>
+        </TrackingHistoryScroller>
       </View>
-    </ScrollView>
+    </TrackingHistoryScroller>
   );
 }
 

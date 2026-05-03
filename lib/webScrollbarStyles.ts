@@ -5,21 +5,13 @@ const STYLE_ID = "timeplete-nonmac-scrollbar";
 const HISTORY_SCROLL_STYLE_ID = "timeplete-tracking-history-scrollbar";
 
 /**
- * DOM marker for Tracking history grids (CSS selector below).
- * react-native-web `View`/ScrollView strips arbitrary `data-*` props — use `dataSet` so it reaches the DOM.
+ * Class on the **real** scroll `div` used on web for Edit Trackable → Tracking history
+ * (see `TrackingHistoryScroller.web.tsx`). Scoped scrollbar CSS targets this + `data-*`.
  */
-export const TRACKING_HISTORY_SCROLL_ATTR_NAME = "data-tracking-history-scroll";
+export const TRACKING_HISTORY_SCROLL_DOM_CLASS = "timeplete-tracking-history-scroll-native";
 
-/** Web: spread onto Tracking history tab `ScrollView`s. */
-export function trackingHistoryScrollViewDomProps(): {
-  dataSet?: { trackingHistoryScroll: string };
-} {
-  if (Platform.OS !== "web") return {};
-  return {
-    /** → `data-tracking-history-scroll` on the scroll node (hyphenated from camelCase). */
-    dataSet: { trackingHistoryScroll: "true" },
-  };
-}
+/** Must match the `data-*` attribute set on the scroll `div` (`TrackingHistoryScroller.web.tsx`). */
+export const TRACKING_HISTORY_SCROLL_ATTR_NAME = "data-tracking-history-scroll";
 
 /** Applied to overflow elements while (or briefly after) the user scrolls them. */
 const SCROLL_REVEAL_CLASS = "timeplete-scrollbar-reveal";
@@ -91,23 +83,29 @@ function installTrackingHistoryScrollbarStyles(): () => void {
     const style = document.createElement("style");
     style.id = HISTORY_SCROLL_STYLE_ID;
     style.textContent = `
-${sel} {
+${sel},
+.${TRACKING_HISTORY_SCROLL_DOM_CLASS} {
   scrollbar-width: thin !important;
   scrollbar-color: ${thumb} ${track} !important;
+  scrollbar-gutter: stable;
 }
-${sel}::-webkit-scrollbar {
+${sel}::-webkit-scrollbar,
+.${TRACKING_HISTORY_SCROLL_DOM_CLASS}::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-${sel}::-webkit-scrollbar-track {
+${sel}::-webkit-scrollbar-track,
+.${TRACKING_HISTORY_SCROLL_DOM_CLASS}::-webkit-scrollbar-track {
   background-color: ${track};
   border-radius: 999px;
 }
-${sel}::-webkit-scrollbar-thumb {
+${sel}::-webkit-scrollbar-thumb,
+.${TRACKING_HISTORY_SCROLL_DOM_CLASS}::-webkit-scrollbar-thumb {
   background-color: ${thumb} !important;
   border-radius: 999px;
 }
-${sel}::-webkit-scrollbar-thumb:hover {
+${sel}::-webkit-scrollbar-thumb:hover,
+.${TRACKING_HISTORY_SCROLL_DOM_CLASS}::-webkit-scrollbar-thumb:hover {
   background-color: ${thumbHover} !important;
 }
 `;
@@ -185,8 +183,8 @@ function installNonMacUniversalScrollbarStyles(): () => void {
  * other overflow regions (Chrome/Safari: webkit; Firefox: scrollbar-color).
  *
  * Non-mac: scrollbars stay hidden unless hover / focus-within / active scroll.
- * Edit Trackable Tracking history uses `trackingHistoryScrollViewDomProps()` for a
- * visible thumb independent of that behavior.
+ * Tracking history scroll surfaces on web use `TrackingHistoryScroller` (`timeplete-tracking-history-scroll-native`);
+ * stylesheet `installTrackingHistoryScrollbarStyles` styles that node for a visible thumb.
  */
 export function installWebScrollbarStyles(): () => void {
   if (Platform.OS !== "web") return () => {};
