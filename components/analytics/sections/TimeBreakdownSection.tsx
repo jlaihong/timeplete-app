@@ -12,13 +12,12 @@ import { SectionCard } from "../SectionCard";
 import { useAnalyticsDataset } from "../useAnalyticsDataset";
 import { useAnalyticsState } from "../AnalyticsState";
 import { TimeBreakdownSunburst } from "../widgets/TimeBreakdownSunburst";
-import { GroupByLevelBuilder } from "../widgets/GroupByLevelBuilder";
+import { TimeBreakdownGroupBy } from "../widgets/TimeBreakdownGroupBy";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * Time Breakdown — productivity-one `analytics-time-breakdown-widget`.
- * Users build an ordered multi-level Group by sequence (dropdown rows +
- * add/remove); the sunburst drills Category → Tag → Goal → … exactly in
- * that order (`sunburstRingBuckets` / `buildSunburstHierarchy`).
+ * Inline Group by selects (one per frequency slot); multi-ring sunburst
+ * partition applies every ordered level simultaneously (`buildPartitionArcs`).
  * ──────────────────────────────────────────────────────────────────── */
 
 export function TimeBreakdownSection() {
@@ -66,7 +65,7 @@ export function TimeBreakdownSection() {
 
   return (
     <SectionCard title="Time Breakdown">
-      <GroupByLevelBuilder
+      <TimeBreakdownGroupBy
         tab={selectedTab}
         levels={groupingLevels}
         onChange={setGroupingLevels}

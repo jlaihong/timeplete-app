@@ -12,12 +12,14 @@ import Svg, { Path, Circle } from "react-native-svg";
 import { Colors, TRACKABLE_COLORS } from "../../../constants/colors";
 import { formatSecondsAsHM } from "../../../lib/dates";
 import {
-  GROUP_BY_DISPLAY_LABEL,
+  GROUP_BY_LABEL,
   GroupByMode,
-  GroupedBucket,
   GroupingLookups,
 } from "../../../lib/grouping";
-import { sunburstRingBuckets } from "../../../lib/analytics/sunburstHierarchy";
+import {
+  buildPartitionArcs,
+  type PartitionArc,
+} from "../../../lib/analytics/sunburstPartition";
 import type { TimeWindowLite } from "../useAnalyticsDataset";
 
 if (
@@ -27,12 +29,19 @@ if (
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const CHART = 260;
+const CHART = 280;
 const CX = CHART / 2;
 const CY = CHART / 2;
-const R_OUTER = CHART / 2 - 8;
-const R_INNER = 56;
-const PAD_RAD = 0.012;
+const R_OUTERMOST = CHART / 2 - 6;
+/** Partition geometry inner bound — matches hub circle. */
+const HUB_R = 54;
+const RING_GAP = 2;
+
+interface ZoomFrame {
+  windows: TimeWindowLite[];
+  levels: GroupByMode[];
+  pathLabels: string[];
+}
 
 function polar(cx: number, cy: number, r: number, angleRad: number) {
   const a = angleRad - Math.PI / 2;
@@ -47,7 +56,7 @@ function annulusSectorPath(
   a0: number,
   a1: number
 ): string {
-  if (a1 - a0 < 1e-6) return "";
+  if (a1 - a0 < 1e-6 || rOuter <= rInner) return "";
   const p0 = polar(cx, cy, rOuter, a0);
   const p1 = polar(cx, cy, rOuter, a1);
   const p2 = polar(cx, cy, rInner, a1);
@@ -70,41 +79,13 @@ function fallbackColour(key: string): string {
   return TRACKABLE_COLORS[h % TRACKABLE_COLORS.length]!;
 }
 
-/** Partition ring angles so wedges fill 2π (handles overlapping tag totals). */
-function layoutRingAngles(buckets: GroupedBucket[]): { a0: number; a1: number }[] {
-  const sum = buckets.reduce((s, b) => s + b.totalSeconds, 0);
-  const totalPad = PAD_RAD * buckets.length;
-  if (sum <= 0 || buckets.length === 0) {
-    return buckets.map(() => ({ a0: 0, a1: 0 }));
-  }
-  const usable = Math.max(0, 2 * Math.PI - totalPad);
-  let acc = 0;
-  return buckets.map((b) => {
-    const span = (b.totalSeconds / sum) * usable;
-    const a0 = acc;
-    acc += span + PAD_RAD;
-    return { a0, a1: a0 + span };
-  });
-}
-
-export interface FocusFrame {
-  label: string;
-  totalSeconds: number;
-  windows: TimeWindowLite[];
-  /** Drill depth; ring dimension is `groupingLevels[depth]`. */
-  depth: number;
-}
-
 export interface TimeBreakdownSunburstProps {
   timeWindows: TimeWindowLite[];
   totalSecondsDenominator: number;
-  /** Ordered grouping dimensions — ring i uses `groupingLevels[i]`. */
   groupingLevels: GroupByMode[];
   lookups: GroupingLookups;
   isLoading: boolean;
-  /** Tab + ordered levels + bounds — drill stack resets when this changes. */
   resetScheduleKey: string;
-  /** Cheap fingerprint when the underlying slice meaningfully changes. */
   dataSignature: string;
 }
 
@@ -117,63 +98,69 @@ export function TimeBreakdownSunburst({
   resetScheduleKey,
   dataSignature,
 }: TimeBreakdownSunburstProps) {
-  const [stack, setStack] = useState<FocusFrame[]>(() => {
-    const secs = timeWindows.reduce((s, w) => s + w.durationSeconds, 0);
-    return [
-      {
-        label: "Total",
-        totalSeconds: secs,
-        windows: timeWindows,
-        depth: 0,
-      },
-    ];
-  });
+  const [zoomStack, setZoomStack] = useState<ZoomFrame[]>(() => [
+    {
+      windows: timeWindows,
+      levels: groupingLevels,
+      pathLabels: [],
+    },
+  ]);
 
-  const focus = stack[stack.length - 1]!;
+  const frame = zoomStack[zoomStack.length - 1]!;
 
   React.useEffect(() => {
     if (isLoading) return;
-    const secs = timeWindows.reduce((s, w) => s + w.durationSeconds, 0);
-    setStack([
+    setZoomStack([
       {
-        label: "Total",
-        totalSeconds: secs,
         windows: timeWindows,
-        depth: 0,
+        levels: groupingLevels,
+        pathLabels: [],
       },
     ]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on schedule/signature; avoid churn from Convex identity
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- zoom resets on schedule/signature only
   }, [resetScheduleKey, dataSignature, isLoading]);
 
-  const buckets: GroupedBucket[] = useMemo(
+  const arcs = useMemo(
     () =>
-      focus.windows.length === 0
+      frame.windows.length === 0 || frame.levels.length === 0
         ? []
-        : sunburstRingBuckets(
-            focus.windows,
-            focus.depth,
-            groupingLevels,
-            lookups
-          ),
-    [focus.depth, focus.windows, groupingLevels, lookups]
+        : buildPartitionArcs(frame.windows, frame.levels, lookups, {
+            rOuterMax: R_OUTERMOST,
+            hubR: HUB_R,
+            ringGap: RING_GAP,
+          }),
+    [frame.windows, frame.levels, lookups]
   );
 
-  const angles = useMemo(() => layoutRingAngles(buckets), [buckets]);
+  const paintArcs = useMemo(
+    () => [...arcs].sort((a, b) => a.depth - b.depth),
+    [arcs]
+  );
+
+  const frameTotalSeconds = useMemo(
+    () => frame.windows.reduce((s, w) => s + w.durationSeconds, 0),
+    [frame.windows]
+  );
 
   const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const hovered = useMemo(
+    () => (hoverKey === null ? null : arcs.find((a) => a.key === hoverKey) ?? null),
+    [hoverKey, arcs]
+  );
 
-  const drill = useCallback((b: GroupedBucket) => {
+  const drill = useCallback((arc: PartitionArc) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    const secs = b.windows.reduce((s, w) => s + w.durationSeconds, 0);
-    setStack((prev) => {
+    setZoomStack((prev) => {
       const top = prev[prev.length - 1]!;
+      if (arc.depth >= top.levels.length - 1) return prev;
+      const nextLevels = top.levels.slice(arc.depth + 1);
+      if (nextLevels.length === 0) return prev;
       return [
         ...prev,
         {
-          label: b.label,
-          totalSeconds: secs,
-          windows: b.windows,
-          depth: top.depth + 1,
+          windows: arc.windows,
+          levels: nextLevels,
+          pathLabels: [...top.pathLabels, arc.label],
         },
       ];
     });
@@ -181,19 +168,29 @@ export function TimeBreakdownSunburst({
 
   const popFocus = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setStack((s) => (s.length <= 1 ? s : s.slice(0, -1)));
+    setZoomStack((s) => (s.length <= 1 ? s : s.slice(0, -1)));
   }, []);
 
   const jumpToCrumb = useCallback((index: number) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setStack((s) => {
+    setZoomStack((s) => {
       if (index < 0 || index >= s.length - 1) return s;
       return s.slice(0, index + 1);
     });
   }, []);
 
-  const hoverBucket =
-    hoverKey === null ? null : buckets.find((b) => b.key === hoverKey) ?? null;
+  const centerTitle =
+    zoomStack.length <= 1
+      ? "Total"
+      : frame.pathLabels[frame.pathLabels.length - 1] ?? "Total";
+
+  const webHoverProps = (key: string) =>
+    Platform.OS === "web"
+      ? ({
+          onMouseEnter: () => setHoverKey(key),
+          onMouseLeave: () => setHoverKey(null),
+        } as object)
+      : {};
 
   if (isLoading) {
     return (
@@ -211,53 +208,37 @@ export function TimeBreakdownSunburst({
     );
   }
 
-  const showRing =
-    buckets.length > 0 && focus.depth < groupingLevels.length;
-  const noFurther =
-    focus.depth >= groupingLevels.length ||
-    (buckets.length === 0 && focus.depth > 0);
-
-  const ringMode = groupingLevels[focus.depth];
-  const ringLabel =
-    ringMode !== undefined ? GROUP_BY_DISPLAY_LABEL[ringMode] : "";
-
-  const webHoverProps = (key: string) =>
-    Platform.OS === "web"
-      ? ({
-          onMouseEnter: () => setHoverKey(key),
-          onMouseLeave: () => setHoverKey(null),
-        } as object)
-      : {};
-
   return (
     <View style={styles.wrap}>
       <View style={styles.breadcrumbRow}>
         <View style={styles.crumbRow}>
-          {stack.map((f, i) => (
-            <React.Fragment key={`crumb-${i}-${f.label}`}>
-              {i > 0 ? (
-                <Text style={styles.crumbSep}> › </Text>
-              ) : null}
-              <Pressable
-                onPress={() => jumpToCrumb(i)}
-                disabled={i === stack.length - 1}
-                hitSlop={6}
-                accessibilityRole="button"
-                accessibilityLabel={`Focus ${f.label}`}
-                accessibilityState={{ disabled: i === stack.length - 1 }}
-              >
-                <Text
-                  style={[
-                    styles.crumbText,
-                    i === stack.length - 1 && styles.crumbTextActive,
-                  ]}
-                  numberOfLines={1}
+          {zoomStack.map((z, i) => {
+            const label =
+              i === 0 ? "Total" : z.pathLabels[z.pathLabels.length - 1] ?? "…";
+            return (
+              <React.Fragment key={`crumb-${i}`}>
+                {i > 0 ? <Text style={styles.crumbSep}> › </Text> : null}
+                <Pressable
+                  onPress={() => jumpToCrumb(i)}
+                  disabled={i === zoomStack.length - 1}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Zoom to ${label}`}
+                  accessibilityState={{ disabled: i === zoomStack.length - 1 }}
                 >
-                  {f.label}
-                </Text>
-              </Pressable>
-            </React.Fragment>
-          ))}
+                  <Text
+                    style={[
+                      styles.crumbText,
+                      i === zoomStack.length - 1 && styles.crumbTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              </React.Fragment>
+            );
+          })}
         </View>
       </View>
 
@@ -268,31 +249,39 @@ export function TimeBreakdownSunburst({
           viewBox={`0 0 ${CHART} ${CHART}`}
           style={styles.svg}
         >
-          {showRing
-            ? buckets.map((b, i) => {
-                const { a0, a1 } = angles[i]!;
-                const fill = b.colour ?? fallbackColour(b.key);
-                const dimmed =
-                  hoverKey !== null && hoverKey !== b.key ? 0.45 : 1;
-                return (
-                  <Path
-                    key={b.key}
-                    d={annulusSectorPath(CX, CY, R_INNER, R_OUTER, a0, a1)}
-                    fill={fill}
-                    fillOpacity={dimmed}
-                    stroke={Colors.background}
-                    strokeWidth={1}
-                    onPress={() => drill(b)}
-                    {...webHoverProps(b.key)}
-                  />
-                );
-              })
-            : null}
+          {paintArcs.map((a) => {
+            const fill = a.colour ?? fallbackColour(a.key);
+            const dimmed =
+              hoverKey !== null && hoverKey !== a.key ? 0.42 : 1;
+            const drillable = a.depth < frame.levels.length - 1;
+            return (
+              <Path
+                key={a.key}
+                d={annulusSectorPath(
+                  CX,
+                  CY,
+                  a.rInner,
+                  a.rOuter,
+                  a.a0,
+                  a.a1
+                )}
+                fill={fill}
+                fillOpacity={dimmed}
+                stroke={Colors.background}
+                strokeWidth={1}
+                onPress={() => drill(a)}
+                {...(Platform.OS === "web" && drillable
+                  ? ({ cursor: "pointer" } as object)
+                  : {})}
+                {...webHoverProps(a.key)}
+              />
+            );
+          })}
 
           <Circle
             cx={CX}
             cy={CY}
-            r={R_INNER - 2}
+            r={HUB_R - 2}
             fill={Colors.surfaceContainerHigh}
             stroke={Colors.outlineVariant}
             strokeWidth={1}
@@ -303,21 +292,21 @@ export function TimeBreakdownSunburst({
           style={[
             styles.centerOverlay,
             Platform.OS === "web"
-              ? { cursor: stack.length > 1 ? "pointer" : "default" }
+              ? { cursor: zoomStack.length > 1 ? "pointer" : "default" }
               : undefined,
           ]}
           onPress={popFocus}
-          disabled={stack.length <= 1}
+          disabled={zoomStack.length <= 1}
           accessibilityRole="button"
           accessibilityLabel="Zoom out to parent level"
         >
           <Text style={styles.centerTitle} numberOfLines={2}>
-            {focus.label}
+            {centerTitle}
           </Text>
           <Text style={styles.centerTime}>
-            {formatSecondsAsHM(focus.totalSeconds)}
+            {formatSecondsAsHM(frameTotalSeconds)}
           </Text>
-          {stack.length > 1 ? (
+          {zoomStack.length > 1 ? (
             <Text style={styles.centerHint}>Tap to zoom out</Text>
           ) : (
             <Text style={styles.centerHintMuted}>
@@ -327,33 +316,21 @@ export function TimeBreakdownSunburst({
         </Pressable>
       </View>
 
-      {hoverBucket ? (
+      {hovered ? (
         <Text style={styles.tooltip} numberOfLines={3}>
-          {ringLabel ? (
-            <Text style={styles.tooltipDim}>{ringLabel}: </Text>
-          ) : null}
-          {hoverBucket.label}
+          <Text style={styles.tooltipDim}>{GROUP_BY_LABEL[hovered.mode]}: </Text>
+          {hovered.label}
           {" · "}
-          {formatSecondsAsHM(hoverBucket.totalSeconds)}
+          {formatSecondsAsHM(hovered.seconds)}
           {" · "}
           {totalSecondsDenominator > 0
-            ? Math.round(
-                (hoverBucket.totalSeconds / totalSecondsDenominator) * 100
-              )
+            ? Math.round((hovered.seconds / totalSecondsDenominator) * 100)
             : 0}
           %
         </Text>
       ) : (
         <Text style={styles.tooltipPlaceholder}> </Text>
       )}
-
-      {noFurther ? (
-        <Text style={styles.footerNote}>
-          {focus.depth >= groupingLevels.length
-            ? "End of grouping sequence."
-            : "No subdivisions at this level."}
-        </Text>
-      ) : null}
     </View>
   );
 }
@@ -452,18 +429,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   tooltipDim: {
-    fontWeight: "600",
     color: Colors.textSecondary,
+    fontWeight: "600",
   },
   tooltipPlaceholder: {
     marginTop: 6,
     minHeight: 18,
-  },
-  footerNote: {
-    marginTop: 6,
-    fontSize: 11,
-    color: Colors.textTertiary,
-    textAlign: "center",
   },
   muted: {
     fontSize: 13,
