@@ -80,6 +80,16 @@ export const upsert = mutation({
       for (const [key, val] of Object.entries(rest)) {
         if (val !== undefined) (updateFields as Record<string, unknown>)[key] = val;
       }
+      const effectiveType =
+        (args.trackableType ?? existing.trackableType) as
+          | "NUMBER"
+          | "TIME_TRACK"
+          | "DAYS_A_WEEK"
+          | "MINUTES_A_WEEK"
+          | "TRACKER";
+      if (effectiveType === "TRACKER") {
+        (updateFields as Record<string, unknown>).targetCount = undefined;
+      }
       await ctx.db.patch(args.id, {
         ...updateFields,
         isCumulative: args.isCumulative ?? existing.isCumulative,
@@ -1041,6 +1051,139 @@ export const getTrackableAnalyticsSeries = query({
       windowStart: args.windowStart,
       windowEnd: args.windowEnd,
       trackables: result,
+    };
+  },
+});
+
+/**
+ * Tracking log + attributed-time breakdown for the Edit Trackable dialog's
+ * "Tracking history" tab — mirrors productivity-one's per-entry history
+ * list and (for time-based goals) source breakdown.
+ */
+export const getEditDialogTrackingHistory = query({
+  args: { trackableId: v.id("trackables") },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const trackable = await ctx.db.get(args.trackableId);
+    if (!trackable || trackable.userId !== user._id) {
+      return null;
+    }
+
+    if (trackable.trackableType === "TRACKER") {
+      const entries = await ctx.db
+        .query("trackerEntries")
+        .withIndex("by_trackable", (q) =>
+          q.eq("trackableId", args.trackableId)
+        )
+        .collect();
+      entries.sort((a, b) => b._creationTime - a._creationTime);
+      return {
+        kind: "tracker" as const,
+        entries: entries.map((e) => ({
+          _id: e._id,
+          dayYYYYMMDD: e.dayYYYYMMDD,
+          countValue: e.countValue,
+          durationSeconds: e.durationSeconds,
+          startTimeHHMM: e.startTimeHHMM,
+          comments: e.comments,
+          _creationTime: e._creationTime,
+        })),
+      };
+    }
+
+    const days = await ctx.db
+      .query("trackableDays")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", args.trackableId))
+      .collect();
+    const dayRows = days
+      .filter(
+        (d) =>
+          d.numCompleted !== 0 ||
+          (d.comments && d.comments.trim().length > 0)
+      )
+      .sort((a, b) => b.dayYYYYMMDD.localeCompare(a.dayYYYYMMDD))
+      .map((d) => ({
+        dayYYYYMMDD: d.dayYYYYMMDD,
+        numCompleted: d.numCompleted,
+        comments: d.comments,
+      }));
+
+    let timeBySource:
+      | Array<{ source: string; label: string; seconds: number }>
+      | undefined;
+    if (
+      trackable.trackableType === "TIME_TRACK" ||
+      trackable.trackableType === "MINUTES_A_WEEK"
+    ) {
+      const compactStart = toCompactYYYYMMDD(trackable.startDayYYYYMMDD);
+      const compactEnd = toCompactYYYYMMDD(trackable.endDayYYYYMMDD);
+
+      const userTasks = await ctx.db
+        .query("tasks")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect();
+      const taskInfoMap = buildTaskInfoMap(userTasks);
+
+      const userLinks = await ctx.db
+        .query("listTrackableLinks")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect();
+      const listIdToTrackableId = buildListIdToTrackableId(userLinks);
+
+      const allWindows = await ctx.db
+        .query("timeWindows")
+        .withIndex("by_user", (q) => q.eq("userId", user._id))
+        .collect();
+
+      const attributed = allWindows.filter(
+        (w) =>
+          w.budgetType === "ACTUAL" &&
+          (!compactStart || toCompactYYYYMMDD(w.startDayYYYYMMDD) >= compactStart) &&
+          (!compactEnd || toCompactYYYYMMDD(w.startDayYYYYMMDD) <= compactEnd) &&
+          timeWindowAttributedToTrackable(
+            w,
+            args.trackableId,
+            taskInfoMap,
+            listIdToTrackableId
+          )
+      );
+
+      const buckets = new Map<string, number>();
+      for (const w of attributed) {
+        const raw = w.source ?? "timer";
+        buckets.set(raw, (buckets.get(raw) ?? 0) + w.durationSeconds);
+      }
+
+      const labelFor = (key: string) => {
+        switch (key) {
+          case "timer":
+            return "Timer";
+          case "manual":
+            return "Manual entry";
+          case "calendar":
+            return "Calendar";
+          case "tracker_entry":
+            return "Tracker";
+          default:
+            return key;
+        }
+      };
+
+      timeBySource = [...buckets.entries()]
+        .filter(([, sec]) => sec > 0)
+        .map(([source, seconds]) => ({
+          source,
+          label: labelFor(source),
+          seconds,
+        }))
+        .sort((a, b) => b.seconds - a.seconds);
+    }
+
+    return {
+      kind: "goal" as const,
+      trackableType: trackable.trackableType,
+      days: dayRows,
+      timeBySource,
     };
   },
 });
