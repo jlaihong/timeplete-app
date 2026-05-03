@@ -140,14 +140,10 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
       const origins = [...staticTrustedOrigins];
       // Better Auth calls this with `undefined` during init (no live request yet)
       // and again per-request via corsRouter / origin-check middleware.
-<<<<<<< HEAD
       const allowEphemeralLoopbackOrigin =
         isLocalDevDeployment || loopbackSiteUrlDev;
 
       if (allowEphemeralLoopbackOrigin && request) {
-=======
-      if (request) {
->>>>>>> main
         const reqOrigin = request.headers.get("origin");
         const allowDynamicLoopback =
           isLocalDevDeployment || isLoopbackHttpSiteUrl(siteUrl);
