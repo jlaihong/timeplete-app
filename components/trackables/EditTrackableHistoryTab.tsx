@@ -641,12 +641,13 @@ export function EditTrackableHistoryTab({
 }
 
 const styles = StyleSheet.create({
-  scroll: { maxHeight: 420 },
+  scroll: { flex: 1 },
   center: { paddingVertical: 24, alignItems: "center" },
   muted: { fontSize: 14, color: Colors.textTertiary, textAlign: "center" },
   trackerTabWrap: {
     gap: 0,
-    minHeight: 200,
+    flex: 1,
+    minHeight: 0,
     marginTop: 8,
     paddingHorizontal: 0,
     alignSelf: "stretch",

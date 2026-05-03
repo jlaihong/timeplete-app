@@ -7,6 +7,8 @@ import {
   Pressable,
   Alert,
   Platform,
+  useWindowDimensions,
+  type ViewStyle,
 } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { Ionicons } from "@expo/vector-icons";
@@ -75,6 +77,7 @@ export function EditTrackableDialog({
   trackableId,
   onClose,
 }: EditTrackableDialogProps) {
+  const { height: windowHeight } = useWindowDimensions();
   const trackables = useQuery(api.trackables.search, {});
   const trackable = trackables?.find((t) => t._id === trackableId);
   const upsertTrackable = useMutation(api.trackables.upsert);
@@ -157,6 +160,27 @@ export function EditTrackableDialog({
 
   const trackableType = trackable.trackableType as TrackableType;
   const isGoal = trackableType !== "TRACKER";
+
+  /** Match productivity-one: footer Save is not shown on read-only / history views. */
+  const showSaveFooter =
+    isGoal
+      ? goalTab === "commitment" ||
+        goalTab === "motivations" ||
+        goalTab === "accountability"
+      : trackerTab === "details";
+
+  const cardFlexStyle: ViewStyle[] = [
+    Platform.OS === "web"
+      ? ({
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        } as ViewStyle)
+      : {},
+    {
+      maxHeight: Math.min(windowHeight * 0.9, 840),
+    },
+  ];
 
   const handleSave = async () => {
     const trimmed = name.trim();
@@ -531,68 +555,105 @@ export function EditTrackableDialog({
     );
   };
 
+  const headerActions = (
+    <>
+      <Pressable
+        style={styles.headerIconBtn}
+        onPress={handleArchive}
+        accessibilityRole="button"
+        accessibilityLabel={
+          trackable.archived ? "Unarchive trackable" : "Archive trackable"
+        }
+        hitSlop={6}
+      >
+        <Ionicons
+          name="archive-outline"
+          size={22}
+          color={Colors.textSecondary}
+        />
+      </Pressable>
+      <Pressable
+        style={styles.headerIconBtn}
+        onPress={confirmDelete}
+        accessibilityRole="button"
+        accessibilityLabel="Delete trackable"
+        hitSlop={6}
+      >
+        <Ionicons name="trash-outline" size={22} color={Colors.textSecondary} />
+      </Pressable>
+    </>
+  );
+
   return (
     <DialogOverlay onBackdropPress={onClose} align="center">
-      <DialogCard desktopWidth={640}>
-        <DialogHeader title={trackable.name} onClose={onClose} />
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.tabBarScroll}
-          contentContainerStyle={styles.tabBarContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          {isGoal
-            ? GOAL_TAB_DEFS.map(({ key, label }) => (
-                <Pressable
-                  key={key}
-                  style={[styles.tab, goalTab === key && styles.tabActive]}
-                  onPress={() => setGoalTab(key)}
-                >
-                  <Text
-                    style={[
-                      styles.tabText,
-                      goalTab === key && styles.tabTextActive,
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </Pressable>
-              ))
-            : TRACKER_TAB_DEFS.map(({ key, label }) => (
-                <Pressable
-                  key={key}
-                  style={[
-                    styles.tab,
-                    trackerTab === key && styles.tabActive,
-                  ]}
-                  onPress={() => setTrackerTab(key)}
-                >
-                  <Text
-                    style={[
-                      styles.tabText,
-                      trackerTab === key && styles.tabTextActive,
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </Pressable>
-              ))}
-        </ScrollView>
-
-        {isGoal ? renderGoalTabContents() : renderTrackerTabContents()}
-
-        <DialogFooter>
-          <Button title="Delete" variant="outline" onPress={confirmDelete} />
-          <Button
-            title={trackable.archived ? "Unarchive" : "Archive"}
-            variant="outline"
-            onPress={handleArchive}
+      <DialogCard desktopWidth={640} style={cardFlexStyle}>
+        <View style={styles.dialogFill}>
+          <DialogHeader
+            title={trackable.name}
+            onClose={onClose}
+            headerActions={headerActions}
           />
-          <Button title="Cancel" variant="ghost" onPress={onClose} />
-          <Button title="Save" onPress={handleSave} loading={loading} />
-        </DialogFooter>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.tabBarScroll}
+            contentContainerStyle={styles.tabBarContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {isGoal
+              ? GOAL_TAB_DEFS.map(({ key, label }) => (
+                  <Pressable
+                    key={key}
+                    style={[styles.tab, goalTab === key && styles.tabActive]}
+                    onPress={() => setGoalTab(key)}
+                  >
+                    <Text
+                      style={[
+                        styles.tabText,
+                        goalTab === key && styles.tabTextActive,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))
+              : TRACKER_TAB_DEFS.map(({ key, label }) => (
+                  <Pressable
+                    key={key}
+                    style={[styles.tab, trackerTab === key && styles.tabActive]}
+                    onPress={() => setTrackerTab(key)}
+                  >
+                    <Text
+                      style={[
+                        styles.tabText,
+                        trackerTab === key && styles.tabTextActive,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+          </ScrollView>
+
+          <View
+            style={[
+              styles.dialogBody,
+              Platform.OS !== "web"
+                ? { maxHeight: Math.min(windowHeight * 0.62, 520) }
+                : null,
+            ]}
+          >
+            {isGoal ? renderGoalTabContents() : renderTrackerTabContents()}
+          </View>
+
+          <DialogFooter>
+            <Button title="Cancel" variant="ghost" onPress={onClose} />
+            {showSaveFooter ? (
+              <Button title="Save" onPress={handleSave} loading={loading} />
+            ) : null}
+          </DialogFooter>
+        </View>
       </DialogCard>
     </DialogOverlay>
   );
@@ -656,9 +717,35 @@ function ChoiceChip({
 }
 
 const styles = StyleSheet.create({
+  dialogFill: {
+    flex: 1,
+    minHeight: 0,
+    minWidth: 0,
+    width: "100%",
+    ...(Platform.OS === "web"
+      ? ({ display: "flex", flexDirection: "column" } as ViewStyle)
+      : {}),
+  },
+  dialogBody: {
+    flex: 1,
+    minHeight: 0,
+    minWidth: 0,
+    width: "100%",
+  },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    ...Platform.select({
+      web: { cursor: "pointer" } as object,
+      default: {},
+    }),
+  },
   tabBarScroll: {
     flexGrow: 0,
-    maxHeight: 48,
+    flexShrink: 0,
     borderBottomWidth: 1,
     borderBottomColor: Colors.outlineVariant,
   },
@@ -684,14 +771,15 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   tabTextActive: { color: Colors.primary, fontWeight: "600" },
-  scroll: { maxHeight: 500 },
-  scrollContent: { paddingBottom: 8 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingBottom: 8, flexGrow: 1 },
   historyTabPane: {
+    flex: 1,
+    minHeight: 0,
     alignSelf: "stretch",
     width: "100%",
     maxWidth: "100%",
     paddingHorizontal: 8,
-    minHeight: 200,
     overflow: "hidden",
   },
   fieldBlock: { marginBottom: 16 },
