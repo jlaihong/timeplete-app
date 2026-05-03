@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -7,12 +7,33 @@ import { Colors } from "../../constants/colors";
 import {
   formatYYYYMMDDtoDDMMM,
   secondsToDurationString,
+  addDays,
+  todayYYYYMMDD,
 } from "../../lib/dates";
+import {
+  buildEditDialogTimeBySource,
+  type EditDialogTimeWindow,
+} from "../../lib/editDialogTrackingHistory";
 
 export type EditTrackableHistoryTabMode = "history" | "breakdown";
 
+export type EditDialogTrackableType =
+  | "NUMBER"
+  | "TIME_TRACK"
+  | "DAYS_A_WEEK"
+  | "MINUTES_A_WEEK"
+  | "TRACKER";
+
+const TRACKER_BREAKDOWN_FALLBACK = {
+  startDay: "19700101",
+  endDay: "21001231",
+} as const;
+
 interface EditTrackableHistoryTabProps {
   trackableId: Id<"trackables">;
+  trackableType: EditDialogTrackableType;
+  startDayYYYYMMDD: string;
+  endDayYYYYMMDD: string;
   trackTime: boolean;
   trackCount: boolean;
   isRatingTracker: boolean;
@@ -22,35 +43,124 @@ interface EditTrackableHistoryTabProps {
 
 export function EditTrackableHistoryTab({
   trackableId,
+  trackableType,
+  startDayYYYYMMDD,
+  endDayYYYYMMDD,
   trackTime,
   trackCount,
   isRatingTracker,
   mode,
   breakdownHint,
 }: EditTrackableHistoryTabProps) {
-  const data = useQuery(api.trackables.getEditDialogTrackingHistory, {
+  const trackerSearch = useQuery(
+    api.trackerEntries.search,
+    trackableType === "TRACKER"
+      ? { trackableId, limit: 2000 }
+      : "skip"
+  );
+
+  const daysSearch = useQuery(
+    api.trackableDays.search,
+    trackableType !== "TRACKER" ? { trackableIds: [trackableId] } : "skip"
+  );
+
+  const needsTimeBreakdown =
+    mode === "breakdown" &&
+    (trackableType === "TIME_TRACK" ||
+      trackableType === "MINUTES_A_WEEK" ||
+      (trackableType === "TRACKER" && trackTime));
+
+  const breakdownRange = useMemo(() => {
+    if (!needsTimeBreakdown) return null;
+    if (trackableType === "TRACKER") {
+      const end = todayYYYYMMDD();
+      return { startDay: addDays(end, -7300), endDay: end };
+    }
+    const s =
+      startDayYYYYMMDD.replace(/\D/g, "").slice(0, 8) || startDayYYYYMMDD;
+    const e = endDayYYYYMMDD.replace(/\D/g, "").slice(0, 8) || endDayYYYYMMDD;
+    if (s.length === 8 && e.length === 8) return { startDay: s, endDay: e };
+    return TRACKER_BREAKDOWN_FALLBACK;
+  }, [
+    needsTimeBreakdown,
+    trackableType,
+    startDayYYYYMMDD,
+    endDayYYYYMMDD,
+  ]);
+
+  const timeBreakdown = useQuery(
+    api.analytics.getTimeBreakdown,
+    breakdownRange
+      ? {
+          startDay: breakdownRange.startDay,
+          endDay: breakdownRange.endDay,
+        }
+      : "skip"
+  );
+
+  const trackerEntryDurationSeconds = useMemo(() => {
+    if (trackableType !== "TRACKER" || !trackerSearch?.entries.length) return 0;
+    return trackerSearch.entries.reduce(
+      (s, e) => s + (e.durationSeconds ?? 0),
+      0
+    );
+  }, [trackableType, trackerSearch]);
+
+  const timeBySourceRows = useMemo(() => {
+    if (!needsTimeBreakdown || !timeBreakdown) return [];
+    const tasks = timeBreakdown.tasks as Record<
+      string,
+      { trackableId?: string; listId?: string } | undefined
+    >;
+    const listIdToTrackableId =
+      (timeBreakdown as { listIdToTrackableId?: Record<string, string> })
+        .listIdToTrackableId ?? {};
+    const windows = timeBreakdown.timeWindows as EditDialogTimeWindow[];
+
+    if (
+      trackableType !== "TIME_TRACK" &&
+      trackableType !== "MINUTES_A_WEEK" &&
+      trackableType !== "TRACKER"
+    ) {
+      return [];
+    }
+
+    return buildEditDialogTimeBySource({
+      trackableId: String(trackableId),
+      trackableType,
+      startDayYYYYMMDD,
+      endDayYYYYMMDD,
+      windows,
+      tasks,
+      listIdToTrackableId,
+      trackerEntryDurationSeconds,
+    });
+  }, [
+    needsTimeBreakdown,
+    timeBreakdown,
     trackableId,
-  });
-
-  if (data === undefined) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.muted}>Loading…</Text>
-      </View>
-    );
-  }
-
-  if (data === null) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.muted}>Unable to load history.</Text>
-      </View>
-    );
-  }
+    trackableType,
+    startDayYYYYMMDD,
+    endDayYYYYMMDD,
+    trackerEntryDurationSeconds,
+  ]);
 
   if (mode === "breakdown") {
-    const rows = data.timeBySource ?? [];
-    if (rows.length === 0) {
+    if (!needsTimeBreakdown) {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.muted}>No breakdown for this trackable.</Text>
+        </View>
+      );
+    }
+    if (timeBreakdown === undefined) {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.muted}>Loading…</Text>
+        </View>
+      );
+    }
+    if (timeBySourceRows.length === 0) {
       return (
         <View style={styles.center}>
           <Text style={styles.muted}>No time breakdown yet.</Text>
@@ -66,7 +176,7 @@ export function EditTrackableHistoryTab({
         <View style={styles.breakdownBlock}>
           <Text style={styles.sectionTitle}>Time by source</Text>
           <Text style={styles.sectionHint}>{breakdownHint}</Text>
-          {rows.map((row) => (
+          {timeBySourceRows.map((row) => (
             <View key={row.source} style={styles.breakdownRow}>
               <Text style={styles.breakdownLabel}>{row.label}</Text>
               <Text style={styles.breakdownValue}>
@@ -80,8 +190,16 @@ export function EditTrackableHistoryTab({
   }
 
   // mode === "history"
-  if (data.kind === "tracker") {
-    if (data.entries.length === 0) {
+  if (trackableType === "TRACKER") {
+    if (trackerSearch === undefined) {
+      return (
+        <View style={styles.center}>
+          <Text style={styles.muted}>Loading…</Text>
+        </View>
+      );
+    }
+    const entries = trackerSearch.entries;
+    if (entries.length === 0) {
       return (
         <View style={styles.center}>
           <Text style={styles.muted}>No tracking entries yet.</Text>
@@ -95,7 +213,7 @@ export function EditTrackableHistoryTab({
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.sectionTitle}>Entries</Text>
-        {data.entries.map((e) => (
+        {entries.map((e) => (
           <View key={e._id} style={styles.card}>
             <Text style={styles.cardDate}>
               {formatYYYYMMDDtoDDMMM(e.dayYYYYMMDD)}
@@ -124,9 +242,23 @@ export function EditTrackableHistoryTab({
     );
   }
 
-  const hasDays = data.days.length > 0;
+  if (daysSearch === undefined) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.muted}>Loading…</Text>
+      </View>
+    );
+  }
 
-  if (!hasDays) {
+  const dayRows = daysSearch
+    .filter(
+      (d) =>
+        d.numCompleted !== 0 ||
+        (d.comments && d.comments.trim().length > 0)
+    )
+    .sort((a, b) => b.dayYYYYMMDD.localeCompare(a.dayYYYYMMDD));
+
+  if (dayRows.length === 0) {
     return (
       <View style={styles.center}>
         <Text style={styles.muted}>No tracking history yet.</Text>
@@ -141,7 +273,7 @@ export function EditTrackableHistoryTab({
       keyboardShouldPersistTaps="handled"
     >
       <Text style={styles.sectionTitle}>Daily log</Text>
-      {data.days.map((d) => (
+      {dayRows.map((d) => (
         <View key={d.dayYYYYMMDD} style={styles.card}>
           <Text style={styles.cardDate}>
             {formatYYYYMMDDtoDDMMM(d.dayYYYYMMDD)}
