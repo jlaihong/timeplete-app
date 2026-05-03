@@ -76,6 +76,31 @@ if (!siteUrlRaw) {
   );
 }
 const siteUrl = stripTrailingSlash(siteUrlRaw);
+
+/**
+ * Convex Cloud dev often uses SITE_URL=http://localhost:<metro-default> while agent-flow /
+ * previews run Expo Web on arbitrary loopback ports. We still need to mirror those live
+ * `Origin`s into trusted origins (see `trustedOrigins` handler below).
+ *
+ * Narrow trigger: SITE_URL itself is plain HTTP + loopback host (classic local Expo dev).
+ */
+function siteUrlIndicatesLoopbackHttpDev(u: URL): boolean {
+  if (u.protocol !== "http:") return false;
+  const h =
+    u.hostname === "[::1]" ? "::1" : u.hostname.replace(/^\[|\]$/g, "");
+  return (
+    h === "localhost" ||
+    h === "127.0.0.1" ||
+    h === "::1"
+  );
+}
+
+let loopbackSiteUrlDev = false;
+try {
+  loopbackSiteUrlDev = siteUrlIndicatesLoopbackHttpDev(new URL(siteUrl));
+} catch {
+  loopbackSiteUrlDev = false;
+}
 const staticTrustedOrigins = [
   ...localWebOriginVariants(siteUrl),
   "timeplete://",
@@ -98,7 +123,10 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
       const origins = [...staticTrustedOrigins];
       // Better Auth calls this with `undefined` during init (no live request yet)
       // and again per-request via corsRouter / origin-check middleware.
-      if (isLocalDevDeployment && request) {
+      const allowEphemeralLoopbackOrigin =
+        isLocalDevDeployment || loopbackSiteUrlDev;
+
+      if (allowEphemeralLoopbackOrigin && request) {
         const reqOrigin = request.headers.get("origin");
         if (reqOrigin && isLoopbackDevOrigin(reqOrigin)) {
           origins.push(reqOrigin);
