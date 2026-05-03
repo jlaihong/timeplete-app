@@ -248,7 +248,7 @@ export type TrackerDetailsHistoryRow =
       startDayYYYYMMDD: string;
       startTimeHHMM: string;
       durationSeconds: number;
-      /** `tw.title || tw.comments` in productivity-one (`convertTimeWindowToHistoryRow`) */
+      /** Mirrors productivity-one Comments: `tw.title || tw.comments`, then resolved label (task name, etc.). */
       commentsUnified: string;
       /** Present when trackCount && autoCountFromCalendar (value `1`). */
       syntheticCount?: number;
@@ -295,6 +295,10 @@ export function mergeTrackerDetailsHistory(opts: {
       attributed.push(w);
     }
 
+    const tasksById = mapById(bd.tasks as Record<string, TaskSubset>);
+    const listsById = mapById(bd.lists as Record<string, ListSubset>);
+    const trackablesById = mapById(bd.trackables as Record<string, TrackableSubset>);
+
     for (const tw of attributed) {
       const src = tw.source ?? "timer";
       // productivity-one: keep `time_window`-sourced rows always; omit `tracker_entry`
@@ -304,13 +308,25 @@ export function mergeTrackerDetailsHistory(opts: {
         continue;
       }
 
-      const titleOrComments =
+      const titleTrim =
         typeof tw.title === "string" && tw.title.trim().length > 0
           ? tw.title.trim()
-          : typeof tw.comments === "string" && tw.comments.trim().length > 0
-            ? tw.comments.trim()
-            : "";
+          : undefined;
+      const commentsTrim =
+        typeof tw.comments === "string" && tw.comments.trim().length > 0
+          ? tw.comments.trim()
+          : undefined;
 
+      const twSansCaption = { ...tw, title: undefined, comments: undefined } as TW;
+
+      const derivedLabel = displayTitleForEditHistoryWindow(
+        twSansCaption,
+        tasksById,
+        listsById,
+        trackablesById,
+      );
+
+      const commentsUnified = titleTrim ?? commentsTrim ?? derivedLabel;
       rows.push({
         source: "time_window",
         id: String(tw._id),
@@ -318,7 +334,7 @@ export function mergeTrackerDetailsHistory(opts: {
         startDayYYYYMMDD: tw.startDayYYYYMMDD,
         startTimeHHMM: tw.startTimeHHMM,
         durationSeconds: tw.durationSeconds,
-        commentsUnified: titleOrComments,
+        commentsUnified,
         syntheticCount:
           opts.trackCount && opts.autoCountFromCalendar ? 1 : undefined,
       });

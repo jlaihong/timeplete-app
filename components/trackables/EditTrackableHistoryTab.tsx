@@ -276,7 +276,7 @@ export function EditTrackableHistoryTab({
         >
           <View style={styles.trackerTable}>
             <View style={[styles.trackerDataRow, styles.trackerHeadRowBg]}>
-              <View style={styles.icoHead} />
+              <View style={styles.trackerIconCol} />
               <Text style={[styles.cellHead, styles.trackerDateCol]}>Date</Text>
               {trackerShowValueCol ? (
                 <Text style={[styles.cellHead, styles.trackerMiniCol]}>Value</Text>
@@ -288,7 +288,7 @@ export function EditTrackableHistoryTab({
                 </>
               ) : null}
               <Text style={[styles.cellHead, styles.trackerCommentsCol]}>Comments</Text>
-              <View style={styles.icoHead} />
+              <View style={styles.trackerDeleteCol} />
             </View>
 
             {trackerRows.map((row, i) => (
@@ -299,14 +299,14 @@ export function EditTrackableHistoryTab({
                   i % 2 === 1 ? styles.rowZebra : null,
                 ]}
               >
-                <View style={styles.icoHead}>
+                <View style={styles.trackerIconCol}>
                   <Ionicons
                     name={
                       row.source === "tracker_entry"
                         ? "reader-outline"
                         : "calendar-outline"
                     }
-                    size={14}
+                    size={16}
                     color={Colors.textSecondary}
                     accessibilityLabel={
                       row.source === "tracker_entry"
@@ -358,11 +358,11 @@ export function EditTrackableHistoryTab({
                       : "-"}
                 </Text>
 
-                <View style={styles.icoHead}>
+                <View style={styles.trackerDeleteCol}>
                   <Pressable
-                    hitSlop={8}
+                    hitSlop={10}
                     accessibilityRole="button"
-                    accessibilityLabel="Delete row"
+                    accessibilityLabel="Delete tracking row"
                     onPress={() => {
                       if (row.source === "tracker_entry") {
                         confirmDeleteTrackerRow(row.id as Id<"trackerEntries">, "");
@@ -371,7 +371,7 @@ export function EditTrackableHistoryTab({
                       }
                     }}
                   >
-                    <Ionicons name="trash-outline" size={18} color={Colors.textSecondary} />
+                    <Ionicons name="trash-outline" size={22} color={Colors.text} />
                   </Pressable>
                 </View>
               </View>
@@ -437,6 +437,7 @@ export function EditTrackableHistoryTab({
               <TableHeaderCell style={styles.colDuration}>Duration</TableHeaderCell>
             ) : null}
             <TableHeaderCell style={styles.colNotes}>Comments</TableHeaderCell>
+            <TableHeaderCell style={[styles.thCell, styles.colHistAction]} bold />
           </View>
           <ScrollView
             style={styles.tableBodyScroll}
@@ -465,9 +466,20 @@ export function EditTrackableHistoryTab({
                       </TableDataCell>
                     ) : null}
                     <TableDataCell style={styles.colNotes}>
-                      {row.comments?.trim() || "—"}
+                      {row.comments?.trim() || row.displayTitle?.trim() || "—"}
                     </TableDataCell>
-                  </View>
+                    <View style={[styles.tdCell, styles.colHistAction]}>
+                      <Pressable
+                        hitSlop={10}
+                        accessibilityRole="button"
+                        accessibilityLabel="Delete time row"
+                        onPress={() =>
+                          confirmDeleteTimeWindow(row._id as Id<"timeWindows">)
+                        }
+                      >
+                        <Ionicons name="trash-outline" size={22} color={Colors.text} />
+                      </Pressable>
+                    </View>
                 );
               }
 
@@ -507,7 +519,7 @@ export function EditTrackableHistoryTab({
                   <TableDataCell style={styles.colNotes}>
                     {e.comments?.trim() || "—"}
                   </TableDataCell>
-                </View>
+                  <TableDataCell style={styles.colHistAction}>{" "}</TableDataCell>
               );
             })}
           </ScrollView>
@@ -598,7 +610,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   trackerTable: {
-    minWidth: 520,
+    minWidth: 600,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
     borderRadius: 4,
@@ -631,10 +643,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 2,
   },
-  icoHead: {
-    width: 28,
+  trackerIconCol: {
+    width: 32,
     alignItems: "center",
     justifyContent: "center",
+  },
+  trackerDeleteCol: {
+    width: 48,
+    minWidth: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 4,
   },
   trackerDateCol: { width: 88 },
   trackerMiniCol: { width: 52 },
@@ -653,7 +672,7 @@ const styles = StyleSheet.create({
   loadMoreLabel: { fontSize: 13, fontWeight: "600", color: Colors.text },
 
   tableMinWidth: {
-    minWidth: 640,
+    minWidth: 728,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
     borderRadius: 4,
@@ -733,6 +752,12 @@ const styles = StyleSheet.create({
   colValue: { width: 56 },
   colDuration: { width: 72 },
   colNotes: { flex: 1, minWidth: 120 },
+  colHistAction: {
+    width: 48,
+    minWidth: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   colProgress: { width: 72 },
   colNotesWide: { flex: 1, minWidth: 200 },
 });
