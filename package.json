@@ -9,7 +9,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "web:clear": "expo start --web --clear --host localhost",
+    "web:clear": "expo start --web --clear --host localhost --port 33339",
     "postinstall": "patch-package"
   },
   "dependencies": {
