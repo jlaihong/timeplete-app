@@ -161,13 +161,9 @@ export function EditTrackableDialog({
   const trackableType = trackable.trackableType as TrackableType;
   const isGoal = trackableType !== "TRACKER";
 
-  /** Match productivity-one: footer Save is not shown on read-only / history views. */
+  /** Productivity-one: primary Save lives on the commitment/edit tab, not on history. */
   const showSaveFooter =
-    isGoal
-      ? goalTab === "commitment" ||
-        goalTab === "motivations" ||
-        goalTab === "accountability"
-      : trackerTab === "details";
+    isGoal ? goalTab === "commitment" : trackerTab === "details";
 
   const cardFlexStyle: ViewStyle[] = [
     Platform.OS === "web"
