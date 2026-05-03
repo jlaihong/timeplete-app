@@ -97,6 +97,17 @@ interface ListSection {
   data: ListPageTask[];
 }
 
+function listSectionCountSuffix(
+  isCollapsed: boolean,
+  totalTasks: number,
+  tasks: ListPageTask[],
+): string {
+  if (isCollapsed) return ` (${totalTasks})`;
+  if (tasks.length === 0) return "";
+  const c = tasks.filter((t) => !!t.dateCompleted).length;
+  return ` ${c}/${tasks.length}`;
+}
+
 interface ContextMenuState {
   taskId: Id<"tasks">;
   x: number;
@@ -202,7 +213,9 @@ export default function ListDetailScreen() {
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [showCompleted, setShowCompleted] = useState(true);
   const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
-  const [showAddTask, setShowAddTask] = useState(false);
+  const [addTaskSectionId, setAddTaskSectionId] = useState<
+    Id<"listSections"> | null
+  >(null);
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(
     null,
   );
@@ -680,6 +693,7 @@ export default function ListDetailScreen() {
             moveBetweenSections={async (args) => {
               await moveBetweenSections(args);
             }}
+            onAddTaskToSection={(sid) => setAddTaskSectionId(sid)}
             listContentStyle={
               noSections
                 ? [styles.listContent, styles.listContentEmpty]
@@ -718,33 +732,49 @@ export default function ListDetailScreen() {
               )
             : undefined
         }
-        renderSectionHeader={({ section }) => (
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onPress={() => toggleSectionCollapsed(section.sectionKey)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityState={{
-              expanded: !collapsedSectionKeys.has(section.sectionKey),
-            }}
-            accessibilityLabel={`${section.title}, ${collapsedSectionKeys.has(section.sectionKey) ? "collapsed" : "expanded"}`}
-          >
-            <MaterialIcons
-              name="arrow-forward-ios"
-              size={14}
-              color={Colors.textTertiary}
-              style={[
-                styles.sectionExpandArrow,
-                !collapsedSectionKeys.has(section.sectionKey) &&
-                  styles.sectionExpandArrowOpen,
-              ]}
-            />
-            <Text style={styles.sectionTitle}>{section.title}</Text>
-            <Text style={styles.sectionCount}>
-              {section.totalTasks} tasks
-            </Text>
-          </TouchableOpacity>
-        )}
+        renderSectionHeader={({ section }) => {
+          const collapsed = collapsedSectionKeys.has(section.sectionKey);
+          const countSuffix = listSectionCountSuffix(
+            collapsed,
+            section.totalTasks,
+            section.data,
+          );
+          return (
+            <View style={styles.sectionHeaderRow}>
+              <TouchableOpacity
+                style={styles.sectionHeaderMain}
+                onPress={() => toggleSectionCollapsed(section.sectionKey)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: !collapsed }}
+                accessibilityLabel={`${section.title}, ${collapsed ? "collapsed" : "expanded"}`}
+              >
+                <MaterialIcons
+                  name="arrow-forward-ios"
+                  size={18}
+                  color={Colors.textTertiary}
+                  style={[
+                    styles.sectionExpandArrow,
+                    !collapsed && styles.sectionExpandArrowOpen,
+                  ]}
+                />
+                <Text style={styles.sectionTitle} numberOfLines={1}>
+                  {section.title}
+                  <Text style={styles.sectionCountInline}>{countSuffix}</Text>
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setAddTaskSectionId(section.sectionId)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={styles.sectionAddBtn}
+                accessibilityRole="button"
+                accessibilityLabel={`Add task to ${section.title}`}
+              >
+                <Ionicons name="add" size={26} color={Colors.primary} />
+              </TouchableOpacity>
+            </View>
+          );
+        }}
         renderItem={({ item: task }) => {
           const meta = buildMeta(task, tagMap, listMap, trackableMap);
           const isTicking = timer.isRunning && timer.taskId === task._id;
@@ -889,7 +919,9 @@ export default function ListDetailScreen() {
 
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => setShowAddTask(true)}
+        onPress={() => {
+          if (defaultSectionId) setAddTaskSectionId(defaultSectionId);
+        }}
         accessibilityRole="button"
         accessibilityLabel="Add task"
       >
@@ -902,11 +934,12 @@ export default function ListDetailScreen() {
         onClose={() => setShowEditDialog(false)}
       />
 
-      {showAddTask && listId && (
+      {addTaskSectionId && listId && (
         <AddTaskSheet
           listId={listId}
-          sectionId={defaultSectionId}
-          onClose={() => setShowAddTask(false)}
+          sectionId={addTaskSectionId}
+          lockListToContext
+          onClose={() => setAddTaskSectionId(null)}
         />
       )}
 
@@ -1025,19 +1058,31 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     alignSelf: "stretch",
   },
-  sectionHeader: {
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    gap: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.outlineVariant,
+    marginBottom: 8,
+  },
+  sectionHeaderMain: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
+    minWidth: 0,
     ...Platform.select({
       web: { cursor: "pointer" } as object,
       default: {},
     }),
   },
+  sectionAddBtn: {
+    padding: 4,
+  },
   sectionExpandArrow: {
-    marginRight: 2,
     ...Platform.select({
       web: { transition: "transform 150ms ease" } as object,
       default: {},
@@ -1048,12 +1093,16 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: "700",
-    color: Colors.textSecondary,
-    textTransform: "uppercase",
+    fontSize: 18,
+    fontWeight: "500",
+    color: Colors.text,
+    minWidth: 0,
   },
-  sectionCount: { fontSize: 12, color: Colors.textTertiary },
+  sectionCountInline: {
+    fontSize: 15,
+    fontWeight: "400",
+    color: Colors.textTertiary,
+  },
   taskCardWrap: { marginBottom: 8 },
   taskCard: { marginBottom: 6 },
   taskRow: {

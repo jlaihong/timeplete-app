@@ -30,7 +30,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
 import {
   TaskRowDesktop,
@@ -221,6 +221,8 @@ export interface ListDetailWebDndProps {
     toSectionId: Id<"listSections">;
     newOrderIndex: number;
   }) => Promise<void>;
+  /** Opens add-task UI for a specific section (productivity-one per-section +). */
+  onAddTaskToSection?: (sectionId: Id<"listSections">) => void;
   listContentStyle?: object;
   /** Footer inside scroll (load more, etc.) */
   footer?: React.ReactNode;
@@ -228,6 +230,17 @@ export interface ListDetailWebDndProps {
 }
 
 const DEFAULT_DURATION_SEC = 1800;
+
+function sectionCountSuffix(
+  isCollapsed: boolean,
+  totalTasks: number,
+  tasks: TaskRowTask[],
+): string {
+  if (isCollapsed) return ` (${totalTasks})`;
+  if (tasks.length === 0) return "";
+  const c = tasks.filter((t) => !!t.dateCompleted).length;
+  return ` ${c}/${tasks.length}`;
+}
 
 export function ListDetailWebDnd({
   sections,
@@ -241,6 +254,7 @@ export function ListDetailWebDnd({
   onSetTimeSpent,
   onRequestContextMenu,
   moveBetweenSections,
+  onAddTaskToSection,
   listContentStyle,
   footer,
   ListEmptyComponent,
@@ -513,29 +527,60 @@ export function ListDetailWebDnd({
           ? ListEmptyComponent
           : localGroups.map((group) => {
               const isCollapsed = collapsedSectionIds.has(group.id);
+              const countSuffix = sectionCountSuffix(
+                isCollapsed,
+                group.totalTasks,
+                group.tasks,
+              );
               return (
                 <View key={group.id} style={styles.sectionBlock}>
-                  <Pressable
-                    style={styles.sectionHeaderPressable}
-                    onPress={() => toggleSectionCollapsed(group.id)}
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded: !isCollapsed }}
-                    accessibilityLabel={`${group.title}, ${isCollapsed ? "collapsed" : "expanded"}`}
-                  >
-                    <MaterialIcons
-                      name="arrow-forward-ios"
-                      size={14}
-                      color={Colors.textTertiary}
-                      style={[
-                        styles.expandArrow,
-                        !isCollapsed && styles.expandArrowOpen,
-                      ]}
-                    />
-                    <Text style={styles.sectionTitle}>{group.title}</Text>
-                    <Text style={styles.sectionCount}>
-                      {group.totalTasks} tasks
-                    </Text>
-                  </Pressable>
+                  <View style={styles.sectionHeaderRow}>
+                    <Pressable
+                      style={styles.sectionHeaderMain}
+                      onPress={() => toggleSectionCollapsed(group.id)}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: !isCollapsed }}
+                      accessibilityLabel={`${group.title}, ${isCollapsed ? "collapsed" : "expanded"}`}
+                    >
+                      <MaterialIcons
+                        name="arrow-forward-ios"
+                        size={18}
+                        color={Colors.textTertiary}
+                        style={[
+                          styles.expandArrow,
+                          !isCollapsed && styles.expandArrowOpen,
+                        ]}
+                      />
+                      <Text style={styles.sectionTitle} numberOfLines={1}>
+                        {group.title}
+                        <Text style={styles.sectionCountInline}>
+                          {countSuffix}
+                        </Text>
+                      </Text>
+                    </Pressable>
+                    {onAddTaskToSection ? (
+                      <Pressable
+                        onPress={(e: { stopPropagation?: () => void }) => {
+                          e?.stopPropagation?.();
+                          onAddTaskToSection(group.sectionId);
+                        }}
+                        style={({ hovered }: { hovered?: boolean }) => [
+                          styles.sectionAddBtn,
+                          hovered && styles.sectionAddBtnHover,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Add task to ${group.title}`}
+                        hitSlop={8}
+                      >
+                        <Ionicons
+                          name="add"
+                          size={24}
+                          color={Colors.primary}
+                        />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <View style={styles.sectionDivider} />
                   {!isCollapsed ? (
                     <SortableContext
                       items={group.tasks.map((t) => t._id)}
@@ -603,20 +648,43 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   listContent: { padding: 16, paddingBottom: 24 },
-  sectionBlock: { marginBottom: 8 },
-  sectionHeaderPressable: {
+  sectionBlock: { marginBottom: 4 },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    gap: 4,
+  },
+  sectionHeaderMain: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
+    minWidth: 0,
     ...Platform.select({
       web: { cursor: "pointer" } as object,
       default: {},
     }),
   },
-  expandArrow: {
-    marginRight: 2,
+  sectionAddBtn: {
+    padding: 6,
+    borderRadius: 20,
+    ...Platform.select({
+      web: { cursor: "pointer" } as object,
+      default: {},
+    }),
+  },
+  sectionAddBtnHover: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  sectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.outlineVariant,
+    marginBottom: 10,
+    marginTop: 2,
+  },
+    marginRight: 0,
     ...Platform.select({
       web: { transition: "transform 150ms ease" } as object,
       default: {},
@@ -627,12 +695,16 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: "700",
-    color: Colors.textSecondary,
-    textTransform: "uppercase",
+    fontSize: 18,
+    fontWeight: "500",
+    color: Colors.text,
+    minWidth: 0,
   },
-  sectionCount: { fontSize: 12, color: Colors.textTertiary },
+  sectionCountInline: {
+    fontSize: 15,
+    fontWeight: "400",
+    color: Colors.textTertiary,
+  },
   rowWrap: { marginBottom: 8 },
   emptyDropZone: {
     minHeight: 48,
