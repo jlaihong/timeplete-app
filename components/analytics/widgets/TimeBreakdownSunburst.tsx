@@ -12,11 +12,12 @@ import Svg, { Path, Circle } from "react-native-svg";
 import { Colors, TRACKABLE_COLORS } from "../../../constants/colors";
 import { formatSecondsAsHM } from "../../../lib/dates";
 import {
+  GROUP_BY_DISPLAY_LABEL,
   GroupByMode,
   GroupedBucket,
   GroupingLookups,
-  groupTimeWindowsWithBuckets,
 } from "../../../lib/grouping";
+import { sunburstRingBuckets } from "../../../lib/analytics/sunburstHierarchy";
 import type { TimeWindowLite } from "../useAnalyticsDataset";
 
 if (
@@ -90,17 +91,18 @@ export interface FocusFrame {
   label: string;
   totalSeconds: number;
   windows: TimeWindowLite[];
-  /** Depth in drill stack; ring uses modeChain[depth]. */
+  /** Drill depth; ring dimension is `groupingLevels[depth]`. */
   depth: number;
 }
 
 export interface TimeBreakdownSunburstProps {
   timeWindows: TimeWindowLite[];
   totalSecondsDenominator: number;
-  modeChain: GroupByMode[];
+  /** Ordered grouping dimensions — ring i uses `groupingLevels[i]`. */
+  groupingLevels: GroupByMode[];
   lookups: GroupingLookups;
   isLoading: boolean;
-  /** Tab + group-by + bounds — drill stack resets when this changes. */
+  /** Tab + ordered levels + bounds — drill stack resets when this changes. */
   resetScheduleKey: string;
   /** Cheap fingerprint when the underlying slice meaningfully changes. */
   dataSignature: string;
@@ -109,7 +111,7 @@ export interface TimeBreakdownSunburstProps {
 export function TimeBreakdownSunburst({
   timeWindows,
   totalSecondsDenominator,
-  modeChain,
+  groupingLevels,
   lookups,
   isLoading,
   resetScheduleKey,
@@ -143,14 +145,18 @@ export function TimeBreakdownSunburst({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only on schedule/signature; avoid churn from Convex identity
   }, [resetScheduleKey, dataSignature, isLoading]);
 
-  const buckets: GroupedBucket[] = useMemo(() => {
-    if (focus.depth >= modeChain.length || focus.windows.length === 0) {
-      return [];
-    }
-    const mode = modeChain[focus.depth];
-    if (!mode) return [];
-    return groupTimeWindowsWithBuckets(focus.windows, mode, lookups);
-  }, [focus.depth, focus.windows, modeChain, lookups]);
+  const buckets: GroupedBucket[] = useMemo(
+    () =>
+      focus.windows.length === 0
+        ? []
+        : sunburstRingBuckets(
+            focus.windows,
+            focus.depth,
+            groupingLevels,
+            lookups
+          ),
+    [focus.depth, focus.windows, groupingLevels, lookups]
+  );
 
   const angles = useMemo(() => layoutRingAngles(buckets), [buckets]);
 
@@ -206,10 +212,14 @@ export function TimeBreakdownSunburst({
   }
 
   const showRing =
-    buckets.length > 0 && focus.depth < modeChain.length;
+    buckets.length > 0 && focus.depth < groupingLevels.length;
   const noFurther =
-    focus.depth >= modeChain.length ||
+    focus.depth >= groupingLevels.length ||
     (buckets.length === 0 && focus.depth > 0);
+
+  const ringMode = groupingLevels[focus.depth];
+  const ringLabel =
+    ringMode !== undefined ? GROUP_BY_DISPLAY_LABEL[ringMode] : "";
 
   const webHoverProps = (key: string) =>
     Platform.OS === "web"
@@ -318,7 +328,10 @@ export function TimeBreakdownSunburst({
       </View>
 
       {hoverBucket ? (
-        <Text style={styles.tooltip} numberOfLines={2}>
+        <Text style={styles.tooltip} numberOfLines={3}>
+          {ringLabel ? (
+            <Text style={styles.tooltipDim}>{ringLabel}: </Text>
+          ) : null}
           {hoverBucket.label}
           {" · "}
           {formatSecondsAsHM(hoverBucket.totalSeconds)}
@@ -336,8 +349,8 @@ export function TimeBreakdownSunburst({
 
       {noFurther ? (
         <Text style={styles.footerNote}>
-          {focus.depth >= modeChain.length
-            ? "No further grouping levels for this tab."
+          {focus.depth >= groupingLevels.length
+            ? "End of grouping sequence."
             : "No subdivisions at this level."}
         </Text>
       ) : null}
@@ -437,6 +450,10 @@ const styles = StyleSheet.create({
     minHeight: 18,
     alignSelf: "stretch",
     paddingHorizontal: 8,
+  },
+  tooltipDim: {
+    fontWeight: "600",
+    color: Colors.textSecondary,
   },
   tooltipPlaceholder: {
     marginTop: 6,
