@@ -284,6 +284,7 @@ export const GROUP_BY_LABEL: Record<GroupByMode, string> = {
   year: "Year",
 };
 
+/**
  * Default grouping chain per analytics frequency (matches productivity-one
  * analytics defaults — Daily: Trackable → List → Task).
  */
