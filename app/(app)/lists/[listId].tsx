@@ -193,6 +193,27 @@ export default function ListDetailScreen() {
       : "skip",
   );
 
+  /**
+   * When a section exceeds `lists.getPaginated`'s incomplete slice (`taskLimit`),
+   * `tasks.length < totalTasks` and `canDragReorder` disables DnD. Adding an
+   * incomplete task sorts it first (`sectionOrderIndex: 0`), which can push an
+   * older row past the slice and flip the UI into truncated state —
+   * "drag suddenly breaks" until the slice is enlarged.
+   */
+  useEffect(() => {
+    if (!paginatedList) return;
+    setTaskLimit((prev) => {
+      let need = prev;
+      for (const s of paginatedList.sections) {
+        const deficit = s.totalTasks - s.tasks.length;
+        if (deficit > 0) {
+          need = Math.max(need, prev + deficit);
+        }
+      }
+      return need;
+    });
+  }, [paginatedList]);
+
   const allLists = useQuery(api.lists.search, canQueryLists ? {} : "skip");
   const fullList = allLists?.find((l) => l._id === listId);
   const tags = useQuery(api.tags.search, canQueryLists ? {} : "skip");

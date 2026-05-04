@@ -584,6 +584,7 @@ export function ListDetailWebDnd({
                   <View style={styles.sectionDivider} />
                   {!isCollapsed ? (
                     <SortableContext
+                      id={`section:${group.id}`}
                       items={group.tasks.map((t) => t._id)}
                       strategy={verticalListSortingStrategy}
                     >
