@@ -34,15 +34,17 @@ export function TimeBreakdownSection() {
 
   const primaryMode = groupingLevels[0];
 
-  const groupingLookups: GroupingLookups = useMemo(
-    () => ({
-      tasks: dataset.tasks,
-      tags: dataset.tags,
-      lists: dataset.lists,
-      trackables: dataset.trackables as GroupingLookups["trackables"],
-      listIdToTrackableId: dataset.listIdToTrackableId,
-      resolveTrackableId: dataset.resolveTrackableId,
-    }),
+  const groupingLookups = useMemo(
+    () =>
+      ({
+        tasks: dataset.tasks,
+        tags: dataset.tags,
+        lists: dataset.lists,
+        trackables: dataset.trackables as GroupingLookups["trackables"],
+        listIdToTrackableId: dataset.listIdToTrackableId,
+        resolveTrackableId: dataset.resolveTrackableId,
+        analyticsTab: selectedTab,
+      }) as GroupingLookups,
     [
       dataset.tasks,
       dataset.tags,
@@ -50,6 +52,7 @@ export function TimeBreakdownSection() {
       dataset.trackables,
       dataset.listIdToTrackableId,
       dataset.resolveTrackableId,
+      selectedTab,
     ]
   );
 
