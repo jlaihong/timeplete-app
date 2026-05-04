@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../../constants/colors";
 import { formatSecondsAsHM } from "../../../lib/dates";
+import { DEFAULT_EVENT_COLOR } from "../../../lib/eventColors";
 import {
   groupTimeWindows,
   GroupByMode,
@@ -105,7 +106,10 @@ export function TimeBreakdownSection() {
                     />
                   ) : (
                     <View
-                      style={[styles.dot, { backgroundColor: Colors.primary }]}
+                      style={[
+                        styles.dot,
+                        { backgroundColor: DEFAULT_EVENT_COLOR },
+                      ]}
                     />
                   )}
                   <Text style={styles.rowLabel} numberOfLines={1}>
@@ -118,7 +122,7 @@ export function TimeBreakdownSection() {
                       styles.barFill,
                       {
                         width: `${pct}%`,
-                        backgroundColor: item.colour ?? Colors.primary,
+                        backgroundColor: item.colour ?? DEFAULT_EVENT_COLOR,
                       },
                     ]}
                   />

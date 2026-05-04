@@ -9,8 +9,9 @@ import {
   UIManager,
 } from "react-native";
 import Svg, { Path, Circle } from "react-native-svg";
-import { Colors, TRACKABLE_COLORS } from "../../../constants/colors";
+import { Colors } from "../../../constants/colors";
 import { formatAggregatedTimeSpanLabel, formatSecondsAsHM } from "../../../lib/dates";
+import { DEFAULT_EVENT_COLOR } from "../../../lib/eventColors";
 import {
   GROUP_BY_LABEL,
   GroupByMode,
@@ -69,14 +70,6 @@ function annulusSectorPath(
     `A ${rInner} ${rInner} 0 ${large} 0 ${p3.x} ${p3.y}`,
     `Z`,
   ].join(" ");
-}
-
-function fallbackColour(key: string): string {
-  let h = 0;
-  for (let i = 0; i < key.length; i++) {
-    h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  }
-  return TRACKABLE_COLORS[h % TRACKABLE_COLORS.length]!;
 }
 
 export interface TimeBreakdownSunburstProps {
@@ -265,7 +258,7 @@ export function TimeBreakdownSunburst({
           style={styles.svg}
         >
           {paintArcs.map((a) => {
-            const fill = a.colour ?? fallbackColour(a.key);
+            const fill = a.colour ?? DEFAULT_EVENT_COLOR;
             const dimmed =
               hoverKey !== null && hoverKey !== a.key ? 0.42 : 1;
             const drillable = a.depth < frame.levels.length - 1;
