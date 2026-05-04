@@ -89,8 +89,10 @@ export function timeWindowBoundsMs(w: {
 }
 
 /**
- * Min start → max end across windows (for time-breakdown tooltips).
- * Returns null when no window has a parseable start time.
+ * Tooltip line for Time window sunburst wedges.
+ *
+ * - **One** log with a parseable start time → that block’s start–end (matches duration).
+ * - **Several** logs → session count plus earliest start and latest end (not one interval).
  */
 export function formatAggregatedTimeSpanLabel(
   windows: {
@@ -99,18 +101,13 @@ export function formatAggregatedTimeSpanLabel(
     durationSeconds: number;
   }[]
 ): string | null {
-  let minS = Infinity;
-  let maxE = -Infinity;
+  const bounds: { startMs: number; endMs: number }[] = [];
   for (const w of windows) {
     const b = timeWindowBoundsMs(w);
-    if (!b) continue;
-    if (b.startMs < minS) minS = b.startMs;
-    if (b.endMs > maxE) maxE = b.endMs;
+    if (b) bounds.push(b);
   }
-  if (minS === Infinity || maxE === -Infinity) return null;
+  if (bounds.length === 0) return null;
 
-  const start = new Date(minS);
-  const end = new Date(maxE);
   const timeOnly: Intl.DateTimeFormatOptions = {
     hour: "numeric",
     minute: "2-digit",
@@ -123,19 +120,41 @@ export function formatAggregatedTimeSpanLabel(
     minute: "2-digit",
   };
 
-  if (maxE <= minS) {
-    return start.toLocaleTimeString(undefined, timeOnly);
+  if (bounds.length === 1) {
+    const { startMs, endMs } = bounds[0]!;
+    const start = new Date(startMs);
+    const end = new Date(endMs);
+    if (endMs <= startMs) {
+      return start.toLocaleTimeString(undefined, timeOnly);
+    }
+    const sameCalendarDay =
+      start.getFullYear() === end.getFullYear() &&
+      start.getMonth() === end.getMonth() &&
+      start.getDate() === end.getDate();
+
+    if (sameCalendarDay) {
+      return `${start.toLocaleTimeString(undefined, timeOnly)} – ${end.toLocaleTimeString(undefined, timeOnly)}`;
+    }
+    return `${start.toLocaleString(undefined, dateTime)} – ${end.toLocaleString(undefined, dateTime)}`;
   }
 
+  const minS = Math.min(...bounds.map((b) => b.startMs));
+  const maxE = Math.max(...bounds.map((b) => b.endMs));
+  const earliest = new Date(minS);
+  const latest = new Date(maxE);
   const sameCalendarDay =
-    start.getFullYear() === end.getFullYear() &&
-    start.getMonth() === end.getMonth() &&
-    start.getDate() === end.getDate();
+    earliest.getFullYear() === latest.getFullYear() &&
+    earliest.getMonth() === latest.getMonth() &&
+    earliest.getDate() === latest.getDate();
 
-  if (sameCalendarDay) {
-    return `${start.toLocaleTimeString(undefined, timeOnly)} – ${end.toLocaleTimeString(undefined, timeOnly)}`;
-  }
-  return `${start.toLocaleString(undefined, dateTime)} – ${end.toLocaleString(undefined, dateTime)}`;
+  const earliestStr = sameCalendarDay
+    ? earliest.toLocaleTimeString(undefined, timeOnly)
+    : earliest.toLocaleString(undefined, dateTime);
+  const latestStr = sameCalendarDay
+    ? latest.toLocaleTimeString(undefined, timeOnly)
+    : latest.toLocaleString(undefined, dateTime);
+
+  return `${bounds.length} sessions · earliest ${earliestStr} · latest end ${latestStr}`;
 }
 
 /** Locale-friendly label for an hour-of-day bucket (e.g. "9 AM"). */
