@@ -89,6 +89,62 @@ export function timeWindowBoundsMs(w: {
 }
 
 /**
+ * One wedge label per logged row (matches Productivity-One: each time window is its own segment).
+ */
+export function formatTimeWindowWedgeLabel(
+  w: {
+    startDayYYYYMMDD: string;
+    startTimeHHMM?: string;
+    durationSeconds: number;
+  },
+  analyticsTab?: string
+): string {
+  const dateLine = formatYYYYMMDDForDisplay(w.startDayYYYYMMDD);
+  const bounds = timeWindowBoundsMs(w);
+  const timeOnly: Intl.DateTimeFormatOptions = {
+    hour: "numeric",
+    minute: "2-digit",
+  };
+  const dateTime: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  };
+
+  if (!bounds) {
+    return dateLine;
+  }
+
+  const start = new Date(bounds.startMs);
+  const end = new Date(bounds.endMs);
+
+  const sameCalendarDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+
+  if (analyticsTab === "DAILY") {
+    if (bounds.endMs <= bounds.startMs) {
+      return start.toLocaleTimeString(undefined, timeOnly);
+    }
+    if (sameCalendarDay) {
+      return `${start.toLocaleTimeString(undefined, timeOnly)} – ${end.toLocaleTimeString(undefined, timeOnly)}`;
+    }
+    return `${start.toLocaleString(undefined, dateTime)} – ${end.toLocaleString(undefined, dateTime)}`;
+  }
+
+  if (bounds.endMs <= bounds.startMs) {
+    return `${dateLine} · ${start.toLocaleTimeString(undefined, timeOnly)}`;
+  }
+  if (sameCalendarDay) {
+    return `${dateLine} · ${start.toLocaleTimeString(undefined, timeOnly)} – ${end.toLocaleTimeString(undefined, timeOnly)}`;
+  }
+  return `${start.toLocaleString(undefined, dateTime)} – ${end.toLocaleString(undefined, dateTime)}`;
+}
+
+/**
  * Tooltip line for Time window sunburst wedges.
  *
  * - **One** log with a parseable start time → that block’s start–end (matches duration).

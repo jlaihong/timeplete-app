@@ -1,15 +1,16 @@
 import {
-  formatHourBucketLabel,
+  formatTimeWindowWedgeLabel,
   formatYYYYMMDDForDisplay,
-  hourFromHHMM,
+  timeWindowBoundsMs,
 } from "./dates";
 
 export type TimeWindowLike = {
   startDayYYYYMMDD: string;
   durationSeconds: number;
   activityType: string;
-  /** Clock start for intra-day grouping (Daily → time window by hour). */
   startTimeHHMM?: string;
+  /** Convex document id — one `time_window` wedge per row (Productivity-One). */
+  _id?: string;
   taskId?: string | null;
   trackableId?: string | null;
   tagIds?: string[];
@@ -24,7 +25,7 @@ export type GroupByMode =
   | "day_of_week"
   | "month"
   | "year"
-  /** Sub-period within the analytics range: hour (Daily), day (Weekly/Monthly), month (Yearly). */
+  /** One segment per logged time window (not bucketed by hour/day/month). */
   | "time_window";
 
 export interface GroupedResult {
@@ -65,7 +66,7 @@ export interface GroupingLookups {
   listIdToTrackableId?: Record<string, string>;
   /** Union attribution for trackable — matches `useAnalyticsDataset.resolveTrackableId`. */
   resolveTrackableId?: (w: TimeWindowLike) => string | null;
-  /** Active analytics tab — required for `time_window` grouping resolution. */
+  /** Active analytics tab — used for time-window wedge labels (date vs time-only). */
   analyticsTab?: string;
 }
 
@@ -170,34 +171,17 @@ function getGroupKeys(
       ];
 
     case "time_window": {
-      const tab = lookups.analyticsTab ?? "DAILY";
-      if (tab === "DAILY") {
-        const h = hourFromHHMM(w.startTimeHHMM);
-        if (h === null) {
-          return [{ key: "unknown_time", label: "Time unknown" }];
-        }
-        return [
-          {
-            key: `h${String(h).padStart(2, "0")}`,
-            label: formatHourBucketLabel(h),
-          },
-        ];
-      }
-      if (tab === "WEEKLY" || tab === "MONTHLY") {
-        const day = w.startDayYYYYMMDD;
-        return [{ key: day, label: formatYYYYMMDDForDisplay(day) }];
-      }
-      if (tab === "YEARLY") {
-        const monthKey = w.startDayYYYYMMDD.slice(0, 6);
-        const year = parseInt(monthKey.slice(0, 4));
-        const month = parseInt(monthKey.slice(4, 6)) - 1;
-        const label = new Date(year, month).toLocaleDateString(undefined, {
-          month: "long",
-          year: "numeric",
-        });
-        return [{ key: monthKey, label }];
-      }
-      return [{ key: "all", label: "All" }];
+      const id = w._id?.trim();
+      const key =
+        id && id.length > 0
+          ? id
+          : `tw|${w.startDayYYYYMMDD}|${w.startTimeHHMM ?? ""}|${w.durationSeconds}|${w.taskId ?? ""}|${w.trackableId ?? ""}|${w.activityType}`;
+      return [
+        {
+          key,
+          label: formatTimeWindowWedgeLabel(w, lookups.analyticsTab),
+        },
+      ];
     }
 
     default:
@@ -274,8 +258,17 @@ export function groupTimeWindowsWithBuckets(
 
   if (mode === "time_window") {
     rows.sort((a, b) => {
-      if (a.key === "unknown_time") return 1;
-      if (b.key === "unknown_time") return -1;
+      const wa = a.windows[0];
+      const wb = b.windows[0];
+      if (!wa) return 1;
+      if (!wb) return -1;
+      const ba = timeWindowBoundsMs(wa);
+      const bb = timeWindowBoundsMs(wb);
+      if (!ba && !bb) return a.key.localeCompare(b.key);
+      if (!ba) return 1;
+      if (!bb) return -1;
+      const d = ba.startMs - bb.startMs;
+      if (d !== 0) return d;
       return a.key.localeCompare(b.key);
     });
   } else {
