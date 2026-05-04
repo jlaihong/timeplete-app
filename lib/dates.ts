@@ -46,12 +46,96 @@ export function formatYYYYMMDDForDisplay(yyyymmdd: string): string {
  * Calendar hour 0–23 from a clock string like "09:30" or "9:30".
  */
 export function hourFromHHMM(hhmm: string | undefined | null): number | null {
+  const mins = parseHHMMToMinutesSinceMidnight(hhmm);
+  if (mins === null) return null;
+  return Math.floor(mins / 60);
+}
+
+/** Minutes since local midnight 0–1439, or null if invalid. */
+export function parseHHMMToMinutesSinceMidnight(
+  hhmm: string | undefined | null
+): number | null {
   if (hhmm == null || hhmm === "") return null;
   const m = /^(\d{1,2})(?::(\d{2}))?/.exec(hhmm.trim());
   if (!m) return null;
   const h = parseInt(m[1]!, 10);
-  if (!Number.isFinite(h) || h < 0 || h > 23) return null;
-  return h;
+  const min = m[2] != null ? parseInt(m[2], 10) : 0;
+  if (
+    !Number.isFinite(h) ||
+    h < 0 ||
+    h > 23 ||
+    !Number.isFinite(min) ||
+    min < 0 ||
+    min > 59
+  ) {
+    return null;
+  }
+  return h * 60 + min;
+}
+
+/** Start/end instants for a logged window (local calendar + clock). */
+export function timeWindowBoundsMs(w: {
+  startDayYYYYMMDD: string;
+  startTimeHHMM?: string;
+  durationSeconds: number;
+}): { startMs: number; endMs: number } | null {
+  const day = tryParseYYYYMMDD(w.startDayYYYYMMDD);
+  if (!day) return null;
+  const mins = parseHHMMToMinutesSinceMidnight(w.startTimeHHMM);
+  if (mins === null) return null;
+  const startMs = day.getTime() + mins * 60 * 1000;
+  const endMs = startMs + Math.max(0, w.durationSeconds) * 1000;
+  return { startMs, endMs };
+}
+
+/**
+ * Min start → max end across windows (for time-breakdown tooltips).
+ * Returns null when no window has a parseable start time.
+ */
+export function formatAggregatedTimeSpanLabel(
+  windows: {
+    startDayYYYYMMDD: string;
+    startTimeHHMM?: string;
+    durationSeconds: number;
+  }[]
+): string | null {
+  let minS = Infinity;
+  let maxE = -Infinity;
+  for (const w of windows) {
+    const b = timeWindowBoundsMs(w);
+    if (!b) continue;
+    if (b.startMs < minS) minS = b.startMs;
+    if (b.endMs > maxE) maxE = b.endMs;
+  }
+  if (minS === Infinity || maxE === -Infinity) return null;
+
+  const start = new Date(minS);
+  const end = new Date(maxE);
+  const timeOnly: Intl.DateTimeFormatOptions = {
+    hour: "numeric",
+    minute: "2-digit",
+  };
+  const dateTime: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  };
+
+  if (maxE <= minS) {
+    return start.toLocaleTimeString(undefined, timeOnly);
+  }
+
+  const sameCalendarDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+
+  if (sameCalendarDay) {
+    return `${start.toLocaleTimeString(undefined, timeOnly)} – ${end.toLocaleTimeString(undefined, timeOnly)}`;
+  }
+  return `${start.toLocaleString(undefined, dateTime)} – ${end.toLocaleString(undefined, dateTime)}`;
 }
 
 /** Locale-friendly label for an hour-of-day bucket (e.g. "9 AM"). */

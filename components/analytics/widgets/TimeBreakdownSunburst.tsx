@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import Svg, { Path, Circle } from "react-native-svg";
 import { Colors, TRACKABLE_COLORS } from "../../../constants/colors";
-import { formatSecondsAsHM } from "../../../lib/dates";
+import { formatAggregatedTimeSpanLabel, formatSecondsAsHM } from "../../../lib/dates";
 import {
   GROUP_BY_LABEL,
   GroupByMode,
@@ -147,6 +147,11 @@ export function TimeBreakdownSunburst({
     () => (hoverKey === null ? null : arcs.find((a) => a.key === hoverKey) ?? null),
     [hoverKey, arcs]
   );
+
+  const hoveredTimeWindowSpan = useMemo(() => {
+    if (!hovered || hovered.mode !== "time_window") return null;
+    return formatAggregatedTimeSpanLabel(hovered.windows);
+  }, [hovered]);
 
   const drill = useCallback((arc: PartitionArc) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -327,10 +332,16 @@ export function TimeBreakdownSunburst({
       </View>
 
       {hovered ? (
-        <Text style={styles.tooltip} numberOfLines={3}>
+        <Text style={styles.tooltip} numberOfLines={5}>
           <Text style={styles.tooltipDim}>{GROUP_BY_LABEL[hovered.mode]}: </Text>
           {hovered.label}
-          {" · "}
+          {hoveredTimeWindowSpan ? (
+            <>
+              {"\n"}
+              <Text style={styles.tooltipRange}>{hoveredTimeWindowSpan}</Text>
+            </>
+          ) : null}
+          {"\n"}
           {formatSecondsAsHM(hovered.seconds)}
           {" · "}
           {totalSecondsDenominator > 0
@@ -441,6 +452,11 @@ const styles = StyleSheet.create({
   tooltipDim: {
     color: Colors.textSecondary,
     fontWeight: "600",
+  },
+  tooltipRange: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.text,
   },
   tooltipPlaceholder: {
     marginTop: 6,
