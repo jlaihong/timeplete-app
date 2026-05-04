@@ -42,6 +42,24 @@ export function formatYYYYMMDDForDisplay(yyyymmdd: string): string {
   });
 }
 
+/**
+ * Calendar hour 0–23 from a clock string like "09:30" or "9:30".
+ */
+export function hourFromHHMM(hhmm: string | undefined | null): number | null {
+  if (hhmm == null || hhmm === "") return null;
+  const m = /^(\d{1,2})(?::(\d{2}))?/.exec(hhmm.trim());
+  if (!m) return null;
+  const h = parseInt(m[1]!, 10);
+  if (!Number.isFinite(h) || h < 0 || h > 23) return null;
+  return h;
+}
+
+/** Locale-friendly label for an hour-of-day bucket (e.g. "9 AM"). */
+export function formatHourBucketLabel(hour: number): string {
+  const d = new Date(2000, 0, 1, hour, 0, 0, 0);
+  return d.toLocaleTimeString(undefined, { hour: "numeric" });
+}
+
 /** Whole **calendar days** between two YYYYMMDD strings (end - start). */
 export function daysBetweenYYYYMMDD(start: string, end: string): number {
   const s = tryParseYYYYMMDD(start);

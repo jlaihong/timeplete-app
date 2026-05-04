@@ -158,7 +158,7 @@ export function TimeBreakdownSunburst({
       return [
         ...prev,
         {
-          windows: arc.windows,
+          windows: arc.windows as TimeWindowLite[],
           levels: nextLevels,
           pathLabels: [...top.pathLabels, arc.label],
         },

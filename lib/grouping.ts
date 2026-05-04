@@ -1,9 +1,15 @@
-import { formatYYYYMMDDForDisplay } from "./dates";
+import {
+  formatHourBucketLabel,
+  formatYYYYMMDDForDisplay,
+  hourFromHHMM,
+} from "./dates";
 
 export type TimeWindowLike = {
   startDayYYYYMMDD: string;
   durationSeconds: number;
   activityType: string;
+  /** Clock start for intra-day grouping (Daily → time window by hour). */
+  startTimeHHMM?: string;
   taskId?: string | null;
   trackableId?: string | null;
   tagIds?: string[];
@@ -17,7 +23,9 @@ export type GroupByMode =
   | "date"
   | "day_of_week"
   | "month"
-  | "year";
+  | "year"
+  /** Sub-period within the analytics range: hour (Daily), day (Weekly/Monthly), month (Yearly). */
+  | "time_window";
 
 export interface GroupedResult {
   key: string;
@@ -57,6 +65,8 @@ export interface GroupingLookups {
   listIdToTrackableId?: Record<string, string>;
   /** Union attribution for trackable — matches `useAnalyticsDataset.resolveTrackableId`. */
   resolveTrackableId?: (w: TimeWindowLike) => string | null;
+  /** Active analytics tab — required for `time_window` grouping resolution. */
+  analyticsTab?: string;
 }
 
 function resolvedTrackableId(
@@ -159,6 +169,37 @@ function getGroupKeys(
         },
       ];
 
+    case "time_window": {
+      const tab = lookups.analyticsTab ?? "DAILY";
+      if (tab === "DAILY") {
+        const h = hourFromHHMM(w.startTimeHHMM);
+        if (h === null) {
+          return [{ key: "unknown_time", label: "Time unknown" }];
+        }
+        return [
+          {
+            key: `h${String(h).padStart(2, "0")}`,
+            label: formatHourBucketLabel(h),
+          },
+        ];
+      }
+      if (tab === "WEEKLY" || tab === "MONTHLY") {
+        const day = w.startDayYYYYMMDD;
+        return [{ key: day, label: formatYYYYMMDDForDisplay(day) }];
+      }
+      if (tab === "YEARLY") {
+        const monthKey = w.startDayYYYYMMDD.slice(0, 6);
+        const year = parseInt(monthKey.slice(0, 4));
+        const month = parseInt(monthKey.slice(4, 6)) - 1;
+        const label = new Date(year, month).toLocaleDateString(undefined, {
+          month: "long",
+          year: "numeric",
+        });
+        return [{ key: monthKey, label }];
+      }
+      return [{ key: "all", label: "All" }];
+    }
+
     default:
       return [{ key: "all", label: "All" }];
   }
@@ -222,16 +263,26 @@ export function groupTimeWindowsWithBuckets(
     accumulateWindow(buckets, w, mode, lookups);
   }
 
-  return Array.from(buckets.entries())
-    .map(([key, data]) => ({
-      key,
-      label: data.label,
-      totalSeconds: data.totalSeconds,
-      count: data.count,
-      colour: data.colour,
-      windows: data.windows,
-    }))
-    .sort((a, b) => b.totalSeconds - a.totalSeconds);
+  const rows = Array.from(buckets.entries()).map(([key, data]) => ({
+    key,
+    label: data.label,
+    totalSeconds: data.totalSeconds,
+    count: data.count,
+    colour: data.colour,
+    windows: data.windows,
+  }));
+
+  if (mode === "time_window") {
+    rows.sort((a, b) => {
+      if (a.key === "unknown_time") return 1;
+      if (b.key === "unknown_time") return -1;
+      return a.key.localeCompare(b.key);
+    });
+  } else {
+    rows.sort((a, b) => b.totalSeconds - a.totalSeconds);
+  }
+
+  return rows;
 }
 
 export function groupTimeWindows(
@@ -253,6 +304,7 @@ export const GROUP_BY_LABEL: Record<GroupByMode, string> = {
   day_of_week: "Day of Week",
   month: "Month",
   year: "Year",
+  time_window: "Time window",
 };
 
 /**
@@ -277,14 +329,23 @@ export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
 export function modesForTab(tab: string): GroupByMode[] {
   switch (tab) {
     case "DAILY":
-      return ["trackable", "list", "task", "tag"];
+      return ["trackable", "list", "task", "tag", "time_window"];
     case "WEEKLY":
-      return ["trackable", "list", "task", "date", "tag", "day_of_week"];
+      return [
+        "trackable",
+        "list",
+        "task",
+        "time_window",
+        "date",
+        "tag",
+        "day_of_week",
+      ];
     case "MONTHLY":
       return [
         "trackable",
         "list",
         "task",
+        "time_window",
         "date",
         "tag",
         "day_of_week",
@@ -295,6 +356,7 @@ export function modesForTab(tab: string): GroupByMode[] {
         "trackable",
         "list",
         "task",
+        "time_window",
         "month",
         "tag",
         "day_of_week",
@@ -302,7 +364,7 @@ export function modesForTab(tab: string): GroupByMode[] {
         "date",
       ];
     default:
-      return ["trackable", "list", "task", "tag"];
+      return ["trackable", "list", "task", "tag", "time_window"];
   }
 }
 
