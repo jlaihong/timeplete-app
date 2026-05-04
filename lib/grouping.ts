@@ -1,3 +1,5 @@
+import { formatYYYYMMDDForDisplay } from "./dates";
+
 export type TimeWindowLike = {
   startDayYYYYMMDD: string;
   durationSeconds: number;
@@ -122,8 +124,10 @@ function getGroupKeys(
       return [{ key: "no_trackable", label: "No Goal" }];
     }
 
-    case "date":
-      return [{ key: w.startDayYYYYMMDD, label: w.startDayYYYYMMDD }];
+    case "date": {
+      const day = w.startDayYYYYMMDD;
+      return [{ key: day, label: formatYYYYMMDDForDisplay(day) }];
+    }
 
     case "day_of_week": {
       const d = new Date(
