@@ -28,6 +28,20 @@ export function tryParseYYYYMMDD(s: string | undefined | null): Date | null {
   return parseYYYYMMDD(s);
 }
 
+/**
+ * Locale-aware label for an 8-digit YYYYMMDD string (tooltips, sunburst, lists).
+ */
+export function formatYYYYMMDDForDisplay(yyyymmdd: string): string {
+  const d = tryParseYYYYMMDD(yyyymmdd);
+  if (!d) return yyyymmdd;
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 /** Whole **calendar days** between two YYYYMMDD strings (end - start). */
 export function daysBetweenYYYYMMDD(start: string, end: string): number {
   const s = tryParseYYYYMMDD(start);
