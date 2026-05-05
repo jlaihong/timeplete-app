@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Colors } from "../../constants/colors";
 import type { ListPermissionPortalArgs } from "./listPermissionPortal";
 
@@ -13,6 +13,23 @@ export function WebListPermissionPopover(props: {
   const { permMenu, updating, onDismiss, onPick } = props;
   const { top, left, minWidth, current } = permMenu;
 
+  /**
+   * RN-web forwards the triggering click to DOM: the fullscreen backdrop mounts
+   * in the same event turn and eats the bubbled click, so the menu vanishes.
+   * Defer dismissal until after the opener gesture settles.
+   */
+  const [dismissArmed, setDismissArmed] = useState(false);
+  useEffect(() => {
+    setDismissArmed(false);
+    const tid = window.setTimeout(() => setDismissArmed(true), 220);
+    return () => window.clearTimeout(tid);
+  }, [permMenu.collaboratorUserId, permMenu.current, top, left]);
+
+  const handleBackdropDismiss = () => {
+    if (!dismissArmed || updating) return;
+    onDismiss();
+  };
+
   return (
     <>
       <div
@@ -23,7 +40,12 @@ export function WebListPermissionPopover(props: {
           zIndex: 310000,
           backgroundColor: "rgba(13,21,22,0.35)",
         }}
-        onClick={onDismiss}
+        onMouseDown={(e) => {
+          // Catch outside interaction without competing with opener `click`.
+          if (e.button !== 0) return;
+          e.preventDefault();
+          handleBackdropDismiss();
+        }}
       />
       <div
         role="menu"
