@@ -394,12 +394,13 @@ export default function ListDetailScreen() {
 
   const isFilterActive = !showCompleted || filterUserIds.length > 0;
 
+  /** Collaborator filter hides rows; indices no longer match section order. Hide-completed does not. */
   const canDragReorder = useMemo(() => {
-    if (!paginatedList || isFilterActive) return false;
+    if (!paginatedList || filterUserIds.length > 0) return false;
     return paginatedList.sections.every(
       (s) => s.tasks.length >= s.totalTasks,
     );
-  }, [paginatedList, isFilterActive]);
+  }, [paginatedList, filterUserIds]);
 
   const webDndSections = useMemo(() => {
     return filteredSections.map((s) => ({
