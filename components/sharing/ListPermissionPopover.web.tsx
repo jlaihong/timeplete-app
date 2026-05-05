@@ -37,7 +37,7 @@ export function WebListPermissionPopover(props: {
         style={{
           position: "fixed",
           inset: 0,
-          zIndex: 310000,
+          zIndex: 520000,
           backgroundColor: "rgba(13,21,22,0.35)",
         }}
         onMouseDown={(e) => {
@@ -54,7 +54,7 @@ export function WebListPermissionPopover(props: {
           top,
           left,
           minWidth,
-          zIndex: 310001,
+          zIndex: 520001,
           backgroundColor: Colors.surfaceContainerHigh,
           borderRadius: 8,
           border: `1px solid ${Colors.border}`,
