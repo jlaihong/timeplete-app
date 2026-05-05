@@ -22,6 +22,26 @@ async function defaultSectionIdForList(
   return (def ?? sorted[0])?._id;
 }
 
+/** Same completion rule as `lists.getPaginated` (`compareTasksForListView`). */
+function isTaskCompletedForListReorder(t: { dateCompleted?: string }): boolean {
+  const d = t.dateCompleted;
+  return typeof d === "string" && d.trim().length > 0;
+}
+
+/**
+ * Must match `lists.getPaginated`: incomplete tasks first, then `sectionOrderIndex`.
+ * Otherwise list DnD passes indices that do not match `moveBetweenSections` ordering.
+ */
+function compareTasksForListReorder(
+  a: { dateCompleted?: string; sectionOrderIndex: number },
+  b: { dateCompleted?: string; sectionOrderIndex: number },
+): number {
+  const aDone = isTaskCompletedForListReorder(a);
+  const bDone = isTaskCompletedForListReorder(b);
+  if (aDone !== bDone) return Number(aDone) - Number(bDone);
+  return a.sectionOrderIndex - b.sectionOrderIndex;
+}
+
 export const search = query({
   args: {
     startDay: v.optional(v.string()),
@@ -543,7 +563,7 @@ export const moveBetweenSections = mutation({
       if (arr) arr.push(t);
     }
     for (const [, arr] of bySec) {
-      arr.sort((a, b) => a.sectionOrderIndex - b.sectionOrderIndex);
+      arr.sort(compareTasksForListReorder);
     }
 
     const fromSectionId = logicalSectionId(task);
