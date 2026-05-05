@@ -13,6 +13,8 @@ import { Colors } from "../../../constants/colors";
 import { Button } from "../../ui/Button";
 import { SectionCard } from "../SectionCard";
 import { useAnalyticsState } from "../AnalyticsState";
+import { QuestionSettings } from "../../reviews/QuestionSettings";
+import { ReviewReflectModal } from "../ReviewReflectModal";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * Review — productivity-one's fourth column.
@@ -27,8 +29,11 @@ import { useAnalyticsState } from "../AnalyticsState";
  * ──────────────────────────────────────────────────────────────────── */
 
 export function ReviewSection() {
-  const { selectedTab, canonicalReviewDate } = useAnalyticsState();
+  const { selectedTab, canonicalReviewDate, windowStart, windowEnd } =
+    useAnalyticsState();
   const frequency = selectedTab;
+
+  const [reflectOpen, setReflectOpen] = useState(false);
 
   const questions = useQuery(api.reviews.searchQuestions, { frequency });
   const existingAnswers = useQuery(api.reviews.searchAnswers, {
@@ -83,46 +88,72 @@ export function ReviewSection() {
     }
   };
 
+  const showReflect = selectedTab !== "DAILY";
+
   return (
-    <SectionCard title="Review">
-      {!questions ? (
-        <Text style={styles.empty}>Loading…</Text>
-      ) : sortedQuestions.length === 0 ? (
-        <Text style={styles.empty}>
-          No review questions for this frequency. Add some from the Reviews
-          screen.
-        </Text>
-      ) : (
-        <View>
-          {sortedQuestions.map((q) => (
-            <View key={q._id} style={styles.questionBlock}>
-              <Text style={styles.questionText}>{q.questionText}</Text>
-              <TextInput
-                style={styles.answerInput}
-                value={answers[q._id] ?? ""}
-                onChangeText={(text) => {
-                  setAnswers((prev) => ({ ...prev, [q._id]: text }));
-                  setIsDirty(true);
-                }}
-                placeholder="Write your answer…"
-                placeholderTextColor={Colors.textTertiary}
-                multiline
-                textAlignVertical="top"
+    <>
+      <SectionCard
+        title="Review"
+        right={
+          showReflect ? (
+            <Button
+              title="Reflect"
+              variant="outline"
+              onPress={() => setReflectOpen(true)}
+            />
+          ) : undefined
+        }
+      >
+        <QuestionSettings frequency={frequency} />
+
+        {!questions ? (
+          <Text style={styles.empty}>Loading…</Text>
+        ) : sortedQuestions.length === 0 ? (
+          <Text style={styles.empty}>
+            No review questions for this frequency yet. Add some above.
+          </Text>
+        ) : (
+          <View style={{ marginTop: 8 }}>
+            {sortedQuestions.map((q) => (
+              <View key={q._id} style={styles.questionBlock}>
+                <Text style={styles.questionText}>{q.questionText}</Text>
+                <TextInput
+                  style={styles.answerInput}
+                  value={answers[q._id] ?? ""}
+                  onChangeText={(text) => {
+                    setAnswers((prev) => ({ ...prev, [q._id]: text }));
+                    setIsDirty(true);
+                  }}
+                  placeholder="Write your answer…"
+                  placeholderTextColor={Colors.textTertiary}
+                  multiline
+                  textAlignVertical="top"
+                />
+              </View>
+            ))}
+
+            <View style={{ marginTop: 4 }}>
+              <Button
+                title={isDirty ? "Save Answers" : "Saved"}
+                onPress={handleSave}
+                disabled={!isDirty}
+                variant={isDirty ? "primary" : "secondary"}
               />
             </View>
-          ))}
-
-          <View style={{ marginTop: 4 }}>
-            <Button
-              title={isDirty ? "Save Answers" : "Saved"}
-              onPress={handleSave}
-              disabled={!isDirty}
-              variant={isDirty ? "primary" : "secondary"}
-            />
           </View>
-        </View>
-      )}
-    </SectionCard>
+        )}
+      </SectionCard>
+
+      {selectedTab !== "DAILY" ? (
+        <ReviewReflectModal
+          visible={reflectOpen}
+          onClose={() => setReflectOpen(false)}
+          parentTab={selectedTab}
+          windowStart={windowStart}
+          windowEnd={windowEnd}
+        />
+      ) : null}
+    </>
   );
 }
 

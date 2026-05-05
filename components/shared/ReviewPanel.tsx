@@ -20,6 +20,7 @@ import {
   startOfWeek,
   formatDisplayDate,
 } from "../../lib/dates";
+import { QuestionSettings } from "../reviews/QuestionSettings";
 
 type Frequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 
@@ -162,6 +163,8 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        <QuestionSettings frequency={frequency} />
+
         {sortedQuestions.map((q) => (
           <Card key={q._id} style={styles.questionCard}>
             <Text style={styles.questionText}>{q.questionText}</Text>
