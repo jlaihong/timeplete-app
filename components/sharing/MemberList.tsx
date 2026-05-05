@@ -123,8 +123,6 @@ export function MemberList({ listId }: MemberListProps) {
 
   const touchableRefsByUserId = useRef<Map<string, View | null>>(new Map());
 
-  console.log("PERM MENU STATE", permMenu);
-
   const applyMenuRectViewport = (
     collaboratorUserId: Id<"users">,
     current: "VIEWER" | "EDITOR",
@@ -142,7 +140,6 @@ export function MemberList({ listId }: MemberListProps) {
     const spaceBelow = vh - bottom;
     if (spaceBelow < 140 && bounds.top > 150)
       topPx = Math.max(8, bounds.top - 96);
-    console.log("SETTING MENU STATE");
     setPermMenu({
       collaboratorUserId,
       current,
@@ -158,12 +155,10 @@ export function MemberList({ listId }: MemberListProps) {
     role: "VIEWER" | "EDITOR",
     anchor: View | null,
   ) => {
-    console.log("OPEN MENU CALLED");
     if (!anchor?.measureInWindow) {
       return;
     }
     anchor.measureInWindow((x, y, w, h) => {
-      console.log("MEASURE CALLBACK", { x, y, w, h });
       if (!(w > 2 && h > 2)) {
         return;
       }
@@ -219,7 +214,8 @@ export function MemberList({ listId }: MemberListProps) {
       : null;
 
   return (
-    <View style={styles.container}>
+    <>
+      <View style={styles.container}>
       <Text style={styles.title}>Members ({members.length})</Text>
 
       {isOwnerViewer && hasCollaborators ? (
@@ -267,7 +263,6 @@ export function MemberList({ listId }: MemberListProps) {
                     style={styles.roleBadge}
                     disabled={busyUpdating}
                     onPress={() => {
-                      console.log("CLICK FIRED");
                       openWebMenuFromMeasuredAnchor(
                         member.userId,
                         editablePerm,
@@ -318,8 +313,9 @@ export function MemberList({ listId }: MemberListProps) {
           </View>
         );
       })}
-      {webPortal}
     </View>
+    {webPortal}
+    </>
   );
 }
 
