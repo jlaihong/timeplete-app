@@ -121,8 +121,9 @@ export function TimeBreakdownSunburst({
             rOuterMax: R_OUTERMOST,
             hubR: HUB_R,
             ringGap: RING_GAP,
+            inheritParentBandColours: zoomStack.length <= 1,
           }),
-    [frame.windows, frame.levels, lookups]
+    [frame.windows, frame.levels, lookups, zoomStack.length]
   );
 
   const paintArcs = useMemo(
