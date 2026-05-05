@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import type { GestureResponderEvent } from "react-native";
 import {
   View,
   Text,
@@ -37,6 +38,17 @@ interface PermMenuAnchored {
   top: number;
   left: number;
   minWidth: number;
+}
+
+const ELEMENT_NODE = 1;
+
+function elementFromPressTarget(nativeEventTarget: unknown): Element | null {
+  let cur: Node | null =
+    nativeEventTarget instanceof Node ? nativeEventTarget : null;
+  while (cur && cur.nodeType !== ELEMENT_NODE) {
+    cur = cur.parentNode;
+  }
+  return cur instanceof Element ? cur : null;
 }
 
 export function MemberList({ listId }: MemberListProps) {
@@ -121,27 +133,65 @@ export function MemberList({ listId }: MemberListProps) {
     );
   };
 
-  const openWebMenu = (
+  const applyMenuRectViewport = (
     collaboratorUserId: Id<"users">,
     current: "VIEWER" | "EDITOR",
-    anchor: View | null,
+    bounds: { left: number; top: number; width: number; height: number },
   ) => {
-    if (!anchor) return;
-    anchor.measureInWindow((x, y, width, height) => {
-      const minWidth = Math.max(width, 160);
-      const vw =
-        typeof window !== "undefined" ? window.innerWidth : 400;
-      const left = Math.max(
-        8,
-        Math.min(x, vw - minWidth - 8),
-      );
-      let top = y + height + 4;
-      if (typeof window !== "undefined") {
-        const spaceBelow = window.innerHeight - height - y;
-        if (spaceBelow < 140 && y > 150) top = Math.max(8, y - 4 - 92);
-      }
-      setPermMenu({ collaboratorUserId, current, top, left, minWidth });
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const minWidthPx = Math.max(bounds.width, 160);
+    const left = Math.max(
+      8,
+      Math.min(bounds.left, vw - minWidthPx - 8),
+    );
+    const bottom = bounds.top + bounds.height;
+    let topPx = bottom + 4;
+    const spaceBelow = vh - bottom;
+    if (spaceBelow < 140 && bounds.top > 150)
+      topPx = Math.max(8, bounds.top - 96);
+    setPermMenu({
+      collaboratorUserId,
+      current,
+      top: topPx,
+      left,
+      minWidth: minWidthPx,
     });
+  };
+
+  /** Prefer DOM rect (`position: fixed` matches viewport) — Modal/Scroll can break `measureInWindow`. */
+  const openWebMenuFromPress = (
+    e: GestureResponderEvent,
+    collaboratorUserId: Id<"users">,
+    role: "VIEWER" | "EDITOR",
+    anchorFallback: View | null,
+  ) => {
+    const ne = e.nativeEvent as unknown as {
+      target?: unknown;
+      /** Legacy DOM field some RN-web paths still surface */
+      srcElement?: unknown;
+    };
+    const el = elementFromPressTarget(ne.target ?? ne.srcElement);
+    if (el?.getBoundingClientRect) {
+      const r = el.getBoundingClientRect();
+      applyMenuRectViewport(collaboratorUserId, role, {
+        left: r.left,
+        top: r.top,
+        width: r.width,
+        height: r.height,
+      });
+      return;
+    }
+    if (anchorFallback != null) {
+      anchorFallback.measureInWindow((x, y, width, height) => {
+        applyMenuRectViewport(collaboratorUserId, role, {
+          left: x,
+          top: y,
+          width,
+          height,
+        });
+      });
+    }
   };
 
   if (!normalized) return null;
@@ -228,8 +278,13 @@ export function MemberList({ listId }: MemberListProps) {
                 <RoleBadgeDropdownWeb
                   label={formatRole(member.permission)}
                   disabled={busyUpdating}
-                  onPressAnchor={(anchor) =>
-                    openWebMenu(member.userId, editablePerm, anchor)
+                  onPress={(evt, anchorFallback) =>
+                    openWebMenuFromPress(
+                      evt,
+                      member.userId,
+                      editablePerm,
+                      anchorFallback,
+                    )
                   }
                 />
               ) : (
@@ -269,9 +324,9 @@ export function MemberList({ listId }: MemberListProps) {
 function RoleBadgeDropdownWeb(props: {
   label: string;
   disabled?: boolean;
-  onPressAnchor: (anchor: View | null) => void;
+  onPress: (e: GestureResponderEvent, anchor: View | null) => void;
 }) {
-  const { label, disabled, onPressAnchor } = props;
+  const { label, disabled, onPress } = props;
   const anchorRef = useRef<View | null>(null);
 
   return (
@@ -292,7 +347,7 @@ function RoleBadgeDropdownWeb(props: {
         accessibilityRole="button"
         accessibilityHint="Opens a menu to choose Viewer or Editor"
         accessibilityLabel="Change permission"
-        onPress={() => onPressAnchor(anchorRef.current)}
+        onPress={(evt) => onPress(evt, anchorRef.current)}
       >
         <Text style={[styles.roleBadgeText, styles.roleBadgeLabelWeb]}>
           {label}
