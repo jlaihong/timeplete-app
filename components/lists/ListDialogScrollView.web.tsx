@@ -25,7 +25,6 @@ function domOuterStyle(scrollViewStyle: ScrollViewProps["style"]): CSSProperties
   stripRnTransformArrays(flat, out);
   return {
     ...out,
-    ...(out.minHeight === undefined ? { minHeight: 0 } : null),
     overflowX: "hidden",
     overflowY: "auto",
     overscrollBehavior: "contain",

@@ -291,11 +291,6 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 440,
     maxHeight: "90%",
-    flexShrink: 1,
-    ...Platform.select({
-      web: { minHeight: 0 } as object,
-      default: {},
-    }),
   },
   title: {
     fontSize: 20,
@@ -329,13 +324,11 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   scroll: {
-    flexGrow: 1,
-    flexShrink: 1,
-    minHeight: 0,
+    width: "100%",
+    alignSelf: "stretch",
     ...Platform.select({
-      /** Cap body height so Sharing (members + invite) scrolls inside the modal. */
+      /** Cap tall Sharing / Details content so body scrolls inside the modal (not flex-fill — avoids 0-height in auto-height columns on web). */
       web: {
-        width: "100%",
         maxHeight: "min(65vh, 540px)",
       } as object,
       default: { maxHeight: 480 },
