@@ -33,6 +33,7 @@ import {
 import { ListDetailWebDnd } from "../../../components/lists/ListDetailWebDnd";
 import { useTimer } from "../../../hooks/useTimer";
 import { todayYYYYMMDD, formatSecondsAsHM } from "../../../lib/dates";
+import { normalizeListMembersQuery } from "../../../lib/listMembersQuery";
 import type { Id, Doc } from "../../../convex/_generated/dataModel";
 import { Card } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
@@ -293,8 +294,9 @@ export default function ListDetailScreen() {
   }, [contextMenu]);
 
   const assignableMembers = useMemo(() => {
-    if (!listMembers) return [];
-    return listMembers.members.filter(
+    const normalized = normalizeListMembersQuery(listMembers);
+    if (!normalized) return [];
+    return normalized.members.filter(
       (m) => m.permission === "OWNER" || m.permission === "EDITOR",
     );
   }, [listMembers]);
