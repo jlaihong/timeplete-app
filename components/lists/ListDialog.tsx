@@ -19,6 +19,7 @@ import { Input } from "../ui/Input";
 import { ColorPicker } from "../ui/ColorPicker";
 import { Card } from "../ui/Card";
 import { TrackablePicker } from "../tasks/TrackablePicker";
+import { ListSharePanel } from "../sharing/ListSharePanel";
 
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
@@ -66,6 +67,9 @@ export function ListDialog({
     list?.trackableId ?? null,
   );
   const [saving, setSaving] = useState(false);
+  const [detailsTab, setDetailsTab] = useState<"details" | "sharing">(
+    "details",
+  );
 
   // Refresh form state if the parent re-opens the dialog with a different list.
   useEffect(() => {
@@ -73,6 +77,7 @@ export function ListDialog({
     setColour(list?.colour ?? "#4A90D9");
     setShowInSidebar(list?.showInSidebar ?? true);
     setTrackableId(list?.trackableId ?? null);
+    setDetailsTab("details");
   }, [list?._id, list?.name, list?.colour, list?.showInSidebar, list?.trackableId]);
 
   const upsertList = useMutation(api.lists.upsert);
@@ -128,72 +133,127 @@ export function ListDialog({
               {isEditMode ? "Edit List" : "Create List"}
             </Text>
 
+            {isEditMode && list ? (
+              <View style={styles.tabsRow}>
+                <Pressable
+                  style={[
+                    styles.tab,
+                    detailsTab === "details" && styles.tabActive,
+                  ]}
+                  onPress={() => setDetailsTab("details")}
+                >
+                  <Text
+                    style={[
+                      styles.tabLabel,
+                      detailsTab === "details" && styles.tabLabelActive,
+                    ]}
+                  >
+                    Details
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.tab,
+                    detailsTab === "sharing" && styles.tabActive,
+                  ]}
+                  onPress={() => setDetailsTab("sharing")}
+                >
+                  <Text
+                    style={[
+                      styles.tabLabel,
+                      detailsTab === "sharing" && styles.tabLabelActive,
+                    ]}
+                  >
+                    Sharing
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+
             <ScrollView
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
             >
-              <Input
-                label="Name"
-                value={name}
-                onChangeText={setName}
-                placeholder="List name"
-                editable={!isInbox}
-              />
-
-              <Text style={styles.fieldLabel}>Colour</Text>
-              <ColorPicker selectedColor={colour} onColorSelect={setColour} />
-
-              {isGoalList ? (
-                <View style={styles.notice}>
-                  <Text style={styles.noticeText}>
-                    This is a goal list. Its linked trackable is managed
-                    automatically and can&apos;t be changed here.
-                  </Text>
-                </View>
+              {isEditMode && list && detailsTab === "sharing" ? (
+                <ListSharePanel listId={list._id} />
               ) : (
-                <TrackablePicker
-                  label="Linked Trackable"
-                  value={trackableId}
-                  onChange={setTrackableId}
-                />
-              )}
+                <>
+                  <Input
+                    label="Name"
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="List name"
+                    editable={!isInbox}
+                  />
 
-              <View style={styles.toggleRow}>
-                <Text style={styles.toggleLabel}>Show in sidebar</Text>
-                <Switch
-                  value={showInSidebar}
-                  onValueChange={setShowInSidebar}
-                  trackColor={{
-                    false: Colors.surfaceContainerHigh,
-                    true: Colors.primary,
-                  }}
-                  thumbColor={Colors.white}
-                />
-              </View>
+                  <Text style={styles.fieldLabel}>Colour</Text>
+                  <ColorPicker
+                    selectedColor={colour}
+                    onColorSelect={setColour}
+                  />
+
+                  {isGoalList ? (
+                    <View style={styles.notice}>
+                      <Text style={styles.noticeText}>
+                        This is a goal list. Its linked trackable is managed
+                        automatically and can&apos;t be changed here.
+                      </Text>
+                    </View>
+                  ) : (
+                    <TrackablePicker
+                      label="Linked Trackable"
+                      value={trackableId}
+                      onChange={setTrackableId}
+                    />
+                  )}
+
+                  <View style={styles.toggleRow}>
+                    <Text style={styles.toggleLabel}>Show in sidebar</Text>
+                    <Switch
+                      value={showInSidebar}
+                      onValueChange={setShowInSidebar}
+                      trackColor={{
+                        false: Colors.surfaceContainerHigh,
+                        true: Colors.primary,
+                      }}
+                      thumbColor={Colors.white}
+                    />
+                  </View>
+                </>
+              )}
             </ScrollView>
 
-            <View style={styles.actionsRow}>
-              {isEditMode && !isInbox ? (
-                <Button
-                  title="Delete"
-                  variant="danger"
-                  onPress={handleDelete}
-                  style={styles.deleteButton}
-                />
-              ) : (
+            {isEditMode && list && detailsTab === "sharing" ? (
+              <View style={[styles.actionsRow, styles.actionsRowSharing]}>
                 <View style={styles.spacer} />
-              )}
-              <View style={styles.primaryActions}>
-                <Button title="Cancel" variant="outline" onPress={onClose} />
-                <Button
-                  title={isEditMode ? "Save" : "Create"}
-                  onPress={handleSave}
-                  loading={saving}
-                  disabled={!name.trim()}
-                />
+                <View style={styles.primaryActions}>
+                  <Button title="Cancel" variant="outline" onPress={onClose} />
+                </View>
               </View>
-            </View>
+            ) : (
+              <View style={styles.actionsRow}>
+                {isEditMode && !isInbox ? (
+                  <Button
+                    title="Delete"
+                    variant="danger"
+                    onPress={handleDelete}
+                    style={styles.deleteButton}
+                  />
+                ) : (
+                  <View style={styles.spacer} />
+                )}
+                <View style={styles.primaryActions}>
+                  <Button title="Cancel" variant="outline" onPress={onClose} />
+                  <Button
+                    title={isEditMode ? "Save" : "Create"}
+                    onPress={handleSave}
+                    loading={saving}
+                    disabled={!name.trim()}
+                  />
+                </View>
+              </View>
+            )}
           </Card>
         </View>
       </View>
@@ -239,6 +299,31 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: 16,
   },
+  tabsRow: {
+    flexDirection: "row",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.outlineVariant,
+    marginBottom: 12,
+    gap: 4,
+  },
+  tab: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: -StyleSheet.hairlineWidth,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  tabActive: {
+    borderBottomColor: Colors.primary,
+  },
+  tabLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  tabLabelActive: {
+    color: Colors.primary,
+  },
   scroll: { flexGrow: 0 },
   scrollContent: { paddingBottom: 8 },
   fieldLabel: {
@@ -270,6 +355,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: 16,
     gap: 12,
+  },
+  actionsRowSharing: {
+    justifyContent: "flex-end",
   },
   spacer: { flex: 0 },
   deleteButton: { paddingHorizontal: 14 },
