@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Colors } from "../../constants/colors";
-import type { ListPermissionPortalArgs } from "./listPermissionPortal";
+import type { ListPermissionPortalArgs } from "./listPermissionPortal.types";
 
 type AnchoredMenu = ListPermissionPortalArgs["permMenu"];
 

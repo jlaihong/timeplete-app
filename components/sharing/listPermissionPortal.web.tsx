@@ -1,7 +1,7 @@
 import type React from "react";
 import { createPortal } from "react-dom";
 import { WebListPermissionPopover } from "./ListPermissionPopover.web";
-import type { ListPermissionPortalArgs } from "./listPermissionPortal";
+import type { ListPermissionPortalArgs } from "./listPermissionPortal.types";
 
 export function renderListPermissionPortal({
   permMenu,
@@ -21,4 +21,4 @@ export function renderListPermissionPortal({
   );
 }
 
-export type { ListPermissionPortalArgs } from "./listPermissionPortal";
+export type { ListPermissionPortalArgs } from "./listPermissionPortal.types";

@@ -1,5 +1,3 @@
-import type React from "react";
-
 export interface ListPermissionPortalArgs {
   permMenu: {
     collaboratorUserId: string;
@@ -12,10 +10,4 @@ export interface ListPermissionPortalArgs {
   onDismiss: () => void;
   /** Apply new role — caller persists + closes modal */
   onPick: (perm: "VIEWER" | "EDITOR") => void;
-}
-
-export function renderListPermissionPortal(
-  _args: ListPermissionPortalArgs,
-): React.ReactNode {
-  return null;
 }
