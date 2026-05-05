@@ -207,6 +207,11 @@ export const removeListShare = mutation({
   args: { shareId: v.id("listShares") },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    const share = await ctx.db.get(args.shareId);
+    if (!share) throw new Error("Share not found");
+    const list = await ctx.db.get(share.listId);
+    if (!list || list.userId !== user._id)
+      throw new Error("Only the list owner can remove access");
     await ctx.db.delete(args.shareId);
   },
 });
@@ -226,6 +231,11 @@ export const updateListSharePermission = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    const share = await ctx.db.get(args.shareId);
+    if (!share) throw new Error("Share not found");
+    const list = await ctx.db.get(share.listId);
+    if (!list || list.userId !== user._id)
+      throw new Error("Only the list owner can change permissions");
     await ctx.db.patch(args.shareId, { permission: args.permission });
   },
 });
@@ -320,10 +330,15 @@ export const getListMembers = query({
           email: u.email,
           permission: share.permission,
           isOwner: false,
+          shareId: share._id,
+          shareStatus: share.status,
         });
       }
     }
 
-    return members;
+    return {
+      viewerIsOwner: list.userId === user._id,
+      members,
+    };
   },
 });
