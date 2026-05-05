@@ -86,9 +86,8 @@ function radiusBand(
  * otherwise the wedge inherits from its parent — lists/tasks/tags/dates without a colour
  * all chain upward until the chart fallback palette applies at paint time.
  *
- * With `inheritParentBandColours: false` (zoomed chart), only each bucket’s own colour
- * is used; inner rings no longer inherit the parent band’s resolved colour so neutral
- * segments use the chart default (calendar gray) instead of “tinting” the whole subtree.
+ * `seedInheritedColour` seeds the outermost ring when the chart is zoomed into a wedge
+ * (same resolved paint as the clicked segment so inner rings keep that hue).
  */
 export function buildPartitionArcs(
   windows: TimeWindowLike[],
@@ -98,15 +97,11 @@ export function buildPartitionArcs(
     rOuterMax: number;
     hubR: number;
     ringGap: number;
-    /**
-     * When false, each ring uses only intrinsic bucket colours (list/task/trackable
-     * from lookups); inner wedges do not inherit the parent wedge’s resolved paint
-     * colour. Matches Productivity-One zoom focus: neutral segments stay default/gray.
-     */
-    inheritParentBandColours?: boolean;
+    /** Drilled wedge colour — zoom focus inherits into the rebuilt rings. */
+    seedInheritedColour?: string;
   }
 ): PartitionArc[] {
-  const { rOuterMax, hubR, ringGap, inheritParentBandColours = true } = geometry;
+  const { rOuterMax, hubR, ringGap, seedInheritedColour } = geometry;
   const arcs: PartitionArc[] = [];
   const L = groupingLevels.length;
 
@@ -144,12 +139,10 @@ export function buildPartitionArcs(
         rInner,
         rOuter,
       });
-      const passToChildren =
-        inheritParentBandColours ? effectiveColour : undefined;
-      recur(b.windows, depth + 1, ta0, ta1, key, passToChildren);
+      recur(b.windows, depth + 1, ta0, ta1, key, effectiveColour);
     });
   }
 
-  recur(windows, 0, 0, Math.PI * 2, "root", undefined);
+  recur(windows, 0, 0, Math.PI * 2, "root", seedInheritedColour);
   return arcs;
 }

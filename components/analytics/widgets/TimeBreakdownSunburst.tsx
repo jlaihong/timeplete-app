@@ -42,6 +42,8 @@ interface ZoomFrame {
   windows: TimeWindowLite[];
   levels: GroupByMode[];
   pathLabels: string[];
+  /** Resolved paint of the drilled wedge — seeds colour inheritance for this zoom level. */
+  inheritedColour?: string;
 }
 
 function polar(cx: number, cy: number, r: number, angleRad: number) {
@@ -121,9 +123,9 @@ export function TimeBreakdownSunburst({
             rOuterMax: R_OUTERMOST,
             hubR: HUB_R,
             ringGap: RING_GAP,
-            inheritParentBandColours: zoomStack.length <= 1,
+            seedInheritedColour: frame.inheritedColour,
           }),
-    [frame.windows, frame.levels, lookups, zoomStack.length]
+    [frame.windows, frame.levels, frame.inheritedColour, lookups]
   );
 
   const paintArcs = useMemo(
@@ -160,6 +162,7 @@ export function TimeBreakdownSunburst({
           windows: arc.windows as TimeWindowLite[],
           levels: nextLevels,
           pathLabels: [...top.pathLabels, arc.label],
+          inheritedColour: arc.colour,
         },
       ];
     });
