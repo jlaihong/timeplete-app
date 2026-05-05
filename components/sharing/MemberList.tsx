@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -6,8 +6,6 @@ import {
   TouchableOpacity,
   Platform,
   Alert,
-  Modal,
-  Pressable,
 } from "react-native";
 import { useQuery, useMutation } from "convex/react";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,6 +13,7 @@ import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Id } from "../../convex/_generated/dataModel";
 import { normalizeListMembersQuery } from "../../lib/listMembersQuery";
+import { renderListPermissionPortal } from "./listPermissionPortal";
 
 interface MemberListProps {
   listId: Id<"lists">;
@@ -28,17 +27,16 @@ function formatRole(
   return "Viewer";
 }
 
-/** Web anchored menu for Viewer / Editor. */
+function emailsEqual(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 interface PermMenuAnchored {
-  shareId: Id<"listShares">;
+  collaboratorUserId: Id<"users">;
   current: "VIEWER" | "EDITOR";
   top: number;
   left: number;
   minWidth: number;
-}
-
-function emailsEqual(a: string, b: string): boolean {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
 export function MemberList({ listId }: MemberListProps) {
@@ -48,11 +46,23 @@ export function MemberList({ listId }: MemberListProps) {
     api.users.getProfile,
     normalized != null ? {} : "skip",
   );
+  const myOwnedLists = useQuery(api.lists.search, normalized != null ? {} : "skip");
 
-  const updatePermission = useMutation(api.sharing.updateListSharePermission);
-  const [updatingShareId, setUpdatingShareId] =
-    useState<Id<"listShares"> | null>(null);
+  const setCollaboratorPermission = useMutation(
+    api.sharing.updateListCollaboratorPermission,
+  );
+  const [updatingCollaboratorUserId, setUpdatingCollaboratorUserId] =
+    useState<Id<"users"> | null>(null);
   const [permMenu, setPermMenu] = useState<PermMenuAnchored | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || !permMenu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPermMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [permMenu]);
 
   const notifyError = (message: string) => {
     if (Platform.OS === "web") {
@@ -64,21 +74,25 @@ export function MemberList({ listId }: MemberListProps) {
   };
 
   const handleSetPermission = async (
-    shareId: Id<"listShares">,
+    collaboratorUserId: Id<"users">,
     permission: "VIEWER" | "EDITOR",
   ) => {
-    setUpdatingShareId(shareId);
+    setUpdatingCollaboratorUserId(collaboratorUserId);
     try {
-      await updatePermission({ shareId, permission });
+      await setCollaboratorPermission({
+        listId,
+        collaboratorUserId,
+        permission,
+      });
     } catch (e: unknown) {
       notifyError(e instanceof Error ? e.message : "Could not update role");
     } finally {
-      setUpdatingShareId(null);
+      setUpdatingCollaboratorUserId(null);
     }
   };
 
   const openNativePicker = (
-    shareId: Id<"listShares">,
+    collaboratorUserId: Id<"users">,
     current: "VIEWER" | "EDITOR",
   ) => {
     Alert.alert(
@@ -88,13 +102,17 @@ export function MemberList({ listId }: MemberListProps) {
         {
           text: "Viewer",
           onPress: () => {
-            if (current !== "VIEWER") void handleSetPermission(shareId, "VIEWER");
+            if (current !== "VIEWER") {
+              void handleSetPermission(collaboratorUserId, "VIEWER");
+            }
           },
         },
         {
           text: "Editor",
           onPress: () => {
-            if (current !== "EDITOR") void handleSetPermission(shareId, "EDITOR");
+            if (current !== "EDITOR") {
+              void handleSetPermission(collaboratorUserId, "EDITOR");
+            }
           },
         },
         { text: "Cancel", style: "cancel" },
@@ -104,13 +122,13 @@ export function MemberList({ listId }: MemberListProps) {
   };
 
   const openWebMenu = (
-    shareId: Id<"listShares">,
+    collaboratorUserId: Id<"users">,
     current: "VIEWER" | "EDITOR",
     anchor: View | null,
   ) => {
     if (!anchor) return;
     anchor.measureInWindow((x, y, width, height) => {
-      const minWidth = Math.max(width, 148);
+      const minWidth = Math.max(width, 160);
       const vw =
         typeof window !== "undefined" ? window.innerWidth : 400;
       const left = Math.max(
@@ -122,7 +140,7 @@ export function MemberList({ listId }: MemberListProps) {
         const spaceBelow = window.innerHeight - height - y;
         if (spaceBelow < 140 && y > 150) top = Math.max(8, y - 4 - 92);
       }
-      setPermMenu({ shareId, current, top, left, minWidth });
+      setPermMenu({ collaboratorUserId, current, top, left, minWidth });
     });
   };
 
@@ -136,22 +154,63 @@ export function MemberList({ listId }: MemberListProps) {
     profile.email.trim().length > 0 &&
     emailsEqual(profile.email, ownerRow.email);
 
-  const isOwnerViewer = viewerIsOwner === true || inferredOwnerViaProfile;
+  const isOwnerViaMyLists =
+    myOwnedLists !== undefined &&
+    myOwnedLists.some((l) => l._id === listId);
+
+  const isOwnerViewer =
+    viewerIsOwner === true || inferredOwnerViaProfile || isOwnerViaMyLists;
+
+  const hasCollaborators = members.some((m) => !m.isOwner);
+
+  const busyUpdating = updatingCollaboratorUserId !== null;
+
+  const webPortal =
+    permMenu != null
+      ? renderListPermissionPortal({
+          permMenu: {
+            collaboratorUserId: permMenu.collaboratorUserId,
+            current: permMenu.current,
+            top: permMenu.top,
+            left: permMenu.left,
+            minWidth: permMenu.minWidth,
+          },
+          busyUpdating,
+          onDismiss: () => setPermMenu(null),
+          onPick: (perm) => {
+            if (permMenu.current !== perm) {
+              void handleSetPermission(permMenu.collaboratorUserId, perm);
+            }
+            setPermMenu(null);
+          },
+        })
+      : null;
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Members ({members.length})</Text>
+
+      {isOwnerViewer && hasCollaborators ? (
+        <Text style={styles.ownerHint}>
+          Tap a collaborator&apos;s role (Viewer / Editor) to change their
+          permission.
+        </Text>
+      ) : null}
+
       {members.map((member) => {
-        const canEditRole =
-          isOwnerViewer && !member.isOwner && Boolean(member.shareId);
-        const shareId = member.shareId;
         const editablePerm =
           member.permission === "VIEWER" || member.permission === "EDITOR"
             ? member.permission
             : null;
 
+        const canEditRole =
+          Boolean(isOwnerViewer) &&
+          !member.isOwner &&
+          editablePerm != null &&
+          !busyUpdating;
+
         return (
-          <View key={shareId ?? member.userId} style={styles.row}>
+          <View key={member.userId} style={styles.row}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
                 {member.name.charAt(0).toUpperCase()}
@@ -164,21 +223,24 @@ export function MemberList({ listId }: MemberListProps) {
                 <Text style={styles.pendingLabel}>Invitation pending</Text>
               ) : null}
             </View>
-            {canEditRole && shareId && editablePerm ? (
+            {canEditRole && editablePerm ? (
               Platform.OS === "web" ? (
                 <RoleBadgeDropdownWeb
                   label={formatRole(member.permission)}
-                  disabled={Boolean(updatingShareId)}
+                  disabled={busyUpdating}
                   onPressAnchor={(anchor) =>
-                    openWebMenu(shareId, editablePerm, anchor)
+                    openWebMenu(member.userId, editablePerm, anchor)
                   }
                 />
               ) : (
                 <TouchableOpacity
                   style={[styles.roleBadge, styles.roleBadgeInteractive]}
-                  disabled={Boolean(updatingShareId)}
-                  onPress={() => openNativePicker(shareId, editablePerm)}
+                  disabled={busyUpdating}
+                  onPress={() =>
+                    openNativePicker(member.userId, editablePerm)
+                  }
                   accessibilityRole="button"
+                  accessibilityHint="Opens options to choose Viewer or Editor"
                   accessibilityLabel="Change permission"
                 >
                   <Text style={styles.roleBadgeText}>
@@ -187,7 +249,7 @@ export function MemberList({ listId }: MemberListProps) {
                   <Ionicons
                     name="chevron-down"
                     size={14}
-                    color={Colors.textSecondary}
+                    color={Colors.primary}
                   />
                 </TouchableOpacity>
               )
@@ -199,71 +261,7 @@ export function MemberList({ listId }: MemberListProps) {
           </View>
         );
       })}
-
-      {Platform.OS === "web" ? (
-        <Modal
-          transparent
-          visible={permMenu != null}
-          animationType="none"
-          onRequestClose={() => setPermMenu(null)}
-          presentationStyle="overFullScreen"
-        >
-          <View style={styles.modalRoot} pointerEvents="box-none">
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss permission menu"
-              style={styles.menuBackdrop}
-              onPress={() => setPermMenu(null)}
-            />
-            {permMenu ? (
-              <View
-                style={[
-                  styles.menuPanel,
-                  {
-                    position: "absolute",
-                    top: permMenu.top,
-                    left: permMenu.left,
-                    minWidth: permMenu.minWidth,
-                  },
-                ]}
-                accessibilityViewIsModal
-              >
-                {(
-                  [
-                    ["VIEWER" as const, "Viewer"],
-                    ["EDITOR" as const, "Editor"],
-                  ] as const
-                ).map(([perm, label]) => (
-                  <Pressable
-                    key={perm}
-                    style={({ pressed }) => [
-                      styles.menuItem,
-                      pressed && styles.menuItemPressed,
-                      permMenu.current === perm && styles.menuItemSelected,
-                    ]}
-                    disabled={permMenu.current === perm}
-                    onPress={() => {
-                      if (permMenu.current !== perm) {
-                        void handleSetPermission(permMenu.shareId, perm);
-                      }
-                      setPermMenu(null);
-                    }}
-                  >
-                    <Text style={styles.menuItemText}>{label}</Text>
-                    {permMenu.current === perm ? (
-                      <Ionicons
-                        name="checkmark"
-                        size={18}
-                        color={Colors.primary}
-                      />
-                    ) : null}
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-          </View>
-        </Modal>
-      ) : null}
+      {webPortal}
     </View>
   );
 }
@@ -292,11 +290,14 @@ function RoleBadgeDropdownWeb(props: {
           disabled ? styles.opacityDisabled : null,
         ]}
         accessibilityRole="button"
+        accessibilityHint="Opens a menu to choose Viewer or Editor"
         accessibilityLabel="Change permission"
         onPress={() => onPressAnchor(anchorRef.current)}
       >
-        <Text style={styles.roleBadgeText}>{label}</Text>
-        <Ionicons name="chevron-down" size={14} color={Colors.textSecondary} />
+        <Text style={[styles.roleBadgeText, styles.roleBadgeLabelWeb]}>
+          {label}
+        </Text>
+        <Ionicons name="chevron-down" size={16} color={Colors.primary} />
       </TouchableOpacity>
     </View>
   );
@@ -308,6 +309,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: Colors.text,
+    marginBottom: 12,
+  },
+  ownerHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: Colors.textSecondary,
     marginBottom: 12,
   },
   row: {
@@ -351,64 +358,30 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surfaceVariant,
-    maxWidth: 180,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.surfaceContainerHighest,
+    maxWidth: 200,
     alignSelf: "center",
+    minHeight: 36,
+    justifyContent: "center",
   },
-  roleBadgeInteractive: {
-    borderColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceVariant,
-  },
+  roleBadgeInteractive: {},
   roleBadgeInnerTouchable: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
   },
   opacityDisabled: { opacity: 0.55 },
   roleBadgeText: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: "600",
     color: Colors.textSecondary,
   },
-  modalRoot: { flex: 1 },
-  menuBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "transparent" },
-  menuPanel: {
-    backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingVertical: 4,
-    ...Platform.select({
-      web: {
-        boxShadow: "0px 8px 24px rgba(0,0,0,0.45)",
-      } as object,
-      default: {
-        elevation: 12,
-      },
-    }),
-    zIndex: 10,
-  },
-  menuItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    minWidth: 140,
-    gap: 12,
-  },
-  menuItemPressed: {
-    backgroundColor: Colors.surfaceContainerHighest,
-  },
-  menuItemSelected: {
-    backgroundColor: Colors.primary + "18",
-  },
-  menuItemText: {
-    fontSize: 15,
-    fontWeight: "600",
+  roleBadgeLabelWeb: {
+    fontSize: 13,
     color: Colors.text,
+    fontWeight: "700",
   },
 });

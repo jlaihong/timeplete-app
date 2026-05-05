@@ -240,6 +240,35 @@ export const updateListSharePermission = mutation({
   },
 });
 
+/** Resolve share server-side — works without `shareId` on stale client payloads. */
+export const updateListCollaboratorPermission = mutation({
+  args: {
+    listId: v.id("lists"),
+    collaboratorUserId: v.id("users"),
+    permission: v.union(v.literal("VIEWER"), v.literal("EDITOR")),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const list = await ctx.db.get(args.listId);
+    if (!list || list.userId !== user._id)
+      throw new Error("Only the list owner can change permissions");
+    if (args.collaboratorUserId === user._id) {
+      throw new Error("Cannot change your owner role here");
+    }
+
+    const share = await ctx.db
+      .query("listShares")
+      .withIndex("by_list", (q) => q.eq("listId", args.listId))
+      .filter((q) =>
+        q.eq(q.field("sharedWithUserId"), args.collaboratorUserId),
+      )
+      .first();
+
+    if (!share) throw new Error("That person does not have access to this list");
+    await ctx.db.patch(share._id, { permission: args.permission });
+  },
+});
+
 export const leaveList = mutation({
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
