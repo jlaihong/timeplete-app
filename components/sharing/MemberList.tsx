@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,6 @@ import { Colors } from "../../constants/colors";
 import { Id } from "../../convex/_generated/dataModel";
 import { normalizeListMembersQuery } from "../../lib/listMembersQuery";
 import { renderListPermissionPortal } from "./listPermissionPortal";
-import { CollaboratorRoleBadge } from "./MemberListCollaboratorRoleBadge";
 
 interface MemberListProps {
   listId: Id<"lists">;
@@ -122,6 +121,8 @@ export function MemberList({ listId }: MemberListProps) {
     );
   };
 
+  const touchableRefsByUserId = useRef<Map<string, View | null>>(new Map());
+
   const applyMenuRectViewport = (
     collaboratorUserId: Id<"users">,
     current: "VIEWER" | "EDITOR",
@@ -146,6 +147,53 @@ export function MemberList({ listId }: MemberListProps) {
       left,
       minWidth: minWidthPx,
     });
+  };
+
+  /**
+   * Web: rn-web `UIManager.measureInWindow` skips the callback entirely when there
+   * is no mounted host DOM node (`if (!node)`), so `setPermMenu` never ran. Use one
+   * scheduled fallback so permission state still opens if measurement never completes.
+   */
+  const openWebMenuFromMeasuredAnchor = (
+    collaboratorUserId: Id<"users">,
+    role: "VIEWER" | "EDITOR",
+    anchor: View | null,
+  ) => {
+    const vw = typeof window !== "undefined" ? window.innerWidth : 400;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 600;
+    const fallback = {
+      left: Math.max(8, vw / 2 - 80),
+      top: Math.max(8, vh * 0.25),
+      width: 160,
+      height: 36,
+    };
+    let settled = false;
+    const fallbackTimer =
+      Platform.OS === "web" && typeof window !== "undefined"
+        ? window.setTimeout(() => {
+            if (!settled) {
+              settled = true;
+              applyMenuRectViewport(collaboratorUserId, role, fallback);
+            }
+          }, 120)
+        : undefined;
+    const settle = (
+      bounds: { left: number; top: number; width: number; height: number },
+    ) => {
+      if (settled) return;
+      settled = true;
+      if (fallbackTimer != null) window.clearTimeout(fallbackTimer);
+      applyMenuRectViewport(collaboratorUserId, role, bounds);
+    };
+    if (anchor?.measureInWindow) {
+      anchor.measureInWindow((x, y, w, h) => {
+        if (w > 2 && h > 2) {
+          settle({ left: x, top: y, width: w, height: h });
+        } else {
+          settle(fallback);
+        }
+      });
+    }
   };
 
   if (!normalized) return null;
@@ -229,13 +277,32 @@ export function MemberList({ listId }: MemberListProps) {
             </View>
             {canEditRole && editablePerm ? (
               Platform.OS === "web" ? (
-                <CollaboratorRoleBadge
-                  label={formatRole(member.permission)}
+                <TouchableOpacity
+                  ref={(r: View | null) => {
+                    touchableRefsByUserId.current.set(member.userId, r);
+                  }}
+                  style={styles.roleBadge}
                   disabled={busyUpdating}
-                  onOpenFromRect={(r) =>
-                    applyMenuRectViewport(member.userId, editablePerm, r)
+                  onPress={() =>
+                    openWebMenuFromMeasuredAnchor(
+                      member.userId,
+                      editablePerm,
+                      touchableRefsByUserId.current.get(member.userId) ?? null,
+                    )
                   }
-                />
+                  accessibilityRole="button"
+                  accessibilityHint="Opens options to choose Viewer or Editor"
+                  accessibilityLabel="Change permission"
+                >
+                  <Text style={styles.roleBadgeText}>
+                    {formatRole(member.permission)}
+                  </Text>
+                  <Ionicons
+                    name="chevron-down"
+                    size={14}
+                    color={Colors.primary}
+                  />
+                </TouchableOpacity>
               ) : (
                 <TouchableOpacity
                   style={styles.roleBadge}
