@@ -1,6 +1,6 @@
 import React from "react";
 import { Colors } from "../../constants/colors";
-import type { CollaboratorRoleBadgeProps } from "./MemberListCollaboratorRoleBadge";
+import type { CollaboratorRoleBadgeProps } from "./MemberListCollaboratorRoleBadge.types";
 
 /**
  * Plain DOM button + viewport `getBoundingClientRect()`.
