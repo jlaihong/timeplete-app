@@ -460,6 +460,52 @@ const MONTH_NAMES_SHORT = [
   "Dec",
 ];
 
+/** productivity-one `WEEKDAY_NAMES` / `formatYYYYMMDDtoWeekdayDayMonth`. */
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+const MONTH_NAMES_LONG = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/**
+ * productivity-one `formatYYYYMMDDtoWeekdayDayMonth` — e.g. "Sunday, 6 December".
+ */
+export function formatYYYYMMDDtoWeekdayDayMonth(yyyymmdd: string): string {
+  if (!yyyymmdd) return "";
+  const d = parseYYYYMMDD(yyyymmdd);
+  const weekday = WEEKDAY_NAMES[d.getDay()];
+  const day = d.getDate();
+  const month = MONTH_NAMES_LONG[d.getMonth()];
+  return `${weekday}, ${day} ${month}`;
+}
+
+/**
+ * productivity-one `getMonthYear` for compact YYYYMMDD — e.g. "Mar 2026".
+ */
+export function getMonthYearCompact(yyyymmdd: string): string {
+  const d = parseYYYYMMDD(yyyymmdd);
+  return `${MONTH_NAMES_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 /** Match angular `formatYYYYMMDDtoDDMMM` — "5 Apr" or "5 Apr 2027" if non-current year. */
 export function formatYYYYMMDDtoDDMMM(yyyymmdd: string): string {
   const y = yyyymmdd.slice(0, 4);
