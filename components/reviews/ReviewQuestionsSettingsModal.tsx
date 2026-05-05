@@ -203,7 +203,7 @@ export function ReviewQuestionsSettingsModal({
                         </Text>
                       ) : null}
 
-                      {isWeb ? (
+                      {Platform.OS === "web" ? (
                         <DndContext
                           sensors={sensors}
                           collisionDetection={closestCenter}
