@@ -189,110 +189,137 @@ export function ReviewQuestionsSettingsModal({
                   </Pressable>
                 </View>
 
-                <ScrollView
-                  key={tab}
-                  style={styles.settingsScroll}
-                  keyboardShouldPersistTaps="handled"
-                >
-                  {tab === "active" ? (
+                {(() => {
+                  const body = (
                     <>
-                      {activeQuestions.length === 0 && !showAddInput ? (
-                        <Text style={styles.muted}>
-                          No questions yet. Add one below.
-                        </Text>
-                      ) : null}
+                      {tab === "active" ? (
+                        <>
+                          {activeQuestions.length === 0 && !showAddInput ? (
+                            <Text style={styles.muted}>
+                              No questions yet. Add one below.
+                            </Text>
+                          ) : null}
 
-                      {Platform.OS === "web" ? (
-                        <DndContext
-                          sensors={sensors}
-                          collisionDetection={closestCenter}
-                          onDragEnd={onDragEndActive}
-                        >
-                          <SortableContext
-                            items={activeQuestions.map((q) => q._id)}
-                            strategy={verticalListSortingStrategy}
-                          >
-                            {activeQuestions.map((q, i) => (
-                              <WebQuestionSortRow
+                          {Platform.OS === "web" ? (
+                            <DndContext
+                              sensors={sensors}
+                              collisionDetection={closestCenter}
+                              onDragEnd={onDragEndActive}
+                            >
+                              <SortableContext
+                                items={activeQuestions.map((q) => q._id)}
+                                strategy={verticalListSortingStrategy}
+                              >
+                                {activeQuestions.map((q) => (
+                                  <WebQuestionSortRow
+                                    key={q._id}
+                                    question={q}
+                                    onEdit={() => openEdit(q)}
+                                    onArchive={() =>
+                                      archiveQuestion({ id: q._id })
+                                    }
+                                    onDelete={() => setDeleteTarget(q)}
+                                  />
+                                ))}
+                              </SortableContext>
+                            </DndContext>
+                          ) : (
+                            activeQuestions.map((q, i) => (
+                              <NativeQuestionRow
                                 key={q._id}
                                 question={q}
+                                index={i}
+                                total={activeQuestions.length}
+                                onMoveUp={() => moveRow(i, i - 1)}
+                                onMoveDown={() => moveRow(i, i + 1)}
                                 onEdit={() => openEdit(q)}
                                 onArchive={() =>
                                   archiveQuestion({ id: q._id })
                                 }
                                 onDelete={() => setDeleteTarget(q)}
                               />
-                            ))}
-                          </SortableContext>
-                        </DndContext>
+                            ))
+                          )}
+
+                          {showAddInput ? (
+                            <View style={styles.addForm}>
+                              <Text style={styles.inputLabel}>
+                                New question
+                              </Text>
+                              <TextInput
+                                style={styles.outlineInput}
+                                value={newQuestionText}
+                                onChangeText={setNewQuestionText}
+                                placeholder="e.g. What went well?"
+                                placeholderTextColor={Colors.textTertiary}
+                              />
+                              <View style={styles.addActions}>
+                                <Button
+                                  title="Cancel"
+                                  variant="ghost"
+                                  onPress={() => {
+                                    setShowAddInput(false);
+                                    setNewQuestionText("");
+                                  }}
+                                />
+                                <Button title="Add" onPress={addQuestion} />
+                              </View>
+                            </View>
+                          ) : (
+                            <Pressable
+                              style={styles.addQuestionBtn}
+                              onPress={() => setShowAddInput(true)}
+                            >
+                              <MaterialIcons
+                                name="add"
+                                size={18}
+                                color={Colors.primary}
+                              />
+                              <Text style={styles.addQuestionBtnText}>
+                                Add question
+                              </Text>
+                            </Pressable>
+                          )}
+                        </>
+                      ) : archivedQuestions.length === 0 ? (
+                        <Text style={styles.muted}>
+                          No archived questions.
+                        </Text>
                       ) : (
-                        activeQuestions.map((q, i) => (
-                          <NativeQuestionRow
+                        archivedQuestions.map((q) => (
+                          <ArchivedRow
                             key={q._id}
                             question={q}
-                            index={i}
-                            total={activeQuestions.length}
-                            onMoveUp={() => moveRow(i, i - 1)}
-                            onMoveDown={() => moveRow(i, i + 1)}
                             onEdit={() => openEdit(q)}
-                            onArchive={() => archiveQuestion({ id: q._id })}
+                            onUnarchive={() =>
+                              archiveQuestion({ id: q._id })
+                            }
                             onDelete={() => setDeleteTarget(q)}
                           />
                         ))
                       )}
-
-                      {showAddInput ? (
-                        <View style={styles.addForm}>
-                          <Text style={styles.inputLabel}>New question</Text>
-                          <TextInput
-                            style={styles.outlineInput}
-                            value={newQuestionText}
-                            onChangeText={setNewQuestionText}
-                            placeholder="e.g. What went well?"
-                            placeholderTextColor={Colors.textTertiary}
-                          />
-                          <View style={styles.addActions}>
-                            <Button
-                              title="Cancel"
-                              variant="ghost"
-                              onPress={() => {
-                                setShowAddInput(false);
-                                setNewQuestionText("");
-                              }}
-                            />
-                            <Button title="Add" onPress={addQuestion} />
-                          </View>
-                        </View>
-                      ) : (
-                        <Pressable
-                          style={styles.addQuestionBtn}
-                          onPress={() => setShowAddInput(true)}
-                        >
-                          <MaterialIcons
-                            name="add"
-                            size={18}
-                            color={Colors.primary}
-                          />
-                          <Text style={styles.addQuestionBtnText}>
-                            Add question
-                          </Text>
-                        </Pressable>
-                      )}
                     </>
-                  ) : archivedQuestions.length === 0 ? (
-                    <Text style={styles.muted}>No archived questions.</Text>
+                  );
+
+                  /*
+                   * RN-web ScrollView does not size raw DOM children from
+                   * @dnd-kit (`<div>` sortable rows), so the Active list can
+                   * measure as empty. Use overflow:auto on web only.
+                   */
+                  return Platform.OS === "web" ? (
+                    <View key={tab} style={styles.settingsBodyWeb}>
+                      {body}
+                    </View>
                   ) : (
-                    archivedQuestions.map((q) => (
-                      <ArchivedRow
-                        key={q._id}
-                        question={q}
-                        onEdit={() => openEdit(q)}
-                        onUnarchive={() => archiveQuestion({ id: q._id })}
-                        onDelete={() => setDeleteTarget(q)}
-                      />
-                    ))
-                  )}
-                </ScrollView>
+                    <ScrollView
+                      key={tab}
+                      style={styles.settingsScroll}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {body}
+                    </ScrollView>
+                  );
+                })()}
 
                 <DialogFooter>
                   <Button title="Close" variant="ghost" onPress={onClose} />
@@ -579,6 +606,17 @@ function ArchivedRow({
 const styles = StyleSheet.create({
   settingsCard: { maxHeight: Platform.OS === "web" ? ("90vh" as any) : 600 },
   settingsScroll: { maxHeight: 360 },
+  settingsBodyWeb: {
+    maxHeight: 360,
+    width: "100%",
+    ...Platform.select({
+      web: {
+        overflowY: "auto",
+        overflowX: "hidden",
+      },
+      default: {},
+    }),
+  },
   muted: {
     fontSize: 14,
     color: Colors.textTertiary,
