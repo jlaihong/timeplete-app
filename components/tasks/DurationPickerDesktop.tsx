@@ -272,11 +272,28 @@ export function DurationPickerDesktop({
 
   if (!isEditing) {
     return (
-      <button
-        type="button"
-        onClick={startEditing}
-        disabled={readonly}
+      // Must not be `<button>`: on web `TaskRowDesktop` merges dnd-kit sortable attrs
+      // onto an outer RN `View`, which resolves to `<button>` — nested buttons break
+      // HTML + React hydration warnings.
+      <div
+        role={readonly ? undefined : "button"}
+        tabIndex={readonly ? undefined : 0}
+        {...(readonly
+          ? ({ "aria-readonly": true } as React.HTMLAttributes<HTMLDivElement>)
+          : {})}
+        onClick={(e) => startEditing(e)}
+        onKeyDown={
+          readonly
+            ? undefined
+            : (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  startEditing(e);
+                }
+              }
+        }
         style={{
+          display: "inline-block",
           background: "transparent",
           border: "none",
           padding: "4px 8px",
@@ -294,17 +311,16 @@ export function DurationPickerDesktop({
         }}
         onMouseEnter={(e) => {
           if (!readonly) {
-            (e.currentTarget as HTMLButtonElement).style.background =
+            (e.currentTarget as HTMLDivElement).style.background =
               "rgba(255,255,255,0.06)";
           }
         }}
         onMouseLeave={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.background =
-            "transparent";
+          (e.currentTarget as HTMLDivElement).style.background = "transparent";
         }}
       >
         {labelText}
-      </button>
+      </div>
     );
   }
 
