@@ -262,6 +262,17 @@ function cloneLocalGroups(gs: LocalGroup[]): LocalGroup[] {
   }));
 }
 
+function findTaskLocationIn(
+  groups: LocalGroup[],
+  taskId: string,
+): { groupId: string; index: number } | null {
+  for (const g of groups) {
+    const idx = g.tasks.findIndex((t) => t._id === taskId);
+    if (idx !== -1) return { groupId: g.id, index: idx };
+  }
+  return null;
+}
+
 /** Section id + task id order only — must match `groupsFromDetailSections` mapping. */
 function fingerprintTaskOrder(groups: LocalGroup[]): string {
   return groups
@@ -328,13 +339,8 @@ export function ListDetailWebDnd({
   );
 
   const findTaskLocation = useCallback(
-    (taskId: string): { groupId: string; index: number } | null => {
-      for (const g of localGroups) {
-        const idx = g.tasks.findIndex((t) => t._id === taskId);
-        if (idx !== -1) return { groupId: g.id, index: idx };
-      }
-      return null;
-    },
+    (taskId: string): { groupId: string; index: number } | null =>
+      findTaskLocationIn(localGroups, taskId),
     [localGroups],
   );
 
@@ -394,16 +400,16 @@ export function ListDetailWebDnd({
     [findTaskLocation, localGroups, buildMeta],
   );
 
-  const onDragOver = useCallback(
-    (event: DragOverEvent) => {
-      const { active, over } = event;
-      if (!over) return;
-      const activeId = String(active.id);
-      const overId = String(over.id);
-      if (activeId === overId) return;
+  const onDragOver = useCallback((event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (activeId === overId) return;
 
-      const activeLoc = findTaskLocation(activeId);
-      if (!activeLoc) return;
+    setLocalGroups((prev) => {
+      const activeLoc = findTaskLocationIn(prev, activeId);
+      if (!activeLoc) return prev;
 
       let targetGroupId: string;
       let targetIndex: number;
@@ -414,29 +420,42 @@ export function ListDetailWebDnd({
 
       if (overData?.type === "group" && overData.groupId) {
         targetGroupId = overData.groupId;
-        const targetGroup = localGroups.find((g) => g.id === targetGroupId);
+        const targetGroup = prev.find((g) => g.id === targetGroupId);
         targetIndex = targetGroup ? targetGroup.tasks.length : 0;
       } else {
-        const overLoc = findTaskLocation(overId);
-        if (!overLoc) return;
+        const overLoc = findTaskLocationIn(prev, overId);
+        if (!overLoc) return prev;
         targetGroupId = overLoc.groupId;
         targetIndex = overLoc.index;
       }
 
-      if (activeLoc.groupId === targetGroupId) return;
+      if (activeLoc.groupId === targetGroupId) return prev;
 
-      setLocalGroups((prev) => {
-        const next = prev.map((g) => ({ ...g, tasks: g.tasks.slice() }));
-        const fromGroup = next.find((g) => g.id === activeLoc.groupId)!;
-        const toGroup = next.find((g) => g.id === targetGroupId)!;
-        const [moved] = fromGroup.tasks.splice(activeLoc.index, 1);
-        const insertAt = Math.min(targetIndex, toGroup.tasks.length);
-        toGroup.tasks.splice(insertAt, 0, moved);
-        return next;
+      const fromG = prev.find((g) => g.id === activeLoc.groupId);
+      const toG = prev.find((g) => g.id === targetGroupId);
+      if (!fromG || !toG) return prev;
+
+      const movedTask = fromG.tasks[activeLoc.index];
+      if (!movedTask || movedTask._id !== activeId) return prev;
+
+      const insertAt = Math.min(targetIndex, toG.tasks.length);
+
+      return prev.map((g) => {
+        if (g.id === activeLoc.groupId) {
+          return {
+            ...g,
+            tasks: fromG.tasks.filter((_, i) => i !== activeLoc.index),
+          };
+        }
+        if (g.id === targetGroupId) {
+          const tasks = [...toG.tasks];
+          tasks.splice(insertAt, 0, movedTask);
+          return { ...g, tasks };
+        }
+        return g;
       });
-    },
-    [findTaskLocation, localGroups],
-  );
+    });
+  }, []);
 
   const onDragEnd = useCallback(
     async (event: DragEndEvent) => {
