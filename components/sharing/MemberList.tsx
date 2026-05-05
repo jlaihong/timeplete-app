@@ -11,6 +11,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Id } from "../../convex/_generated/dataModel";
+import { normalizeListMembersQuery } from "../../lib/listMembersQuery";
 
 interface MemberListProps {
   listId: Id<"lists">;
@@ -30,9 +31,10 @@ export function MemberList({ listId }: MemberListProps) {
   const [updatingShareId, setUpdatingShareId] =
     useState<Id<"listShares"> | null>(null);
 
-  if (!data) return null;
+  const normalized = normalizeListMembersQuery(data);
+  if (!normalized) return null;
 
-  const { members, viewerIsOwner } = data;
+  const { members, viewerIsOwner } = normalized;
 
   const notifyError = (message: string) => {
     if (Platform.OS === "web") {
