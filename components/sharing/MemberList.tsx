@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { Colors } from "../../constants/colors";
 import { Id } from "../../convex/_generated/dataModel";
 import { normalizeListMembersQuery } from "../../lib/listMembersQuery";
 import { renderListPermissionPortal } from "./listPermissionPortal";
+import { CollaboratorRoleBadge } from "./MemberListCollaboratorRoleBadge";
 
 interface MemberListProps {
   listId: Id<"lists">;
@@ -147,58 +148,6 @@ export function MemberList({ listId }: MemberListProps) {
     });
   };
 
-  /**
-   * Open the web role menu anchored to the badge control.
-   * RN-web often omits a reliable `nativeEvent.target` on `onPress`, so we
-   * measure the `TouchableOpacity` ref (with rAF + one retry) instead of
-   * trusting DOM hit-targets. If layout still reports 0×0, fall back to a
-   * centered viewport position so the menu is at least usable.
-   */
-  const openWebMenuFromAnchor = (
-    collaboratorUserId: Id<"users">,
-    role: "VIEWER" | "EDITOR",
-    anchor: View | null,
-  ) => {
-    const vw =
-      typeof window !== "undefined" ? window.innerWidth : 400;
-    const vh =
-      typeof window !== "undefined" ? window.innerHeight : 600;
-    const fallback = {
-      left: Math.max(8, vw / 2 - 80),
-      top: Math.max(8, vh * 0.25),
-      width: 160,
-      height: 36,
-    };
-
-    const tryMeasure = (remainingRetries: number) => {
-      if (
-        anchor == null ||
-        typeof anchor.measureInWindow !== "function"
-      ) {
-        applyMenuRectViewport(collaboratorUserId, role, fallback);
-        return;
-      }
-      anchor.measureInWindow((x, y, width, height) => {
-        if (width > 2 && height > 2) {
-          applyMenuRectViewport(collaboratorUserId, role, {
-            left: x,
-            top: y,
-            width,
-            height,
-          });
-          return;
-        }
-        if (remainingRetries > 0) {
-          requestAnimationFrame(() => tryMeasure(remainingRetries - 1));
-          return;
-        }
-        applyMenuRectViewport(collaboratorUserId, role, fallback);
-      });
-    };
-
-    requestAnimationFrame(() => tryMeasure(3));
-  };
-
   if (!normalized) return null;
 
   const { members, viewerIsOwner } = normalized;
@@ -280,16 +229,16 @@ export function MemberList({ listId }: MemberListProps) {
             </View>
             {canEditRole && editablePerm ? (
               Platform.OS === "web" ? (
-                <RoleBadgeDropdownWeb
+                <CollaboratorRoleBadge
                   label={formatRole(member.permission)}
                   disabled={busyUpdating}
-                  onOpen={(anchor) =>
-                    openWebMenuFromAnchor(member.userId, editablePerm, anchor)
+                  onOpenFromRect={(r) =>
+                    applyMenuRectViewport(member.userId, editablePerm, r)
                   }
                 />
               ) : (
                 <TouchableOpacity
-                  style={[styles.roleBadge, styles.roleBadgeInteractive]}
+                  style={styles.roleBadge}
                   disabled={busyUpdating}
                   onPress={() =>
                     openNativePicker(member.userId, editablePerm)
@@ -317,41 +266,6 @@ export function MemberList({ listId }: MemberListProps) {
         );
       })}
       {webPortal}
-    </View>
-  );
-}
-
-function RoleBadgeDropdownWeb(props: {
-  label: string;
-  disabled?: boolean;
-  onOpen: (anchor: View | null) => void;
-}) {
-  const { label, disabled, onOpen } = props;
-  const touchRef = useRef<View | null>(null);
-
-  return (
-    <View
-      collapsable={false}
-      style={[styles.roleBadge, styles.roleBadgeInteractive]}
-    >
-      <TouchableOpacity
-        ref={touchRef}
-        activeOpacity={0.75}
-        disabled={disabled}
-        style={[
-          styles.roleBadgeInnerTouchable,
-          disabled ? styles.opacityDisabled : null,
-        ]}
-        accessibilityRole="button"
-        accessibilityHint="Opens a menu to choose Viewer or Editor"
-        accessibilityLabel="Change permission"
-        onPress={() => onOpen(touchRef.current)}
-      >
-        <Text style={[styles.roleBadgeText, styles.roleBadgeLabelWeb]}>
-          {label}
-        </Text>
-        <Ionicons name="chevron-down" size={16} color={Colors.primary} />
-      </TouchableOpacity>
     </View>
   );
 }
@@ -420,21 +334,9 @@ const styles = StyleSheet.create({
     minHeight: 36,
     justifyContent: "center",
   },
-  roleBadgeInteractive: {},
-  roleBadgeInnerTouchable: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  opacityDisabled: { opacity: 0.55 },
   roleBadgeText: {
     fontSize: 13,
     fontWeight: "600",
     color: Colors.textSecondary,
-  },
-  roleBadgeLabelWeb: {
-    fontSize: 13,
-    color: Colors.text,
-    fontWeight: "700",
   },
 });
