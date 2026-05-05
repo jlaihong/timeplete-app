@@ -37,18 +37,22 @@ interface PermMenuAnchored {
   minWidth: number;
 }
 
+function emailsEqual(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 export function MemberList({ listId }: MemberListProps) {
   const data = useQuery(api.sharing.getListMembers, { listId });
-  const viewerOwnsList = useQuery(api.sharing.viewerIsListOwner, { listId });
+  const normalized = normalizeListMembersQuery(data);
+  const profile = useQuery(
+    api.users.getProfile,
+    normalized != null ? {} : "skip",
+  );
+
   const updatePermission = useMutation(api.sharing.updateListSharePermission);
   const [updatingShareId, setUpdatingShareId] =
     useState<Id<"listShares"> | null>(null);
   const [permMenu, setPermMenu] = useState<PermMenuAnchored | null>(null);
-
-  const normalized = normalizeListMembersQuery(data);
-  if (!normalized) return null;
-
-  const { members } = normalized;
 
   const notifyError = (message: string) => {
     if (Platform.OS === "web") {
@@ -122,7 +126,17 @@ export function MemberList({ listId }: MemberListProps) {
     });
   };
 
-  const isOwnerViewer = viewerOwnsList === true;
+  if (!normalized) return null;
+
+  const { members, viewerIsOwner } = normalized;
+  const ownerRow = members.find((m) => m.isOwner);
+  const inferredOwnerViaProfile =
+    ownerRow !== undefined &&
+    typeof profile?.email === "string" &&
+    profile.email.trim().length > 0 &&
+    emailsEqual(profile.email, ownerRow.email);
+
+  const isOwnerViewer = viewerIsOwner === true || inferredOwnerViaProfile;
 
   return (
     <View style={styles.container}>
