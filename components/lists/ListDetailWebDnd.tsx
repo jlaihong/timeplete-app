@@ -110,17 +110,16 @@ function SortableRow({
     listeners,
     setNodeRef,
     transform,
-    transition,
     isDragging,
   } = useSortable({
     id: task._id,
     data: { type: "task", groupId, task, meta, displayColor, durationSec },
     disabled: !canDrag,
+    animateLayoutChanges: () => false,
   });
 
   const style: Record<string, string | number | undefined> = {
     transform: CSS.Transform.toString(transform),
-    transition: transition as string | undefined,
     width: "100%",
   };
 
@@ -270,6 +269,8 @@ export function ListDetailWebDnd({
     // Mirror `DesktopTaskList`: resync from server whenever `sections` changes.
     // A key that only tracked task ids missed field edits (e.g. `taskDay` from
     // TaskDetailSheet), so the list showed stale dates until full remount/refresh.
+    // While dragging (or awaiting `moveBetweenSections` in `onDragEnd`), skip sync so
+    // Convex cannot briefly overwrite optimistic order with a pre-mutation snapshot.
     if (isDraggingRef.current) return;
     setLocalGroups(
       sections.map((s) => ({
@@ -413,79 +414,87 @@ export function ListDetailWebDnd({
     async (event: DragEndEvent) => {
       const startInfo = activeDrag;
       setActiveDrag(null);
-      isDraggingRef.current = false;
-      if (!startInfo) return;
-
-      const { active, over } = event;
-      const taskId = String(active.id) as Id<"tasks">;
-
-      const currentLoc = findTaskLocation(taskId);
-      if (!currentLoc) return;
-
-      let toSectionKey = currentLoc.groupId;
-      let newOrderIndex = currentLoc.index;
-
-      if (over) {
-        const overId = String(over.id);
-        const overData = over.data.current as
-          | { type?: string; groupId?: string }
-          | undefined;
-
-        if (overData?.type === "group" && overData.groupId) {
-          toSectionKey = overData.groupId;
-          const groupLen =
-            localGroups.find((g) => g.id === toSectionKey)?.tasks.length ?? 0;
-          if (toSectionKey === currentLoc.groupId) {
-            newOrderIndex = Math.max(0, groupLen - 1);
-          } else {
-            newOrderIndex = groupLen;
-          }
-        } else if (overId !== taskId) {
-          const overLoc = findTaskLocation(overId);
-          if (overLoc && overLoc.groupId === currentLoc.groupId) {
-            toSectionKey = overLoc.groupId;
-            newOrderIndex = overLoc.index;
-          }
-        }
-      }
-
-      if (
-        toSectionKey === currentLoc.groupId &&
-        currentLoc.index !== newOrderIndex
-      ) {
-        setLocalGroups((prev) =>
-          prev.map((g) =>
-            g.id !== toSectionKey
-              ? g
-              : {
-                  ...g,
-                  tasks: arrayMove(g.tasks, currentLoc.index, newOrderIndex),
-                },
-          ),
-        );
-      }
-
-      const fromGroupId = startInfo.fromGroupId;
-
-      if (
-        fromGroupId === toSectionKey &&
-        startInfo.fromIndex === newOrderIndex
-      ) {
+      if (!startInfo) {
+        isDraggingRef.current = false;
         return;
       }
 
-      const toSectionId = toSectionKey as Id<"listSections">;
-
+      /** Keep true until mutation + local fixes finish so `sections` useEffect cannot
+       * clobber optimistic `onDragOver` state with a stale Convex snapshot. */
       try {
-        await moveBetweenSections({
-          taskId,
-          toSectionId,
-          newOrderIndex,
-        });
-      } catch (err) {
-        setLocalGroups(serverGroups);
-        // eslint-disable-next-line no-console
-        console.error("List section move failed", err);
+        const { active, over } = event;
+        const taskId = String(active.id) as Id<"tasks">;
+
+        const currentLoc = findTaskLocation(taskId);
+        if (!currentLoc) return;
+
+        let toSectionKey = currentLoc.groupId;
+        let newOrderIndex = currentLoc.index;
+
+        if (over) {
+          const overId = String(over.id);
+          const overData = over.data.current as
+            | { type?: string; groupId?: string }
+            | undefined;
+
+          if (overData?.type === "group" && overData.groupId) {
+            toSectionKey = overData.groupId;
+            const groupLen =
+              localGroups.find((g) => g.id === toSectionKey)?.tasks.length ?? 0;
+            if (toSectionKey === currentLoc.groupId) {
+              newOrderIndex = Math.max(0, groupLen - 1);
+            } else {
+              newOrderIndex = groupLen;
+            }
+          } else if (overId !== taskId) {
+            const overLoc = findTaskLocation(overId);
+            if (overLoc && overLoc.groupId === currentLoc.groupId) {
+              toSectionKey = overLoc.groupId;
+              newOrderIndex = overLoc.index;
+            }
+          }
+        }
+
+        if (
+          toSectionKey === currentLoc.groupId &&
+          currentLoc.index !== newOrderIndex
+        ) {
+          setLocalGroups((prev) =>
+            prev.map((g) =>
+              g.id !== toSectionKey
+                ? g
+                : {
+                    ...g,
+                    tasks: arrayMove(g.tasks, currentLoc.index, newOrderIndex),
+                  },
+            ),
+          );
+        }
+
+        const fromGroupId = startInfo.fromGroupId;
+
+        if (
+          fromGroupId === toSectionKey &&
+          startInfo.fromIndex === newOrderIndex
+        ) {
+          return;
+        }
+
+        const toSectionId = toSectionKey as Id<"listSections">;
+
+        try {
+          await moveBetweenSections({
+            taskId,
+            toSectionId,
+            newOrderIndex,
+          });
+        } catch (err) {
+          setLocalGroups(serverGroups);
+          // eslint-disable-next-line no-console
+          console.error("List section move failed", err);
+        }
+      } finally {
+        isDraggingRef.current = false;
       }
     },
     [
