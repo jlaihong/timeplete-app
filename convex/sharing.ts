@@ -255,17 +255,6 @@ export const leaveList = mutation({
   },
 });
 
-/** Authoritative hint for Share/Member UI (works regardless of legacy getListMembers shape). */
-export const viewerIsListOwner = query({
-  args: { listId: v.id("lists") },
-  handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
-    const list = await ctx.db.get(args.listId);
-    if (!list) return false;
-    return list.userId === user._id;
-  },
-});
-
 export const getCollaborators = query({
   args: {},
   handler: async (ctx) => {
