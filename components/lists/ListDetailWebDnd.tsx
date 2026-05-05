@@ -19,7 +19,10 @@ import {
   DragStartEvent,
   DragOverEvent,
   DragEndEvent,
-  closestCenter,
+  pointerWithin,
+  rectIntersection,
+  closestCorners,
+  type CollisionDetection,
   useDndMonitor,
   useDroppable,
 } from "@dnd-kit/core";
@@ -166,7 +169,10 @@ function DroppableGroupBody({
   const { setNodeRef, isOver } = useDroppable({
     id: `group:${groupId}`,
     data: { type: "group", groupId },
-    disabled,
+    // When rows exist, the section wrapper overlaps every task rect; collisions
+    // would pick `group:*` often and snap the item to END of section (jumpy overlay).
+    // Keep this droppable only for genuinely empty sections.
+    disabled: disabled || !isEmpty,
   });
 
   return (
@@ -300,6 +306,16 @@ export function ListDetailWebDnd({
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
+
+  /** Same layering as DesktopHome — pointer/box hits before centroid snap.
+   * `closestCorners` behaves more predictably than `closestCenter` in tall scroll lists. */
+  const listCollisionDetection = useCallback<CollisionDetection>((args) => {
+    const pw = pointerWithin(args);
+    if (pw.length > 0) return pw;
+    const ri = rectIntersection(args);
+    if (ri.length > 0) return ri;
+    return closestCorners(args);
+  }, []);
 
   const [localGroups, setLocalGroups] = useState<LocalGroup[]>([]);
   const isDraggingRef = useRef(false);
@@ -576,7 +592,7 @@ export function ListDetailWebDnd({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={listCollisionDetection}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
