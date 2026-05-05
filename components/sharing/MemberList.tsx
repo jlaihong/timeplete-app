@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { GestureResponderEvent } from "react-native";
 import {
   View,
   Text,
@@ -38,17 +37,6 @@ interface PermMenuAnchored {
   top: number;
   left: number;
   minWidth: number;
-}
-
-const ELEMENT_NODE = 1;
-
-function elementFromPressTarget(nativeEventTarget: unknown): Element | null {
-  let cur: Node | null =
-    nativeEventTarget instanceof Node ? nativeEventTarget : null;
-  while (cur && cur.nodeType !== ELEMENT_NODE) {
-    cur = cur.parentNode;
-  }
-  return cur instanceof Element ? cur : null;
 }
 
 export function MemberList({ listId }: MemberListProps) {
@@ -159,39 +147,56 @@ export function MemberList({ listId }: MemberListProps) {
     });
   };
 
-  /** Prefer DOM rect (`position: fixed` matches viewport) — Modal/Scroll can break `measureInWindow`. */
-  const openWebMenuFromPress = (
-    e: GestureResponderEvent,
+  /**
+   * Open the web role menu anchored to the badge control.
+   * RN-web often omits a reliable `nativeEvent.target` on `onPress`, so we
+   * measure the `TouchableOpacity` ref (with rAF + one retry) instead of
+   * trusting DOM hit-targets. If layout still reports 0×0, fall back to a
+   * centered viewport position so the menu is at least usable.
+   */
+  const openWebMenuFromAnchor = (
     collaboratorUserId: Id<"users">,
     role: "VIEWER" | "EDITOR",
-    anchorFallback: View | null,
+    anchor: View | null,
   ) => {
-    const ne = e.nativeEvent as unknown as {
-      target?: unknown;
-      /** Legacy DOM field some RN-web paths still surface */
-      srcElement?: unknown;
+    const vw =
+      typeof window !== "undefined" ? window.innerWidth : 400;
+    const vh =
+      typeof window !== "undefined" ? window.innerHeight : 600;
+    const fallback = {
+      left: Math.max(8, vw / 2 - 80),
+      top: Math.max(8, vh * 0.25),
+      width: 160,
+      height: 36,
     };
-    const el = elementFromPressTarget(ne.target ?? ne.srcElement);
-    if (el?.getBoundingClientRect) {
-      const r = el.getBoundingClientRect();
-      applyMenuRectViewport(collaboratorUserId, role, {
-        left: r.left,
-        top: r.top,
-        width: r.width,
-        height: r.height,
+
+    const tryMeasure = (remainingRetries: number) => {
+      if (
+        anchor == null ||
+        typeof anchor.measureInWindow !== "function"
+      ) {
+        applyMenuRectViewport(collaboratorUserId, role, fallback);
+        return;
+      }
+      anchor.measureInWindow((x, y, width, height) => {
+        if (width > 2 && height > 2) {
+          applyMenuRectViewport(collaboratorUserId, role, {
+            left: x,
+            top: y,
+            width,
+            height,
+          });
+          return;
+        }
+        if (remainingRetries > 0) {
+          requestAnimationFrame(() => tryMeasure(remainingRetries - 1));
+          return;
+        }
+        applyMenuRectViewport(collaboratorUserId, role, fallback);
       });
-      return;
-    }
-    if (anchorFallback != null) {
-      anchorFallback.measureInWindow((x, y, width, height) => {
-        applyMenuRectViewport(collaboratorUserId, role, {
-          left: x,
-          top: y,
-          width,
-          height,
-        });
-      });
-    }
+    };
+
+    requestAnimationFrame(() => tryMeasure(3));
   };
 
   if (!normalized) return null;
@@ -278,13 +283,8 @@ export function MemberList({ listId }: MemberListProps) {
                 <RoleBadgeDropdownWeb
                   label={formatRole(member.permission)}
                   disabled={busyUpdating}
-                  onPress={(evt, anchorFallback) =>
-                    openWebMenuFromPress(
-                      evt,
-                      member.userId,
-                      editablePerm,
-                      anchorFallback,
-                    )
+                  onOpen={(anchor) =>
+                    openWebMenuFromAnchor(member.userId, editablePerm, anchor)
                   }
                 />
               ) : (
@@ -324,20 +324,18 @@ export function MemberList({ listId }: MemberListProps) {
 function RoleBadgeDropdownWeb(props: {
   label: string;
   disabled?: boolean;
-  onPress: (e: GestureResponderEvent, anchor: View | null) => void;
+  onOpen: (anchor: View | null) => void;
 }) {
-  const { label, disabled, onPress } = props;
-  const anchorRef = useRef<View | null>(null);
+  const { label, disabled, onOpen } = props;
+  const touchRef = useRef<View | null>(null);
 
   return (
     <View
       collapsable={false}
       style={[styles.roleBadge, styles.roleBadgeInteractive]}
-      ref={(r: View | null) => {
-        anchorRef.current = r;
-      }}
     >
       <TouchableOpacity
+        ref={touchRef}
         activeOpacity={0.75}
         disabled={disabled}
         style={[
@@ -347,7 +345,7 @@ function RoleBadgeDropdownWeb(props: {
         accessibilityRole="button"
         accessibilityHint="Opens a menu to choose Viewer or Editor"
         accessibilityLabel="Change permission"
-        onPress={(evt) => onPress(evt, anchorRef.current)}
+        onPress={() => onOpen(touchRef.current)}
       >
         <Text style={[styles.roleBadgeText, styles.roleBadgeLabelWeb]}>
           {label}
