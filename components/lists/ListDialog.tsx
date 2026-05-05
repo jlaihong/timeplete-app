@@ -9,6 +9,7 @@ import {
   Switch,
   Alert,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -54,6 +55,9 @@ export function ListDialog({
   onClose,
   visible: visibleProp = true,
 }: ListDialogProps) {
+  const { height: windowHeight } = useWindowDimensions();
+  /** Must match `padding` in `styles.overlay` (24 × 2 vertically). */
+  const overlayVerticalPaddingPx = 48;
   const isEditMode = !!list;
   const isInbox = !!list?.isInbox;
   const isGoalList = !!list?.isGoalList;
@@ -118,6 +122,14 @@ export function ListDialog({
     ]);
   };
 
+  /** Approx. title/tabs/footer + inner card padding (`theme/panels` 16 × 2 + gaps). */
+  const webBodyChromeReservePx =
+    (isEditMode && list ? 296 : 220) + overlayVerticalPaddingPx;
+  const scrollMaxHeightWeb = Math.max(
+    160,
+    Math.round(windowHeight - webBodyChromeReservePx),
+  );
+
   return (
     <Modal
       visible={visibleProp}
@@ -171,7 +183,10 @@ export function ListDialog({
             ) : null}
 
             <ScrollView
-              style={styles.scroll}
+              style={[
+                styles.scroll,
+                Platform.OS === "web" && { maxHeight: scrollMaxHeightWeb },
+              ]}
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator
               keyboardShouldPersistTaps="handled"
@@ -226,14 +241,16 @@ export function ListDialog({
             </ScrollView>
 
             {isEditMode && list && detailsTab === "sharing" ? (
-              <View style={[styles.actionsRow, styles.actionsRowSharing]}>
+              <View
+                style={[styles.actionsRow, styles.actionsRowSharing, styles.actionsFooter]}
+              >
                 <View style={styles.spacer} />
                 <View style={styles.primaryActions}>
                   <Button title="Cancel" variant="outline" onPress={onClose} />
                 </View>
               </View>
             ) : (
-              <View style={styles.actionsRow}>
+              <View style={[styles.actionsRow, styles.actionsFooter]}>
                 {isEditMode && !isInbox ? (
                   <Button
                     title="Delete"
@@ -293,6 +310,10 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 440,
     maxHeight: "90%",
+    ...Platform.select({
+      web: { alignSelf: "center", maxHeight: "min(90vh, 90%)" } as object,
+      default: {},
+    }),
   },
   title: {
     fontSize: 20,
@@ -327,14 +348,8 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flexGrow: 0,
-    flexShrink: 0,
-    ...Platform.select({
-      web: {
-        width: "100%",
-        maxHeight: "min(70vh, 560px)",
-      } as object,
-      default: {},
-    }),
+    flexShrink: 1,
+    width: "100%",
   },
   scrollContent: { paddingBottom: 8 },
   fieldLabel: {
@@ -366,6 +381,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: 16,
     gap: 12,
+  },
+  /** Keep Save/Cancel inside the card when the scroll body is height-capped on web. */
+  actionsFooter: {
+    flexShrink: 0,
   },
   actionsRowSharing: {
     justifyContent: "flex-end",
