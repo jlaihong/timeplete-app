@@ -13,13 +13,6 @@ export const TRACKING_HISTORY_SCROLL_DOM_CLASS = "timeplete-tracking-history-scr
 /** Must match the `data-*` attribute set on the scroll `div` (`TrackingHistoryScroller.web.tsx`). */
 export const TRACKING_HISTORY_SCROLL_ATTR_NAME = "data-tracking-history-scroll";
 
-/**
- * List create/edit modal body (`ListDialogScrollView.web.tsx`).
- * Shares the persistent thin-scrollbar rules with tracking history on web.
- */
-export const LIST_DIALOG_SCROLL_DOM_CLASS = "timeplete-list-dialog-scroll-native";
-export const LIST_DIALOG_SCROLL_ATTR_NAME = "data-list-dialog-scroll";
-
 /** Applied to overflow elements while (or briefly after) the user scrolls them. */
 const SCROLL_REVEAL_CLASS = "timeplete-scrollbar-reveal";
 const SCROLL_REVEAL_MS = 650;
@@ -75,8 +68,8 @@ function installScrollRevealListener(): () => void {
 }
 
 /**
- * Persistent scrollbar chrome for select scroll regions (Edit Trackable tracking
- * history, list create/edit dialog body) — overrides translucent `*` rules.
+ * Persistent scrollbar chrome for Edit Trackable → tracking history overflow
+ * (`TrackingHistoryScroller.web.tsx`) — overrides translucent `*` rules.
  */
 function installTrackingHistoryScrollbarStyles(): () => void {
   if (typeof document === "undefined") return () => {};
@@ -86,9 +79,7 @@ function installTrackingHistoryScrollbarStyles(): () => void {
     const thumbHover = Colors.outline;
     const track = Colors.surfaceContainer;
     const persistentScrollSurfaces = `[${TRACKING_HISTORY_SCROLL_ATTR_NAME}],
-.${TRACKING_HISTORY_SCROLL_DOM_CLASS},
-[${LIST_DIALOG_SCROLL_ATTR_NAME}],
-.${LIST_DIALOG_SCROLL_DOM_CLASS}`;
+.${TRACKING_HISTORY_SCROLL_DOM_CLASS}`;
 
     const style = document.createElement("style");
     style.id = HISTORY_SCROLL_STYLE_ID;
@@ -188,7 +179,7 @@ function installNonMacUniversalScrollbarStyles(): () => void {
  * other overflow regions (Chrome/Safari: webkit; Firefox: scrollbar-color).
  *
  * Non-mac: scrollbars stay hidden unless hover / focus-within / active scroll.
- * Persistent scroll surfaces on web (`TrackingHistoryScroller`, `ListDialogScrollView`) use matching
+ * Persistent scroll surfaces on web (`TrackingHistoryScroller`) use matching
  * `data-*` + class hooks; stylesheet `installTrackingHistoryScrollbarStyles` styles them for visible thumbs.
  */
 export function installWebScrollbarStyles(): () => void {

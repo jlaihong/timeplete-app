@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Modal,
   Pressable,
+  ScrollView,
   Switch,
   Alert,
   Platform,
@@ -19,7 +20,6 @@ import { ColorPicker } from "../ui/ColorPicker";
 import { Card } from "../ui/Card";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { ListSharePanel } from "../sharing/ListSharePanel";
-import { ListDialogScrollView } from "./ListDialogScrollView";
 
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
@@ -170,9 +170,11 @@ export function ListDialog({
               </View>
             ) : null}
 
-            <ListDialogScrollView
+            <ScrollView
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator
+              keyboardShouldPersistTaps="handled"
             >
               {isEditMode && list && detailsTab === "sharing" ? (
                 <ListSharePanel listId={list._id} />
@@ -221,7 +223,7 @@ export function ListDialog({
                   </View>
                 </>
               )}
-            </ListDialogScrollView>
+            </ScrollView>
 
             {isEditMode && list && detailsTab === "sharing" ? (
               <View style={[styles.actionsRow, styles.actionsRowSharing]}>
@@ -324,14 +326,14 @@ const styles = StyleSheet.create({
     color: Colors.primary,
   },
   scroll: {
-    width: "100%",
-    alignSelf: "stretch",
+    flexGrow: 0,
+    flexShrink: 0,
     ...Platform.select({
-      /** Cap tall Sharing / Details content so body scrolls inside the modal (not flex-fill — avoids 0-height in auto-height columns on web). */
       web: {
-        maxHeight: "min(65vh, 540px)",
+        width: "100%",
+        maxHeight: "min(70vh, 560px)",
       } as object,
-      default: { maxHeight: 480 },
+      default: {},
     }),
   },
   scrollContent: { paddingBottom: 8 },
