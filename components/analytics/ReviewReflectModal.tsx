@@ -1,282 +1,410 @@
-import React, { useMemo } from "react";
+/**
+ * productivity-one `ReflectDialogComponent` — title `Reflect — {Current} Review`,
+ * two columns (child reviews read-only | current review editable), footer
+ * Cancel / Save, content height ~70vh, 90vw max 1200px.
+ */
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  TextInput,
   Platform,
+  Alert,
 } from "react-native";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
-import {
-  addDays,
-  endOfMonth,
-  endOfWeek,
-  formatDisplayDate,
-  getDaysInRange,
-  parseYYYYMMDD,
-  startOfMonth,
-  startOfWeek,
-} from "../../lib/dates";
+import { Button } from "../ui/Button";
 import {
   DialogCard,
+  DialogFooter,
   DialogHeader,
   DialogOverlay,
 } from "../ui/DialogScaffold";
+import {
+  displayReviewQuestions,
+  getChildDateLabel,
+  getReflectMeta,
+  type ReviewFrequency,
+} from "../../lib/reviewParity";
 
-type ParentTab = "WEEKLY" | "MONTHLY" | "YEARLY";
-
-function weekStartsInWindow(windowStart: string, windowEnd: string): string[] {
-  const set = new Set<string>();
-  for (const d of getDaysInRange(windowStart, windowEnd)) {
-    set.add(startOfWeek(d));
-  }
-  return [...set].sort();
-}
-
-function monthStartsInWindow(windowStart: string, windowEnd: string): string[] {
-  const out: string[] = [];
-  let cur = startOfMonth(windowStart);
-  while (cur <= windowEnd) {
-    if (cur >= windowStart) out.push(cur);
-    cur = addDays(endOfMonth(cur), 1);
-  }
-  return out;
-}
-
-function monthHeading(yyyymmdd: string): string {
-  const d = parseYYYYMMDD(yyyymmdd);
-  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-}
-
-function periodHeading(parentTab: ParentTab, dayKey: string): string {
-  switch (parentTab) {
-    case "WEEKLY":
-      return formatDisplayDate(dayKey);
-    case "MONTHLY": {
-      const wEnd = endOfWeek(dayKey);
-      return `${formatDisplayDate(dayKey)} – ${formatDisplayDate(wEnd)}`;
-    }
-    case "YEARLY":
-      return monthHeading(dayKey);
-  }
-}
-
-function emptyQuestionsHint(parentTab: ParentTab): string {
-  switch (parentTab) {
-    case "WEEKLY":
-      return "No daily review questions yet. Switch the analytics tab to Daily and add questions above.";
-    case "MONTHLY":
-      return "No weekly review questions yet. Switch the analytics tab to Weekly and add questions above.";
-    case "YEARLY":
-      return "No monthly review questions yet. Switch the analytics tab to Monthly and add questions above.";
-  }
-}
-
-function childFrequencyFor(parentTab: ParentTab): "DAILY" | "WEEKLY" | "MONTHLY" {
-  switch (parentTab) {
-    case "WEEKLY":
-      return "DAILY";
-    case "MONTHLY":
-      return "WEEKLY";
-    case "YEARLY":
-      return "MONTHLY";
-  }
-}
-
-function childReviewKeys(
-  parentTab: ParentTab,
-  windowStart: string,
-  windowEnd: string
-): string[] {
-  switch (parentTab) {
-    case "WEEKLY":
-      return getDaysInRange(windowStart, windowEnd);
-    case "MONTHLY":
-      return weekStartsInWindow(windowStart, windowEnd);
-    case "YEARLY":
-      return monthStartsInWindow(windowStart, windowEnd);
-  }
-}
-
-function childListLabel(parentTab: ParentTab): string {
-  switch (parentTab) {
-    case "WEEKLY":
-      return "Daily reviews";
-    case "MONTHLY":
-      return "Weekly reviews";
-    case "YEARLY":
-      return "Monthly reviews";
-  }
-}
+type ParentTab = Exclude<ReviewFrequency, "DAILY">;
 
 export function ReviewReflectModal({
   visible,
   onClose,
+  onSaved,
   parentTab,
-  windowStart,
-  windowEnd,
+  canonicalReviewDate,
+  currentFrequency,
 }: {
   visible: boolean;
   onClose: () => void;
+  onSaved?: () => void;
   parentTab: ParentTab;
-  windowStart: string;
-  windowEnd: string;
+  canonicalReviewDate: string;
+  currentFrequency: ReviewFrequency;
 }) {
-  const childFrequency = childFrequencyFor(parentTab);
-  const orderedKeys = useMemo(
-    () => childReviewKeys(parentTab, windowStart, windowEnd),
-    [parentTab, windowStart, windowEnd]
+  const meta = useMemo(
+    () => getReflectMeta(parentTab, canonicalReviewDate),
+    [parentTab, canonicalReviewDate]
   );
 
-  const rangeStr = `${formatDisplayDate(windowStart)} – ${formatDisplayDate(windowEnd)}`;
-
-  const queryArgs =
-    visible && orderedKeys.length > 0
+  const rangeQuery =
+    visible && meta
       ? {
-          frequency: childFrequency,
-          startDate: orderedKeys[0]!,
-          endDate: orderedKeys[orderedKeys.length - 1]!,
+          frequency: meta.childFrequency,
+          startDate: meta.startDate,
+          endDate: meta.endDate,
         }
       : ("skip" as const);
 
-  const flatAnswers = useQuery(api.reviews.searchAnswersRange, queryArgs);
-  const questionsRaw = useQuery(
+  const childAnswersFlat = useQuery(api.reviews.searchAnswersRange, rangeQuery);
+  const childQuestionsRaw = useQuery(
     api.reviews.searchQuestions,
-    visible ? { frequency: childFrequency } : "skip"
+    visible ? { frequency: meta.childFrequency } : "skip"
+  );
+  const currentQuestionsRaw = useQuery(
+    api.reviews.searchQuestions,
+    visible ? { frequency: currentFrequency } : "skip"
+  );
+  const currentAnswers = useQuery(
+    api.reviews.searchAnswers,
+    visible
+      ? {
+          frequency: currentFrequency,
+          dayUnderReview: canonicalReviewDate,
+        }
+      : "skip"
   );
 
-  const sortedQuestions = useMemo(
+  const bulkUpsert = useMutation(api.reviews.bulkUpsertAnswers);
+
+  const childQuestions = useMemo(
     () =>
-      questionsRaw
-        ?.filter((q) => !q.archived)
-        .sort((a, b) => a.orderIndex - b.orderIndex) ?? [],
-    [questionsRaw]
+      (childQuestionsRaw ?? [])
+        .filter((q) => !q.archived)
+        .sort((a, b) => a.orderIndex - b.orderIndex),
+    [childQuestionsRaw]
   );
 
-  const answersByPeriod = useMemo(() => {
-    const m = new Map<string, Map<string, string>>();
-    for (const a of flatAnswers ?? []) {
-      if (!m.has(a.dayUnderReview)) {
-        m.set(a.dayUnderReview, new Map());
-      }
-      m.get(a.dayUnderReview)!.set(a.reviewQuestionId, a.answerText);
+  const displayCurrentQs = useMemo(
+    () =>
+      displayReviewQuestions(currentQuestionsRaw, currentAnswers ?? []),
+    [currentQuestionsRaw, currentAnswers]
+  );
+
+  const childAnswersByDate = useMemo(() => {
+    const m = new Map<string, typeof childAnswersFlat>();
+    for (const a of childAnswersFlat ?? []) {
+      const list = m.get(a.dayUnderReview) ?? [];
+      list.push(a);
+      m.set(a.dayUnderReview, list);
     }
     return m;
-  }, [flatAnswers]);
+  }, [childAnswersFlat]);
+
+  const orderedDates = useMemo(
+    () => [...childAnswersByDate.keys()].sort(),
+    [childAnswersByDate]
+  );
+
+  const dateLabels = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const d of orderedDates) {
+      labels.set(d, getChildDateLabel(meta.childFrequency, d));
+    }
+    return labels;
+  }, [orderedDates, meta.childFrequency]);
+
+  const [answerTexts, setAnswerTexts] = useState<Record<string, string>>({});
+  const [initialTexts, setInitialTexts] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !currentAnswers) return;
+    const next: Record<string, string> = {};
+    for (const a of currentAnswers) {
+      next[a.reviewQuestionId] = a.answerText ?? "";
+    }
+    setAnswerTexts({ ...next });
+    setInitialTexts({ ...next });
+  }, [visible, currentAnswers, canonicalReviewDate, currentFrequency]);
+
+  const isDirty = useMemo(() => {
+    for (const [qId, text] of Object.entries(answerTexts)) {
+      if ((text || "") !== (initialTexts[qId] || "")) return true;
+    }
+    for (const [qId, text] of Object.entries(initialTexts)) {
+      if ((text || "") !== (answerTexts[qId] || "")) return true;
+    }
+    return false;
+  }, [answerTexts, initialTexts]);
+
+  const getAnswerForQuestion = useCallback(
+    (date: string, questionId: string): string => {
+      const answers = childAnswersByDate.get(date) ?? [];
+      return (
+        answers.find((a) => a.reviewQuestionId === questionId)?.answerText ??
+        ""
+      );
+    },
+    [childAnswersByDate]
+  );
+
+  const datesWithAnswers = useMemo(
+    () =>
+      orderedDates.filter(
+        (d) => (childAnswersByDate.get(d)?.length ?? 0) > 0
+      ),
+    [orderedDates, childAnswersByDate]
+  );
+
+  const requestClose = () => {
+    if (!isDirty) {
+      onClose();
+      return;
+    }
+    if (Platform.OS === "web") {
+      // eslint-disable-next-line no-alert
+      if (
+        window.confirm(
+          "You have unsaved changes. Discard them?"
+        )
+      ) {
+        onClose();
+      }
+    } else {
+      Alert.alert("Unsaved changes", "Discard your edits?", [
+        { text: "Keep editing", style: "cancel" },
+        { text: "Discard", style: "destructive", onPress: onClose },
+      ]);
+    }
+  };
+
+  const save = async () => {
+    if (saving) return;
+    const toSave = displayCurrentQs.map((q) => ({
+      reviewQuestionId: q._id,
+      answerText: answerTexts[q._id] ?? "",
+      frequency: currentFrequency,
+      dayUnderReview: canonicalReviewDate,
+    }));
+    setSaving(true);
+    try {
+      if (toSave.length > 0) {
+        await bulkUpsert({ answers: toSave });
+      }
+      setInitialTexts({ ...answerTexts });
+      onSaved?.();
+      onClose();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Save failed";
+      if (Platform.OS === "web") window.alert(msg);
+      else Alert.alert("Save failed", msg);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (!visible) return null;
 
+  const title = `Reflect — ${meta.currentLabel} Review`;
+  const childHeading = `${meta.childLabel} Reviews`;
+  const currentHeading = `${meta.currentLabel} Review`;
+
   return (
-    <DialogOverlay onBackdropPress={onClose} zIndex={2500}>
+    <DialogOverlay onBackdropPress={requestClose} zIndex={2500}>
       <DialogCard
-        desktopWidth={580}
+        desktopWidth={1200}
         style={[
-          styles.card,
+          styles.reflectCard,
           Platform.OS === "web"
-            ? ({ maxHeight: "85vh" } as object)
-            : { maxHeight: 560 },
+            ? ({ width: "90vw", maxWidth: 1200 } as object)
+            : null,
         ]}
       >
-        <DialogHeader title="Reflect" onClose={onClose} />
-        <Text style={styles.subtitle}>
-          {childListLabel(parentTab)} · {rangeStr}
-        </Text>
-
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollInner}
-          keyboardShouldPersistTaps="handled"
+        <DialogHeader title={title} onClose={requestClose} />
+        <View
+          style={[
+            styles.reflectContent,
+            Platform.OS === "web" && styles.reflectContentWeb,
+          ]}
         >
-          {sortedQuestions.length === 0 ? (
-            <Text style={styles.muted}>{emptyQuestionsHint(parentTab)}</Text>
-          ) : null}
+          <View style={styles.reflectColumns}>
+            <ScrollView
+              style={[styles.reflectColumn, styles.reflectChildColumn]}
+              contentContainerStyle={styles.columnPad}
+            >
+              <Text style={styles.columnHeading}>{childHeading}</Text>
+              {datesWithAnswers.map((date) => {
+                const answers = childAnswersByDate.get(date);
+                if (!answers || answers.length === 0) return null;
+                return (
+                  <View key={date} style={styles.dateGroup}>
+                    <Text style={styles.dateHeading}>
+                      {dateLabels.get(date) ?? date}
+                    </Text>
+                    {childQuestions.map((q) => {
+                      const answer = getAnswerForQuestion(date, q._id);
+                      if (!answer) return null;
+                      return (
+                        <View key={q._id} style={styles.qaPair}>
+                          <Text style={styles.questionLabel}>
+                            {q.questionText}
+                          </Text>
+                          <Text style={styles.answerText}>{answer}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+              {datesWithAnswers.length === 0 ? (
+                <Text style={styles.emptyState}>
+                  No {meta.childLabel.toLowerCase()} reviews found for this
+                  period.
+                </Text>
+              ) : null}
+            </ScrollView>
 
-          {orderedKeys.map((dayKey) => {
-            const heading = periodHeading(parentTab, dayKey);
-            const perQ = answersByPeriod.get(dayKey);
-            return (
-              <View key={dayKey} style={styles.periodBlock}>
-                <Text style={styles.periodTitle}>{heading}</Text>
-                {sortedQuestions.map((q) => {
-                  const text = perQ?.get(q._id) ?? "";
-                  const hasText = text.trim().length > 0;
-                  return (
-                    <View key={q._id} style={styles.qaBlock}>
-                      <Text style={styles.questionLabel}>{q.questionText}</Text>
-                      <Text
-                        style={[
-                          styles.answerText,
-                          !hasText && styles.answerEmpty,
-                        ]}
-                      >
-                        {hasText ? text : "—"}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            );
-          })}
-        </ScrollView>
+            <ScrollView
+              style={styles.reflectColumn}
+              contentContainerStyle={styles.columnPad}
+            >
+              <Text style={styles.columnHeading}>{currentHeading}</Text>
+              {displayCurrentQs.length === 0 ? (
+                <Text style={styles.emptyState}>
+                  No questions configured for{" "}
+                  {meta.currentLabel.toLowerCase()} reviews.
+                </Text>
+              ) : (
+                displayCurrentQs.map((q) => (
+                  <View key={q._id} style={styles.currentField}>
+                    <Text style={styles.currentLabel}>{q.questionText}</Text>
+                    <TextInput
+                      style={styles.currentTextarea}
+                      value={answerTexts[q._id] ?? ""}
+                      onChangeText={(t) =>
+                        setAnswerTexts((prev) => ({ ...prev, [q._id]: t }))
+                      }
+                      placeholder="Your answer..."
+                      placeholderTextColor={Colors.textTertiary}
+                      multiline
+                      textAlignVertical="top"
+                    />
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+
+        <DialogFooter>
+          <Button title="Cancel" variant="ghost" onPress={requestClose} />
+          <Button
+            title={saving ? "Saving..." : "Save"}
+            onPress={save}
+            disabled={saving}
+          />
+        </DialogFooter>
       </DialogCard>
     </DialogOverlay>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+  reflectCard: {
     flexDirection: "column",
+    maxHeight: Platform.OS === "web" ? ("92vh" as any) : 720,
   },
-  subtitle: {
+  reflectContent: {
+    overflow: "hidden",
+  },
+  reflectContentWeb: {
+    height: "70vh" as any,
+  } as const,
+  reflectColumns: {
+    flex: 1,
+    flexDirection: "row",
+    gap: 32,
+    minHeight: 280,
+    height: "100%",
+  },
+  reflectChildColumn: {
+    paddingRight: 32,
+    borderRightWidth: 1,
+    borderRightColor: Colors.outlineVariant,
+  },
+  reflectColumn: {
+    flex: 1,
+    minWidth: 0,
+  },
+  columnPad: {
+    paddingBottom: 12,
+  },
+  columnHeading: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 16,
+    color: Colors.text,
+  },
+  dateGroup: {
+    marginBottom: 24,
+  },
+  dateHeading: {
+    fontWeight: "600",
     fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 12,
-    lineHeight: 20,
-  },
-  scroll: {
-    flexGrow: 1,
-    minHeight: 120,
-    maxHeight: Platform.OS === "web" ? (480 as const) : 440,
-  },
-  scrollInner: {
-    paddingBottom: 8,
-  },
-  muted: {
-    fontSize: 13,
-    color: Colors.textTertiary,
-    marginBottom: 12,
-    lineHeight: 18,
-  },
-  periodBlock: {
-    marginBottom: 20,
-    paddingBottom: 16,
+    marginBottom: 8,
+    paddingBottom: 4,
     borderBottomWidth: 1,
     borderBottomColor: Colors.outlineVariant,
-  },
-  periodTitle: {
-    fontSize: 15,
-    fontWeight: "700",
     color: Colors.text,
-    marginBottom: 10,
   },
-  qaBlock: {
-    marginTop: 10,
+  qaPair: {
+    marginBottom: 12,
   },
   questionLabel: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "500",
+    opacity: 0.8,
+    marginBottom: 2,
     color: Colors.text,
-    marginBottom: 4,
   },
   answerText: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    lineHeight: 20,
+    fontSize: 14,
+    lineHeight: 21,
+    color: Colors.text,
+    ...(Platform.OS === "web"
+      ? ({ whiteSpace: "pre-wrap" } as object)
+      : null),
   },
-  answerEmpty: {
-    color: Colors.textTertiary,
+  emptyState: {
+    opacity: 0.6,
     fontStyle: "italic",
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  currentField: {
+    marginBottom: 16,
+    gap: 4,
+  },
+  currentLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.text,
+  },
+  currentTextarea: {
+    minHeight: 72,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    color: Colors.text,
+    backgroundColor: Colors.surfaceContainer,
   },
 });
