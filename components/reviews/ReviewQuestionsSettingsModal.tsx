@@ -169,9 +169,7 @@ export function ReviewQuestionsSettingsModal({
                     </Text>
                   </Pressable>
                   <Pressable
-                    onPress={() =>
-                      archivedQuestions.length > 0 && setTab("archived")
-                    }
+                    onPress={() => setTab("archived")}
                     disabled={archivedQuestions.length === 0}
                     style={[
                       styles.tab,
@@ -192,6 +190,7 @@ export function ReviewQuestionsSettingsModal({
                 </View>
 
                 <ScrollView
+                  key={tab}
                   style={styles.settingsScroll}
                   keyboardShouldPersistTaps="handled"
                 >
