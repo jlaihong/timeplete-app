@@ -241,6 +241,34 @@ function sectionHeaderCountSuffix(
   return ` ${completed}/${total}`;
 }
 
+function groupsFromDetailSections(
+  detailSections: ListDetailDndSection[],
+): LocalGroup[] {
+  return detailSections.map((s) => ({
+    id: String(s.sectionId),
+    sectionId: s.sectionId,
+    title: s.title,
+    isDefault: s.isDefault,
+    headerCompletedCount: s.headerCompletedCount,
+    headerTotalCount: s.headerTotalCount,
+    tasks: s.tasks.map((t) => ({ ...t })),
+  }));
+}
+
+function cloneLocalGroups(gs: LocalGroup[]): LocalGroup[] {
+  return gs.map((g) => ({
+    ...g,
+    tasks: g.tasks.map((t) => ({ ...t })),
+  }));
+}
+
+/** Section id + task id order only — must match `groupsFromDetailSections` mapping. */
+function fingerprintTaskOrder(groups: LocalGroup[]): string {
+  return groups
+    .map((g) => `${g.id}:${g.tasks.map((t) => t._id).join(",")}`)
+    .join("|");
+}
+
 export function ListDetailWebDnd({
   sections,
   buildMeta,
@@ -264,6 +292,9 @@ export function ListDetailWebDnd({
 
   const [localGroups, setLocalGroups] = useState<LocalGroup[]>([]);
   const isDraggingRef = useRef(false);
+  /** Block `sections` resync until Convex matches this order (mutation returns before query does). */
+  const pendingReorderFingerprintRef = useRef<string | null>(null);
+  const pendingReorderDeadlineMsRef = useRef(0);
 
   useEffect(() => {
     // Mirror `DesktopTaskList`: resync from server whenever `sections` changes.
@@ -272,30 +303,27 @@ export function ListDetailWebDnd({
     // While dragging (or awaiting `moveBetweenSections` in `onDragEnd`), skip sync so
     // Convex cannot briefly overwrite optimistic order with a pre-mutation snapshot.
     if (isDraggingRef.current) return;
-    setLocalGroups(
-      sections.map((s) => ({
-        id: String(s.sectionId),
-        sectionId: s.sectionId,
-        title: s.title,
-        isDefault: s.isDefault,
-        headerCompletedCount: s.headerCompletedCount,
-        headerTotalCount: s.headerTotalCount,
-        tasks: s.tasks.map((t) => ({ ...t })),
-      })),
-    );
+
+    const incoming = groupsFromDetailSections(sections);
+    const incomingFp = fingerprintTaskOrder(incoming);
+    const pending = pendingReorderFingerprintRef.current;
+    const deadline = pendingReorderDeadlineMsRef.current;
+    const now = Date.now();
+    const deadlineExpired = pending !== null && deadline > 0 && now > deadline;
+
+    if (pending !== null && !deadlineExpired && incomingFp !== pending) {
+      return;
+    }
+    if (pending !== null) {
+      pendingReorderFingerprintRef.current = null;
+      pendingReorderDeadlineMsRef.current = 0;
+    }
+
+    setLocalGroups(incoming);
   }, [sections]);
 
   const serverGroups = useMemo(
-    () =>
-      sections.map((s) => ({
-        id: String(s.sectionId),
-        sectionId: s.sectionId,
-        title: s.title,
-        isDefault: s.isDefault,
-        headerCompletedCount: s.headerCompletedCount,
-        headerTotalCount: s.headerTotalCount,
-        tasks: s.tasks.map((t) => ({ ...t })),
-      })),
+    () => groupsFromDetailSections(sections),
     [sections],
   );
 
@@ -455,22 +483,6 @@ export function ListDetailWebDnd({
           }
         }
 
-        if (
-          toSectionKey === currentLoc.groupId &&
-          currentLoc.index !== newOrderIndex
-        ) {
-          setLocalGroups((prev) =>
-            prev.map((g) =>
-              g.id !== toSectionKey
-                ? g
-                : {
-                    ...g,
-                    tasks: arrayMove(g.tasks, currentLoc.index, newOrderIndex),
-                  },
-            ),
-          );
-        }
-
         const fromGroupId = startInfo.fromGroupId;
 
         if (
@@ -479,6 +491,30 @@ export function ListDetailWebDnd({
         ) {
           return;
         }
+
+        let modeledGroups = cloneLocalGroups(localGroups);
+        if (
+          toSectionKey === currentLoc.groupId &&
+          currentLoc.index !== newOrderIndex
+        ) {
+          modeledGroups = modeledGroups.map((g) =>
+            g.id !== toSectionKey
+              ? g
+              : {
+                  ...g,
+                  tasks: arrayMove(
+                    [...g.tasks],
+                    currentLoc.index,
+                    newOrderIndex,
+                  ),
+                },
+          );
+          setLocalGroups(modeledGroups);
+        }
+
+        pendingReorderFingerprintRef.current =
+          fingerprintTaskOrder(modeledGroups);
+        pendingReorderDeadlineMsRef.current = Date.now() + 8000;
 
         const toSectionId = toSectionKey as Id<"listSections">;
 
@@ -489,6 +525,8 @@ export function ListDetailWebDnd({
             newOrderIndex,
           });
         } catch (err) {
+          pendingReorderFingerprintRef.current = null;
+          pendingReorderDeadlineMsRef.current = 0;
           setLocalGroups(serverGroups);
           // eslint-disable-next-line no-console
           console.error("List section move failed", err);
@@ -509,6 +547,8 @@ export function ListDetailWebDnd({
   const onDragCancel = useCallback(() => {
     setActiveDrag(null);
     isDraggingRef.current = false;
+    pendingReorderFingerprintRef.current = null;
+    pendingReorderDeadlineMsRef.current = 0;
     setLocalGroups(serverGroups);
   }, [serverGroups]);
 
