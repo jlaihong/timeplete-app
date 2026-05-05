@@ -294,7 +294,7 @@ export default function ListDetailScreen() {
 
   const assignableMembers = useMemo(() => {
     if (!listMembers) return [];
-    return listMembers.filter(
+    return listMembers.members.filter(
       (m) => m.permission === "OWNER" || m.permission === "EDITOR",
     );
   }, [listMembers]);
