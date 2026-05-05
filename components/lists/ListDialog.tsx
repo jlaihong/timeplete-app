@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Modal,
   Pressable,
-  ScrollView,
   Switch,
   Alert,
   Platform,
@@ -20,6 +19,7 @@ import { ColorPicker } from "../ui/ColorPicker";
 import { Card } from "../ui/Card";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { ListSharePanel } from "../sharing/ListSharePanel";
+import { ListDialogScrollView } from "./ListDialogScrollView";
 
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
@@ -170,10 +170,9 @@ export function ListDialog({
               </View>
             ) : null}
 
-            <ScrollView
+            <ListDialogScrollView
               style={styles.scroll}
               contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
             >
               {isEditMode && list && detailsTab === "sharing" ? (
                 <ListSharePanel listId={list._id} />
@@ -222,7 +221,7 @@ export function ListDialog({
                   </View>
                 </>
               )}
-            </ScrollView>
+            </ListDialogScrollView>
 
             {isEditMode && list && detailsTab === "sharing" ? (
               <View style={[styles.actionsRow, styles.actionsRowSharing]}>
@@ -292,6 +291,11 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 440,
     maxHeight: "90%",
+    flexShrink: 1,
+    ...Platform.select({
+      web: { minHeight: 0 } as object,
+      default: {},
+    }),
   },
   title: {
     fontSize: 20,
@@ -324,7 +328,19 @@ const styles = StyleSheet.create({
   tabLabelActive: {
     color: Colors.primary,
   },
-  scroll: { flexGrow: 0 },
+  scroll: {
+    flexGrow: 1,
+    flexShrink: 1,
+    minHeight: 0,
+    ...Platform.select({
+      /** Cap body height so Sharing (members + invite) scrolls inside the modal. */
+      web: {
+        width: "100%",
+        maxHeight: "min(65vh, 540px)",
+      } as object,
+      default: { maxHeight: 480 },
+    }),
+  },
   scrollContent: { paddingBottom: 8 },
   fieldLabel: {
     fontSize: 13,
