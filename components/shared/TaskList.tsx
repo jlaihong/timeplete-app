@@ -24,6 +24,7 @@ import {
   formatSecondsAsHM,
 } from "../../lib/dates";
 import { useTimer } from "../../hooks/useTimer";
+import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { Id } from "../../convex/_generated/dataModel";
 
@@ -38,14 +39,18 @@ interface TaskListProps {
 
 export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const isDesktop = useIsDesktop();
+  const { profileReady } = useAuth();
   const today = todayYYYYMMDD();
   const [visibleDays, setVisibleDays] = useState(7);
   const visibleEndDay = addDays(today, visibleDays - 1);
 
-  const tasks = useQuery(api.tasks.search, { includeCompleted: true });
-  const tags = useQuery(api.tags.search, {});
-  const lists = useQuery(api.lists.search, {});
-  const trackables = useQuery(api.trackables.search, {});
+  const tasks = useQuery(
+    api.tasks.search,
+    profileReady ? { includeCompleted: true } : "skip",
+  );
+  const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
+  const trackables = useQuery(api.trackables.search, profileReady ? {} : "skip");
   const upsertTask = useMutation(api.tasks.upsert);
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);

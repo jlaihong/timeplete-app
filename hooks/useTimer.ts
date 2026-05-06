@@ -1,11 +1,12 @@
-import { useConvexAuth, useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import { useState, useEffect, useRef } from "react";
 import { Id } from "../convex/_generated/dataModel";
+import { useAuth } from "./useAuth";
 
 export function useTimer() {
-  const { isAuthenticated } = useConvexAuth();
-  const timerData = useQuery(api.timers.get, isAuthenticated ? {} : "skip");
+  const { profileReady } = useAuth();
+  const timerData = useQuery(api.timers.get, profileReady ? {} : "skip");
   const startTaskTimer = useMutation(api.timers.startTaskTimer);
   const startTrackableTimer = useMutation(api.timers.startTrackableTimer);
   const stopTimer = useMutation(api.timers.stop);

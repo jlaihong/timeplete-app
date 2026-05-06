@@ -14,6 +14,7 @@ import { Colors } from "../../constants/colors";
 import { Id } from "../../convex/_generated/dataModel";
 import { normalizeListMembersQuery } from "../../lib/listMembersQuery";
 import { renderListPermissionPortal } from "./listPermissionPortal";
+import { useAuth } from "../../hooks/useAuth";
 
 interface MemberListProps {
   listId: Id<"lists">;
@@ -40,7 +41,11 @@ interface PermMenuAnchored {
 }
 
 export function MemberList({ listId }: MemberListProps) {
-  const data = useQuery(api.sharing.getListMembers, { listId });
+  const { profileReady } = useAuth();
+  const data = useQuery(
+    api.sharing.getListMembers,
+    profileReady ? { listId } : "skip",
+  );
   const normalized = normalizeListMembersQuery(data);
   const profile = useQuery(
     api.users.getProfile,

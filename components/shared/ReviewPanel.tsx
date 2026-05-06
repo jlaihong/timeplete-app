@@ -25,6 +25,7 @@ import {
 import { displayReviewQuestions } from "../../lib/reviewParity";
 import { ReviewQuestionsSettingsModal } from "../reviews/ReviewQuestionsSettingsModal";
 import { ReviewReflectModal } from "../analytics/ReviewReflectModal";
+import { useAuth } from "../../hooks/useAuth";
 
 type Frequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 
@@ -33,6 +34,7 @@ interface ReviewPanelProps {
 }
 
 export function ReviewPanel({ title }: ReviewPanelProps) {
+  const { profileReady } = useAuth();
   const [frequency, setFrequency] = useState<Frequency>("DAILY");
   const [offset, setOffset] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -61,11 +63,19 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
     }
   }, [frequency, offset, today]);
 
-  const questions = useQuery(api.reviews.searchQuestions, { frequency });
-  const existingAnswers = useQuery(api.reviews.searchAnswers, {
-    frequency,
-    dayUnderReview,
-  });
+  const questions = useQuery(
+    api.reviews.searchQuestions,
+    profileReady ? { frequency } : "skip",
+  );
+  const existingAnswers = useQuery(
+    api.reviews.searchAnswers,
+    profileReady
+      ? {
+          frequency,
+          dayUnderReview,
+        }
+      : "skip",
+  );
   const bulkUpsert = useMutation(api.reviews.bulkUpsertAnswers);
 
   const displayQs = useMemo(

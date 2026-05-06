@@ -17,6 +17,7 @@ import { useAnalyticsState } from "../AnalyticsState";
 import { ReviewReflectModal } from "../ReviewReflectModal";
 import { ReviewQuestionsSettingsModal } from "../../reviews/ReviewQuestionsSettingsModal";
 import { displayReviewQuestions } from "../../../lib/reviewParity";
+import { useAuth } from "../../../hooks/useAuth";
 
 /* productivity-one `review-component` in analytics column — header row:
  * "Review" + Reflect link + spacer + settings icon; questions from
@@ -24,17 +25,26 @@ import { displayReviewQuestions } from "../../../lib/reviewParity";
 
 export function ReviewSection() {
   const { selectedTab, canonicalReviewDate } = useAnalyticsState();
+  const { profileReady } = useAuth();
   const frequency = selectedTab;
 
   const [reflectOpen, setReflectOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const questions = useQuery(api.reviews.searchQuestions, { frequency });
-  const existingAnswers = useQuery(api.reviews.searchAnswers, {
-    frequency,
-    dayUnderReview: canonicalReviewDate,
-  });
+  const questions = useQuery(
+    api.reviews.searchQuestions,
+    profileReady ? { frequency } : "skip",
+  );
+  const existingAnswers = useQuery(
+    api.reviews.searchAnswers,
+    profileReady
+      ? {
+          frequency,
+          dayUnderReview: canonicalReviewDate,
+        }
+      : "skip",
+  );
   const bulkUpsert = useMutation(api.reviews.bulkUpsertAnswers);
 
   const [answers, setAnswers] = useState<Record<string, string>>({});
