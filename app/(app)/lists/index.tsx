@@ -6,7 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
 } from "react-native";
-import { useQuery, useConvexAuth } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
 import { Colors } from "../../../constants/colors";
@@ -15,12 +15,13 @@ import { Card } from "../../../components/ui/Card";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { ListDialog } from "../../../components/lists/ListDialog";
 import { Stack, router } from "expo-router";
+import { useAuth } from "../../../hooks/useAuth";
 
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
 export default function ListsScreen() {
-  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
-  const canQueryLists = !authLoading && isAuthenticated;
+  const { profile } = useAuth();
+  const canQueryLists = profile != null;
   const lists = useQuery(api.lists.search, canQueryLists ? {} : "skip");
   const [showArchived, setShowArchived] = useState(false);
   // `null` = closed, `"new"` = create mode, otherwise the list being edited.
