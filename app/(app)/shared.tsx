@@ -22,10 +22,10 @@ import { DesktopBrandedHeaderTitle } from "../../components/layout/DesktopBrande
 
 export default function SharedScreen() {
   const isDesktop = useIsDesktop();
-  const { profile } = useAuth();
+  const { profileReady } = useAuth();
   const shared = useQuery(
     api.sharing.getSharedWithMe,
-    profile != null ? {} : "skip",
+    profileReady ? {} : "skip",
   );
   const acceptShare = useMutation(api.sharing.acceptShare);
   const rejectShare = useMutation(api.sharing.rejectShare);

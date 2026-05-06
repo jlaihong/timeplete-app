@@ -33,6 +33,8 @@ export function useAuth() {
     isLoading,
     user: session?.user ?? null,
     profile,
+    /** False while Convex auth is resolving or `users` row / getProfile is not ready yet. */
+    profileReady: profile != null,
     isApproved: profile?.isApproved ?? true,
   };
 }

@@ -32,6 +32,7 @@ import {
 } from "./goal/GoalAccountabilityForm";
 import { EditTrackableHistoryTab } from "./EditTrackableHistoryTab";
 import { EditTrackableProgressTab } from "./EditTrackableProgressTab";
+import { useAuth } from "../../hooks/useAuth";
 
 interface EditTrackableDialogProps {
   trackableId: Id<"trackables">;
@@ -71,8 +72,12 @@ export function EditTrackableDialog({
   trackableId,
   onClose,
 }: EditTrackableDialogProps) {
+  const { profileReady } = useAuth();
   const { height: windowHeight } = useWindowDimensions();
-  const trackables = useQuery(api.trackables.search, {});
+  const trackables = useQuery(
+    api.trackables.search,
+    profileReady ? {} : "skip",
+  );
   const trackable = trackables?.find((t) => t._id === trackableId);
   const upsertTrackable = useMutation(api.trackables.upsert);
   const archiveTrackable = useMutation(api.trackables.archive);

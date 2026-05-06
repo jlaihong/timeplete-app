@@ -41,6 +41,7 @@ import {
   isPast,
 } from "../../lib/dates";
 import { useTimer } from "../../hooks/useTimer";
+import { useAuth } from "../../hooks/useAuth";
 import { EmptyState } from "../ui/EmptyState";
 import {
   TaskRowDesktop,
@@ -233,6 +234,7 @@ export function DesktopTaskList({
   onAddTask,
   onSelectTask,
 }: DesktopTaskListProps) {
+  const { profileReady } = useAuth();
   const today = todayYYYYMMDD();
   // Server-driven pagination. Initial render = today only (rangeEndDays=0).
   // Each "Load More" click extends the window by 7 days into the future,
@@ -240,14 +242,22 @@ export function DesktopTaskList({
   const [rangeEndDays, setRangeEndDays] = useState(0);
   const visibleEndDay = addDays(today, rangeEndDays);
 
-  const tasks = useQuery(api.tasks.getHomeTasks, {
-    todayYYYYMMDD: today,
-    rangeEndYYYYMMDD: visibleEndDay,
-  });
-  const tags = useQuery(api.tags.search, {});
-  const lists = useQuery(api.lists.search, {});
-  const trackables = useQuery(api.trackables.search, {});
-  const recurringRules = useQuery(api.recurringTasks.list, {});
+  const tasks = useQuery(
+    api.tasks.getHomeTasks,
+    profileReady
+      ? {
+          todayYYYYMMDD: today,
+          rangeEndYYYYMMDD: visibleEndDay,
+        }
+      : "skip",
+  );
+  const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
+  const trackables = useQuery(api.trackables.search, profileReady ? {} : "skip");
+  const recurringRules = useQuery(
+    api.recurringTasks.list,
+    profileReady ? {} : "skip",
+  );
 
   /* ──────────────────  Recurring instance materialization  ──────────────────
    * Recurring tasks live as a single `recurringTasks` rule plus zero-to-many

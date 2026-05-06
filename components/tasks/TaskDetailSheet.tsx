@@ -49,6 +49,7 @@ import {
   recurrenceFormToRuleFields,
 } from "./RecurrenceSection";
 import { useTimer } from "../../hooks/useTimer";
+import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { formatSecondsAsHM, formatDisplayDate, todayYYYYMMDD } from "../../lib/dates";
 import { Id } from "../../convex/_generated/dataModel";
@@ -91,17 +92,30 @@ interface EditableForm {
 export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const isDesktop = useIsDesktop();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { profileReady } = useAuth();
 
-  const tasks = useQuery(api.tasks.search, { includeCompleted: true });
+  const tasks = useQuery(
+    api.tasks.search,
+    profileReady ? { includeCompleted: true } : "skip",
+  );
   const task = tasks?.find((t) => t._id === taskId);
-  const timeTracked = useQuery(api.tasks.getTimeTracked, { taskId });
-  const comments = useQuery(api.taskComments.search, { taskId, limit: 50 });
-  const tags = useQuery(api.tags.search, {});
-  const lists = useQuery(api.lists.search, {});
+  const timeTracked = useQuery(
+    api.tasks.getTimeTracked,
+    profileReady ? { taskId } : "skip",
+  );
+  const comments = useQuery(
+    api.taskComments.search,
+    profileReady ? { taskId, limit: 50 } : "skip",
+  );
+  const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   // The full recurringTasks list is small (one row per series) and is
   // already subscribed by DesktopTaskList — Convex de-dupes the
   // subscription so this is essentially free.
-  const recurringRules = useQuery(api.recurringTasks.list, {});
+  const recurringRules = useQuery(
+    api.recurringTasks.list,
+    profileReady ? {} : "skip",
+  );
   const existingRule =
     task?.recurringTaskId
       ? recurringRules?.find((r) => r._id === task.recurringTaskId) ?? null

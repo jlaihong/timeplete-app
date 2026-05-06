@@ -23,6 +23,7 @@ import {
   formatSecondsAsHM,
   formatDisplayDate,
 } from "../../lib/dates";
+import { useAuth } from "../../hooks/useAuth";
 
 type Period = "daily" | "weekly" | "monthly" | "yearly";
 
@@ -31,6 +32,7 @@ interface AnalyticsViewProps {
 }
 
 export function AnalyticsView({ title }: AnalyticsViewProps) {
+  const { profileReady } = useAuth();
   const [period, setPeriod] = useState<Period>("daily");
   const [offset, setOffset] = useState(0);
 
@@ -74,10 +76,15 @@ export function AnalyticsView({ title }: AnalyticsViewProps) {
     }
   }, [period, offset, today]);
 
-  const breakdown = useQuery(api.analytics.getTimeBreakdown, {
-    startDay,
-    endDay,
-  });
+  const breakdown = useQuery(
+    api.analytics.getTimeBreakdown,
+    profileReady
+      ? {
+          startDay,
+          endDay,
+        }
+      : "skip",
+  );
 
   const stats = useMemo(() => {
     if (!breakdown) return null;

@@ -22,10 +22,10 @@ const drawerItemStyle = { borderRadius: 8 };
 
 function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { navigation } = props;
-  const { profile } = useAuth();
+  const { profileReady } = useAuth();
   const isDesktop = useIsDesktop();
   const sel = useDrawerSelection();
-  const lists = useQuery(api.lists.search, profile != null ? {} : "skip");
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const inboxList =
     lists
       ?.filter((l) => l.isInbox && !l.archived)

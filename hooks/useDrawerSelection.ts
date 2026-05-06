@@ -34,8 +34,8 @@ const empty: DrawerSelection = {
  */
 export function useDrawerSelection(): DrawerSelection {
   const segments = useSegments();
-  const { profile } = useAuth();
-  const lists = useQuery(api.lists.search, profile != null ? {} : "skip");
+  const { profileReady } = useAuth();
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const inboxId = useMemo(() => {
     if (!lists) return null;
     const candidates = lists.filter((l) => l.isInbox && !l.archived);

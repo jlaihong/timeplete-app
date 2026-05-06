@@ -181,8 +181,8 @@ export default function ListDetailScreen() {
     return s ? (s as Id<"lists">) : null;
   }, [listIdParam]);
 
-  const { profile } = useAuth();
-  const canQueryLists = profile != null;
+  const { profileReady, isLoading, isAuthenticated } = useAuth();
+  const canQueryLists = profileReady;
 
   const [sectionLimit, setSectionLimit] = useState(500);
   /** Keep in sync with `lists.getPaginated` default so completed rows are not silently truncated. */
@@ -530,7 +530,7 @@ export default function ListDetailScreen() {
     );
   }
 
-  if (authLoading) {
+  if (isLoading) {
     return (
       <View style={styles.loading}>
         <Stack.Screen options={{ title: "List" }} />

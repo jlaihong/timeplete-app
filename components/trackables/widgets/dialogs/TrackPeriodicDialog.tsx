@@ -17,6 +17,7 @@ import { Colors } from "../../../../constants/colors";
 import { Card } from "../../../ui/Card";
 import { Button } from "../../../ui/Button";
 import { formatYYYYMMDDtoDDMMM } from "../../../../lib/dates";
+import { useAuth } from "../../../../hooks/useAuth";
 
 interface TrackPeriodicDialogProps {
   trackableId: Id<"trackables">;
@@ -44,13 +45,14 @@ export function TrackPeriodicDialog({
   initialComments,
   onClose,
 }: TrackPeriodicDialogProps) {
+  const { profileReady } = useAuth();
   const [isCompleted, setIsCompleted] = useState(initialNumCompleted > 0);
   const [comments, setComments] = useState(initialComments);
   const [saving, setSaving] = useState(false);
   const upsertDay = useMutation(api.trackableDays.upsert);
   const completedTaskNames = useQuery(
     api.trackables.getCompletedTaskNamesForDay,
-    { trackableId, dayYYYYMMDD }
+    profileReady ? { trackableId, dayYYYYMMDD } : "skip",
   );
 
   const onSave = async () => {

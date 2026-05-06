@@ -20,8 +20,8 @@ import { useAuth } from "../../../hooks/useAuth";
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
 export default function ListsScreen() {
-  const { profile } = useAuth();
-  const canQueryLists = profile != null;
+  const { profileReady } = useAuth();
+  const canQueryLists = profileReady;
   const lists = useQuery(api.lists.search, canQueryLists ? {} : "skip");
   const [showArchived, setShowArchived] = useState(false);
   // `null` = closed, `"new"` = create mode, otherwise the list being edited.

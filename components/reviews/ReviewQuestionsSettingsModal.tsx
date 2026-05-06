@@ -43,6 +43,7 @@ import {
   DialogOverlay,
 } from "../ui/DialogScaffold";
 import type { ReviewFrequency } from "../../lib/reviewParity";
+import { useAuth } from "../../hooks/useAuth";
 
 type TabKey = "active" | "archived";
 
@@ -55,7 +56,11 @@ export function ReviewQuestionsSettingsModal({
   onClose: () => void;
   frequency: ReviewFrequency;
 }) {
-  const questions = useQuery(api.reviews.searchQuestions, { frequency });
+  const { profileReady } = useAuth();
+  const questions = useQuery(
+    api.reviews.searchQuestions,
+    visible && profileReady ? { frequency } : "skip",
+  );
   const upsertQuestion = useMutation(api.reviews.upsertQuestion);
   const moveQuestion = useMutation(api.reviews.moveQuestion);
   const archiveQuestion = useMutation(api.reviews.archiveQuestion);
