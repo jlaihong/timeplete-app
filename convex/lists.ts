@@ -1,7 +1,7 @@
 import { query, mutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireApprovedUser } from "./_helpers/auth";
+import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 
 /**
  * Set/clear the bidirectional link between a list and a trackable.
@@ -64,7 +64,8 @@ async function setListTrackableLink(
 export const search = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
 
     const ownLists = await ctx.db
       .query("lists")
@@ -98,7 +99,8 @@ export const search = query({
 export const getInboxList = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return null;
 
     const inboxRows = await ctx.db
       .query("lists")
@@ -278,7 +280,9 @@ export const getPaginated = query({
     taskLimit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return null;
+
     const list = await ctx.db.get(args.listId);
     if (!list) throw new Error("List not found");
 

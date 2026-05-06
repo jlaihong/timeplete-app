@@ -20,7 +20,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { requireApprovedUser } from "./_helpers/auth";
+import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { generateOccurrences } from "./_helpers/recurrence";
 
 const recurrenceFrequency = v.union(
@@ -37,7 +37,9 @@ const monthlyPattern = v.optional(
 export const get = query({
   args: { id: v.id("recurringTasks") },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return null;
+
     const rule = await ctx.db.get(args.id);
     if (!rule || rule.userId !== user._id) throw new Error("Not found");
     return rule;
@@ -551,7 +553,9 @@ function computeDurationSeconds(start: string, end: string): number {
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
+
     return await ctx.db
       .query("recurringTasks")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
