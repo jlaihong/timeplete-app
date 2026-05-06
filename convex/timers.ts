@@ -1,6 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireApprovedUser } from "./_helpers/auth";
+import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import {
   buildListIdToTrackableId,
   resolveSnapshotTrackableIdForTask,
@@ -9,7 +9,9 @@ import {
 export const get = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return null;
+
     const timer = await ctx.db
       .query("taskTimers")
       .withIndex("by_user", (q) => q.eq("userId", user._id))

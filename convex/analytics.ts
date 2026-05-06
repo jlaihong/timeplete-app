@@ -1,6 +1,6 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
-import { requireApprovedUser } from "./_helpers/auth";
+import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import {
   buildListIdToTrackableId,
   buildTaskInfoMap,
@@ -14,7 +14,19 @@ export const getTimeBreakdown = query({
     collaboratorIds: v.optional(v.array(v.id("users"))),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) {
+      return {
+        timeWindows: [],
+        tasks: {},
+        tags: {},
+        lists: {},
+        trackables: {},
+        listIdToTrackableId: {},
+        windowStart: args.startDay,
+        windowEnd: args.endDay,
+      };
+    }
 
     const userIds = [user._id, ...(args.collaboratorIds ?? [])];
     let allWindows = [];
@@ -96,7 +108,9 @@ export const getProgressionStats = query({
     yearly: v.optional(v.object({ date: v.string() })),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return {};
+
     const results: Record<string, any> = {};
 
     // Pre-load attribution maps once (same approach as `getGoalDetails`).

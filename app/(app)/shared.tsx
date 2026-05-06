@@ -16,12 +16,17 @@ import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Stack } from "expo-router";
 import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
+import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { DesktopBrandedHeaderTitle } from "../../components/layout/DesktopBrandedHeaderTitle";
 
 export default function SharedScreen() {
   const isDesktop = useIsDesktop();
-  const shared = useQuery(api.sharing.getSharedWithMe, {});
+  const { profileReady } = useAuth();
+  const shared = useQuery(
+    api.sharing.getSharedWithMe,
+    profileReady ? {} : "skip",
+  );
   const acceptShare = useMutation(api.sharing.acceptShare);
   const rejectShare = useMutation(api.sharing.rejectShare);
 

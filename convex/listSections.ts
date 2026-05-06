@@ -1,12 +1,14 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireApprovedUser } from "./_helpers/auth";
+import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { verifyListWriteAccess } from "./_helpers/permissions";
 
 export const search = query({
   args: { listId: v.optional(v.id("lists")) },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
+
     if (args.listId) {
       return await ctx.db
         .query("listSections")

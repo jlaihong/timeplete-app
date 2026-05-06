@@ -1,6 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireApprovedUser } from "./_helpers/auth";
+import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 
 export const searchQuestions = query({
   args: {
@@ -14,7 +14,8 @@ export const searchQuestions = query({
     ),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
 
     if (args.frequency) {
       return await ctx.db
@@ -135,7 +136,9 @@ export const searchAnswers = query({
     dayUnderReview: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
+
     return await ctx.db
       .query("reviewAnswers")
       .withIndex("by_user_frequency_day", (q) =>
@@ -160,7 +163,9 @@ export const searchAnswersRange = query({
     endDate: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
+
     const all = await ctx.db
       .query("reviewAnswers")
       .withIndex("by_user_frequency_day", (q) =>

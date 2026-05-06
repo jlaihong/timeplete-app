@@ -11,6 +11,7 @@ import {
   startOfMonth,
   todayYYYYMMDD,
 } from "../../lib/dates";
+import { useAuth } from "../../hooks/useAuth";
 
 type GoalProgressType = "NUMBER" | "TIME_TRACK" | "DAYS_A_WEEK" | "MINUTES_A_WEEK";
 
@@ -78,6 +79,7 @@ function buildMonthCells(monthAnchorYYYYMMDD: string): Array<{
 }
 
 export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTabTrackable }) {
+  const { profileReady } = useAuth();
   const type = trackable.trackableType;
   const caption = progressCaption(trackable);
   const showCalendar =
@@ -94,7 +96,7 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
 
   const daysSearch = useQuery(
     api.trackableDays.search,
-    showCalendar ? { trackableIds: [trackable._id] } : "skip"
+    profileReady && showCalendar ? { trackableIds: [trackable._id] } : "skip",
   );
 
   const completionByDay = useMemo(() => {

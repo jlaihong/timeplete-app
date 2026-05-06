@@ -1,7 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
-import { requireApprovedUser } from "./_helpers/auth";
+import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 
 export const shareList = mutation({
   args: {
@@ -110,7 +110,10 @@ export const getSharedWithMe = query({
     ),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) {
+      return { listShares: [], trackableShares: [] };
+    }
 
     let listShares;
     if (args.status) {
@@ -287,7 +290,8 @@ export const leaveList = mutation({
 export const getCollaborators = query({
   args: {},
   handler: async (ctx) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
 
     const myShares = await ctx.db
       .query("listShares")
@@ -329,7 +333,11 @@ export const getCollaborators = query({
 export const getListMembers = query({
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) {
+      return { viewerIsOwner: false, members: [] };
+    }
+
     const list = await ctx.db.get(args.listId);
     if (!list) throw new Error("List not found");
 

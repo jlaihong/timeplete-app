@@ -25,6 +25,7 @@ import {
   formatSecondsAsHM,
 } from "../../lib/dates";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
+import { useAuth } from "../../hooks/useAuth";
 import { useTimer } from "../../hooks/useTimer";
 import { Id } from "../../convex/_generated/dataModel";
 import { DEFAULT_EVENT_COLOR } from "../../lib/eventColors";
@@ -857,6 +858,7 @@ export function CalendarView({
   onEditEvent,
 }: CalendarViewProps) {
   const isDesktop = useIsDesktop();
+  const { profileReady } = useAuth();
   const [selectedDay, setSelectedDay] = useState(todayYYYYMMDD());
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
   /**
@@ -896,11 +898,19 @@ export function CalendarView({
     null
   );
 
-  const timeWindows = useQuery(api.timeWindows.search, {
-    startDay: selectedDay,
-    endDay: selectedDay,
-  });
-  const recurringEventRules = useQuery((api as any).recurringEvents.list, {});
+  const timeWindows = useQuery(
+    api.timeWindows.search,
+    profileReady
+      ? {
+          startDay: selectedDay,
+          endDay: selectedDay,
+        }
+      : "skip",
+  );
+  const recurringEventRules = useQuery(
+    (api as any).recurringEvents.list,
+    profileReady ? {} : "skip",
+  );
   const generateRecurringEventInstances = useMutation(
     (api as any).recurringEvents.generateInstances
   );

@@ -30,6 +30,7 @@ import {
   getReflectMeta,
   type ReviewFrequency,
 } from "../../lib/reviewParity";
+import { useAuth } from "../../hooks/useAuth";
 
 type ParentTab = Exclude<ReviewFrequency, "DAILY">;
 
@@ -48,13 +49,14 @@ export function ReviewReflectModal({
   canonicalReviewDate: string;
   currentFrequency: ReviewFrequency;
 }) {
+  const { profileReady } = useAuth();
   const meta = useMemo(
     () => getReflectMeta(parentTab, canonicalReviewDate),
     [parentTab, canonicalReviewDate]
   );
 
   const rangeQuery =
-    visible && meta
+    visible && meta && profileReady
       ? {
           frequency: meta.childFrequency,
           startDate: meta.startDate,
@@ -65,20 +67,22 @@ export function ReviewReflectModal({
   const childAnswersFlat = useQuery(api.reviews.searchAnswersRange, rangeQuery);
   const childQuestionsRaw = useQuery(
     api.reviews.searchQuestions,
-    visible ? { frequency: meta.childFrequency } : "skip"
+    visible && profileReady && meta
+      ? { frequency: meta.childFrequency }
+      : "skip",
   );
   const currentQuestionsRaw = useQuery(
     api.reviews.searchQuestions,
-    visible ? { frequency: currentFrequency } : "skip"
+    visible && profileReady ? { frequency: currentFrequency } : "skip",
   );
   const currentAnswers = useQuery(
     api.reviews.searchAnswers,
-    visible
+    visible && profileReady
       ? {
           frequency: currentFrequency,
           dayUnderReview: canonicalReviewDate,
         }
-      : "skip"
+      : "skip",
   );
 
   const bulkUpsert = useMutation(api.reviews.bulkUpsertAnswers);
