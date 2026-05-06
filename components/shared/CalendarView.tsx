@@ -1,4 +1,11 @@
-import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import React, {
+  useState,
+  useMemo,
+  useRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+} from "react";
 import {
   View,
   Text,
@@ -69,6 +76,10 @@ const HOUR_LABEL_WIDTH = 56;
 const RESIZE_HANDLE_HEIGHT = 6;
 const HOUR_DROPPABLE_PREFIX = "cal-hour-";
 const isWeb = Platform.OS === "web";
+/** iOS-calendar-style red accent for “now” on today's timeline */
+const CURRENT_TIME_LINE_COLOR = "#FF3B30";
+/** Roughly one-third of a typical viewport so “now” is not glued to the top edge */
+const SCROLL_PADDING_ABOVE_NOW_PX = 160;
 
 /* ────────────────────────────────────────────────────────────────────────
  *  Types
@@ -212,6 +223,16 @@ function snapMinutes(min: number): number {
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
+}
+
+/** Local wall-clock fractional minutes since midnight [0, 1440). */
+function getDateMinutesSinceMidnight(d: Date): number {
+  return (
+    d.getHours() * 60 +
+    d.getMinutes() +
+    d.getSeconds() / 60 +
+    d.getMilliseconds() / 60000
+  );
 }
 
 function formatClockTime(absMinutes: number): string {
@@ -874,6 +895,50 @@ export function CalendarView({
   >(null);
   /** Ref to the grid column DOM node — used to map clientY → minute. */
   const gridColumnRef = useRef<HTMLElement | null>(null);
+  const scrollViewRef = useRef<ScrollView | null>(null);
+  const [nowPulse, setNowPulse] = useState(0);
+
+  /** Move the red “now” line as real time progresses. */
+  useEffect(() => {
+    const id = setInterval(() => setNowPulse((n) => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  /**
+   * When today is visible, snap the viewport to roughly the current time on every
+   * transition to viewing this `selectedDay` (including refresh: remount resets state).
+   */
+  useLayoutEffect(() => {
+    const todayStr = todayYYYYMMDD();
+    if (selectedDay !== todayStr) return;
+
+    const minutes = getDateMinutesSinceMidnight(new Date());
+    const y = Math.max(
+      0,
+      minutes * PX_PER_MINUTE - SCROLL_PADDING_ABOVE_NOW_PX
+    );
+
+    const run = () => {
+      scrollViewRef.current?.scrollTo({ y, animated: false });
+    };
+
+    run();
+    requestAnimationFrame(() => requestAnimationFrame(run));
+    const tMid = setTimeout(run, 100);
+    const tLate = setTimeout(run, 400);
+
+    return () => {
+      clearTimeout(tMid);
+      clearTimeout(tLate);
+    };
+  }, [selectedDay]);
+
+  const todayStr = todayYYYYMMDD();
+  const isViewingToday = selectedDay === todayStr;
+  const currentTimeMinutesSinceMidnight = useMemo(() => {
+    void nowPulse;
+    return getDateMinutesSinceMidnight(new Date());
+  }, [nowPulse]);
 
   /**
    * Right-click context menu. A single state object means "only one menu
@@ -1485,6 +1550,7 @@ export function CalendarView({
       </View>
 
       <ScrollView
+        ref={scrollViewRef}
         style={styles.timeline}
         contentContainerStyle={styles.timelineContent}
       >
@@ -1687,6 +1753,22 @@ export function CalendarView({
               )}
             </View>
           </View>
+
+          {isViewingToday ? (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.nowLine,
+                {
+                  top: clamp(
+                    currentTimeMinutesSinceMidnight * PX_PER_MINUTE,
+                    0,
+                    DAY_HEIGHT - 2
+                  ),
+                },
+              ]}
+            />
+          ) : null}
         </View>
       </ScrollView>
 
@@ -1869,6 +1951,21 @@ const styles = StyleSheet.create({
   timelineSurface: {
     flexDirection: "row",
     position: "relative",
+  },
+  /** Spans the schedule grid (excluding the hour gutter) at the current time. */
+  nowLine: {
+    position: "absolute",
+    left: HOUR_LABEL_WIDTH,
+    right: 0,
+    height: 2,
+    backgroundColor: CURRENT_TIME_LINE_COLOR,
+    zIndex: 20,
+    ...Platform.select({
+      web: {
+        boxShadow: `0 0 2px ${CURRENT_TIME_LINE_COLOR}`,
+      } as any,
+      default: {},
+    }),
   },
   labelsColumn: { width: HOUR_LABEL_WIDTH },
   hourLabelRow: {
