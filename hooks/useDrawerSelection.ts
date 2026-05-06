@@ -2,6 +2,7 @@ import { useSegments } from "expo-router";
 import { useQuery } from "convex/react";
 import { useMemo } from "react";
 import { api } from "../convex/_generated/api";
+import { useAuth } from "./useAuth";
 
 export type DrawerSelection = {
   home: boolean;
@@ -33,7 +34,8 @@ const empty: DrawerSelection = {
  */
 export function useDrawerSelection(): DrawerSelection {
   const segments = useSegments();
-  const lists = useQuery(api.lists.search, {});
+  const { profile } = useAuth();
+  const lists = useQuery(api.lists.search, profile != null ? {} : "skip");
   const inboxId = useMemo(() => {
     if (!lists) return null;
     const candidates = lists.filter((l) => l.isInbox && !l.archived);

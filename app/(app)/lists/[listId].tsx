@@ -17,8 +17,8 @@ import {
   ScrollView,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useLocalSearchParams, Stack } from "expo-router";
-import { useQuery, useMutation, useConvexAuth } from "convex/react";
+import { Stack, useLocalSearchParams } from "expo-router";
+import { useQuery, useMutation } from "convex/react";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { api } from "../../../convex/_generated/api";
 import { Colors } from "../../../constants/colors";
@@ -35,6 +35,7 @@ import { useTimer } from "../../../hooks/useTimer";
 import { todayYYYYMMDD, formatSecondsAsHM } from "../../../lib/dates";
 import { normalizeListMembersQuery } from "../../../lib/listMembersQuery";
 import type { Id, Doc } from "../../../convex/_generated/dataModel";
+import { useAuth } from "../../../hooks/useAuth";
 import { Card } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
 import { Button } from "../../../components/ui/Button";
@@ -180,8 +181,8 @@ export default function ListDetailScreen() {
     return s ? (s as Id<"lists">) : null;
   }, [listIdParam]);
 
-  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
-  const canQueryLists = !authLoading && isAuthenticated;
+  const { profile } = useAuth();
+  const canQueryLists = profile != null;
 
   const [sectionLimit, setSectionLimit] = useState(500);
   /** Keep in sync with `lists.getPaginated` default so completed rows are not silently truncated. */
