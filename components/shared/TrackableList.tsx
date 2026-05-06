@@ -16,6 +16,7 @@ import { Colors } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { EmptyState } from "../ui/EmptyState";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
+import { useAuth } from "../../hooks/useAuth";
 import { AddTrackableFlow } from "../trackables/AddTrackableFlow";
 import { TrackableWidgetFactory } from "../trackables/widgets/TrackableWidgetFactory";
 import { TrackableDialogHost } from "../trackables/widgets/TrackableDialogHost";
@@ -83,6 +84,7 @@ export function TrackableList({
   variant = "default",
 }: TrackableListProps) {
   const isDesktop = useIsDesktop();
+  const { profile } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
 
   // Recompute each render so long-lived sessions advance past midnight and
@@ -100,13 +102,18 @@ export function TrackableList({
       ? Math.max(activePageLimit, archivedPageLimit)
       : undefined;
 
-  const goalDetails = useQuery(api.trackables.getGoalDetails, {
-    today,
-    weekStart,
-    ...(trackablesPageFetchLimit != null
-      ? { limit: trackablesPageFetchLimit }
-      : {}),
-  });
+  const goalDetails = useQuery(
+    api.trackables.getGoalDetails,
+    profile != null
+      ? {
+          today,
+          weekStart,
+          ...(trackablesPageFetchLimit != null
+            ? { limit: trackablesPageFetchLimit }
+            : {}),
+        }
+      : "skip",
+  );
 
   const [refreshing, setRefreshing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
