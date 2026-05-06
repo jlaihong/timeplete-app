@@ -1,11 +1,7 @@
 import { query, mutation, action, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import {
-  getCurrentUser,
-  getCurrentUserOrNull,
-  requireApprovedUser,
-} from "./_helpers/auth";
+import { getCurrentUser, getCurrentUserOrNull } from "./_helpers/auth";
 
 /**
  * productivity-backend `_create_inbox_list` inserts both `AppList` and a default
@@ -139,23 +135,6 @@ export const getProfile = query({
     const user = await getCurrentUserOrNull(ctx);
     if (!user) return null;
     return { name: user.name, email: user.email, isApproved: user.isApproved };
-  },
-});
-
-/** Display names for task collaborator filters (Home, etc.). */
-export const getPublicDisplayNames = query({
-  args: { userIds: v.array(v.id("users")) },
-  handler: async (ctx, args) => {
-    await requireApprovedUser(ctx);
-    const out: Record<string, string> = {};
-    const seen = new Set<string>();
-    for (const id of args.userIds) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const row = await ctx.db.get(id);
-      if (row) out[id] = row.name;
-    }
-    return out;
   },
 });
 
