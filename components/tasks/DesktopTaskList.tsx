@@ -49,6 +49,7 @@ import {
 } from "./TaskRowDesktop";
 import { TaskFilterModal } from "./TaskFilterModal";
 import { useTaskFilters } from "../../hooks/useTaskFilters";
+import { useHomeAssignableMembers } from "../../hooks/useHomeAssignableMembers";
 import {
   taskCompletedForFilters,
   taskMatchesUserFilter,
@@ -251,6 +252,9 @@ export function DesktopTaskList({
   });
   const tags = useQuery(api.tags.search, {});
   const lists = useQuery(api.lists.search, {});
+  const sharedWithMeAccepted = useQuery(api.sharing.getSharedWithMe, {
+    status: "ACCEPTED",
+  });
   const trackables = useQuery(api.trackables.search, {});
   const recurringRules = useQuery(api.recurringTasks.list, {});
 
@@ -356,18 +360,10 @@ export function DesktopTaskList({
   } = useTaskFilters(homeFilterScope);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
 
-  const homeAssignableMembersRaw = useQuery(
-    api.sharing.getHomeFilterAssignableMembers,
-    {},
+  const homeAssignableMembers = useHomeAssignableMembers(
+    lists ?? undefined,
+    sharedWithMeAccepted,
   );
-
-  const homeAssignableMembers = useMemo(() => {
-    if (!homeAssignableMembersRaw) return [];
-    return homeAssignableMembersRaw.map((m) => ({
-      userId: String(m.userId),
-      name: m.name,
-    }));
-  }, [homeAssignableMembersRaw]);
 
   const showCollaboratorFilter = homeAssignableMembers.length > 1;
 
