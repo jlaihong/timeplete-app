@@ -4,6 +4,14 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
 import { useQuery, useConvexAuth } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
+import {
+  DrawerContentScrollView,
+  DrawerItem,
+  type DrawerContentComponentProps,
+} from "@react-navigation/drawer";
+import { router, Redirect, type Href } from "expo-router";
 import { authClient } from "../../lib/auth-client";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
