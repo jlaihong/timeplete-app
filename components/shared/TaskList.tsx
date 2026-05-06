@@ -117,8 +117,8 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         if (!groups.has(overdueKey)) groups.set(overdueKey, []);
         groups.get(overdueKey)!.push(task);
       } else if (task.dateCompleted) {
-        if (day >= today && day <= visibleEndDay) {
-          const completionDay = task.dateCompleted;
+        const completionDay = task.dateCompleted;
+        if (completionDay >= today && completionDay <= visibleEndDay) {
           if (!groups.has(completionDay)) groups.set(completionDay, []);
           groups.get(completionDay)!.push(task);
         }
