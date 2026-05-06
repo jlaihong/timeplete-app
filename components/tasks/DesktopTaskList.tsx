@@ -423,21 +423,29 @@ export function DesktopTaskList({
     const groups = new Map<string, TaskRowTask[]>();
 
     for (const task of tasks as any as TaskRowTask[]) {
-      const day = task.taskDay;
-      if (!day) {
+      // Completed tasks group by completion date; incomplete by schedule day.
+      if (task.dateCompleted) {
+        const d = task.dateCompleted;
+        if (!groups.has(d)) groups.set(d, []);
+        groups.get(d)!.push(task);
+        continue;
+      }
+
+      const scheduleDay = task.taskDay;
+      if (!scheduleDay) {
         if (!groups.has(UNSCHEDULED_GROUP_ID))
           groups.set(UNSCHEDULED_GROUP_ID, []);
         groups.get(UNSCHEDULED_GROUP_ID)!.push(task);
         continue;
       }
 
-      if (!task.dateCompleted && isPast(day) && !isToday(day)) {
+      if (isPast(scheduleDay) && !isToday(scheduleDay)) {
         if (!groups.has(OVERDUE_GROUP_ID))
           groups.set(OVERDUE_GROUP_ID, []);
         groups.get(OVERDUE_GROUP_ID)!.push(task);
       } else {
-        if (!groups.has(day)) groups.set(day, []);
-        groups.get(day)!.push(task);
+        if (!groups.has(scheduleDay)) groups.set(scheduleDay, []);
+        groups.get(scheduleDay)!.push(task);
       }
     }
 
@@ -803,31 +811,49 @@ export function DesktopTaskList({
         );
       }
 
-      const fromDay = startInfo.fromGroupId;
+      const draggedTask = startInfo.task;
+      const persistenceFromDay =
+        startInfo.fromGroupId === OVERDUE_GROUP_ID
+          ? draggedTask.taskDay!
+          : draggedTask.dateCompleted && draggedTask.taskDay
+            ? draggedTask.taskDay
+            : startInfo.fromGroupId;
+
+      const persistenceToDay =
+        draggedTask.dateCompleted &&
+        toDay === draggedTask.dateCompleted
+          ? (draggedTask.taskDay ?? toDay)
+          : toDay;
 
       // No-op
-      if (fromDay === toDay && startInfo.fromIndex === newOrderIndex) {
+      if (
+        persistenceFromDay === persistenceToDay &&
+        startInfo.fromIndex === newOrderIndex
+      ) {
         return;
       }
       // Disallow drop targets
-      if (toDay === OVERDUE_GROUP_ID || toDay === UNSCHEDULED_GROUP_ID) {
+      if (
+        persistenceToDay === OVERDUE_GROUP_ID ||
+        persistenceToDay === UNSCHEDULED_GROUP_ID
+      ) {
         // Revert local state by re-syncing on next query update.
         setLocalGroups(serverGroups);
         return;
       }
 
       try {
-        if (fromDay === toDay) {
+        if (persistenceFromDay === persistenceToDay) {
           await moveOnDay({
             taskId,
-            day: toDay,
+            day: persistenceFromDay,
             newOrderIndex,
           });
         } else {
           await moveBetweenDays({
             taskId,
-            fromDay,
-            toDay,
+            fromDay: persistenceFromDay,
+            toDay: persistenceToDay,
             newOrderIndex,
           });
         }
