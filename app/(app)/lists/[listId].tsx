@@ -13,10 +13,7 @@ import {
   Platform,
   Modal,
   Pressable,
-  Switch,
-  ScrollView,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, Stack } from "expo-router";
 import { useQuery, useMutation, useConvexAuth } from "convex/react";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
@@ -38,24 +35,17 @@ import type { Id, Doc } from "../../../convex/_generated/dataModel";
 import { Card } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
 import { Button } from "../../../components/ui/Button";
+import { TaskFilterModal } from "../../../components/tasks/TaskFilterModal";
+import { useTaskFilters } from "../../../hooks/useTaskFilters";
+import {
+  taskCompletedForFilters,
+  taskMatchesUserFilter,
+} from "../../../lib/taskFilters";
 
 /** `lists.getPaginated` enriches rows with `tagIds` like `tasks.search`. */
 type ListPageTask = Doc<"tasks"> & { tagIds?: Id<"tags">[] };
 
 const isWeb = Platform.OS === "web";
-
-function showCompletedStorageKey(listId: string) {
-  return `showCompleted:list:${listId}`;
-}
-
-function listFilterUsersStorageKey(listId: string) {
-  return `listFilterUsers:${listId}`;
-}
-
-function taskCompletedForSectionHeader(task: ListPageTask): boolean {
-  const d = task.dateCompleted;
-  return typeof d === "string" && d.trim().length > 0;
-}
 
 function toTaskRowTask(task: ListPageTask): TaskRowTask {
   return {
@@ -235,8 +225,17 @@ export default function ListDetailScreen() {
 
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
-  const [showCompleted, setShowCompleted] = useState(true);
-  const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
+  const filterScope = useMemo(
+    () => (listId ? ({ kind: "list" as const, listId }) : null),
+    [listId],
+  );
+  const {
+    showCompleted,
+    filterUserIds,
+    persistShowCompleted,
+    toggleUserFilter,
+    isFilterActive,
+  } = useTaskFilters(filterScope);
   const [addTaskSectionId, setAddTaskSectionId] = useState<
     Id<"listSections"> | null
   >(null);
@@ -249,31 +248,6 @@ export default function ListDetailScreen() {
   const [collapsedSectionKeys, setCollapsedSectionKeys] = useState<Set<string>>(
     () => new Set(),
   );
-
-  useEffect(() => {
-    if (!listId) return;
-    let cancelled = false;
-    (async () => {
-      const sc = await AsyncStorage.getItem(showCompletedStorageKey(listId));
-      const show = sc !== "false";
-      const raw = await AsyncStorage.getItem(listFilterUsersStorageKey(listId));
-      let users: string[] = [];
-      if (raw) {
-        try {
-          users = JSON.parse(raw) as string[];
-        } catch {
-          users = [];
-        }
-      }
-      if (!cancelled) {
-        setShowCompleted(show);
-        setFilterUserIds(users);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [listId]);
 
   useEffect(() => {
     if (!isWeb || !contextMenu) return;
@@ -344,17 +318,12 @@ export default function ListDetailScreen() {
       const blockTasks = block.tasks as ListPageTask[];
       let forUserFilter = blockTasks;
       if (hasUser) {
-        forUserFilter = forUserFilter.filter((task) => {
-          const c = task.createdBy;
-          const a = task.assignedToUserId;
-          return (
-            (c && filterUserIds.includes(String(c))) ||
-            (a && filterUserIds.includes(String(a)))
-          );
-        });
+        forUserFilter = forUserFilter.filter((task) =>
+          taskMatchesUserFilter(task, filterUserIds),
+        );
       }
       const headerCompletedCount = forUserFilter.filter(
-        taskCompletedForSectionHeader,
+        taskCompletedForFilters,
       ).length;
       const headerTotalCount = hasUser
         ? forUserFilter.length
@@ -394,8 +363,6 @@ export default function ListDetailScreen() {
     return paginatedList.sections.some((s) => s.totalTasks > s.tasks.length);
   }, [paginatedList]);
 
-  const isFilterActive = !showCompleted || filterUserIds.length > 0;
-
   /** Collaborator filter hides rows; indices no longer match section order. Hide-completed does not. */
   const canDragReorder = useMemo(() => {
     if (!paginatedList || filterUserIds.length > 0) return false;
@@ -414,37 +381,6 @@ export default function ListDetailScreen() {
       tasks: s.data.map(toTaskRowTask),
     }));
   }, [filteredSections]);
-
-  const persistShowCompleted = useCallback(
-    async (checked: boolean) => {
-      setShowCompleted(checked);
-      if (listId) {
-        await AsyncStorage.setItem(
-          showCompletedStorageKey(listId),
-          String(checked),
-        );
-      }
-    },
-    [listId],
-  );
-
-  const toggleUserFilter = useCallback(
-    async (userId: string, checked: boolean) => {
-      setFilterUserIds((prev) => {
-        const next = checked
-          ? [...prev, userId]
-          : prev.filter((id) => id !== userId);
-        if (listId) {
-          void AsyncStorage.setItem(
-            listFilterUsersStorageKey(listId),
-            JSON.stringify(next),
-          );
-        }
-        return next;
-      });
-    },
-    [listId],
-  );
 
   const toggleComplete = useCallback(
     async (taskId: Id<"tasks">, taskName: string, isCompleted: boolean) => {
@@ -620,67 +556,19 @@ export default function ListDetailScreen() {
         </View>
       </View>
 
-      <Modal
+      <TaskFilterModal
         visible={filterMenuOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFilterMenuOpen(false)}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => setFilterMenuOpen(false)}
-        >
-          <Pressable style={styles.filterSheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.filterSheetTitle}>Filters</Text>
-            <View style={styles.filterRow}>
-              <Text style={styles.filterLabel}>Show completed</Text>
-              <Switch
-                value={showCompleted}
-                onValueChange={(v) => {
-                  void persistShowCompleted(v);
-                }}
-                trackColor={{
-                  false: Colors.outlineVariant,
-                  true: Colors.primary + "60",
-                }}
-                thumbColor={showCompleted ? Colors.primary : Colors.textTertiary}
-              />
-            </View>
-            {showCollaboratorFilter && (
-              <>
-                <Text style={styles.filterSectionLabel}>Filter by user</Text>
-                <ScrollView style={styles.filterUserScroll}>
-                  {assignableMembers.map((m) => (
-                    <View key={m.userId} style={styles.filterRow}>
-                      <Text style={styles.filterLabel}>{m.name}</Text>
-                      <Switch
-                        value={filterUserIds.includes(String(m.userId))}
-                        onValueChange={(v) =>
-                          void toggleUserFilter(String(m.userId), v)
-                        }
-                        trackColor={{
-                          false: Colors.outlineVariant,
-                          true: Colors.primary + "60",
-                        }}
-                        thumbColor={
-                          filterUserIds.includes(String(m.userId))
-                            ? Colors.primary
-                            : Colors.textTertiary
-                        }
-                      />
-                    </View>
-                  ))}
-                </ScrollView>
-              </>
-            )}
-            <Button
-              title="Done"
-              onPress={() => setFilterMenuOpen(false)}
-              style={{ marginTop: 12 }}
-            />
-          </Pressable>
-        </Pressable>
-      </Modal>
+        onClose={() => setFilterMenuOpen(false)}
+        showCompleted={showCompleted}
+        onPersistShowCompleted={persistShowCompleted}
+        filterUserIds={filterUserIds}
+        onToggleUserFilter={toggleUserFilter}
+        assignableMembers={assignableMembers.map((m) => ({
+          userId: String(m.userId),
+          name: m.name,
+        }))}
+        showCollaboratorFilter={showCollaboratorFilter}
+      />
 
       <Modal
         visible={showAddSection}
@@ -1057,22 +945,6 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginBottom: 16,
   },
-  filterSectionLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  filterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-    gap: 12,
-  },
-  filterLabel: { fontSize: 15, color: Colors.text, flex: 1 },
-  filterUserScroll: { maxHeight: 220 },
   sectionList: {
     flex: 1,
     zIndex: 0,
