@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
+import { useAuth } from "../../hooks/useAuth";
 
 export interface ListPickerProps {
   /**
@@ -55,8 +56,9 @@ export function ListPicker({
   mode = "add",
   disabled,
 }: ListPickerProps) {
+  const { profileReady } = useAuth();
   const [open, setOpen] = useState(false);
-  const lists = useQuery(api.lists.search, {});
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
 
   const inboxList = useMemo(
     () => lists?.find((l) => l.isInbox) ?? null,

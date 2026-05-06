@@ -2,6 +2,7 @@ import { useQuery } from "convex/react";
 import { useMemo } from "react";
 import { api } from "../../convex/_generated/api";
 import { useAnalyticsState } from "./AnalyticsState";
+import { useAuth } from "../../hooks/useAuth";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * `useAnalyticsDataset` is the source of truth for the **time-based**
@@ -46,11 +47,17 @@ export interface TrackableLite {
 
 export function useAnalyticsDataset() {
   const { windowStart, windowEnd } = useAnalyticsState();
+  const { profileReady } = useAuth();
 
-  const data = useQuery(api.analytics.getTimeBreakdown, {
-    startDay: windowStart,
-    endDay: windowEnd,
-  });
+  const data = useQuery(
+    api.analytics.getTimeBreakdown,
+    profileReady
+      ? {
+          startDay: windowStart,
+          endDay: windowEnd,
+        }
+      : "skip",
+  );
 
   const isLoading = data === undefined;
 

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import { Redirect, Stack } from "expo-router";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { useAuth } from "../../hooks/useAuth";
 import { Colors } from "../../constants/colors";
 import { EmptyState } from "../../components/ui/EmptyState";
 
@@ -11,7 +12,8 @@ import { EmptyState } from "../../components/ui/EmptyState";
  * Keep `/inbox` as a redirect so bookmarks and old bundles still work.
  */
 export default function InboxRedirectScreen() {
-  const lists = useQuery(api.lists.search, {});
+  const { profileReady } = useAuth();
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const inbox = useMemo(() => {
     if (lists === undefined) return undefined;
     const candidates = lists.filter((l) => l.isInbox && !l.archived);

@@ -3,7 +3,7 @@ import { Drawer } from "expo-router/drawer";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
-import { useQuery } from "convex/react";
+import { useQuery, useConvexAuth } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import {
@@ -22,10 +22,10 @@ const drawerItemStyle = { borderRadius: 8 };
 
 function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { navigation } = props;
-  const { isAuthenticated } = useAuth();
+  const { profileReady } = useAuth();
   const isDesktop = useIsDesktop();
   const sel = useDrawerSelection();
-  const lists = useQuery(api.lists.search, isAuthenticated ? {} : "skip");
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const inboxList =
     lists
       ?.filter((l) => l.isInbox && !l.archived)
@@ -205,26 +205,39 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
 
 export default function AppLayout() {
   const isDesktop = useIsDesktop();
-  const { isAuthenticated, isLoading, isApproved } = useAuth();
+  const { isLoading: convexLoading, isAuthenticated: convexAuthenticated } =
+    useConvexAuth();
+  const { profile, isApproved } = useAuth();
 
-  // Auth guard: without this, screens inside (app) render and immediately
-  // call queries that require an authenticated identity, producing
-  // "Not authenticated" errors when a user hits a deep link or lingers
-  // on a stale page after sign-out. The root index.tsx redirect doesn't
-  // protect against direct navigation to e.g. /(app)/(tabs).
-  if (isLoading) {
-    return (
-      <View style={styles.authGuardCenter}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </View>
-    );
-  }
-  if (!isAuthenticated) {
+  // Auth guard: without redirects below, screens inside (app) render after
+  // sign-out. We intentionally NEVER swap this Drawer subtree for a
+  // full-screen spinner while Convex/session bootstrap runs — replacing it
+  // remounts the navigator and Expo Router loses the deep-linked URL, so a
+  // refresh jumps back to the default tab ("Trackables"). Instead keep this
+  // layout mounted and show an overlay until Convex identity + users.store are ready.
+
+  if (!convexLoading && !convexAuthenticated) {
     return <Redirect href="/(auth)/login" />;
   }
-  if (!isApproved) {
+
+  const sessionBootstrapBlocked =
+    convexAuthenticated &&
+    (profile === undefined || profile === null);
+
+  const pendingApprovalBlocked =
+    !convexLoading &&
+    convexAuthenticated &&
+    profile !== undefined &&
+    profile !== null &&
+    !isApproved;
+
+  if (pendingApprovalBlocked) {
     return <Redirect href="/(auth)/pending-approval" />;
   }
+
+  const overlayBlocked =
+    convexLoading ||
+    sessionBootstrapBlocked;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -254,6 +267,14 @@ export default function AppLayout() {
           options={{ title: "Edit Goal" }}
         />
       </Drawer>
+      {overlayBlocked && (
+        <View
+          style={styles.bootstrapOverlay}
+          pointerEvents="auto"
+        >
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      )}
     </GestureHandlerRootView>
   );
 }
@@ -291,8 +312,8 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
   },
-  authGuardCenter: {
-    flex: 1,
+  bootstrapOverlay: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: Colors.background,
