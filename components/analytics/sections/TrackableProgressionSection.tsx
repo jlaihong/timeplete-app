@@ -6,6 +6,7 @@ import { Colors } from "../../../constants/colors";
 import { SectionCard } from "../SectionCard";
 import { useAnalyticsState } from "../AnalyticsState";
 import { AnalyticsTrackableWidgetFactory } from "../widgets/AnalyticsTrackableWidgetFactory";
+import { useAuth } from "../../../hooks/useAuth";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * Trackable Progression — analytics-page section.
@@ -38,11 +39,17 @@ import { AnalyticsTrackableWidgetFactory } from "../widgets/AnalyticsTrackableWi
 
 export function TrackableProgressionSection() {
   const { selectedTab, windowStart, windowEnd } = useAnalyticsState();
+  const { profileReady } = useAuth();
 
-  const series = useQuery(api.trackables.getTrackableAnalyticsSeries, {
-    windowStart,
-    windowEnd,
-  });
+  const series = useQuery(
+    api.trackables.getTrackableAnalyticsSeries,
+    profileReady
+      ? {
+          windowStart,
+          windowEnd,
+        }
+      : "skip",
+  );
 
   // Stale-data guard: if the cached payload is from a previous window,
   // hide it until the new one arrives. Prevents a brief flash of last

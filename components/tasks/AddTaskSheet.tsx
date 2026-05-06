@@ -10,6 +10,7 @@ import { TrackablePicker } from "./TrackablePicker";
 import { ListPicker } from "./ListPicker";
 import { todayYYYYMMDD } from "../../lib/dates";
 import { Id } from "../../convex/_generated/dataModel";
+import { useAuth } from "../../hooks/useAuth";
 
 interface AddTaskSheetProps {
   day?: string;
@@ -31,6 +32,7 @@ export function AddTaskSheet({
   lockListToContext = false,
   onClose,
 }: AddTaskSheetProps) {
+  const { profileReady } = useAuth();
   const [name, setName] = useState("");
   const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(
     initialTrackableId ?? null
@@ -42,7 +44,7 @@ export function AddTaskSheet({
   );
   const [loading, setLoading] = useState(false);
 
-  const lists = useQuery(api.lists.search, {});
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const upsertTask = useMutation(api.tasks.upsert);
 
   const inboxListId =

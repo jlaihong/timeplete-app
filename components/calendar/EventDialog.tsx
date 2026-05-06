@@ -37,6 +37,7 @@ import { Input } from "../ui/Input";
 import { DateField } from "../ui/DateField";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { Id } from "../../convex/_generated/dataModel";
+import { useAuth } from "../../hooks/useAuth";
 import {
   RecurrenceSection,
   type RecurrenceFormValue,
@@ -97,6 +98,7 @@ export function EventDialog({
   defaultStartTimeHHMM,
   defaultDurationMinutes,
 }: EventDialogProps) {
+  const { profileReady } = useAuth();
   // Title state holds ONLY what the user has typed. On open, seed it
   // with:
   //   - the persisted explicit title, if one exists; otherwise
@@ -138,7 +140,10 @@ export function EventDialog({
   } | null>(null);
 
   const upsertTimeWindow = useMutation(api.timeWindows.upsert);
-  const recurringRules = useQuery((api as any).recurringEvents.list, {});
+  const recurringRules = useQuery(
+    (api as any).recurringEvents.list,
+    profileReady ? {} : "skip",
+  );
   const existingRule = useMemo(
     () =>
       existingEvent?.recurringEventId
@@ -163,7 +168,7 @@ export function EventDialog({
   // "matches derived → save as undefined" detection in `handleSave`.
   const trackables = useQuery(
     api.trackables.search,
-    trackableId ? { archived: false } : "skip"
+    profileReady && trackableId ? { archived: false } : "skip",
   );
   const liveDerivedName = useMemo(() => {
     // TASK events derive from `task.name` on the server (canonical, not

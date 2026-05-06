@@ -12,8 +12,8 @@ import { EmptyState } from "../../components/ui/EmptyState";
  * Keep `/inbox` as a redirect so bookmarks and old bundles still work.
  */
 export default function InboxRedirectScreen() {
-  const { profile } = useAuth();
-  const lists = useQuery(api.lists.search, profile != null ? {} : "skip");
+  const { profileReady } = useAuth();
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const inbox = useMemo(() => {
     if (lists === undefined) return undefined;
     const candidates = lists.filter((l) => l.isInbox && !l.archived);

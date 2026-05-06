@@ -84,7 +84,7 @@ export function TrackableList({
   variant = "default",
 }: TrackableListProps) {
   const isDesktop = useIsDesktop();
-  const { profile } = useAuth();
+  const { profileReady } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
 
   // Recompute each render so long-lived sessions advance past midnight and
@@ -104,7 +104,7 @@ export function TrackableList({
 
   const goalDetails = useQuery(
     api.trackables.getGoalDetails,
-    profile != null
+    profileReady
       ? {
           today,
           weekStart,

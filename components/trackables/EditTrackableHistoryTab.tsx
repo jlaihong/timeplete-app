@@ -24,6 +24,7 @@ import {
   mergeTrackerDetailsHistory,
 } from "../../lib/editDialogAttributedHistory";
 import { TrackingHistoryScroller } from "./TrackingHistoryScroller";
+import { useAuth } from "../../hooks/useAuth";
 
 interface EditTrackableHistoryTabProps {
   trackableId: Id<"trackables">;
@@ -50,6 +51,7 @@ export function EditTrackableHistoryTab({
   trackCount,
   autoCountFromCalendar,
 }: EditTrackableHistoryTabProps) {
+  const { profileReady } = useAuth();
   const [trackerMergeLimit, setTrackerMergeLimit] = useState(TRACKER_PAGE);
   useEffect(() => {
     setTrackerMergeLimit(TRACKER_PAGE);
@@ -63,18 +65,28 @@ export function EditTrackableHistoryTab({
     return { startDay: addDays(end, -7300), endDay: end };
   }, []);
 
-  const timeBreakdown = useQuery(api.analytics.getTimeBreakdown, {
-    startDay: wideRange.startDay,
-    endDay: wideRange.endDay,
-  });
+  const timeBreakdown = useQuery(
+    api.analytics.getTimeBreakdown,
+    profileReady
+      ? {
+          startDay: wideRange.startDay,
+          endDay: wideRange.endDay,
+        }
+      : "skip",
+  );
 
-  const trackerSearch = useQuery(api.trackerEntries.search, {
-    trackableId,
-    startDay: wideRange.startDay,
-    endDay: wideRange.endDay,
-    limit: trackerMergeLimit,
-    offset: 0,
-  });
+  const trackerSearch = useQuery(
+    api.trackerEntries.search,
+    profileReady
+      ? {
+          trackableId,
+          startDay: wideRange.startDay,
+          endDay: wideRange.endDay,
+          limit: trackerMergeLimit,
+          offset: 0,
+        }
+      : "skip",
+  );
 
   const trackerShowValueCol = showTrackerValueColumn(trackCount);
   const trackerShowTimeCols = showTrackerTimeColumns(trackTime);
