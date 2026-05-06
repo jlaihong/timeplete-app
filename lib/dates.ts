@@ -28,6 +28,197 @@ export function tryParseYYYYMMDD(s: string | undefined | null): Date | null {
   return parseYYYYMMDD(s);
 }
 
+/**
+ * Locale-aware label for an 8-digit YYYYMMDD string (tooltips, sunburst, lists).
+ */
+export function formatYYYYMMDDForDisplay(yyyymmdd: string): string {
+  const d = tryParseYYYYMMDD(yyyymmdd);
+  if (!d) return yyyymmdd;
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/**
+ * Calendar hour 0–23 from a clock string like "09:30" or "9:30".
+ */
+export function hourFromHHMM(hhmm: string | undefined | null): number | null {
+  const mins = parseHHMMToMinutesSinceMidnight(hhmm);
+  if (mins === null) return null;
+  return Math.floor(mins / 60);
+}
+
+/** Minutes since local midnight 0–1439, or null if invalid. */
+export function parseHHMMToMinutesSinceMidnight(
+  hhmm: string | undefined | null
+): number | null {
+  if (hhmm == null || hhmm === "") return null;
+  const m = /^(\d{1,2})(?::(\d{2}))?/.exec(hhmm.trim());
+  if (!m) return null;
+  const h = parseInt(m[1]!, 10);
+  const min = m[2] != null ? parseInt(m[2], 10) : 0;
+  if (
+    !Number.isFinite(h) ||
+    h < 0 ||
+    h > 23 ||
+    !Number.isFinite(min) ||
+    min < 0 ||
+    min > 59
+  ) {
+    return null;
+  }
+  return h * 60 + min;
+}
+
+/** Start/end instants for a logged window (local calendar + clock). */
+export function timeWindowBoundsMs(w: {
+  startDayYYYYMMDD: string;
+  startTimeHHMM?: string;
+  durationSeconds: number;
+}): { startMs: number; endMs: number } | null {
+  const day = tryParseYYYYMMDD(w.startDayYYYYMMDD);
+  if (!day) return null;
+  const mins = parseHHMMToMinutesSinceMidnight(w.startTimeHHMM);
+  if (mins === null) return null;
+  const startMs = day.getTime() + mins * 60 * 1000;
+  const endMs = startMs + Math.max(0, w.durationSeconds) * 1000;
+  return { startMs, endMs };
+}
+
+/**
+ * One wedge label per logged row (matches Productivity-One: each time window is its own segment).
+ */
+export function formatTimeWindowWedgeLabel(
+  w: {
+    startDayYYYYMMDD: string;
+    startTimeHHMM?: string;
+    durationSeconds: number;
+  },
+  analyticsTab?: string
+): string {
+  const dateLine = formatYYYYMMDDForDisplay(w.startDayYYYYMMDD);
+  const bounds = timeWindowBoundsMs(w);
+  const timeOnly: Intl.DateTimeFormatOptions = {
+    hour: "numeric",
+    minute: "2-digit",
+  };
+  const dateTime: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  };
+
+  if (!bounds) {
+    return dateLine;
+  }
+
+  const start = new Date(bounds.startMs);
+  const end = new Date(bounds.endMs);
+
+  const sameCalendarDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate();
+
+  if (analyticsTab === "DAILY") {
+    if (bounds.endMs <= bounds.startMs) {
+      return start.toLocaleTimeString(undefined, timeOnly);
+    }
+    if (sameCalendarDay) {
+      return `${start.toLocaleTimeString(undefined, timeOnly)} – ${end.toLocaleTimeString(undefined, timeOnly)}`;
+    }
+    return `${start.toLocaleString(undefined, dateTime)} – ${end.toLocaleString(undefined, dateTime)}`;
+  }
+
+  if (bounds.endMs <= bounds.startMs) {
+    return `${dateLine} · ${start.toLocaleTimeString(undefined, timeOnly)}`;
+  }
+  if (sameCalendarDay) {
+    return `${dateLine} · ${start.toLocaleTimeString(undefined, timeOnly)} – ${end.toLocaleTimeString(undefined, timeOnly)}`;
+  }
+  return `${start.toLocaleString(undefined, dateTime)} – ${end.toLocaleString(undefined, dateTime)}`;
+}
+
+/**
+ * Tooltip line for Time window sunburst wedges.
+ *
+ * - **One** log with a parseable start time → that block’s start–end (matches duration).
+ * - **Several** logs → session count plus earliest start and latest end (not one interval).
+ */
+export function formatAggregatedTimeSpanLabel(
+  windows: {
+    startDayYYYYMMDD: string;
+    startTimeHHMM?: string;
+    durationSeconds: number;
+  }[]
+): string | null {
+  const bounds: { startMs: number; endMs: number }[] = [];
+  for (const w of windows) {
+    const b = timeWindowBoundsMs(w);
+    if (b) bounds.push(b);
+  }
+  if (bounds.length === 0) return null;
+
+  const timeOnly: Intl.DateTimeFormatOptions = {
+    hour: "numeric",
+    minute: "2-digit",
+  };
+  const dateTime: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  };
+
+  if (bounds.length === 1) {
+    const { startMs, endMs } = bounds[0]!;
+    const start = new Date(startMs);
+    const end = new Date(endMs);
+    if (endMs <= startMs) {
+      return start.toLocaleTimeString(undefined, timeOnly);
+    }
+    const sameCalendarDay =
+      start.getFullYear() === end.getFullYear() &&
+      start.getMonth() === end.getMonth() &&
+      start.getDate() === end.getDate();
+
+    if (sameCalendarDay) {
+      return `${start.toLocaleTimeString(undefined, timeOnly)} – ${end.toLocaleTimeString(undefined, timeOnly)}`;
+    }
+    return `${start.toLocaleString(undefined, dateTime)} – ${end.toLocaleString(undefined, dateTime)}`;
+  }
+
+  const minS = Math.min(...bounds.map((b) => b.startMs));
+  const maxE = Math.max(...bounds.map((b) => b.endMs));
+  const earliest = new Date(minS);
+  const latest = new Date(maxE);
+  const sameCalendarDay =
+    earliest.getFullYear() === latest.getFullYear() &&
+    earliest.getMonth() === latest.getMonth() &&
+    earliest.getDate() === latest.getDate();
+
+  const earliestStr = sameCalendarDay
+    ? earliest.toLocaleTimeString(undefined, timeOnly)
+    : earliest.toLocaleString(undefined, dateTime);
+  const latestStr = sameCalendarDay
+    ? latest.toLocaleTimeString(undefined, timeOnly)
+    : latest.toLocaleString(undefined, dateTime);
+
+  return `${bounds.length} sessions · earliest ${earliestStr} · latest end ${latestStr}`;
+}
+
+/** Locale-friendly label for an hour-of-day bucket (e.g. "9 AM"). */
+export function formatHourBucketLabel(hour: number): string {
+  const d = new Date(2000, 0, 1, hour, 0, 0, 0);
+  return d.toLocaleTimeString(undefined, { hour: "numeric" });
+}
+
 /** Whole **calendar days** between two YYYYMMDD strings (end - start). */
 export function daysBetweenYYYYMMDD(start: string, end: string): number {
   const s = tryParseYYYYMMDD(start);
@@ -268,6 +459,52 @@ const MONTH_NAMES_SHORT = [
   "Nov",
   "Dec",
 ];
+
+/** productivity-one `WEEKDAY_NAMES` / `formatYYYYMMDDtoWeekdayDayMonth`. */
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+const MONTH_NAMES_LONG = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+/**
+ * productivity-one `formatYYYYMMDDtoWeekdayDayMonth` — e.g. "Sunday, 6 December".
+ */
+export function formatYYYYMMDDtoWeekdayDayMonth(yyyymmdd: string): string {
+  if (!yyyymmdd) return "";
+  const d = parseYYYYMMDD(yyyymmdd);
+  const weekday = WEEKDAY_NAMES[d.getDay()];
+  const day = d.getDate();
+  const month = MONTH_NAMES_LONG[d.getMonth()];
+  return `${weekday}, ${day} ${month}`;
+}
+
+/**
+ * productivity-one `getMonthYear` for compact YYYYMMDD — e.g. "Mar 2026".
+ */
+export function getMonthYearCompact(yyyymmdd: string): string {
+  const d = parseYYYYMMDD(yyyymmdd);
+  return `${MONTH_NAMES_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+}
 
 /** Match angular `formatYYYYMMDDtoDDMMM` — "5 Apr" or "5 Apr 2027" if non-current year. */
 export function formatYYYYMMDDtoDDMMM(yyyymmdd: string): string {

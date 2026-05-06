@@ -1,7 +1,16 @@
-type TimeWindowLike = {
+import {
+  formatTimeWindowWedgeLabel,
+  formatYYYYMMDDForDisplay,
+  timeWindowBoundsMs,
+} from "./dates";
+
+export type TimeWindowLike = {
   startDayYYYYMMDD: string;
   durationSeconds: number;
   activityType: string;
+  startTimeHHMM?: string;
+  /** Convex document id — one `time_window` wedge per row (Productivity-One). */
+  _id?: string;
   taskId?: string | null;
   trackableId?: string | null;
   tagIds?: string[];
@@ -15,7 +24,9 @@ export type GroupByMode =
   | "date"
   | "day_of_week"
   | "month"
-  | "year";
+  | "year"
+  /** One segment per logged time window (not bucketed by hour/day/month). */
+  | "time_window";
 
 export interface GroupedResult {
   key: string;
@@ -25,51 +36,66 @@ export interface GroupedResult {
   colour?: string;
 }
 
-export function groupTimeWindows(
-  windows: TimeWindowLike[],
-  mode: GroupByMode,
-  lookups: {
-    tasks?: Record<string, { name: string; listId?: string }>;
-    tags?: Record<string, { name: string; colour: string }>;
-    lists?: Record<string, { name: string; colour: string }>;
-    trackables?: Record<string, { name: string; colour: string }>;
-  }
-): GroupedResult[] {
-  const groups = new Map<
+export interface GroupedBucket extends GroupedResult {
+  /** Windows that contributed to this bucket (for drill-down). */
+  windows: TimeWindowLike[];
+}
+
+export type TrackableTypeLite =
+  | "NUMBER"
+  | "TIME_TRACK"
+  | "DAYS_A_WEEK"
+  | "MINUTES_A_WEEK"
+  | "TRACKER";
+
+export interface GroupingLookups {
+  tasks?: Record<
     string,
-    { label: string; totalSeconds: number; count: number; colour?: string }
-  >();
-
-  for (const w of windows) {
-    const keys = getGroupKeys(w, mode, lookups);
-    for (const { key, label, colour } of keys) {
-      const existing = groups.get(key) ?? {
-        label,
-        totalSeconds: 0,
-        count: 0,
-        colour,
-      };
-      existing.totalSeconds += w.durationSeconds;
-      existing.count += 1;
-      groups.set(key, existing);
+    {
+      name?: string;
+      listId?: string;
+      trackableId?: string;
     }
-  }
+  >;
+  tags?: Record<string, { name: string; colour: string }>;
+  lists?: Record<string, { name: string; colour: string }>;
+  trackables?: Record<
+    string,
+    { name: string; colour: string; trackableType?: TrackableTypeLite }
+  >;
+  listIdToTrackableId?: Record<string, string>;
+  /** Union attribution for trackable — matches `useAnalyticsDataset.resolveTrackableId`. */
+  resolveTrackableId?: (w: TimeWindowLike) => string | null;
+  /** Active analytics tab — used for time-window wedge labels (date vs time-only). */
+  analyticsTab?: string;
+}
 
-  return Array.from(groups.entries())
-    .map(([key, data]) => ({ key, ...data }))
-    .sort((a, b) => b.totalSeconds - a.totalSeconds);
+function resolvedTrackableId(
+  w: TimeWindowLike,
+  lookups: GroupingLookups
+): string | null {
+  if (lookups.resolveTrackableId) return lookups.resolveTrackableId(w);
+  if (w.trackableId) return w.trackableId;
+  if (!w.taskId) return null;
+  const task = lookups.tasks?.[w.taskId];
+  if (!task) return null;
+  if (task.trackableId) return task.trackableId;
+  if (task.listId && lookups.listIdToTrackableId) {
+    return lookups.listIdToTrackableId[task.listId] ?? null;
+  }
+  return null;
 }
 
 function getGroupKeys(
   w: TimeWindowLike,
   mode: GroupByMode,
-  lookups: any
+  lookups: GroupingLookups
 ): { key: string; label: string; colour?: string }[] {
   switch (mode) {
     case "task":
-      if (w.taskId && lookups.tasks?.[w.taskId]) {
-        const t = lookups.tasks[w.taskId];
-        return [{ key: w.taskId, label: t.name }];
+      if (w.taskId && lookups.tasks?.[w.taskId]?.name) {
+        const t = lookups.tasks[w.taskId]!;
+        return [{ key: w.taskId, label: t.name ?? "Task" }];
       }
       return [{ key: "no_task", label: "No Task" }];
 
@@ -88,7 +114,7 @@ function getGroupKeys(
 
     case "list":
       if (w.taskId && lookups.tasks?.[w.taskId]?.listId) {
-        const listId = lookups.tasks[w.taskId].listId;
+        const listId = lookups.tasks[w.taskId]!.listId!;
         const list = lookups.lists?.[listId];
         return [
           {
@@ -100,15 +126,19 @@ function getGroupKeys(
       }
       return [{ key: "no_list", label: "No List" }];
 
-    case "trackable":
-      if (w.trackableId && lookups.trackables?.[w.trackableId]) {
-        const t = lookups.trackables[w.trackableId];
-        return [{ key: w.trackableId, label: t.name, colour: t.colour }];
+    case "trackable": {
+      const tid = resolvedTrackableId(w, lookups);
+      if (tid && lookups.trackables?.[tid]) {
+        const t = lookups.trackables[tid]!;
+        return [{ key: tid, label: t.name, colour: t.colour }];
       }
       return [{ key: "no_trackable", label: "No Goal" }];
+    }
 
-    case "date":
-      return [{ key: w.startDayYYYYMMDD, label: w.startDayYYYYMMDD }];
+    case "date": {
+      const day = w.startDayYYYYMMDD;
+      return [{ key: day, label: formatYYYYMMDDForDisplay(day) }];
+    }
 
     case "day_of_week": {
       const d = new Date(
@@ -140,7 +170,201 @@ function getGroupKeys(
         },
       ];
 
+    case "time_window": {
+      const id = w._id?.trim();
+      const key =
+        id && id.length > 0
+          ? id
+          : `tw|${w.startDayYYYYMMDD}|${w.startTimeHHMM ?? ""}|${w.durationSeconds}|${w.taskId ?? ""}|${w.trackableId ?? ""}|${w.activityType}`;
+      return [
+        {
+          key,
+          label: formatTimeWindowWedgeLabel(w, lookups.analyticsTab),
+        },
+      ];
+    }
+
     default:
       return [{ key: "all", label: "All" }];
   }
+}
+
+function accumulateWindow(
+  buckets: Map<
+    string,
+    {
+      label: string;
+      totalSeconds: number;
+      count: number;
+      colour?: string;
+      windows: TimeWindowLike[];
+    }
+  >,
+  w: TimeWindowLike,
+  mode: GroupByMode,
+  lookups: GroupingLookups
+) {
+  const keys = getGroupKeys(w, mode, lookups);
+  for (const { key, label, colour } of keys) {
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.totalSeconds += w.durationSeconds;
+      existing.count += 1;
+      existing.windows.push(w);
+      const incoming = colour?.trim();
+      if (incoming && !existing.colour?.trim()) {
+        existing.colour = incoming;
+      }
+    } else {
+      buckets.set(key, {
+        label,
+        totalSeconds: w.durationSeconds,
+        count: 1,
+        colour,
+        windows: [w],
+      });
+    }
+  }
+}
+
+export function groupTimeWindowsWithBuckets(
+  windows: TimeWindowLike[],
+  mode: GroupByMode,
+  lookups: GroupingLookups
+): GroupedBucket[] {
+  const buckets = new Map<
+    string,
+    {
+      label: string;
+      totalSeconds: number;
+      count: number;
+      colour?: string;
+      windows: TimeWindowLike[];
+    }
+  >();
+
+  for (const w of windows) {
+    accumulateWindow(buckets, w, mode, lookups);
+  }
+
+  const rows = Array.from(buckets.entries()).map(([key, data]) => ({
+    key,
+    label: data.label,
+    totalSeconds: data.totalSeconds,
+    count: data.count,
+    colour: data.colour,
+    windows: data.windows,
+  }));
+
+  if (mode === "time_window") {
+    rows.sort((a, b) => {
+      const wa = a.windows[0];
+      const wb = b.windows[0];
+      if (!wa) return 1;
+      if (!wb) return -1;
+      const ba = timeWindowBoundsMs(wa);
+      const bb = timeWindowBoundsMs(wb);
+      if (!ba && !bb) return a.key.localeCompare(b.key);
+      if (!ba) return 1;
+      if (!bb) return -1;
+      const d = ba.startMs - bb.startMs;
+      if (d !== 0) return d;
+      return a.key.localeCompare(b.key);
+    });
+  } else {
+    rows.sort((a, b) => b.totalSeconds - a.totalSeconds);
+  }
+
+  return rows;
+}
+
+export function groupTimeWindows(
+  windows: TimeWindowLike[],
+  mode: GroupByMode,
+  lookups: GroupingLookups
+): GroupedResult[] {
+  return groupTimeWindowsWithBuckets(windows, mode, lookups).map(
+    ({ windows: _w, ...rest }) => rest
+  );
+}
+
+export const GROUP_BY_LABEL: Record<GroupByMode, string> = {
+  trackable: "Trackable",
+  list: "List",
+  task: "Task",
+  tag: "Tag",
+  date: "Date",
+  day_of_week: "Day of Week",
+  month: "Month",
+  year: "Year",
+  time_window: "Time window",
+};
+
+/**
+ * Default grouping chain per analytics frequency (Daily/Weekly align with
+ * productivity-one; Monthly/Yearly omit Tag at the end — users can add it).
+ */
+export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
+  switch (tab) {
+    case "DAILY":
+      return ["trackable", "list", "task"];
+    case "WEEKLY":
+      return ["trackable", "list", "task", "date"];
+    case "MONTHLY":
+      return ["trackable", "list", "task", "date"];
+    case "YEARLY":
+      return ["trackable", "list", "task", "month"];
+    default:
+      return ["trackable", "list", "task"];
+  }
+}
+
+export function modesForTab(tab: string): GroupByMode[] {
+  switch (tab) {
+    case "DAILY":
+      return ["trackable", "list", "task", "tag", "time_window"];
+    case "WEEKLY":
+      return [
+        "trackable",
+        "list",
+        "task",
+        "time_window",
+        "date",
+        "tag",
+        "day_of_week",
+      ];
+    case "MONTHLY":
+      return [
+        "trackable",
+        "list",
+        "task",
+        "time_window",
+        "date",
+        "tag",
+        "day_of_week",
+        "month",
+      ];
+    case "YEARLY":
+      return [
+        "trackable",
+        "list",
+        "task",
+        "time_window",
+        "month",
+        "tag",
+        "day_of_week",
+        "year",
+        "date",
+      ];
+    default:
+      return ["trackable", "list", "task", "tag", "time_window"];
+  }
+}
+
+/** Modes from the tab pool not yet used (order preserved). */
+export function modesAvailableToAdd(
+  tab: string,
+  levels: GroupByMode[]
+): GroupByMode[] {
+  return modesForTab(tab).filter((m) => !levels.includes(m));
 }

@@ -7,6 +7,8 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Pressable,
+  Platform,
 } from "react-native";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -20,6 +22,9 @@ import {
   startOfWeek,
   formatDisplayDate,
 } from "../../lib/dates";
+import { displayReviewQuestions } from "../../lib/reviewParity";
+import { ReviewQuestionsSettingsModal } from "../reviews/ReviewQuestionsSettingsModal";
+import { ReviewReflectModal } from "../analytics/ReviewReflectModal";
 
 type Frequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 
@@ -32,6 +37,9 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
   const [offset, setOffset] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [isDirty, setIsDirty] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [reflectOpen, setReflectOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const today = todayYYYYMMDD();
 
@@ -60,12 +68,9 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
   });
   const bulkUpsert = useMutation(api.reviews.bulkUpsertAnswers);
 
-  const sortedQuestions = useMemo(
-    () =>
-      questions
-        ?.filter((q) => !q.archived)
-        .sort((a, b) => a.orderIndex - b.orderIndex) ?? [],
-    [questions]
+  const displayQs = useMemo(
+    () => displayReviewQuestions(questions, existingAnswers ?? []),
+    [questions, existingAnswers]
   );
 
   useEffect(() => {
@@ -80,14 +85,24 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
   }, [existingAnswers]);
 
   const handleSave = async () => {
-    const toSave = sortedQuestions.map((q) => ({
+    if (saving) return;
+    const toSave = displayQs.map((q) => ({
       reviewQuestionId: q._id,
       answerText: answers[q._id] ?? "",
       frequency,
       dayUnderReview,
     }));
-    await bulkUpsert({ answers: toSave });
-    setIsDirty(false);
+    setSaving(true);
+    try {
+      await bulkUpsert({ answers: toSave });
+      setIsDirty(false);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Save failed";
+      if (Platform.OS === "web") window.alert(msg);
+      else Alert.alert("Save failed", msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleFrequencySwitch = (f: Frequency) => {
@@ -114,6 +129,8 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
       setOffset(0);
     }
   };
+
+  const showReflect = frequency !== "DAILY";
 
   return (
     <View style={styles.container}>
@@ -161,34 +178,78 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        {sortedQuestions.map((q) => (
-          <Card key={q._id} style={styles.questionCard}>
-            <Text style={styles.questionText}>{q.questionText}</Text>
-            <TextInput
-              style={styles.answerInput}
-              value={answers[q._id] ?? ""}
-              onChangeText={(text) => {
-                setAnswers((prev) => ({ ...prev, [q._id]: text }));
-                setIsDirty(true);
-              }}
-              placeholder="Write your answer..."
-              placeholderTextColor={Colors.textTertiary}
-              multiline
-              textAlignVertical="top"
-            />
-          </Card>
-        ))}
+      <View style={styles.reviewHeaderRow}>
+        <Text style={styles.reviewTitle}>Review</Text>
+        {showReflect ? (
+          <Pressable
+            onPress={() => setReflectOpen(true)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.reflectLink}>Reflect</Text>
+          </Pressable>
+        ) : null}
+        <View style={styles.headerSpacer} />
+        <Pressable
+          onPress={() => setSettingsOpen(true)}
+          accessibilityLabel="Review settings"
+          style={styles.settingsHit}
+        >
+          <Ionicons name="settings-outline" size={22} color={Colors.primary} />
+        </Pressable>
+      </View>
 
-        {sortedQuestions.length > 0 && (
-          <Button
-            title={isDirty ? "Save Answers" : "Saved"}
-            onPress={handleSave}
-            disabled={!isDirty}
-            variant={isDirty ? "primary" : "secondary"}
-          />
+      <ScrollView contentContainerStyle={styles.content}>
+        {!questions ? (
+          <Text style={styles.empty}>Loading...</Text>
+        ) : displayQs.length === 0 ? (
+          <Text style={styles.empty}>
+            Add review questions using the settings icon above.
+          </Text>
+        ) : (
+          <>
+            {displayQs.map((q) => (
+              <Card key={q._id} style={styles.questionCard}>
+                <Text style={styles.questionText}>{q.questionText}</Text>
+                <TextInput
+                  style={styles.answerInput}
+                  value={answers[q._id] ?? ""}
+                  onChangeText={(text) => {
+                    setAnswers((prev) => ({ ...prev, [q._id]: text }));
+                    setIsDirty(true);
+                  }}
+                  placeholder="Your answer..."
+                  placeholderTextColor={Colors.textTertiary}
+                  multiline
+                  textAlignVertical="top"
+                />
+              </Card>
+            ))}
+
+            <Button
+              title={saving ? "Saving..." : "Save"}
+              onPress={handleSave}
+              disabled={saving}
+              variant="primary"
+            />
+          </>
         )}
       </ScrollView>
+
+      <ReviewQuestionsSettingsModal
+        visible={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        frequency={frequency}
+      />
+
+      {showReflect ? (
+        <ReviewReflectModal
+          visible={reflectOpen}
+          onClose={() => setReflectOpen(false)}
+          parentTab={frequency}
+          canonicalReviewDate={dayUnderReview}
+          currentFrequency={frequency}
+        />
+      ) : null}
     </View>
   );
 }
@@ -230,6 +291,31 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   dateLabel: { fontSize: 15, fontWeight: "600", color: Colors.text },
+  reviewHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  reviewTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  reflectLink: {
+    marginLeft: 12,
+    fontSize: 13,
+    fontWeight: "400",
+    color: Colors.primary,
+  },
+  headerSpacer: { flex: 1 },
+  settingsHit: { padding: 4 },
+  empty: {
+    fontSize: 13,
+    color: Colors.textTertiary,
+    paddingVertical: 12,
+  },
   content: { padding: 16, paddingBottom: 40 },
   questionCard: { marginBottom: 16 },
   questionText: {
