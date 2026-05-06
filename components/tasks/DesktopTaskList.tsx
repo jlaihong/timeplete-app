@@ -11,7 +11,6 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  Switch,
   Platform,
 } from "react-native";
 import { useQuery, useMutation } from "convex/react";
@@ -48,6 +47,12 @@ import {
   TaskRowMeta,
   TaskDragPlaceholder,
 } from "./TaskRowDesktop";
+import { TaskFilterModal } from "./TaskFilterModal";
+import { useTaskFilters } from "../../hooks/useTaskFilters";
+import {
+  taskCompletedForFilters,
+  taskMatchesUserFilter,
+} from "../../lib/taskFilters";
 
 const isWeb = Platform.OS === "web";
 const LOAD_MORE_DAYS = 7;
@@ -341,7 +346,50 @@ export function DesktopTaskList({
   const setTimeSpentMutation = useMutation(api.tasks.setTimeSpent);
   const timer = useTimer();
 
-  const [showCompleted, setShowCompleted] = useState(true);
+  const homeFilterScope = useMemo(() => ({ kind: "home" as const }), []);
+  const {
+    showCompleted,
+    filterUserIds,
+    persistShowCompleted,
+    toggleUserFilter,
+    isFilterActive,
+  } = useTaskFilters(homeFilterScope);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+
+  const homeCollaboratorUserIds = useMemo((): Id<"users">[] => {
+    if (!tasks) return [];
+    const ids = new Set<string>();
+    for (const t of tasks) {
+      ids.add(String(t.createdBy));
+      if (t.assignedToUserId) {
+        ids.add(String(t.assignedToUserId));
+      }
+    }
+    return [...ids].sort() as Id<"users">[];
+  }, [tasks]);
+
+  const collaboratorDisplayNames = useQuery(
+    api.users.getPublicDisplayNames,
+    homeCollaboratorUserIds.length > 1
+      ? { userIds: homeCollaboratorUserIds }
+      : "skip",
+  );
+
+  const homeAssignableMembers = useMemo(() => {
+    if (homeCollaboratorUserIds.length <= 1) return [];
+    return homeCollaboratorUserIds
+      .map((id) => {
+        const sid = String(id);
+        return {
+          userId: sid,
+          name: collaboratorDisplayNames?.[sid] ?? sid,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [homeCollaboratorUserIds, collaboratorDisplayNames]);
+
+  const showCollaboratorFilter = homeCollaboratorUserIds.length > 1;
+
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
   );
@@ -493,14 +541,32 @@ export function DesktopTaskList({
     }
   }, [serverGroups]);
 
-  /* Build display groups (filter completed if needed) */
+  /* Build display groups (parity with Lists: assignee filter → header counts; then completed) */
   const displayGroups = useMemo(() => {
+    const hasUser = filterUserIds.length > 0;
     return localGroups.map((g) => {
       const allTasks = g.tasks;
-      const completedCount = allTasks.filter((t) => !!t.dateCompleted).length;
+      let forUserFilter = allTasks;
+      if (hasUser) {
+        forUserFilter = forUserFilter.filter((task) =>
+          taskMatchesUserFilter(
+            task as TaskRowTask & {
+              createdBy: string;
+              assignedToUserId?: string;
+            },
+            filterUserIds,
+          ),
+        );
+      }
+      const completedCount = forUserFilter.filter((t) =>
+        taskCompletedForFilters(t),
+      ).length;
+      const totalCount = forUserFilter.length;
       const visibleTasks = showCompleted
-        ? allTasks
-        : allTasks.filter((t) => !t.dateCompleted);
+        ? forUserFilter
+        : forUserFilter.filter((t) => !t.dateCompleted);
+
+      const dndUnlocked = !hasUser;
 
       return {
         id: g.id,
@@ -514,28 +580,15 @@ export function DesktopTaskList({
                 : formatDisplayDate(g.id),
         tasks: visibleTasks,
         completedCount,
-        totalCount: allTasks.length,
-        // Per-group drag rules are deliberately asymmetric:
-        //
-        //   group         | canDrag | canDropInto
-        //   --------------+---------+------------
-        //   Overdue       |  yes    |   no
-        //   Unscheduled   |  no     |   no
-        //   Today/future  |  yes    |   yes
-        //
-        // Overdue tasks must be draggable so the user can move them onto
-        // a real day (or the calendar) — but Overdue is a virtual bucket,
-        // not a target a task should ever land in. Likewise Unscheduled
-        // is a passive bucket today (no drag yet); both are blocked as
-        // drop targets in `onDragOver`/`onDragEnd`, and the underlying
-        // `useDroppable` is also disabled below so collision detection
-        // skips them entirely.
-        canDrag: g.id !== UNSCHEDULED_GROUP_ID,
+        totalCount,
+        canDrag: dndUnlocked && g.id !== UNSCHEDULED_GROUP_ID,
         canDropInto:
-          g.id !== OVERDUE_GROUP_ID && g.id !== UNSCHEDULED_GROUP_ID,
+          dndUnlocked &&
+          g.id !== OVERDUE_GROUP_ID &&
+          g.id !== UNSCHEDULED_GROUP_ID,
       };
     });
-  }, [localGroups, showCompleted]);
+  }, [localGroups, showCompleted, filterUserIds]);
 
   /* ───── Mutations ───── */
   const toggleComplete = useCallback(
@@ -965,25 +1018,34 @@ export function DesktopTaskList({
       {title && (
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{title}</Text>
+          <Pressable
+            onPress={() => setFilterMenuOpen(true)}
+            style={styles.filterIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Filters"
+            hitSlop={10}
+          >
+            <MaterialIcons
+              name="filter-list"
+              size={26}
+              color={
+                isFilterActive ? Colors.primary : Colors.textSecondary
+              }
+            />
+          </Pressable>
         </View>
       )}
 
-      <View style={styles.filterBar}>
-        <View style={styles.filterRow}>
-          <Text style={styles.filterLabel}>Show completed</Text>
-          <Switch
-            value={showCompleted}
-            onValueChange={setShowCompleted}
-            trackColor={{
-              false: Colors.outlineVariant,
-              true: Colors.primary + "60",
-            }}
-            thumbColor={
-              showCompleted ? Colors.primary : Colors.textTertiary
-            }
-          />
-        </View>
-      </View>
+      <TaskFilterModal
+        visible={filterMenuOpen}
+        onClose={() => setFilterMenuOpen(false)}
+        showCompleted={showCompleted}
+        onPersistShowCompleted={persistShowCompleted}
+        filterUserIds={filterUserIds}
+        onToggleUserFilter={toggleUserFilter}
+        assignableMembers={homeAssignableMembers}
+        showCollaboratorFilter={showCollaboratorFilter}
+      />
 
       {displayGroups.length === 0 ? (
         <EmptyState
@@ -1188,20 +1250,19 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
+    gap: 12,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  filterBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.text,
+    flex: 1,
+    minWidth: 0,
   },
-  filterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  filterLabel: { fontSize: 14, color: Colors.textSecondary },
+  filterIconBtn: { padding: 4 },
   listContent: { padding: 16, paddingBottom: 80 },
   group: { marginBottom: 20 },
   groupHeader: {
