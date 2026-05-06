@@ -20,10 +20,12 @@ import { Stack } from "expo-router";
 import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { DesktopBrandedHeaderTitle } from "../../components/layout/DesktopBrandedHeaderTitle";
+import { useAuth } from "../../hooks/useAuth";
 
 export default function TagsScreen() {
   const isDesktop = useIsDesktop();
-  const tags = useQuery(api.tags.search);
+  const { profileReady } = useAuth();
+  const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const upsertTag = useMutation(api.tags.upsert);
   const removeTag = useMutation(api.tags.remove);
   const [showArchived, setShowArchived] = useState(false);

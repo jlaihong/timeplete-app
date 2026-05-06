@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
+import { useAuth } from "../../hooks/useAuth";
 
 interface TrackablePickerProps {
   value: Id<"trackables"> | null | undefined;
@@ -37,8 +38,12 @@ export function TrackablePicker({
   label = "Trackable",
   compact = true,
 }: TrackablePickerProps) {
+  const { profileReady } = useAuth();
   const [open, setOpen] = useState(false);
-  const trackables = useQuery(api.trackables.search, { archived: false });
+  const trackables = useQuery(
+    api.trackables.search,
+    profileReady ? { archived: false } : "skip",
+  );
 
   const selected = trackables?.find((t) => t._id === value);
 

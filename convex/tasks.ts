@@ -1,7 +1,7 @@
 import { query, mutation, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { requireApprovedUser } from "./_helpers/auth";
+import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 
 /**
  * productivity-backend `upsert_task` sets `section_id` from `list_id` when the
@@ -51,7 +51,8 @@ export const search = query({
     includeCompleted: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
 
     let tasks;
     if (args.listId) {
@@ -128,7 +129,9 @@ export const getHomeTasks = query({
     rangeEndYYYYMMDD: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
+
     const today = args.todayYYYYMMDD;
     const rangeEnd =
       args.rangeEndYYYYMMDD < today ? today : args.rangeEndYYYYMMDD;
@@ -235,7 +238,8 @@ export const searchWithCriteria = query({
     collaboratorIds: v.optional(v.array(v.id("users"))),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
 
     let allTasks = await ctx.db
       .query("tasks")
@@ -745,7 +749,9 @@ export const setTimeSpent = mutation({
 export const getTimeTracked = query({
   args: { taskId: v.id("tasks") },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return { totalSeconds: 0, sessions: [] };
+
     const windows = await ctx.db
       .query("timeWindows")
       .withIndex("by_task", (q) => q.eq("taskId", args.taskId))

@@ -1,7 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { requireApprovedUser } from "./_helpers/auth";
+import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import {
   buildListIdToTrackableId,
   buildTaskInfoMap,
@@ -20,7 +20,8 @@ export const search = query({
     activityType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
 
     let windows;
     if (args.taskId) {

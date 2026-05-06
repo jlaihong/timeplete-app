@@ -1,6 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireApprovedUser } from "./_helpers/auth";
+import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import {
   buildCompletedTaskCountsByTrackableDay,
   buildListIdToTrackableId,
@@ -14,7 +14,9 @@ import { isYYYYMMDDCompact, toCompactYYYYMMDD } from "./_helpers/compactYYYYMMDD
 export const search = query({
   args: { archived: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
+
     let trackables = await ctx.db
       .query("trackables")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
@@ -323,7 +325,8 @@ export const getCompletedTaskNamesForDay = query({
     dayYYYYMMDD: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
 
     const tasks = await ctx.db
       .query("tasks")
@@ -364,7 +367,16 @@ export const getGoalDetails = query({
     weekStart: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) {
+      return {
+        active: [],
+        archived: [],
+        activeCount: 0,
+        archivedCount: 0,
+      };
+    }
+
     const lim = args.limit ?? 20;
 
     const all = await ctx.db
@@ -776,7 +788,14 @@ export const getTrackableAnalyticsSeries = query({
     windowEnd: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) {
+      return {
+        windowStart: args.windowStart,
+        windowEnd: args.windowEnd,
+        trackables: [],
+      };
+    }
 
     const trackables = await ctx.db
       .query("trackables")
