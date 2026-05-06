@@ -356,39 +356,20 @@ export function DesktopTaskList({
   } = useTaskFilters(homeFilterScope);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
 
-  const homeCollaboratorUserIds = useMemo((): Id<"users">[] => {
-    if (!tasks) return [];
-    const ids = new Set<string>();
-    for (const t of tasks) {
-      ids.add(String(t.createdBy));
-      if (t.assignedToUserId) {
-        ids.add(String(t.assignedToUserId));
-      }
-    }
-    return [...ids].sort() as Id<"users">[];
-  }, [tasks]);
-
-  const collaboratorDisplayNames = useQuery(
-    api.users.getPublicDisplayNames,
-    homeCollaboratorUserIds.length > 1
-      ? { userIds: homeCollaboratorUserIds }
-      : "skip",
+  const homeAssignableMembersRaw = useQuery(
+    api.sharing.getHomeFilterAssignableMembers,
+    {},
   );
 
   const homeAssignableMembers = useMemo(() => {
-    if (homeCollaboratorUserIds.length <= 1) return [];
-    return homeCollaboratorUserIds
-      .map((id) => {
-        const sid = String(id);
-        return {
-          userId: sid,
-          name: collaboratorDisplayNames?.[sid] ?? sid,
-        };
-      })
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [homeCollaboratorUserIds, collaboratorDisplayNames]);
+    if (!homeAssignableMembersRaw) return [];
+    return homeAssignableMembersRaw.map((m) => ({
+      userId: String(m.userId),
+      name: m.name,
+    }));
+  }, [homeAssignableMembersRaw]);
 
-  const showCollaboratorFilter = homeCollaboratorUserIds.length > 1;
+  const showCollaboratorFilter = homeAssignableMembers.length > 1;
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()

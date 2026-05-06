@@ -326,6 +326,70 @@ export const getCollaborators = query({
   },
 });
 
+/**
+ * Union of users who appear in List-detail assignee filters: list owner
+ * (OWNER) plus EDITOR shares, across all lists the viewer owns or has an
+ * accepted share on. Matches `normalizeListMembersQuery` → OWNER|EDITOR on
+ * any single list, but deduped for Home.
+ */
+export const getHomeFilterAssignableMembers = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireApprovedUser(ctx);
+
+    const listIds = new Set<Id<"lists">>();
+
+    const ownedLists = await ctx.db
+      .query("lists")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    for (const l of ownedLists) {
+      listIds.add(l._id);
+    }
+
+    const acceptedShares = await ctx.db
+      .query("listShares")
+      .withIndex("by_shared_user_status", (q) =>
+        q.eq("sharedWithUserId", user._id).eq("status", "ACCEPTED"),
+      )
+      .collect();
+    for (const s of acceptedShares) {
+      listIds.add(s.listId);
+    }
+
+    const assignableIds = new Set<Id<"users">>();
+
+    for (const listId of listIds) {
+      const list = await ctx.db.get(listId);
+      if (!list) continue;
+
+      assignableIds.add(list.userId);
+
+      const shares = await ctx.db
+        .query("listShares")
+        .withIndex("by_list", (q) => q.eq("listId", listId))
+        .collect();
+
+      for (const share of shares) {
+        if (share.permission === "EDITOR") {
+          assignableIds.add(share.sharedWithUserId);
+        }
+      }
+    }
+
+    const rows: { userId: Id<"users">; name: string }[] = [];
+    for (const uid of assignableIds) {
+      const u = await ctx.db.get(uid);
+      if (u) {
+        rows.push({ userId: u._id, name: u.name });
+      }
+    }
+
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    return rows;
+  },
+});
+
 export const getListMembers = query({
   args: { listId: v.id("lists") },
   handler: async (ctx, args) => {
