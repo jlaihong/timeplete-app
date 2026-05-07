@@ -68,7 +68,7 @@ interface DesktopTaskListProps {
   /**
    * Calendar header day on home (`CalendarView` selection).
    * Convex stays subscribed at clock-today (`getHomeTasks`); stepping backward
-   * merges `homeBackwardGapTasks` without shifting that anchor (productivity-one window retention).
+   * merges `searchWithCriteria` without shifting that anchor (productivity-one window retention).
    */
   rangeStartYYYYMMDD?: string;
 }
@@ -282,10 +282,16 @@ export function DesktopTaskList({
     calendarDay < clockToday &&
     calendarDay <= backwardGapEnd;
 
+  /** Uses long-deployed `searchWithCriteria` — avoids requiring a new Convex function on shared backends. */
   const backwardGapTasksQuery = useQuery(
-    api.tasks.homeBackwardGapTasks,
+    api.tasks.searchWithCriteria,
     backwardGapActive
-      ? { startDay: calendarDay, endDay: backwardGapEnd }
+      ? {
+          dayRanges: [{ startDay: calendarDay, endDay: backwardGapEnd }],
+          includeCompleted: true,
+          completedStartDay: calendarDay,
+          completedEndDay: backwardGapEnd,
+        }
       : "skip",
   );
 
@@ -297,7 +303,12 @@ export function DesktopTaskList({
     }
     if (backwardGapTasksQuery !== undefined) {
       for (const t of backwardGapTasksQuery as TaskRowTask[]) {
-        if (!merged.has(t._id)) merged.set(t._id, t);
+        if (!merged.has(t._id)) {
+          merged.set(t._id, {
+            ...t,
+            tagIds: t.tagIds ?? [],
+          });
+        }
       }
     }
     return [...merged.values()].sort(
@@ -426,14 +437,14 @@ export function DesktopTaskList({
         localStore.setQuery(api.tasks.getHomeTasks, q.args, next);
       }
 
-      for (const q of localStore.getAllQueries(api.tasks.homeBackwardGapTasks)) {
+      for (const q of localStore.getAllQueries(api.tasks.searchWithCriteria)) {
         const value = q.value;
         if (!value) continue;
         const idx = value.findIndex((t) => t._id === args.id);
         if (idx === -1) continue;
         const next = [...value];
         next[idx] = patchRow(value[idx] as TaskRowTask);
-        localStore.setQuery(api.tasks.homeBackwardGapTasks, q.args, next);
+        localStore.setQuery(api.tasks.searchWithCriteria, q.args, next);
       }
     }
   );

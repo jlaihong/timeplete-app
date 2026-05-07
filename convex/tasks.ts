@@ -160,8 +160,8 @@ async function enrichHomeTasksPayload(
  * Home-page task query.
  *
  * `todayYYYYMMDD` MUST be the user's clock **today** (local calendar day) —
- * the home UI merges optional backward-window rows separately (`homeBackwardGapTasks`)
- * so calendar navigation does not shift this subscription anchor (productivity-one parity).
+ * the home UI merges older-day rows via existing `searchWithCriteria` so the
+ * calendar does not shift this subscription anchor (productivity-one parity).
  *
  * Returns ONLY:
  *   1. Overdue tasks – incomplete, non-recurring, taskDay < today
@@ -237,57 +237,6 @@ export const getHomeTasks = query({
     const tasks = Array.from(byId.values());
 
     return enrichHomeTasksPayload(ctx, tasks);
-  },
-});
-
-/**
- * Incremental home payload for calendar days **strictly before** clock-today.
- * Mirrors `getHomeTasks` “scheduled in range” + “completed in window” pairing,
- * but scoped to `[startDay, endDay]` where callers guarantee `endDay < today`.
- *
- * Merged client-side with `getHomeTasks(today: clock, …)` so stepping the
- * calendar backward does not replace / shift the primary subscription anchor.
- */
-export const homeBackwardGapTasks = query({
-  args: {
-    startDay: v.string(),
-    endDay: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireApprovedUserOrEmpty(ctx);
-    if (!user) return [];
-
-    const startDay = args.startDay;
-    const endDay = args.endDay;
-    if (startDay > endDay) return [];
-
-    const rangeScheduled = await ctx.db
-      .query("tasks")
-      .withIndex("by_user_day", (q) =>
-        q.eq("userId", user._id).gte("taskDay", startDay).lte("taskDay", endDay),
-      )
-      .collect();
-
-    const pastBeforeStart = await ctx.db
-      .query("tasks")
-      .withIndex("by_user_day", (q) =>
-        q.eq("userId", user._id).lt("taskDay", startDay),
-      )
-      .collect();
-
-    const completedInGap = pastBeforeStart.filter(
-      (t) =>
-        t.taskDay !== undefined &&
-        t.dateCompleted !== undefined &&
-        t.dateCompleted >= startDay &&
-        t.dateCompleted <= endDay,
-    );
-
-    const byId = new Map<string, (typeof rangeScheduled)[number]>();
-    for (const t of rangeScheduled) byId.set(t._id, t);
-    for (const t of completedInGap) byId.set(t._id, t);
-
-    return enrichHomeTasksPayload(ctx, Array.from(byId.values()));
   },
 });
 
