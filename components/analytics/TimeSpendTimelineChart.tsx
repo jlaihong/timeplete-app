@@ -10,21 +10,21 @@ import {
   type TimelineBlock,
 } from "./timeSpendTimelineUtils";
 
+/**
+ * Wall-clock axis: top = 00:00, bottom = 24:00 (Productivity-One style).
+ */
 const TICK_LABELS = ["00:00", "06:00", "12:00", "18:00", "24:00"] as const;
 
-const LANE_HEIGHT = 13;
-const LANE_GAP = 3;
-const TRACK_PADDING_V = 6;
-const TRACK_MIN_HEIGHT = 26;
+const AXIS_W_NARROW = 34;
+const AXIS_W_WIDE = 42;
 const LABEL_COL_NARROW = 40;
 const LABEL_COL_WIDE = 56;
 
-function timelineRowHeight(maxLane: number): number {
-  const n = Math.max(1, maxLane + 1);
-  return (
-    TRACK_PADDING_V * 2 +
-    Math.max(TRACK_MIN_HEIGHT, n * LANE_HEIGHT + Math.max(0, n - 1) * LANE_GAP)
-  );
+/** Minimum chart height; scales slightly with viewport so the day strip is readable. */
+function trackHeightForWidth(windowWidth: number): number {
+  if (windowWidth < 360) return 208;
+  if (windowWidth < 480) return 256;
+  return 304;
 }
 
 export interface TimeSpendTimelineChartProps {
@@ -49,6 +49,8 @@ export function TimeSpendTimelineChart({
 }: TimeSpendTimelineChartProps) {
   const { width } = useWindowDimensions();
   const labelColW = width < 400 ? LABEL_COL_NARROW : LABEL_COL_WIDE;
+  const axisW = width < 400 ? AXIS_W_NARROW : AXIS_W_WIDE;
+  const trackHeight = trackHeightForWidth(width);
 
   const rows = useMemo(() => {
     return days.map((day) => {
@@ -62,23 +64,14 @@ export function TimeSpendTimelineChart({
       const lanes =
         blocks.length > 0 ? assignOverlapLanes(blocks) : ([] as number[]);
       const maxLane = lanes.length ? Math.max(...lanes) : 0;
-      return { day, blocks, lanes, maxLane, height: timelineRowHeight(maxLane) };
+      const laneCount = Math.max(1, maxLane + 1);
+      return { day, blocks, lanes, laneCount };
     });
   }, [days, timeWindows, resolveTrackableId, trackables, fallbackColour]);
 
   return (
     <View style={styles.wrap}>
-      <View style={[styles.axisRow, { paddingLeft: labelColW }]}>
-        <View style={styles.axisTrack}>
-          {TICK_LABELS.map((label) => (
-            <Text key={label} style={styles.axisTick}>
-              {label}
-            </Text>
-          ))}
-        </View>
-      </View>
-
-      {rows.map(({ day, blocks, lanes, height }, rowIdx) => (
+      {rows.map(({ day, blocks, lanes, laneCount }, rowIdx) => (
         <View
           key={day}
           style={[styles.dayRow, rowIdx < rows.length - 1 && { marginBottom: rowGap }]}
@@ -88,11 +81,19 @@ export function TimeSpendTimelineChart({
               {dayLabel(day)}
             </Text>
           </View>
-          <View style={styles.trackArea}>
+          <View style={[styles.axisCol, { width: axisW, height: trackHeight }]}>
+            {TICK_LABELS.map((label) => (
+              <Text key={label} style={styles.axisTick}>
+                {label}
+              </Text>
+            ))}
+          </View>
+          <View style={[styles.trackArea, { height: trackHeight }]}>
             <DayTrack
               blocks={blocks}
               lanes={lanes}
-              trackHeight={height}
+              laneCount={laneCount}
+              trackHeight={trackHeight}
             />
           </View>
         </View>
@@ -104,29 +105,34 @@ export function TimeSpendTimelineChart({
 function DayTrack({
   blocks,
   lanes,
+  laneCount,
   trackHeight,
 }: {
   blocks: TimelineBlock[];
   lanes: number[];
+  laneCount: number;
   trackHeight: number;
 }) {
+  const laneGapPct = laneCount > 1 ? 0.35 : 0;
+  const slotPct = (100 - laneGapPct * (laneCount - 1)) / laneCount;
+
   return (
-    <View style={[styles.track, { minHeight: trackHeight }]}>
+    <View style={[styles.track, { height: trackHeight }]}>
       <View style={styles.grid} pointerEvents="none">
         {[1, 2, 3].map((i) => (
           <View
             key={i}
-            style={[styles.gridLine, { left: `${(i / 4) * 100}%` }]}
+            style={[styles.gridLineH, { top: `${(i / 4) * 100}%` }]}
           />
         ))}
       </View>
       {blocks.map((b, i) => {
         const lane = lanes[i] ?? 0;
         const span = Math.max(b.endSec - b.startSec, 0);
-        const widthPct = Math.max((span / SECONDS_PER_DAY) * 100, 0.12);
-        const leftPct = (b.startSec / SECONDS_PER_DAY) * 100;
-        const top =
-          TRACK_PADDING_V + lane * (LANE_HEIGHT + LANE_GAP);
+        const topPct = (b.startSec / SECONDS_PER_DAY) * 100;
+        const heightPct = Math.max((span / SECONDS_PER_DAY) * 100, 0.18);
+        const leftPct = lane * (slotPct + laneGapPct);
+        const widthPct = slotPct;
 
         return (
           <View
@@ -134,10 +140,10 @@ function DayTrack({
             style={[
               styles.block,
               {
+                top: `${topPct}%`,
+                height: `${heightPct}%`,
                 left: `${leftPct}%`,
                 width: `${widthPct}%`,
-                top,
-                height: LANE_HEIGHT,
                 backgroundColor: b.colour,
               },
             ]}
@@ -152,33 +158,29 @@ const styles = StyleSheet.create({
   wrap: {
     marginBottom: 4,
   },
-  axisRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    marginBottom: 6,
-  },
-  axisTrack: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  axisTick: {
-    fontSize: 10,
-    color: Colors.textTertiary,
-    fontVariant: ["tabular-nums"],
-  },
   dayRow: {
     flexDirection: "row",
-    alignItems: "stretch",
+    alignItems: "flex-start",
   },
   dayLabelCol: {
     paddingRight: 8,
-    justifyContent: "center",
+    paddingTop: 4,
   },
   dayLabel: {
     fontSize: 11,
     fontWeight: "600",
     color: Colors.textSecondary,
+    textAlign: "right",
+  },
+  axisCol: {
+    justifyContent: "space-between",
+    paddingRight: 6,
+    paddingVertical: 2,
+  },
+  axisTick: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    fontVariant: ["tabular-nums"],
     textAlign: "right",
   },
   trackArea: {
@@ -195,12 +197,12 @@ const styles = StyleSheet.create({
   grid: {
     ...StyleSheet.absoluteFillObject,
   },
-  gridLine: {
+  gridLineH: {
     position: "absolute",
-    top: 0,
-    bottom: 0,
-    width: 1,
-    marginLeft: -0.5,
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth,
+    marginTop: -StyleSheet.hairlineWidth,
     backgroundColor: Colors.borderLight,
     opacity: 0.45,
   },

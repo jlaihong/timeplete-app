@@ -12,7 +12,11 @@ export interface TimelineBlock {
   trackableId: string | null;
 }
 
-/** Assign non-overlapping vertical lanes (0-based) so adjacent/overlapping blocks stack cleanly. */
+/**
+ * Assign overlap lanes (0-based) for blocks on a **vertical** day strip: each lane
+ * becomes a horizontal band (split across the column width) so concurrent
+ * sessions remain readable.
+ */
 export function assignOverlapLanes(
   blocks: { startSec: number; endSec: number }[],
 ): number[] {
