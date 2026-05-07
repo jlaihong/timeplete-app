@@ -18,10 +18,9 @@ import { useAnalyticsState } from "./AnalyticsState";
 
 /**
  * Date navigator — productivity-one's `analytics-date-navigator`.
- * - Daily/Weekly/Monthly: centered label above native `<input type="date">`
- *   on web; chevrons step the right amount.
- * - Yearly: hides the picker entirely (P1 has no datepicker on yearly),
- *   shows just `< YYYY >` arrows.
+ * - Daily/Weekly/Monthly on web: centered label above a row of
+ *   `< [date input] >` so chevrons align with the picker, not the label.
+ * - Yearly / native: `< label >` between chevrons (no separate picker).
  */
 export function AnalyticsDateNavigator() {
   const {
@@ -53,43 +52,50 @@ export function AnalyticsDateNavigator() {
     }
   })();
 
-  return (
-    <View style={styles.row}>
-      <TouchableOpacity
-        onPress={goPrev}
-        style={styles.iconBtn}
-        accessibilityLabel="Previous"
-      >
-        <Ionicons
-          name="chevron-back"
-          size={22}
-          color={Colors.primary}
-        />
-      </TouchableOpacity>
+  const hasWebPicker = !isYearly && Platform.OS === "web";
 
-      <View style={styles.center}>
+  const prevBtn = (
+    <TouchableOpacity
+      onPress={goPrev}
+      style={styles.iconBtn}
+      accessibilityLabel="Previous"
+    >
+      <Ionicons name="chevron-back" size={22} color={Colors.primary} />
+    </TouchableOpacity>
+  );
+
+  const nextBtn = (
+    <TouchableOpacity
+      onPress={goNext}
+      style={styles.iconBtn}
+      accessibilityLabel="Next"
+    >
+      <Ionicons name="chevron-forward" size={22} color={Colors.primary} />
+    </TouchableOpacity>
+  );
+
+  if (hasWebPicker) {
+    return (
+      <View style={styles.outer}>
         <TouchableOpacity onPress={goToday} style={styles.labelTap}>
           <Text style={styles.middleLabel}>{middleLabel}</Text>
         </TouchableOpacity>
-        {!isYearly && Platform.OS === "web" && (
-          <DateInputWeb
-            value={selectedDate}
-            onChange={setSelectedDate}
-          />
-        )}
+        <View style={styles.pickerRow}>
+          {prevBtn}
+          <DateInputWeb value={selectedDate} onChange={setSelectedDate} />
+          {nextBtn}
+        </View>
       </View>
+    );
+  }
 
-      <TouchableOpacity
-        onPress={goNext}
-        style={styles.iconBtn}
-        accessibilityLabel="Next"
-      >
-        <Ionicons
-          name="chevron-forward"
-          size={22}
-          color={Colors.primary}
-        />
+  return (
+    <View style={styles.row}>
+      {prevBtn}
+      <TouchableOpacity onPress={goToday} style={styles.labelTapInline}>
+        <Text style={styles.middleLabel}>{middleLabel}</Text>
       </TouchableOpacity>
+      {nextBtn}
     </View>
   );
 }
@@ -123,6 +129,20 @@ function DateInputWeb({
 }
 
 const styles = StyleSheet.create({
+  outer: {
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    gap: 8,
+    maxWidth: "100%",
+    alignSelf: "center",
+  },
+  pickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -130,6 +150,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
     gap: 6,
+    maxWidth: "100%",
+    alignSelf: "center",
   },
   iconBtn: {
     width: 36,
@@ -141,12 +163,9 @@ const styles = StyleSheet.create({
   labelTap: {
     alignSelf: "stretch",
   },
-  center: {
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
+  labelTapInline: {
     maxWidth: "100%",
+    flexShrink: 1,
   },
   middleLabel: {
     fontSize: 15,
