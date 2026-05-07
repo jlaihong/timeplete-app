@@ -18,17 +18,27 @@ import {
 /**
  * Vertical wall-clock strip: top = 00:00, bottom = 24:00 — calendar / day-planner
  * parity (not a compact dashboard chart).
+ *
+ * One label + horizontal guide per hour (00:00 … 24:00).
  */
-const TICK_LABELS = ["00:00", "06:00", "12:00", "18:00", "24:00"] as const;
-const TICK_POSITION_PCT = [0, 25, 50, 75, 100] as const;
+const HOUR_BOUNDARIES = Array.from({ length: 25 }, (_, i) => i);
 
-/** Hours 1–23 for faint grid (6h multiples slightly stronger). */
-const HOUR_MARKERS = Array.from({ length: 23 }, (_, i) => i + 1);
-
-const AXIS_W_NARROW = 42;
-const AXIS_W_WIDE = 50;
+const AXIS_W_NARROW = 46;
+const AXIS_W_WIDE = 54;
 const LABEL_COL_NARROW = 48;
 const LABEL_COL_WIDE = 64;
+
+function formatHourBoundary(h: number): string {
+  if (h <= 0) return "00:00";
+  if (h >= 24) return "24:00";
+  return `${String(h).padStart(2, "0")}:00`;
+}
+
+function axisTickTranslateY(h: number): number {
+  if (h === 0) return 0;
+  if (h === 24) return -11;
+  return -6;
+}
 
 /** Pixels per hour — tall strip so morning/afternoon/evening read at a glance. */
 function trackHeightForWidth(windowWidth: number): number {
@@ -70,6 +80,7 @@ export function TimeSpendTimelineChart({
   const labelColW = width < 400 ? LABEL_COL_NARROW : LABEL_COL_WIDE;
   const axisW = width < 400 ? AXIS_W_NARROW : AXIS_W_WIDE;
   const trackHeight = trackHeightForWidth(width);
+  const compactAxis = width < 400;
 
   const rows = useMemo(() => {
     return days.map((day) => {
@@ -104,95 +115,78 @@ export function TimeSpendTimelineChart({
               {dayLabel(day)}
             </Text>
           </View>
-          <View style={[styles.axisCol, { width: axisW, height: trackHeight }]}>
-            {TICK_LABELS.map((label, idx) => (
-              <Text
-                key={label}
-                style={[
-                  styles.axisTick,
-                  {
-                    top: `${TICK_POSITION_PCT[idx]}%`,
-                    transform: [
-                      {
-                        translateY:
-                          idx === 0
-                            ? 0
-                            : idx === TICK_LABELS.length - 1
-                              ? -12
-                              : -7,
-                      },
-                    ],
-                  },
-                ]}
-              >
-                {label}
-              </Text>
-            ))}
-          </View>
           <View
             style={[
-              styles.scheduleStrip,
-              { height: trackHeight },
+              styles.timelineBlock,
               Platform.OS === "web"
                 ? ({ userSelect: "none" } as object)
                 : null,
             ]}
           >
-            <DayTrack blocks={blocks} trackHeight={trackHeight} />
+            <View
+              style={[styles.axisCol, { width: axisW, height: trackHeight }]}
+            >
+              {HOUR_BOUNDARIES.map((h) => (
+                <Text
+                  key={h}
+                  style={[
+                    styles.axisTick,
+                    compactAxis && styles.axisTickCompact,
+                    {
+                      top: `${(h / 24) * 100}%`,
+                      transform: [{ translateY: axisTickTranslateY(h) }],
+                    },
+                  ]}
+                >
+                  {formatHourBoundary(h)}
+                </Text>
+              ))}
+            </View>
+            <View style={[styles.trackColumn, { height: trackHeight }]}>
+              <View style={styles.grid} pointerEvents="none">
+                {HOUR_BOUNDARIES.map((h) => (
+                  <View
+                    key={h}
+                    style={[
+                      styles.hourLine,
+                      {
+                        top: `${(h / 24) * 100}%`,
+                        opacity: h % 6 === 0 ? 0.14 : 0.09,
+                      },
+                    ]}
+                  />
+                ))}
+              </View>
+              {blocks.map((b, i) => {
+                const minHeightPct = Math.max(
+                  (5 / trackHeight) * 100,
+                  0.09,
+                );
+                const span = Math.max(b.endSec - b.startSec, 0);
+                const topPct = (b.startSec / SECONDS_PER_DAY) * 100;
+                const heightPct = Math.max(
+                  (span / SECONDS_PER_DAY) * 100,
+                  minHeightPct,
+                );
+                return (
+                  <View
+                    key={b.windowId}
+                    style={[
+                      styles.block,
+                      {
+                        top: `${topPct}%`,
+                        height: `${heightPct}%`,
+                        backgroundColor: b.colour,
+                        zIndex: i + 1,
+                      },
+                    ]}
+                  />
+                );
+              })}
+            </View>
           </View>
         </View>
       ))}
-    </View>
-  );
-}
-
-function DayTrack({
-  blocks,
-  trackHeight,
-}: {
-  blocks: TimelineBlock[];
-  trackHeight: number;
-}) {
-  const minHeightPct = Math.max((5 / trackHeight) * 100, 0.09);
-
-  return (
-    <View style={[styles.track, { height: trackHeight }]}>
-      <View style={styles.grid} pointerEvents="none">
-        {HOUR_MARKERS.map((h) => (
-          <View
-            key={h}
-            style={[
-              styles.hourLine,
-              {
-                top: `${(h / 24) * 100}%`,
-                opacity: h % 6 === 0 ? 0.1 : 0.045,
-              },
-            ]}
-          />
-        ))}
-      </View>
-      {blocks.map((b, i) => {
-        const span = Math.max(b.endSec - b.startSec, 0);
-        const topPct = (b.startSec / SECONDS_PER_DAY) * 100;
-        const heightPct = Math.max(
-          (span / SECONDS_PER_DAY) * 100,
-          minHeightPct,
-        );
-        return (
-          <View
-            key={b.windowId}
-            style={[
-              styles.block,
-              {
-                top: `${topPct}%`,
-                height: `${heightPct}%`,
-                backgroundColor: b.colour,
-                zIndex: i + 1,
-              },
-            ]}
-          />
-        );
-      })}
     </View>
   );
 }
@@ -217,29 +211,33 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
     lineHeight: 18,
   },
+  timelineBlock: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    minWidth: 0,
+  },
   axisCol: {
     position: "relative",
-    paddingRight: 10,
+    paddingRight: 8,
+    flexShrink: 0,
   },
   axisTick: {
     position: "absolute",
     right: 0,
     fontSize: 11,
-    lineHeight: 14,
+    lineHeight: 13,
     color: Colors.textTertiary,
     fontVariant: ["tabular-nums"],
   },
-  scheduleStrip: {
+  axisTickCompact: {
+    fontSize: 10,
+    lineHeight: 12,
+  },
+  trackColumn: {
     flex: 1,
     minWidth: 0,
-    paddingLeft: 10,
-    marginLeft: 2,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: "rgba(186, 201, 205, 0.35)",
-  },
-  track: {
     position: "relative",
-    width: "100%",
   },
   grid: {
     ...StyleSheet.absoluteFillObject,
@@ -254,8 +252,8 @@ const styles = StyleSheet.create({
   },
   block: {
     position: "absolute",
-    left: "2%",
-    width: "96%",
+    left: "1.5%",
+    width: "97%",
     borderRadius: 3,
     opacity: 0.84,
   },
