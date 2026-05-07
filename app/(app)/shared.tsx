@@ -18,7 +18,6 @@ import { Stack } from "expo-router";
 import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
-import { DesktopBrandedHeaderTitle } from "../../components/layout/DesktopBrandedHeaderTitle";
 
 export default function SharedScreen() {
   const isDesktop = useIsDesktop();
@@ -36,15 +35,9 @@ export default function SharedScreen() {
         <Stack.Screen
           options={{
             ...stackHeaderChromeOptions,
-            headerShown: true,
+            headerShown: !isDesktop,
             title: "Shared with Me",
             headerLeft: () => <DrawerMenuButton />,
-            ...(isDesktop
-              ? {
-                  headerTitleAlign: "left",
-                  headerTitle: () => <DesktopBrandedHeaderTitle />,
-                }
-              : {}),
           }}
         />
         <Text>Loading...</Text>
@@ -80,15 +73,9 @@ export default function SharedScreen() {
       <Stack.Screen
         options={{
           ...stackHeaderChromeOptions,
-          headerShown: true,
+          headerShown: !isDesktop,
           title: "Shared with Me",
           headerLeft: () => <DrawerMenuButton />,
-          ...(isDesktop
-            ? {
-                headerTitleAlign: "left",
-                headerTitle: () => <DesktopBrandedHeaderTitle />,
-              }
-            : {}),
         }}
       />
 
