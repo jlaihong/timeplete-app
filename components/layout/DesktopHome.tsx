@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { todayYYYYMMDD } from "../../lib/dates";
 import { View, StyleSheet } from "react-native";
 import { Colors } from "../../constants/colors";
 import { DesktopTaskList } from "../tasks/DesktopTaskList";
@@ -28,6 +29,9 @@ type DialogState =
   | null;
 
 export function DesktopHome() {
+  const [homeCalendarDay, setHomeCalendarDay] = useState(() =>
+    todayYYYYMMDD(),
+  );
   const [showAddTask, setShowAddTask] = useState(false);
   const [addTaskDay, setAddTaskDay] = useState<string | undefined>();
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(
@@ -66,7 +70,9 @@ export function DesktopHome() {
 
           <View style={styles.centerColumn}>
             <DesktopTaskList
+              key={homeCalendarDay}
               title="Tasks"
+              rangeStartYYYYMMDD={homeCalendarDay}
               onAddTask={(day) => {
                 setAddTaskDay(day);
                 setShowAddTask(true);
@@ -78,6 +84,7 @@ export function DesktopHome() {
           <View style={styles.sideColumn}>
             <CalendarView
               title="Calendar"
+              onSelectedDayChange={setHomeCalendarDay}
               onAddEvent={(day, prefill) => {
                 setEventDialog({
                   mode: "create",
