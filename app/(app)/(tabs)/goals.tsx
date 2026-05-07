@@ -3,6 +3,7 @@ import { View, StyleSheet, useWindowDimensions } from "react-native";
 import { Colors } from "../../../constants/colors";
 import { TrackableList } from "../../../components/shared/TrackableList";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
+import { useRegisterDesktopSubtitle } from "../../../components/layout/DesktopAppChrome";
 
 const PAGE_PADDING = 24;
 
@@ -15,6 +16,7 @@ const PAGE_PADDING = 24;
 export default function GoalsScreen() {
   const isDesktop = useIsDesktop();
   const { width } = useWindowDimensions();
+  useRegisterDesktopSubtitle("Trackables");
 
   const contentMaxWidth =
     isDesktop && width >= 900

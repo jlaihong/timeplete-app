@@ -33,6 +33,7 @@ import { todayYYYYMMDD, formatSecondsAsHM } from "../../../lib/dates";
 import { normalizeListMembersQuery } from "../../../lib/listMembersQuery";
 import type { Id, Doc } from "../../../convex/_generated/dataModel";
 import { useAuth } from "../../../hooks/useAuth";
+import { useRegisterDesktopSubtitle } from "../../../components/layout/DesktopAppChrome";
 import { Card } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
 import { Button } from "../../../components/ui/Button";
@@ -457,6 +458,7 @@ export default function ListDetailScreen() {
   }, []);
 
   const listTitle = paginatedList?.list.name ?? "List";
+  useRegisterDesktopSubtitle(listTitle);
 
   if (!listId) {
     return (

@@ -18,11 +18,12 @@ import { Stack } from "expo-router";
 import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
-import { DesktopBrandedHeaderTitle } from "../../components/layout/DesktopBrandedHeaderTitle";
+import { useRegisterDesktopSubtitle } from "../../components/layout/DesktopAppChrome";
 
 export default function SharedScreen() {
   const isDesktop = useIsDesktop();
   const { profileReady } = useAuth();
+  useRegisterDesktopSubtitle("Shared with Me");
   const shared = useQuery(
     api.sharing.getSharedWithMe,
     profileReady ? {} : "skip",
@@ -36,15 +37,9 @@ export default function SharedScreen() {
         <Stack.Screen
           options={{
             ...stackHeaderChromeOptions,
-            headerShown: true,
+            headerShown: !isDesktop,
             title: "Shared with Me",
             headerLeft: () => <DrawerMenuButton />,
-            ...(isDesktop
-              ? {
-                  headerTitleAlign: "left",
-                  headerTitle: () => <DesktopBrandedHeaderTitle />,
-                }
-              : {}),
           }}
         />
         <Text>Loading...</Text>
@@ -80,15 +75,9 @@ export default function SharedScreen() {
       <Stack.Screen
         options={{
           ...stackHeaderChromeOptions,
-          headerShown: true,
+          headerShown: !isDesktop,
           title: "Shared with Me",
           headerLeft: () => <DrawerMenuButton />,
-          ...(isDesktop
-            ? {
-                headerTitleAlign: "left",
-                headerTitle: () => <DesktopBrandedHeaderTitle />,
-              }
-            : {}),
         }}
       />
 

@@ -19,12 +19,13 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Stack } from "expo-router";
 import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
-import { DesktopBrandedHeaderTitle } from "../../components/layout/DesktopBrandedHeaderTitle";
+import { useRegisterDesktopSubtitle } from "../../components/layout/DesktopAppChrome";
 import { useAuth } from "../../hooks/useAuth";
 
 export default function TagsScreen() {
   const isDesktop = useIsDesktop();
   const { profileReady } = useAuth();
+  useRegisterDesktopSubtitle("Tags");
   const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const upsertTag = useMutation(api.tags.upsert);
   const removeTag = useMutation(api.tags.remove);
@@ -65,15 +66,9 @@ export default function TagsScreen() {
       <Stack.Screen
         options={{
           ...stackHeaderChromeOptions,
-          headerShown: true,
+          headerShown: !isDesktop,
           title: "Tags",
           headerLeft: () => <DrawerMenuButton />,
-          ...(isDesktop
-            ? {
-                headerTitleAlign: "left",
-                headerTitle: () => <DesktopBrandedHeaderTitle />,
-              }
-            : {}),
         }}
       />
 

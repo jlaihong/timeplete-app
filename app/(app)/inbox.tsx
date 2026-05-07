@@ -6,6 +6,7 @@ import { api } from "../../convex/_generated/api";
 import { useAuth } from "../../hooks/useAuth";
 import { Colors } from "../../constants/colors";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { useRegisterDesktopSubtitle } from "../../components/layout/DesktopAppChrome";
 
 /**
  * Back-compat route: productivity-one navigates Inbox as `/lists/:inboxListId`.
@@ -13,6 +14,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
  */
 export default function InboxRedirectScreen() {
   const { profileReady } = useAuth();
+  useRegisterDesktopSubtitle("Inbox");
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const inbox = useMemo(() => {
     if (lists === undefined) return undefined;
