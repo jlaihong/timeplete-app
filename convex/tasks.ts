@@ -1,6 +1,11 @@
-import { query, mutation, type MutationCtx } from "./_generated/server";
+import {
+  query,
+  mutation,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 
 /**
@@ -107,7 +112,56 @@ export const search = query({
 });
 
 /**
+ * Shared enrichment for home-task rows (`taskTags` + TASK ACTUAL windows).
+ */
+async function enrichHomeTasksPayload(
+  ctx: QueryCtx,
+  tasks: Doc<"tasks">[],
+) {
+  const tagMap = new Map<string, string[]>();
+  const timeSpentMap = new Map<string, number>();
+  await Promise.all(
+    tasks.map(async (t) => {
+      const tts = await ctx.db
+        .query("taskTags")
+        .withIndex("by_task", (q) => q.eq("taskId", t._id))
+        .collect();
+      if (tts.length > 0) {
+        tagMap.set(
+          t._id,
+          tts.map((tt) => tt.tagId),
+        );
+      }
+
+      const windows = await ctx.db
+        .query("timeWindows")
+        .withIndex("by_task", (q) => q.eq("taskId", t._id))
+        .collect();
+      const totalFromWindows = windows
+        .filter((w) => w.activityType === "TASK" && w.budgetType === "ACTUAL")
+        .reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
+      timeSpentMap.set(t._id, totalFromWindows);
+    }),
+  );
+
+  return tasks
+    .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex)
+    .map((t) => ({
+      ...t,
+      timeSpentInSecondsUnallocated:
+        timeSpentMap.get(t._id) ??
+        t.timeSpentInSecondsUnallocated ??
+        0,
+      tagIds: tagMap.get(t._id) ?? [],
+    }));
+}
+
+/**
  * Home-page task query.
+ *
+ * `todayYYYYMMDD` MUST be the user's clock **today** (local calendar day) —
+ * the home UI merges optional backward-window rows separately (`homeBackwardGapTasks`)
+ * so calendar navigation does not shift this subscription anchor (productivity-one parity).
  *
  * Returns ONLY:
  *   1. Overdue tasks – incomplete, non-recurring, taskDay < today
@@ -182,48 +236,58 @@ export const getHomeTasks = query({
     for (const t of completedInWindow) byId.set(t._id, t);
     const tasks = Array.from(byId.values());
 
-    // Tag map – scoped to the tasks we're actually returning. The previous
-    // implementation collected the entire `taskTags` table on every refetch,
-    // which dominated the cost of post-mutation re-renders.
-    const tagMap = new Map<string, string[]>();
-    const timeSpentMap = new Map<string, number>();
-    await Promise.all(
-      tasks.map(async (t) => {
-        const tts = await ctx.db
-          .query("taskTags")
-          .withIndex("by_task", (q) => q.eq("taskId", t._id))
-          .collect();
-        if (tts.length > 0) {
-          tagMap.set(
-            t._id,
-            tts.map((tt) => tt.tagId)
-          );
-        }
+    return enrichHomeTasksPayload(ctx, tasks);
+  },
+});
 
-        // Use time windows as the authoritative source for row-level "time
-        // spent" so recurring instances with planned calendar windows show
-        // consistent durations in the task panel.
-        const windows = await ctx.db
-          .query("timeWindows")
-          .withIndex("by_task", (q) => q.eq("taskId", t._id))
-          .collect();
-        const totalFromWindows = windows
-          .filter((w) => w.activityType === "TASK" && w.budgetType === "ACTUAL")
-          .reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
-        timeSpentMap.set(t._id, totalFromWindows);
-      })
+/**
+ * Incremental home payload for calendar days **strictly before** clock-today.
+ * Mirrors `getHomeTasks` “scheduled in range” + “completed in window” pairing,
+ * but scoped to `[startDay, endDay]` where callers guarantee `endDay < today`.
+ *
+ * Merged client-side with `getHomeTasks(today: clock, …)` so stepping the
+ * calendar backward does not replace / shift the primary subscription anchor.
+ */
+export const homeBackwardGapTasks = query({
+  args: {
+    startDay: v.string(),
+    endDay: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
+
+    const startDay = args.startDay;
+    const endDay = args.endDay;
+    if (startDay > endDay) return [];
+
+    const rangeScheduled = await ctx.db
+      .query("tasks")
+      .withIndex("by_user_day", (q) =>
+        q.eq("userId", user._id).gte("taskDay", startDay).lte("taskDay", endDay),
+      )
+      .collect();
+
+    const pastBeforeStart = await ctx.db
+      .query("tasks")
+      .withIndex("by_user_day", (q) =>
+        q.eq("userId", user._id).lt("taskDay", startDay),
+      )
+      .collect();
+
+    const completedInGap = pastBeforeStart.filter(
+      (t) =>
+        t.taskDay !== undefined &&
+        t.dateCompleted !== undefined &&
+        t.dateCompleted >= startDay &&
+        t.dateCompleted <= endDay,
     );
 
-    return tasks
-      .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex)
-      .map((t) => ({
-        ...t,
-        timeSpentInSecondsUnallocated:
-          timeSpentMap.get(t._id) ??
-          t.timeSpentInSecondsUnallocated ??
-          0,
-        tagIds: tagMap.get(t._id) ?? [],
-      }));
+    const byId = new Map<string, (typeof rangeScheduled)[number]>();
+    for (const t of rangeScheduled) byId.set(t._id, t);
+    for (const t of completedInGap) byId.set(t._id, t);
+
+    return enrichHomeTasksPayload(ctx, Array.from(byId.values()));
   },
 });
 
