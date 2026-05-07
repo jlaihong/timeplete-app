@@ -3,10 +3,9 @@ import { ScrollView, type ScrollViewProps } from "react-native";
 /**
  * Edit Trackable — Tracking history / Time Tracked tab.
  *
- * Previously, web used a raw `<div overflow: auto>` (see removed `.web.tsx`) to tweak
- * scrollbar theming, but RN-web lays out `View`/`Text` subtrees incorrectly inside
- * that host, yielding a phantom scrollbar with no visible rows. `ScrollView` is the
- * supported scroll container on all platforms.
+ * Uses `ScrollView` on all platforms (see removed raw `<div>` scroll host; RN-web
+ * must scroll through `ScrollView`). On web, `TrackingHistoryScroller.web.tsx`
+ * adds `data-tracking-history-scroll` for persistent scrollbar theming.
  */
 export function TrackingHistoryScroller(props: ScrollViewProps) {
   return <ScrollView {...props} />;

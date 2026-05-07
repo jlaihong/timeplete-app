@@ -2,6 +2,10 @@ import { Platform } from "react-native";
 import { Colors } from "@/constants/colors";
 
 const STYLE_ID = "timeplete-nonmac-scrollbar";
+const HISTORY_SCROLL_STYLE_ID = "timeplete-tracking-history-scrollbar";
+
+/** RN-web maps `dataSet.trackingHistoryScroll` → `data-tracking-history-scroll` on the scroll host. */
+export const TRACKING_HISTORY_SCROLL_ATTR_SELECTOR = "[data-tracking-history-scroll]";
 
 /** Applied to overflow elements while (or briefly after) the user scrolls them. */
 const SCROLL_REVEAL_CLASS = "timeplete-scrollbar-reveal";
@@ -54,6 +58,48 @@ function installScrollRevealListener(): () => void {
     window.removeEventListener("scroll", onScroll, true);
     timers.forEach((t) => clearTimeout(t));
     timers.clear();
+  };
+}
+
+function installPersistentTrackingHistoryScrollbar(): () => void {
+  if (typeof document === "undefined") return () => {};
+
+  if (!document.getElementById(HISTORY_SCROLL_STYLE_ID)) {
+    const thumb = Colors.outlineVariant;
+    const thumbHover = Colors.outline;
+    const track = Colors.surfaceContainer;
+    const sel = TRACKING_HISTORY_SCROLL_ATTR_SELECTOR;
+
+    const style = document.createElement("style");
+    style.id = HISTORY_SCROLL_STYLE_ID;
+    style.textContent = `
+${sel} {
+  direction: ltr;
+  scrollbar-width: thin !important;
+  scrollbar-color: ${thumb} ${track} !important;
+  scrollbar-gutter: stable;
+}
+${sel}::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+${sel}::-webkit-scrollbar-track {
+  background-color: ${track};
+  border-radius: 999px;
+}
+${sel}::-webkit-scrollbar-thumb {
+  background-color: ${thumb} !important;
+  border-radius: 999px;
+}
+${sel}::-webkit-scrollbar-thumb:hover {
+  background-color: ${thumbHover} !important;
+}
+`;
+    document.head.appendChild(style);
+  }
+
+  return () => {
+    document.getElementById(HISTORY_SCROLL_STYLE_ID)?.remove();
   };
 }
 
@@ -123,12 +169,19 @@ function installNonMacUniversalScrollbarStyles(): () => void {
  * other overflow regions (Chrome/Safari: webkit; Firefox: scrollbar-color).
  *
  * Non-mac: scrollbars stay hidden unless hover / focus-within / active scroll.
+ *
+ * Edit Trackable → Tracking history uses `data-tracking-history-scroll` on the
+ * RN-web `ScrollView` host (`TrackingHistoryScroller.web.tsx`) for always-visible
+ * thumbs on long lists.
  */
 export function installWebScrollbarStyles(): () => void {
   if (Platform.OS !== "web") return () => {};
   if (typeof document === "undefined") return () => {};
 
-  const cleanups: Array<() => void> = [installNonMacUniversalScrollbarStyles()];
+  const cleanups: Array<() => void> = [
+    installPersistentTrackingHistoryScrollbar(),
+    installNonMacUniversalScrollbarStyles(),
+  ];
 
   return () => {
     cleanups.forEach((c) => c());
