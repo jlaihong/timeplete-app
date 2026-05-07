@@ -91,10 +91,10 @@ function normalizeDayKey(ymd: string): string {
 }
 
 /** In-cell preview lines; full lists open in the day-detail modal. */
-const MAX_TASK_LINES = 4;
+const MAX_TASK_LINES = 2;
 
-/** Grid gap ~1.5× prior 4px. Cell size is driven by row width + `aspectRatio: 1` (square). */
-const GAP = Math.round(4 * 1.5);
+/** Calendar grid gap between cells. */
+const GAP = 4;
 
 export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTabTrackable }) {
   const { profileReady } = useAuth();
@@ -354,7 +354,7 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                       <Text
                         key={`${cell.yyyymmdd}-t-${ti}`}
                         style={[styles.taskLine, faded && styles.metaFaded]}
-                        numberOfLines={2}
+                        numberOfLines={1}
                         ellipsizeMode="tail"
                         accessibilityLabel={name}
                       >
@@ -372,7 +372,7 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                     {comment ? (
                       <Text
                         style={[styles.commentLine, faded && styles.metaFaded]}
-                        numberOfLines={3}
+                        numberOfLines={2}
                         ellipsizeMode="tail"
                         accessibilityLabel={comment}
                       >
@@ -541,12 +541,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
     aspectRatio: 1,
     position: "relative",
-    borderRadius: 9,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainer,
-    padding: 5,
-    paddingTop: 4,
+    padding: 3,
+    paddingTop: 2,
     overflow: "hidden",
   },
   dayCellPressed: {
@@ -563,9 +563,9 @@ const styles = StyleSheet.create({
   },
   dayNumCorner: {
     position: "absolute",
-    top: 5,
-    right: 6,
-    fontSize: 16,
+    top: 3,
+    right: 4,
+    fontSize: 11,
     fontWeight: "600",
     color: Colors.text,
     zIndex: 1,
@@ -576,15 +576,15 @@ const styles = StyleSheet.create({
   dayCellBody: {
     flex: 1,
     width: "100%",
-    marginTop: 18,
-    gap: 4,
+    marginTop: 12,
+    gap: 2,
     justifyContent: "flex-start",
   },
   contributionNum: {
-    fontSize: 22,
+    fontSize: 15,
     fontWeight: "700",
     color: Colors.text,
-    lineHeight: 26,
+    lineHeight: 18,
   },
   contributionNumFaded: {
     color: Colors.textTertiary,
@@ -593,22 +593,22 @@ const styles = StyleSheet.create({
     color: Colors.onPrimaryContainer,
   },
   taskLine: {
-    fontSize: 13,
+    fontSize: 9,
     fontWeight: "500",
     color: Colors.text,
-    lineHeight: 17,
+    lineHeight: 12,
   },
   commentLine: {
-    fontSize: 13,
+    fontSize: 9,
     fontWeight: "400",
     color: Colors.textSecondary,
-    lineHeight: 17,
+    lineHeight: 12,
   },
   moreTasksLine: {
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: "600",
     color: Colors.textSecondary,
-    lineHeight: 16,
+    lineHeight: 12,
     fontStyle: "italic",
   },
   metaFaded: {
