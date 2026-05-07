@@ -18,12 +18,10 @@ import { Stack } from "expo-router";
 import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
-import { useRegisterDesktopSubtitle } from "../../components/layout/DesktopAppChrome";
 
 export default function SharedScreen() {
   const isDesktop = useIsDesktop();
   const { profileReady } = useAuth();
-  useRegisterDesktopSubtitle("Shared with Me");
   const shared = useQuery(
     api.sharing.getSharedWithMe,
     profileReady ? {} : "skip",

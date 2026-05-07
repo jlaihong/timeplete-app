@@ -13,7 +13,6 @@ import {
   DrawerActions,
   type NavigationProp,
   type ParamListBase,
-  useIsFocused,
   useNavigation,
 } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,8 +21,6 @@ import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { DesktopBrandedHeaderTitle } from "./DesktopBrandedHeaderTitle";
 
 type DesktopAppChromeContextValue = {
-  subtitle: string | undefined;
-  setSubtitle: (subtitle: string | undefined) => void;
   drawerNavigation: DrawerNavigationHelpers | null;
   setDrawerNavigation: (nav: DrawerNavigationHelpers | null) => void;
 };
@@ -36,13 +33,8 @@ export function DesktopAppChromeProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [subtitle, setSubtitleState] = useState<string | undefined>();
   const [drawerNavigation, setDrawerNavigationState] =
     useState<DrawerNavigationHelpers | null>(null);
-
-  const setSubtitle = useCallback((next: string | undefined) => {
-    setSubtitleState(next);
-  }, []);
 
   const setDrawerNavigation = useCallback(
     (nav: DrawerNavigationHelpers | null) => {
@@ -53,12 +45,10 @@ export function DesktopAppChromeProvider({
 
   const value = useMemo(
     () => ({
-      subtitle,
-      setSubtitle,
       drawerNavigation,
       setDrawerNavigation,
     }),
-    [subtitle, setSubtitle, drawerNavigation, setDrawerNavigation],
+    [drawerNavigation, setDrawerNavigation],
   );
 
   return (
@@ -118,26 +108,9 @@ function dispatchDrawerToggle(navigation: NavigationProp<ParamListBase>) {
 }
 
 /**
- * Registers the desktop app-bar subtitle for the currently focused route.
- * Uses navigation focus so inactive drawer/tabs do not clobber the title.
- */
-export function useRegisterDesktopSubtitle(subtitle: string) {
-  const isDesktop = useIsDesktop();
-  const { setSubtitle } = useDesktopAppChrome();
-  const isFocused = useIsFocused();
-
-  useLayoutEffect(() => {
-    if (!isDesktop || !isFocused) {
-      return undefined;
-    }
-    setSubtitle(subtitle);
-    return () => setSubtitle(undefined);
-  }, [isDesktop, isFocused, subtitle, setSubtitle]);
-}
-
-/**
  * Full-viewport-width desktop toolbar above the drawer + main pane stack.
  * Matches productivity-one: toolbar spans sidebar + content, not just the content column.
+ * Brand only — route titles stay in page chrome below (desktop).
  */
 export function DesktopAppTopBar() {
   const isDesktop = useIsDesktop();
@@ -179,7 +152,7 @@ export function DesktopAppTopBar() {
         <Ionicons name="menu" size={24} color={Colors.text} />
       </TouchableOpacity>
       <View style={styles.titleSlot}>
-        <DesktopBrandedHeaderTitle subtitle={ctx.subtitle} />
+        <DesktopBrandedHeaderTitle />
       </View>
     </View>
   );
