@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
 import { useQuery } from "convex/react";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../convex/_generated/api";
@@ -87,6 +87,9 @@ function buildMonthCells(monthAnchorYYYYMMDD: string): Array<{
 function normalizeDayKey(ymd: string): string {
   return ymd.replace(/\D/g, "").slice(0, 8);
 }
+
+/** Match productivity-one `dayMaxEventRows`-style density so one busy day doesn’t blow up the grid. */
+const MAX_TASK_LINES = 2;
 
 export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTabTrackable }) {
   const { profileReady } = useAuth();
@@ -284,6 +287,8 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
               const faded = cell.inMonth === false || !inGoalRange;
               const isToday = cell.yyyymmdd === todayYYYYMMDD();
               const tasks = detail?.completedTaskNames ?? [];
+              const visibleTasks = tasks.slice(0, MAX_TASK_LINES);
+              const moreTaskCount = tasks.length - visibleTasks.length;
               const comment = (detail?.comments ?? "").trim();
               const dom = parseInt(cell.yyyymmdd.slice(6, 8), 10);
 
@@ -292,6 +297,7 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                 inGoalRange ? "in goal range" : "outside goal range",
                 logged > 0 ? `progress ${logged}` : null,
                 tasks.length ? `tasks: ${tasks.join(", ")}` : null,
+                moreTaskCount > 0 ? `${moreTaskCount} more tasks not listed` : null,
                 comment ? `comment: ${comment}` : null,
               ].filter(Boolean);
 
@@ -322,21 +328,37 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                         {logged}
                       </Text>
                     ) : null}
-                    {tasks.map((name, ti) => (
+                    {visibleTasks.map((name, ti) => (
                       <Text
                         key={`${cell.yyyymmdd}-t-${ti}`}
                         style={[styles.taskLine, faded && styles.metaFaded]}
                         numberOfLines={1}
                         ellipsizeMode="tail"
+                        accessibilityLabel={name}
+                        {...(Platform.OS === "web"
+                          ? ({ title: `✓ ${name}` } as { title: string })
+                          : {})}
                       >
                         ✓ {name}
                       </Text>
                     ))}
+                    {moreTaskCount > 0 ? (
+                      <Text
+                        style={[styles.moreTasksLine, faded && styles.metaFaded]}
+                        accessibilityLabel={`${moreTaskCount} more completed tasks`}
+                      >
+                        +{moreTaskCount} more
+                      </Text>
+                    ) : null}
                     {comment ? (
                       <Text
                         style={[styles.commentLine, faded && styles.metaFaded]}
                         numberOfLines={2}
                         ellipsizeMode="tail"
+                        accessibilityLabel={comment}
+                        {...(Platform.OS === "web"
+                          ? ({ title: `💬 ${comment}` } as { title: string })
+                          : {})}
                       >
                         💬 {comment}
                       </Text>
@@ -411,18 +433,17 @@ const styles = StyleSheet.create({
   gridRow: {
     flexDirection: "row",
     gap: 4,
+    alignItems: "stretch",
   },
   dayCell: {
     flex: 1,
     minWidth: 0,
     minHeight: 72,
-    aspectRatio: 1,
     position: "relative",
     borderRadius: 6,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainer,
-    overflow: "hidden",
     padding: 3,
     paddingTop: 2,
   },
@@ -477,6 +498,13 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     color: Colors.textSecondary,
     lineHeight: 12,
+  },
+  moreTasksLine: {
+    fontSize: 9,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+    lineHeight: 12,
+    fontStyle: "italic",
   },
   metaFaded: {
     color: Colors.textTertiary,
