@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { View, StyleSheet, Platform, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { DrawerNavigationProp } from "@react-navigation/drawer";
+import type { DrawerContentComponentProps } from "@react-navigation/drawer";
 import {
   DrawerActions,
   type NavigationProp,
@@ -19,11 +19,15 @@ import { Colors } from "../../constants/colors";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { DesktopBrandedHeaderTitle } from "./DesktopBrandedHeaderTitle";
 
+/**
+ * `DrawerContentComponentProps` is exported but `DrawerNavigationHelpers`
+ * (the actual nav prop type passed into drawerContent) is not — derive it.
+ */
+type DrawerContentNavigation = DrawerContentComponentProps["navigation"];
+
 type DesktopAppChromeContextValue = {
   /** Set synchronously from drawer content render so the out-of-tree top bar can toggle. */
-  drawerNavigationRef: React.MutableRefObject<
-    DrawerNavigationProp<ParamListBase> | null
-  >;
+  drawerNavigationRef: React.MutableRefObject<DrawerContentNavigation | null>;
 };
 
 const DesktopAppChromeContext =
@@ -34,9 +38,7 @@ export function DesktopAppChromeProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const drawerNavigationRef = useRef<DrawerNavigationProp<ParamListBase> | null>(
-    null,
-  );
+  const drawerNavigationRef = useRef<DrawerContentNavigation | null>(null);
 
   const value = useMemo(
     () => ({
@@ -66,17 +68,27 @@ function useDesktopAppChrome(): DesktopAppChromeContextValue {
  * Bind the drawer navigator instance into desktop chrome. Call from
  * `DrawerContentComponentProps` — that object is the authoritative drawer
  * navigation target (the top bar renders outside `<Drawer>`).
+ *
+ * Set in both render and layout-effect: render keeps the ref live during
+ * the very first render (before commit), and the effect re-asserts it after
+ * StrictMode's synthetic mount/unmount cycle, which would otherwise leave
+ * the ref nulled by the cleanup. The cleanup only nulls when we are still
+ * the active value, so transient drawerNav identity changes do not stomp
+ * on a newer registration.
  */
 export function useRegisterDrawerNavigationForDesktopChrome(
-  drawerNav: DrawerNavigationProp<ParamListBase>,
+  drawerNav: DrawerContentNavigation,
 ) {
   const { drawerNavigationRef } = useDesktopAppChrome();
 
   drawerNavigationRef.current = drawerNav;
 
   useLayoutEffect(() => {
+    drawerNavigationRef.current = drawerNav;
     return () => {
-      drawerNavigationRef.current = null;
+      if (drawerNavigationRef.current === drawerNav) {
+        drawerNavigationRef.current = null;
+      }
     };
   }, [drawerNav, drawerNavigationRef]);
 }
