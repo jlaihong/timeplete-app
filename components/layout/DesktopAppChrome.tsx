@@ -6,7 +6,7 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { View, StyleSheet, Platform, Pressable } from "react-native";
+import { View, StyleSheet, Platform, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { DrawerNavigationHelpers } from "@react-navigation/drawer";
 import {
@@ -143,24 +143,16 @@ export function DesktopAppTopBar() {
         },
       ]}
     >
-      <Pressable
+      <TouchableOpacity
         onPress={onToggleDrawer}
         accessibilityRole="button"
         accessibilityLabel="Toggle navigation menu"
-        style={({
-          hovered,
-          pressed,
-        }: {
-          hovered?: boolean;
-          pressed?: boolean;
-        }) => [
-          styles.menuBtn,
-          Boolean(hovered) && styles.menuBtnHover,
-          Boolean(pressed) && styles.menuBtnPressed,
-        ]}
+        style={styles.menuBtn}
+        activeOpacity={0.85}
+        hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
       >
         <Ionicons name="menu" size={24} color={Colors.text} />
-      </Pressable>
+      </TouchableOpacity>
       <View style={styles.titleSlot}>
         <DesktopBrandedHeaderTitle />
       </View>
@@ -190,16 +182,9 @@ const styles = StyleSheet.create({
     ...Platform.select({
       web: {
         cursor: "pointer",
-        transition: "background-color 120ms ease",
       } as const,
       default: {},
     }),
-  },
-  menuBtnHover: {
-    backgroundColor: Colors.sidenavItemHover,
-  },
-  menuBtnPressed: {
-    opacity: 0.85,
   },
   titleSlot: {
     flex: 1,
