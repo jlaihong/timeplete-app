@@ -114,29 +114,96 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     };
   }, [cells]);
 
-  const calendarDetails = useQuery(
-    api.trackableDays.progressCalendarDetails,
+  /**
+   * Compose month data from queries already on the deployed Convex endpoint —
+   * avoids a dedicated `progressCalendarDetails` round-trip (not present until
+   * `npx convex dev` / deploy picks up new functions).
+   */
+  const daysSearch = useQuery(
+    api.trackableDays.search,
     profileReady && showCalendar && calendarBounds
       ? {
-          trackableId: trackable._id,
+          trackableIds: [trackable._id],
           startDay: calendarBounds.start,
           endDay: calendarBounds.end,
         }
       : "skip",
   );
 
+  const completedWindowTasks = useQuery(
+    api.tasks.searchWithCriteria,
+    profileReady && showCalendar && calendarBounds
+      ? {
+          dayRanges: [
+            { startDay: calendarBounds.start, endDay: calendarBounds.end },
+          ],
+          includeCompleted: true,
+          completedStartDay: calendarBounds.start,
+          completedEndDay: calendarBounds.end,
+        }
+      : "skip",
+  );
+
+  const listsSearch = useQuery(
+    api.lists.search,
+    profileReady && showCalendar ? {} : "skip",
+  );
+
   const detailsByDay = useMemo(() => {
     const m = new Map<string, DayDetail>();
-    if (!calendarDetails) return m;
-    for (const row of calendarDetails) {
-      m.set(normalizeDayKey(row.dayYYYYMMDD), {
-        numCompleted: row.numCompleted,
-        comments: row.comments,
-        completedTaskNames: row.completedTaskNames,
-      });
+
+    if (daysSearch) {
+      for (const row of daysSearch) {
+        const key = normalizeDayKey(row.dayYYYYMMDD);
+        m.set(key, {
+          numCompleted: row.numCompleted,
+          comments: (row.comments ?? "").trim(),
+          completedTaskNames: [],
+        });
+      }
     }
+
+    const listToTrackable = new Map<string, Id<"trackables">>();
+    if (listsSearch) {
+      for (const list of listsSearch) {
+        if (list.trackableId) {
+          listToTrackable.set(list._id, list.trackableId);
+        }
+      }
+    }
+
+    if (completedWindowTasks) {
+      const tid = trackable._id;
+      for (const task of completedWindowTasks) {
+        if (!task.dateCompleted) continue;
+        const dayKey = normalizeDayKey(task.dateCompleted);
+        if (dayKey.length !== 8) continue;
+
+        const attributesToTrackable =
+          task.trackableId === tid ||
+          (task.listId != null && listToTrackable.get(task.listId) === tid);
+        if (!attributesToTrackable) continue;
+
+        const existing = m.get(dayKey);
+        if (!existing) {
+          m.set(dayKey, {
+            numCompleted: 0,
+            comments: "",
+            completedTaskNames: [task.name],
+          });
+        } else {
+          existing.completedTaskNames.push(task.name);
+        }
+      }
+    }
+
     return m;
-  }, [calendarDetails]);
+  }, [daysSearch, completedWindowTasks, listsSearch, trackable._id]);
+
+  const calendarLoading =
+    daysSearch === undefined ||
+    completedWindowTasks === undefined ||
+    listsSearch === undefined;
 
   const cellRows = useMemo(() => {
     const rows: (typeof cells)[] = [];
@@ -281,7 +348,7 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
           </View>
         ))}
       </View>
-      {calendarDetails === undefined ? (
+      {calendarLoading ? (
         <Text style={styles.loadingHint}>Loading progress…</Text>
       ) : null}
     </View>
