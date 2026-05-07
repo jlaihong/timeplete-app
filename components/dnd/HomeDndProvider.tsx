@@ -127,7 +127,8 @@ export function HomeDndProvider({ children }: Props) {
           overlay surface mounted (no animation glitch, no flicker), but
           children=null hides the visible card while we're over the
           calendar so the time-slot preview is fully visible. */}
-      <DragOverlay dropAnimation={null}>
+      {/* pointer-events: none so wheel scrolling reaches the ScrollView below */}
+      <DragOverlay dropAnimation={null} style={{ pointerEvents: "none" }}>
         {activeDrag && !overCalendar ? (
           <TaskRowDesktop
             task={activeDrag.task}
