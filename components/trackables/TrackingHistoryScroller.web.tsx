@@ -5,8 +5,9 @@ type ScrollViewWebProps = ScrollViewProps & {
 };
 
 /**
- * Web: tag the RN-web scroll host so `webScrollbarStyles` can apply persistent,
- * visible scrollbar chrome (global non-mac rules hide thumbs until hover).
+ * Web: set `data-tracking-history-scroll` on the **ScrollViewBase** host so
+ * `installWebScrollbarStyles` can exclude it from app-wide translucent-thumb
+ * rules (see `TRACKING_HISTORY_EXCLUDED` in `webScrollbarStyles.ts`).
  */
 export function TrackingHistoryScroller(props: ScrollViewProps) {
   const { dataSet, ...rest } = props as ScrollViewWebProps;

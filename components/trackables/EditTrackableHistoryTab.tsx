@@ -179,7 +179,8 @@ export function EditTrackableHistoryTab({
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
-        showsHorizontalScrollIndicator={false}
+        /* RN-web ScrollViewBase sets scrollbarWidth:none if EITHER indicator is false. */
+        showsHorizontalScrollIndicator
       >
         <View style={styles.trackerTable}>
           <View style={[styles.trackerDataRow, styles.trackerHeadRowBg]}>
