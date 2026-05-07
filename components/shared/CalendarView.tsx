@@ -200,6 +200,12 @@ interface CalendarViewProps {
    * payload as `existingEvent` to put the dialog in edit mode.
    */
   onEditEvent?: (event: EditEventPayload) => void;
+  /**
+   * Fires whenever the visible calendar day changes (prev/next, Today,
+   * or initial mount). Home uses this to align the task panel’s query
+   * window with the same day as productivity-one.
+   */
+  onSelectedDayChange?: (dayYYYYMMDD: string) => void;
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -877,10 +883,15 @@ export function CalendarView({
   title,
   onAddEvent,
   onEditEvent,
+  onSelectedDayChange,
 }: CalendarViewProps) {
   const isDesktop = useIsDesktop();
   const { profileReady } = useAuth();
   const [selectedDay, setSelectedDay] = useState(todayYYYYMMDD());
+
+  useEffect(() => {
+    onSelectedDayChange?.(selectedDay);
+  }, [selectedDay, onSelectedDayChange]);
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
   /**
    * Live state for the click-and-drag-to-create gesture on empty calendar

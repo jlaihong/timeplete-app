@@ -65,6 +65,11 @@ interface DesktopTaskListProps {
   title?: string;
   onAddTask?: (day?: string) => void;
   onSelectTask?: (taskId: Id<"tasks">) => void;
+  /**
+   * First day of the home task query window (passed from the calendar’s
+   * selected day). Defaults to the device clock’s “today” when omitted.
+   */
+  rangeStartYYYYMMDD?: string;
 }
 
 /* ─────────────────────  Lifted-DndContext monitor  ──────────────────────
@@ -239,20 +244,22 @@ export function DesktopTaskList({
   title,
   onAddTask,
   onSelectTask,
+  rangeStartYYYYMMDD,
 }: DesktopTaskListProps) {
   const { profileReady } = useAuth();
-  const today = todayYYYYMMDD();
-  // Server-driven pagination. Initial render = today only (rangeEndDays=0).
+  const clockToday = todayYYYYMMDD();
+  const rangeStart = rangeStartYYYYMMDD ?? clockToday;
+  // Server-driven pagination. Initial render = rangeStart only (rangeEndDays=0).
   // Each "Load More" click extends the window by 7 days into the future,
   // triggering a fresh query – we never preload future days client-side.
   const [rangeEndDays, setRangeEndDays] = useState(0);
-  const visibleEndDay = addDays(today, rangeEndDays);
+  const visibleEndDay = addDays(rangeStart, rangeEndDays);
 
   const tasks = useQuery(
     api.tasks.getHomeTasks,
     profileReady
       ? {
-          todayYYYYMMDD: today,
+          todayYYYYMMDD: rangeStart,
           rangeEndYYYYMMDD: visibleEndDay,
         }
       : "skip",
@@ -272,7 +279,7 @@ export function DesktopTaskList({
   /* ──────────────────  Recurring instance materialization  ──────────────────
    * Recurring tasks live as a single `recurringTasks` rule plus zero-to-many
    * materialized `tasks` rows (one per occurrence). Materialization is lazy:
-   * the home page calls `generateInstances(today, visibleEndDay)` whenever
+   * the home page calls `generateInstances(rangeStart, visibleEndDay)` whenever
    * its window changes, and the mutation idempotently fills any missing
    * `(ruleId, taskDay)` rows. Once the rows exist, the reactive
    * `getHomeTasks` query above pulls them in like any other task — no
@@ -294,14 +301,14 @@ export function DesktopTaskList({
     // subscription resolves, doubling RTTs on first paint.
     if (recurringRules === undefined) return;
     void generateInstances({
-      rangeStartYYYYMMDD: today,
+      rangeStartYYYYMMDD: rangeStart,
       rangeEndYYYYMMDD: visibleEndDay,
     });
     // We intentionally key on the *content* of the rules array, not the
     // identity, so a rule mutation immediately re-materializes — but a
     // re-render with no rule change is a no-op.
   }, [
-    today,
+    rangeStart,
     visibleEndDay,
     recurringRules?.length,
     recurringRules?.map((r) => r._id).join(","),
@@ -449,9 +456,9 @@ export function DesktopTaskList({
   /* Group tasks (server-authoritative).
    *
    * Server already constrained the payload to:
-   *   - overdue (incomplete + non-recurring + taskDay < today)
-   *   - tasks scheduled in [today, visibleEndDay]
-   *   - tasks completed in [today, visibleEndDay]
+   *   - overdue (incomplete + non-recurring + taskDay < rangeStart)
+   *   - tasks scheduled in [rangeStart, visibleEndDay]
+   *   - tasks completed in [rangeStart, visibleEndDay]
    * so we only need to bucket them, not filter for date range or recurrence.
    */
   const serverGroups = useMemo(() => {
@@ -488,7 +495,7 @@ export function DesktopTaskList({
     // Always show every day in the visible window, even if empty,
     // so users have an obvious target for adding/scheduling tasks.
     for (let i = 0; i <= rangeEndDays; i++) {
-      const d = addDays(today, i);
+      const d = addDays(rangeStart, i);
       if (!groups.has(d)) groups.set(d, []);
     }
 
@@ -514,7 +521,7 @@ export function DesktopTaskList({
         return (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0);
       }),
     }));
-  }, [tasks, today, rangeEndDays]);
+  }, [tasks, rangeStart, rangeEndDays]);
 
   /* Local optimistic state — mirrors serverGroups but is mutated during drag. */
   const [localGroups, setLocalGroups] = useState<
