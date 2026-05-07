@@ -12,39 +12,6 @@ export interface TimelineBlock {
   trackableId: string | null;
 }
 
-/**
- * Assign overlap lanes (0-based) for blocks on a **vertical** day strip: each lane
- * becomes a horizontal band (split across the column width) so concurrent
- * sessions remain readable.
- */
-export function assignOverlapLanes(
-  blocks: { startSec: number; endSec: number }[],
-): number[] {
-  const order = blocks
-    .map((b, index) => ({ ...b, index }))
-    .sort(
-      (a, b) =>
-        a.startSec - b.startSec ||
-        a.endSec - b.endSec ||
-        a.index - b.index,
-    );
-  const laneEnds: number[] = [];
-  const lanes = new Array(blocks.length).fill(0);
-  for (const item of order) {
-    let lane = 0;
-    while (lane < laneEnds.length && item.startSec < laneEnds[lane] - 1e-6) {
-      lane++;
-    }
-    if (lane === laneEnds.length) {
-      laneEnds.push(item.endSec);
-    } else {
-      laneEnds[lane] = Math.max(laneEnds[lane]!, item.endSec);
-    }
-    lanes[item.index] = lane;
-  }
-  return lanes;
-}
-
 export function clipTimeWindowToDay(
   w: TimeWindowLite,
   dayYYYYMMDD: string,

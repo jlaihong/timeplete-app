@@ -219,7 +219,7 @@ export function TimeSpendSection() {
             trackables={dataset.trackables}
             fallbackColour={FALLBACK_COLOUR}
             dayLabel={dayLabelFn}
-            rowGap={selectedTab === "DAILY" ? 0 : 10}
+            rowGap={selectedTab === "DAILY" ? 20 : 36}
           />
           {legend.length > 0 && <SummaryLegend legend={legend} />}
         </>
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: Colors.textSecondary,
-    marginBottom: 8,
+    marginBottom: 14,
   },
   barsRow: {
     flexDirection: "row",
@@ -349,9 +349,10 @@ const styles = StyleSheet.create({
   },
   legend: {
     flexDirection: "column",
-    gap: 4,
-    paddingTop: 4,
-    borderTopWidth: 1,
+    gap: 6,
+    paddingTop: 16,
+    marginTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: Colors.borderLight,
   },
   legendItem: {
