@@ -122,6 +122,10 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
   }
 
   const cells = buildMonthCells(viewAnchor);
+  const cellRows: (typeof cells)[] = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    cellRows.push(cells.slice(i, i + 7));
+  }
   const titleDate = parseYYYYMMDD(viewAnchor.slice(0, 8));
   const monthTitle = titleDate.toLocaleDateString(undefined, {
     month: "long",
@@ -167,37 +171,41 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
       </View>
 
       <View style={styles.grid}>
-        {cells.map((cell) => {
-          const logged = completionByDay.get(cell.yyyymmdd) ?? 0;
-          const inGoalRange =
-            cell.yyyymmdd >= trackable.startDayYYYYMMDD &&
-            cell.yyyymmdd <= trackable.endDayYYYYMMDD;
-          const done = logged > 0 && inGoalRange;
-          const faded = cell.inMonth === false || !inGoalRange;
-          const isToday = cell.yyyymmdd === todayYYYYMMDD();
+        {cellRows.map((row, rowIdx) => (
+          <View key={rowIdx} style={styles.gridRow}>
+            {row.map((cell) => {
+              const logged = completionByDay.get(cell.yyyymmdd) ?? 0;
+              const inGoalRange =
+                cell.yyyymmdd >= trackable.startDayYYYYMMDD &&
+                cell.yyyymmdd <= trackable.endDayYYYYMMDD;
+              const done = logged > 0 && inGoalRange;
+              const faded = cell.inMonth === false || !inGoalRange;
+              const isToday = cell.yyyymmdd === todayYYYYMMDD();
 
-          return (
-            <View
-              key={cell.yyyymmdd}
-              style={[
-                styles.dayCell,
-                done ? styles.dayDone : null,
-                faded ? styles.dayFaded : null,
-                isToday ? styles.dayTodayBorder : null,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.dayNum,
-                  faded ? styles.dayNumFaded : null,
-                  done ? styles.dayNumDone : null,
-                ]}
-              >
-                {parseInt(cell.yyyymmdd.slice(6, 8), 10)}
-              </Text>
-            </View>
-          );
-        })}
+              return (
+                <View
+                  key={cell.yyyymmdd}
+                  style={[
+                    styles.dayCell,
+                    done ? styles.dayDone : null,
+                    faded ? styles.dayFaded : null,
+                    isToday ? styles.dayTodayBorder : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dayNum,
+                      faded ? styles.dayNumFaded : null,
+                      done ? styles.dayNumDone : null,
+                    ]}
+                  >
+                    {parseInt(cell.yyyymmdd.slice(6, 8), 10)}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        ))}
       </View>
       {daysSearch === undefined ? (
         <Text style={styles.loadingHint}>Loading progress…</Text>
@@ -256,15 +264,16 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 4,
     marginTop: 4,
+    gap: 4,
+  },
+  gridRow: {
+    flexDirection: "row",
+    gap: 4,
   },
   dayCell: {
-    width: "13.6%",
-    minWidth: 36,
-    maxWidth: 48,
+    flex: 1,
+    minWidth: 0,
     aspectRatio: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -272,7 +281,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainer,
-    marginBottom: 2,
   },
   dayFaded: { opacity: 0.38 },
   dayDone: {
