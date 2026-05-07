@@ -93,8 +93,7 @@ function normalizeDayKey(ymd: string): string {
 /** In-cell preview lines; full lists open in the day-detail modal. */
 const MAX_TASK_LINES = 4;
 
-/** ~1.5× baseline (72px min square → 108). Typography scales similarly. */
-const CELL_MIN = Math.round(72 * 1.5);
+/** Grid gap ~1.5× prior 4px. Cell size is driven by row width + `aspectRatio: 1` (square). */
 const GAP = Math.round(4 * 1.5);
 
 export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTabTrackable }) {
@@ -540,7 +539,6 @@ const styles = StyleSheet.create({
   dayCell: {
     flex: 1,
     minWidth: 0,
-    minHeight: CELL_MIN,
     aspectRatio: 1,
     position: "relative",
     borderRadius: 9,
