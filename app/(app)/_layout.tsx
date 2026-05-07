@@ -20,12 +20,14 @@ import { TimerDisplay } from "../../components/timer/TimerDisplay";
 import {
   DesktopAppChromeProvider,
   DesktopAppTopBar,
+  useRegisterDrawerNavigationForDesktopChrome,
 } from "../../components/layout/DesktopAppChrome";
 
 const drawerItemStyle = { borderRadius: 8 };
 
 function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { navigation } = props;
+  useRegisterDrawerNavigationForDesktopChrome(navigation);
   const { profileReady } = useAuth();
   const isDesktop = useIsDesktop();
   const sel = useDrawerSelection();

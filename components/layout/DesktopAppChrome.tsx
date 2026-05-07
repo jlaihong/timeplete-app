@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { View, StyleSheet, TouchableOpacity, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import type { DrawerNavigationHelpers } from "@react-navigation/drawer";
 import {
   DrawerActions,
   type NavigationProp,
@@ -23,6 +24,8 @@ import { DesktopBrandedHeaderTitle } from "./DesktopBrandedHeaderTitle";
 type DesktopAppChromeContextValue = {
   subtitle: string | undefined;
   setSubtitle: (subtitle: string | undefined) => void;
+  drawerNavigation: DrawerNavigationHelpers | null;
+  setDrawerNavigation: (nav: DrawerNavigationHelpers | null) => void;
 };
 
 const DesktopAppChromeContext =
@@ -34,14 +37,28 @@ export function DesktopAppChromeProvider({
   children: React.ReactNode;
 }) {
   const [subtitle, setSubtitleState] = useState<string | undefined>();
+  const [drawerNavigation, setDrawerNavigationState] =
+    useState<DrawerNavigationHelpers | null>(null);
 
   const setSubtitle = useCallback((next: string | undefined) => {
     setSubtitleState(next);
   }, []);
 
+  const setDrawerNavigation = useCallback(
+    (nav: DrawerNavigationHelpers | null) => {
+      setDrawerNavigationState(nav);
+    },
+    [],
+  );
+
   const value = useMemo(
-    () => ({ subtitle, setSubtitle }),
-    [subtitle, setSubtitle],
+    () => ({
+      subtitle,
+      setSubtitle,
+      drawerNavigation,
+      setDrawerNavigation,
+    }),
+    [subtitle, setSubtitle, drawerNavigation, setDrawerNavigation],
   );
 
   return (
@@ -62,9 +79,21 @@ function useDesktopAppChrome(): DesktopAppChromeContextValue {
 }
 
 /**
- * Registers the desktop app-bar subtitle for the currently focused route.
- * Uses navigation focus so inactive drawer/tabs do not clobber the title.
+ * Bind the drawer navigator instance into desktop chrome. Call from
+ * `DrawerContentComponentProps` — that object is the authoritative drawer
+ * navigation target (the top bar renders outside `<Drawer>`).
  */
+export function useRegisterDrawerNavigationForDesktopChrome(
+  drawerNav: DrawerNavigationHelpers,
+) {
+  const { setDrawerNavigation } = useDesktopAppChrome();
+
+  useLayoutEffect(() => {
+    setDrawerNavigation(drawerNav);
+    return () => setDrawerNavigation(null);
+  }, [drawerNav, setDrawerNavigation]);
+}
+
 /**
  * Desktop toolbar renders beside `<Drawer>`, not inside it, so the default
  * `useNavigation()` target is usually a parent stack — not the drawer.
@@ -88,6 +117,10 @@ function dispatchDrawerToggle(navigation: NavigationProp<ParamListBase>) {
   navigation.dispatch(DrawerActions.toggleDrawer());
 }
 
+/**
+ * Registers the desktop app-bar subtitle for the currently focused route.
+ * Uses navigation focus so inactive drawer/tabs do not clobber the title.
+ */
 export function useRegisterDesktopSubtitle(subtitle: string) {
   const isDesktop = useIsDesktop();
   const { setSubtitle } = useDesktopAppChrome();
@@ -118,6 +151,14 @@ export function DesktopAppTopBar() {
 
   const paddingTop = Platform.OS === "web" ? 0 : insets.top;
 
+  const onToggleDrawer = () => {
+    if (ctx.drawerNavigation) {
+      ctx.drawerNavigation.dispatch(DrawerActions.toggleDrawer());
+      return;
+    }
+    dispatchDrawerToggle(navigation);
+  };
+
   return (
     <View
       style={[
@@ -130,7 +171,7 @@ export function DesktopAppTopBar() {
       ]}
     >
       <TouchableOpacity
-        onPress={() => dispatchDrawerToggle(navigation)}
+        onPress={onToggleDrawer}
         style={styles.menuBtn}
         accessibilityRole="button"
         accessibilityLabel="Toggle navigation menu"
