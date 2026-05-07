@@ -130,3 +130,50 @@ export const mergeDuplicateUsersByEmail = internalMutation({
     };
   },
 });
+
+/**
+ * After a snapshot reimport, some `users` rows can still carry the OLD
+ * Convex-Auth-style `tokenIdentifier` (`http://127.0.0.1:3211|<id>`)
+ * because the snapshot pre-dates the legacy:<uuid> patching pass. Such
+ * rows can never be claimed by the better-auth migration adoption code
+ * in `users.ts` (which only matches `legacy:` prefixed shells), so the
+ * user can sign in to better-auth but ends up linked to a fresh empty
+ * shell instead of their imported data.
+ *
+ * Rewrite any `tokenIdentifier` starting with `http://` to
+ * `legacy:<legacyId>` so the next sign-in adopts the row.
+ *
+ * Invoke ad-hoc:
+ *   npx convex run --no-push internal._admin.cleanup:relegacyHttpTokenIdentifiers
+ */
+export const relegacyHttpTokenIdentifiers = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const patched: Array<{ userId: Id<"users">; email: string; from: string; to: string }> = [];
+    const skipped: Array<{ userId: Id<"users">; email: string; reason: string }> = [];
+
+    for await (const u of ctx.db.query("users")) {
+      const ti = u.tokenIdentifier ?? "";
+      if (!ti.startsWith("http://") && !ti.startsWith("https://")) continue;
+      const legacyId = u.legacyId;
+      if (!legacyId || typeof legacyId !== "string" || legacyId.length === 0) {
+        skipped.push({
+          userId: u._id,
+          email: u.email ?? "(no email)",
+          reason: "no legacyId — cannot relegacy without losing identity",
+        });
+        continue;
+      }
+      const next = `legacy:${legacyId}`;
+      await ctx.db.patch(u._id, { tokenIdentifier: next });
+      patched.push({
+        userId: u._id,
+        email: u.email ?? "(no email)",
+        from: ti,
+        to: next,
+      });
+    }
+
+    return { patched, skipped };
+  },
+});
