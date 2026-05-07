@@ -16,13 +16,11 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 import { ListDialog } from "../../../components/lists/ListDialog";
 import { Stack, router } from "expo-router";
 import { useAuth } from "../../../hooks/useAuth";
-import { useRegisterDesktopSubtitle } from "../../../components/layout/DesktopAppChrome";
 
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
 export default function ListsScreen() {
   const { profileReady } = useAuth();
-  useRegisterDesktopSubtitle("All Lists");
   const canQueryLists = profileReady;
   const lists = useQuery(api.lists.search, canQueryLists ? {} : "skip");
   const [showArchived, setShowArchived] = useState(false);
