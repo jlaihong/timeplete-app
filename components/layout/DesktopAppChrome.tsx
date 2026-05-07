@@ -6,7 +6,7 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { View, StyleSheet, TouchableOpacity, Platform } from "react-native";
+import { View, StyleSheet, Platform, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { DrawerNavigationHelpers } from "@react-navigation/drawer";
 import {
@@ -143,14 +143,24 @@ export function DesktopAppTopBar() {
         },
       ]}
     >
-      <TouchableOpacity
+      <Pressable
         onPress={onToggleDrawer}
-        style={styles.menuBtn}
         accessibilityRole="button"
         accessibilityLabel="Toggle navigation menu"
+        style={({
+          hovered,
+          pressed,
+        }: {
+          hovered?: boolean;
+          pressed?: boolean;
+        }) => [
+          styles.menuBtn,
+          Boolean(hovered) && styles.menuBtnHover,
+          Boolean(pressed) && styles.menuBtnPressed,
+        ]}
       >
         <Ionicons name="menu" size={24} color={Colors.text} />
-      </TouchableOpacity>
+      </Pressable>
       <View style={styles.titleSlot}>
         <DesktopBrandedHeaderTitle />
       </View>
@@ -170,10 +180,26 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   menuBtn: {
-    paddingLeft: 16,
-    paddingRight: 8,
+    marginLeft: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
     justifyContent: "center",
-    alignSelf: "stretch",
+    alignSelf: "center",
+    ...Platform.select({
+      web: {
+        cursor: "pointer",
+        transition: "background-color 120ms ease",
+      } as const,
+      default: {},
+    }),
+  },
+  menuBtnHover: {
+    backgroundColor: Colors.sidenavItemHover,
+  },
+  menuBtnPressed: {
+    opacity: 0.85,
   },
   titleSlot: {
     flex: 1,
