@@ -55,7 +55,7 @@ function linkMap(
 }
 
 function resolveAttributedTrackableIdClient(
-  tw: Pick<TW, "trackableId" | "taskId">,
+  tw: Pick<TW, "trackableId" | "taskId" | "listId">,
   taskMap: Map<
     string,
     {
@@ -66,19 +66,25 @@ function resolveAttributedTrackableIdClient(
   listIdToTrackableId: Map<string, Id<"trackables">>,
 ): string | null {
   if (tw.trackableId) return String(tw.trackableId);
-  if (!tw.taskId) return null;
-  const task = taskMap.get(String(tw.taskId));
-  if (!task) return null;
-  if (task.trackableId) return String(task.trackableId);
-  if (task.listId) {
-    const tgt = listIdToTrackableId.get(String(task.listId));
+  if (tw.taskId) {
+    const task = taskMap.get(String(tw.taskId));
+    if (task) {
+      if (task.trackableId) return String(task.trackableId);
+      if (task.listId) {
+        const tgt = listIdToTrackableId.get(String(task.listId));
+        return tgt ? String(tgt) : null;
+      }
+    }
+  }
+  if (tw.listId) {
+    const tgt = listIdToTrackableId.get(String(tw.listId));
     return tgt ? String(tgt) : null;
   }
   return null;
 }
 
 function windowAttributedToTrackableClient(
-  tw: Pick<TW, "trackableId" | "taskId">,
+  tw: Pick<TW, "trackableId" | "taskId" | "listId">,
   trackableId: string,
   taskMap: Map<
     string,
@@ -89,7 +95,10 @@ function windowAttributedToTrackableClient(
   >,
   listIdToTrackableId: Map<string, Id<"trackables">>,
 ): boolean {
-  return resolveAttributedTrackableIdClient(tw, taskMap, listIdToTrackableId) === trackableId;
+  return (
+    resolveAttributedTrackableIdClient(tw, taskMap, listIdToTrackableId) ===
+    trackableId
+  );
 }
 
 function displayTitleForEditHistoryWindow(

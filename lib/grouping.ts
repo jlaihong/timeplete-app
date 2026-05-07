@@ -13,6 +13,7 @@ export type TimeWindowLike = {
   _id?: string;
   taskId?: string | null;
   trackableId?: string | null;
+  listId?: string | null;
   tagIds?: string[];
 };
 
@@ -76,12 +77,17 @@ function resolvedTrackableId(
 ): string | null {
   if (lookups.resolveTrackableId) return lookups.resolveTrackableId(w);
   if (w.trackableId) return w.trackableId;
-  if (!w.taskId) return null;
-  const task = lookups.tasks?.[w.taskId];
-  if (!task) return null;
-  if (task.trackableId) return task.trackableId;
-  if (task.listId && lookups.listIdToTrackableId) {
-    return lookups.listIdToTrackableId[task.listId] ?? null;
+  if (w.taskId) {
+    const task = lookups.tasks?.[w.taskId];
+    if (task) {
+      if (task.trackableId) return task.trackableId;
+      if (task.listId && lookups.listIdToTrackableId) {
+        return lookups.listIdToTrackableId[task.listId] ?? null;
+      }
+    }
+  }
+  if (w.listId && lookups.listIdToTrackableId) {
+    return lookups.listIdToTrackableId[w.listId] ?? null;
   }
   return null;
 }

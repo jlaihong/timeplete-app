@@ -101,7 +101,8 @@ export function AnalyticsView({ title }: AnalyticsViewProps) {
 
     // Union attribution — mirrors the server-side `timeWindowAttributedToTrackable`
     // so this client aggregate matches `getGoalDetails` / `getProgressionStats`.
-    // Resolution order: window.trackableId → task.trackableId → list.trackableId.
+    // Resolution order: window.trackableId → task.trackableId → task.listId →
+    // listTrackableLinks; then window.listId → listTrackableLinks.
     const tasksMap = breakdown.tasks as Record<
       string,
       { trackableId?: string; listId?: string } | undefined
@@ -112,13 +113,17 @@ export function AnalyticsView({ title }: AnalyticsViewProps) {
     const resolveTrackable = (w: {
       trackableId?: string | null;
       taskId?: string | null;
+      listId?: string | null;
     }): string | null => {
       if (w.trackableId) return w.trackableId;
-      if (!w.taskId) return null;
-      const task = tasksMap[w.taskId];
-      if (!task) return null;
-      if (task.trackableId) return task.trackableId;
-      if (task.listId) return listIdToTrackableId[task.listId] ?? null;
+      if (w.taskId) {
+        const task = tasksMap[w.taskId];
+        if (task) {
+          if (task.trackableId) return task.trackableId;
+          if (task.listId) return listIdToTrackableId[task.listId] ?? null;
+        }
+      }
+      if (w.listId) return listIdToTrackableId[w.listId] ?? null;
       return null;
     };
 

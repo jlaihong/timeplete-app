@@ -6,12 +6,12 @@
  * contribute to?". Every analytics surface that aggregates time per trackable
  * MUST use these helpers so totals stay consistent across screens.
  *
- * The resolution order matches productivity-one exactly:
+ * The resolution order matches productivity-one, with one Convex extension:
  *
  *   1. window.trackableId is set                → that trackable
- *   2. window.taskId is set AND task.trackableId → task.trackableId
- *   3. window.taskId is set AND task.listId AND list → trackable link →
- *      list's trackableId
+ *   2. window.taskId is set                       → task.trackableId, else
+ *      task.listId → listTrackableLinks → trackableId
+ *   3. window.listId only (calendar EVENT / legacy rows) → listTrackableLinks
  *
  * Each window matches at most ONE trackable (early-return), so summing per
  * trackable across all windows never double-counts.
@@ -70,44 +70,39 @@ export function buildTaskInfoMap(
  *    entries) we fall back to the task's CURRENT trackable / list link.
  */
 export function resolveAttributedTrackableId(
-  tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId">,
+  tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId" | "listId">,
   taskInfoMap: Map<string, TaskInfo>,
   listIdToTrackableId: Map<string, Id<"trackables">>
 ): Id<"trackables"> | null {
   if (tw.trackableId) return tw.trackableId;
-  if (!tw.taskId) return null;
-  const taskInfo = taskInfoMap.get(tw.taskId);
-  if (!taskInfo) return null;
-  if (taskInfo.trackableId) return taskInfo.trackableId;
-  if (taskInfo.listId) {
-    return listIdToTrackableId.get(taskInfo.listId) ?? null;
+  if (tw.taskId) {
+    const taskInfo = taskInfoMap.get(tw.taskId);
+    if (taskInfo) {
+      if (taskInfo.trackableId) return taskInfo.trackableId;
+      if (taskInfo.listId) {
+        return listIdToTrackableId.get(taskInfo.listId) ?? null;
+      }
+    }
+  }
+  if (tw.listId) {
+    return listIdToTrackableId.get(tw.listId) ?? null;
   }
   return null;
 }
 
 /**
  * Predicate: does this window count toward `trackableId`'s totals?
- * Equivalent to `resolveAttributedTrackableId(...) === trackableId` but
- * slightly cheaper because we can short-circuit on the trackableId check.
  */
 export function timeWindowAttributedToTrackable(
-  tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId">,
+  tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId" | "listId">,
   trackableId: Id<"trackables">,
   taskInfoMap: Map<string, TaskInfo>,
   listIdToTrackableId: Map<string, Id<"trackables">>
 ): boolean {
-  if (tw.trackableId === trackableId) return true;
-  if (!tw.taskId) return false;
-  const taskInfo = taskInfoMap.get(tw.taskId);
-  if (!taskInfo) return false;
-  if (taskInfo.trackableId === trackableId) return true;
-  if (
-    taskInfo.listId &&
-    listIdToTrackableId.get(taskInfo.listId) === trackableId
-  ) {
-    return true;
-  }
-  return false;
+  return (
+    resolveAttributedTrackableId(tw, taskInfoMap, listIdToTrackableId) ===
+    trackableId
+  );
 }
 
 /**
