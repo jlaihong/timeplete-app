@@ -105,6 +105,7 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     type === "NUMBER" || type === "DAYS_A_WEEK" || type === "MINUTES_A_WEEK";
 
   const defaultAnchor = clipYYYYMMDD(todayYYYYMMDD(), trackable.startDayYYYYMMDD, trackable.endDayYYYYMMDD);
+  const [viewAnchor, setViewAnchor] = useState(defaultAnchor);
   const [expandedDayYYYYMMDD, setExpandedDayYYYYMMDD] = useState<string | null>(
     null,
   );
