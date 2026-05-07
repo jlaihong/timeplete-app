@@ -2,7 +2,6 @@ import React from "react";
 import { View, StyleSheet } from "react-native";
 import { Colors } from "../../../constants/colors";
 import { ReviewPanel } from "../../../components/shared/ReviewPanel";
-
 export default function ReviewsScreen() {
   return (
     <View style={styles.container}>

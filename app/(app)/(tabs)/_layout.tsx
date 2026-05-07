@@ -5,7 +5,6 @@ import { Colors, stackHeaderChromeOptions } from "../../../constants/colors";
 import { Platform } from "react-native";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
 import { DrawerMenuButton } from "../../../components/layout/DrawerMenuButton";
-import { DesktopBrandedHeaderTitle } from "../../../components/layout/DesktopBrandedHeaderTitle";
 
 export default function TabsLayout() {
   const isDesktop = useIsDesktop();
@@ -14,7 +13,7 @@ export default function TabsLayout() {
 
   return (
     <Tabs
-      screenOptions={({ route }) => ({
+      screenOptions={() => ({
         tabBarActiveTintColor: Colors.tab.active,
         tabBarInactiveTintColor: Colors.tab.inactive,
         tabBarStyle: isDesktop
@@ -26,15 +25,9 @@ export default function TabsLayout() {
               paddingBottom: Platform.OS === "ios" ? 28 : 8,
               paddingTop: 8,
             },
-        headerShown: true,
+        headerShown: !isDesktop,
         ...stackHeaderChromeOptions,
         headerLeft,
-        ...(isDesktop
-          ? {
-              headerTitleAlign: "left",
-              headerTitle: () => <DesktopBrandedHeaderTitle />,
-            }
-          : {}),
       })}
     >
       <Tabs.Screen
