@@ -3,6 +3,7 @@ import React, {
   useMemo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
 } from "react";
 import {
@@ -263,6 +264,33 @@ export function DesktopTaskList({
   const visibleEndDay = addDays(windowEndBase, rangeEndDays);
 
   /**
+   * Monotonic retention (productivity-one): never drop columns/range once loaded.
+   * — Earliest day shrinks when the calendar moves back; never grows back when it moves forward.
+   * — Latest range-end grows with calendar/load-more; never shrinks when the calendar moves back.
+   */
+  const [loadedEarliestDay, setLoadedEarliestDay] = useState<string | null>(
+    null,
+  );
+  const [maxRangeEndDay, setMaxRangeEndDay] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    setLoadedEarliestDay((prev) => {
+      if (prev === null) return visibleStartDay;
+      return visibleStartDay.localeCompare(prev) < 0 ? visibleStartDay : prev;
+    });
+  }, [visibleStartDay]);
+
+  useLayoutEffect(() => {
+    setMaxRangeEndDay((prev) => {
+      if (prev === null) return visibleEndDay;
+      return visibleEndDay.localeCompare(prev) > 0 ? visibleEndDay : prev;
+    });
+  }, [visibleEndDay]);
+
+  const retainedEarliestDay = loadedEarliestDay ?? visibleStartDay;
+  const retainedRangeEndDay = maxRangeEndDay ?? visibleEndDay;
+
+  /**
    * Primary home subscription — productivity-one keeps `today` pinned to the
    * real calendar day so stepping the date navigator does not invalidate this.
    */
@@ -271,7 +299,7 @@ export function DesktopTaskList({
     profileReady
       ? {
           todayYYYYMMDD: clockToday,
-          rangeEndYYYYMMDD: visibleEndDay,
+          rangeEndYYYYMMDD: retainedRangeEndDay,
         }
       : "skip",
   );
@@ -279,17 +307,17 @@ export function DesktopTaskList({
   const backwardGapEnd = addDays(clockToday, -1);
   const backwardGapActive =
     profileReady &&
-    calendarDay < clockToday &&
-    calendarDay <= backwardGapEnd;
+    retainedEarliestDay < clockToday &&
+    retainedEarliestDay <= backwardGapEnd;
 
   /** Uses long-deployed `searchWithCriteria` — avoids requiring a new Convex function on shared backends. */
   const backwardGapTasksQuery = useQuery(
     api.tasks.searchWithCriteria,
     backwardGapActive
       ? {
-          dayRanges: [{ startDay: calendarDay, endDay: backwardGapEnd }],
+          dayRanges: [{ startDay: retainedEarliestDay, endDay: backwardGapEnd }],
           includeCompleted: true,
-          completedStartDay: calendarDay,
+          completedStartDay: retainedEarliestDay,
           completedEndDay: backwardGapEnd,
         }
       : "skip",
@@ -321,7 +349,7 @@ export function DesktopTaskList({
    */
   const lastMergedStableRef = useRef<{
     clockToday: string;
-    visibleEndDay: string;
+    retainedRangeEndDay: string;
     tasks: TaskRowTask[];
   } | null>(null);
 
@@ -331,22 +359,22 @@ export function DesktopTaskList({
     if (
       prev &&
       prev.clockToday === clockToday &&
-      visibleEndDay.localeCompare(prev.visibleEndDay) > 0
+      retainedRangeEndDay.localeCompare(prev.retainedRangeEndDay) > 0
     ) {
       return prev.tasks;
     }
     return undefined;
-  }, [mergedFromQueries, clockToday, visibleEndDay]);
+  }, [mergedFromQueries, clockToday, retainedRangeEndDay]);
 
   useEffect(() => {
     if (mergedFromQueries !== undefined) {
       lastMergedStableRef.current = {
         clockToday,
-        visibleEndDay,
+        retainedRangeEndDay,
         tasks: mergedFromQueries,
       };
     }
-  }, [mergedFromQueries, clockToday, visibleEndDay]);
+  }, [mergedFromQueries, clockToday, retainedRangeEndDay]);
   const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const sharedWithMeAccepted = useQuery(
@@ -362,7 +390,7 @@ export function DesktopTaskList({
   /* ──────────────────  Recurring instance materialization  ──────────────────
    * Recurring tasks live as a single `recurringTasks` rule plus zero-to-many
    * materialized `tasks` rows (one per occurrence). Materialization is lazy:
-   * the home page calls `generateInstances(visibleStartDay, visibleEndDay)` whenever
+   * the home page calls `generateInstances(retainedEarliestDay, retainedRangeEndDay)` whenever
    * its window changes, and the mutation idempotently fills any missing
    * `(ruleId, taskDay)` rows. Once the rows exist, the reactive queries pull
    * them in like any other task — no synthetic-id branches downstream.
@@ -383,15 +411,15 @@ export function DesktopTaskList({
     // subscription resolves, doubling RTTs on first paint.
     if (recurringRules === undefined) return;
     void generateInstances({
-      rangeStartYYYYMMDD: visibleStartDay,
-      rangeEndYYYYMMDD: visibleEndDay,
+      rangeStartYYYYMMDD: retainedEarliestDay,
+      rangeEndYYYYMMDD: retainedRangeEndDay,
     });
     // We intentionally key on the *content* of the rules array, not the
     // identity, so a rule mutation immediately re-materializes — but a
     // re-render with no rule change is a no-op.
   }, [
-    visibleStartDay,
-    visibleEndDay,
+    retainedEarliestDay,
+    retainedRangeEndDay,
     recurringRules?.length,
     recurringRules?.map((r) => r._id).join(","),
     generateInstances,
@@ -546,8 +574,8 @@ export function DesktopTaskList({
   }, [trackables]);
 
   /* Group tasks — merged Convex payloads (`getHomeTasks` clock anchor +
-   * optional backward gap). Day buckets span `[visibleStartDay, visibleEndDay]`;
-   * OVERDUE = incomplete tasks scheduled **before** `visibleStartDay`.
+   * optional backward gap). Day buckets span retained `[retainedEarliestDay, retainedRangeEndDay]`;
+   * OVERDUE = incomplete tasks scheduled **before** `retainedEarliestDay`.
    */
   const serverGroups = useMemo(() => {
     if (!tasks) return [] as { id: string; tasks: TaskRowTask[] }[];
@@ -570,7 +598,7 @@ export function DesktopTaskList({
         continue;
       }
 
-      if (scheduleDay < visibleStartDay) {
+      if (scheduleDay < retainedEarliestDay) {
         if (!groups.has(OVERDUE_GROUP_ID))
           groups.set(OVERDUE_GROUP_ID, []);
         groups.get(OVERDUE_GROUP_ID)!.push(task);
@@ -582,7 +610,7 @@ export function DesktopTaskList({
 
     // Always show every day in the visible window, even if empty,
     // so users have an obvious target for adding/scheduling tasks.
-    for (const d of getDaysInRange(visibleStartDay, visibleEndDay)) {
+    for (const d of getDaysInRange(retainedEarliestDay, retainedRangeEndDay)) {
       if (!groups.has(d)) groups.set(d, []);
     }
 
@@ -608,7 +636,7 @@ export function DesktopTaskList({
         return (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0);
       }),
     }));
-  }, [tasks, visibleStartDay, visibleEndDay]);
+  }, [tasks, retainedEarliestDay, retainedRangeEndDay]);
 
   /* Local optimistic state — mirrors serverGroups but is mutated during drag. */
   const [localGroups, setLocalGroups] = useState<
