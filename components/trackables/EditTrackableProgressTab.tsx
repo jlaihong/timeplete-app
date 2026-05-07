@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, Modal, ScrollView } from "react-native";
 import { useQuery } from "convex/react";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../convex/_generated/api";
@@ -7,11 +7,14 @@ import { Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
 import {
   formatYYYYMMDD,
+  formatYYYYMMDDForDisplay,
+  formatSecondsAsHM,
   parseYYYYMMDD,
   startOfMonth,
   todayYYYYMMDD,
 } from "../../lib/dates";
 import { useAuth } from "../../hooks/useAuth";
+import { DialogCard, DialogHeader, DialogOverlay } from "../ui/DialogScaffold";
 
 type GoalProgressType = "NUMBER" | "TIME_TRACK" | "DAYS_A_WEEK" | "MINUTES_A_WEEK";
 
@@ -25,6 +28,14 @@ type ProgressTabTrackable = {
   targetNumberOfDaysAWeek?: number;
   targetNumberOfMinutesAWeek?: number;
   targetNumberOfWeeks?: number;
+};
+
+type DayDetail = {
+  numCompleted: number;
+  comments: string;
+  completedTaskNames: string[];
+  /** Actively logged time attributed to the trackable (`getTrackableAnalyticsSeries`). */
+  secondsAttributed?: number;
 };
 
 function clipYYYYMMDD(day: string, start: string, end: string): string {
@@ -78,15 +89,39 @@ function buildMonthCells(monthAnchorYYYYMMDD: string): Array<{
   return cells.slice(0, trimTo + 1);
 }
 
+function normalizeDayKey(ymd: string): string {
+  return ymd.replace(/\D/g, "").slice(0, 8);
+}
+
+/** Compact hours label for calendar cells (matches TimeTrackWidget rounding). */
+function formatHoursFromSeconds(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return "";
+  const h = totalSeconds / 3600;
+  const r = Math.round(h * 10) / 10;
+  return `${r.toFixed(1).replace(/\.0$/, "")}h`;
+}
+
+/** In-cell preview lines; full lists open in the day-detail modal. */
+const MAX_TASK_LINES = 2;
+
+/** Calendar grid gap between cells. */
+const GAP = 4;
+
 export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTabTrackable }) {
   const { profileReady } = useAuth();
   const type = trackable.trackableType;
   const caption = progressCaption(trackable);
   const showCalendar =
-    type === "NUMBER" || type === "DAYS_A_WEEK" || type === "MINUTES_A_WEEK";
+    type === "NUMBER" ||
+    type === "TIME_TRACK" ||
+    type === "DAYS_A_WEEK" ||
+    type === "MINUTES_A_WEEK";
 
   const defaultAnchor = clipYYYYMMDD(todayYYYYMMDD(), trackable.startDayYYYYMMDD, trackable.endDayYYYYMMDD);
   const [viewAnchor, setViewAnchor] = useState(defaultAnchor);
+  const [expandedDayYYYYMMDD, setExpandedDayYYYYMMDD] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     setViewAnchor(
@@ -94,19 +129,157 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     );
   }, [trackable._id, trackable.startDayYYYYMMDD, trackable.endDayYYYYMMDD]);
 
+  const cells = useMemo(() => buildMonthCells(viewAnchor), [viewAnchor]);
+
+  const calendarBounds = useMemo(() => {
+    if (cells.length === 0) return null;
+    return {
+      start: cells[0]!.yyyymmdd,
+      end: cells[cells.length - 1]!.yyyymmdd,
+    };
+  }, [cells]);
+
+  /**
+   * Compose month data from queries already on the deployed Convex endpoint —
+   * avoids a dedicated `progressCalendarDetails` round-trip (not present until
+   * `npx convex dev` / deploy picks up new functions).
+   */
   const daysSearch = useQuery(
     api.trackableDays.search,
-    profileReady && showCalendar ? { trackableIds: [trackable._id] } : "skip",
+    profileReady && showCalendar && calendarBounds
+      ? {
+          trackableIds: [trackable._id],
+          startDay: calendarBounds.start,
+          endDay: calendarBounds.end,
+        }
+      : "skip",
   );
 
-  const completionByDay = useMemo(() => {
-    const m = new Map<string, number>();
-    if (!daysSearch) return m;
-    for (const row of daysSearch) {
-      m.set(row.dayYYYYMMDD.replace(/\D/g, "").slice(0, 8), row.numCompleted);
+  const completedWindowTasks = useQuery(
+    api.tasks.searchWithCriteria,
+    profileReady && showCalendar && calendarBounds
+      ? {
+          dayRanges: [
+            { startDay: calendarBounds.start, endDay: calendarBounds.end },
+          ],
+          includeCompleted: true,
+          completedStartDay: calendarBounds.start,
+          completedEndDay: calendarBounds.end,
+        }
+      : "skip",
+  );
+
+  const listsSearch = useQuery(
+    api.lists.search,
+    profileReady && showCalendar ? {} : "skip",
+  );
+
+  const analyticsSeries = useQuery(
+    api.trackables.getTrackableAnalyticsSeries,
+    profileReady && type === "TIME_TRACK" && calendarBounds
+      ? {
+          windowStart: calendarBounds.start,
+          windowEnd: calendarBounds.end,
+        }
+      : "skip",
+  );
+
+  const detailsByDay = useMemo(() => {
+    const m = new Map<string, DayDetail>();
+
+    if (daysSearch) {
+      for (const row of daysSearch) {
+        const key = normalizeDayKey(row.dayYYYYMMDD);
+        m.set(key, {
+          numCompleted: row.numCompleted,
+          comments: (row.comments ?? "").trim(),
+          completedTaskNames: [],
+        });
+      }
     }
+
+    const listToTrackable = new Map<string, Id<"trackables">>();
+    if (listsSearch) {
+      for (const list of listsSearch) {
+        if (list.trackableId) {
+          listToTrackable.set(
+            list._id,
+            list.trackableId as Id<"trackables">,
+          );
+        }
+      }
+    }
+
+    if (completedWindowTasks) {
+      const tid = trackable._id;
+      for (const task of completedWindowTasks) {
+        if (!task.dateCompleted) continue;
+        const dayKey = normalizeDayKey(task.dateCompleted);
+        if (dayKey.length !== 8) continue;
+
+        const attributesToTrackable =
+          task.trackableId === tid ||
+          (task.listId != null && listToTrackable.get(task.listId) === tid);
+        if (!attributesToTrackable) continue;
+
+        const existing = m.get(dayKey);
+        if (!existing) {
+          m.set(dayKey, {
+            numCompleted: 0,
+            comments: "",
+            completedTaskNames: [task.name],
+          });
+        } else {
+          existing.completedTaskNames.push(task.name);
+        }
+      }
+    }
+
+    if (type === "TIME_TRACK" && analyticsSeries) {
+      const goal = analyticsSeries.trackables.find((t) => t._id === trackable._id);
+      if (goal) {
+        for (const d of goal.days) {
+          const key = normalizeDayKey(d.day);
+          if (key.length !== 8) continue;
+          const sec = d.secondsAttributed ?? 0;
+          const prev = m.get(key);
+          if (prev) {
+            prev.secondsAttributed = sec;
+          } else if (sec > 0) {
+            m.set(key, {
+              numCompleted: 0,
+              comments: "",
+              completedTaskNames: [],
+              secondsAttributed: sec,
+            });
+          }
+        }
+      }
+    }
+
     return m;
-  }, [daysSearch]);
+  }, [
+    type,
+    analyticsSeries,
+    daysSearch,
+    completedWindowTasks,
+    listsSearch,
+    trackable._id,
+  ]);
+
+  const calendarLoading =
+    daysSearch === undefined ||
+    completedWindowTasks === undefined ||
+    listsSearch === undefined ||
+    (type === "TIME_TRACK" && analyticsSeries === undefined);
+
+  const cellRows = useMemo(() => {
+    const rows: (typeof cells)[] = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      rows.push(cells.slice(i, i + 7));
+    }
+    return rows;
+  }, [cells]);
 
   const prevMonth = useCallback(() => {
     setViewAnchor(addMonthsYYYYMMDD(viewAnchor, -1));
@@ -116,17 +289,20 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     setViewAnchor(addMonthsYYYYMMDD(viewAnchor, 1));
   }, [viewAnchor]);
 
-  if (type === "TIME_TRACK") {
-    /** Productivity-one: empty Progress pane for TIME_TRACK (`<mat-tab label="Progress" />`). */
-    return <View style={{ minHeight: 120 }} />;
-  }
-
-  const cells = buildMonthCells(viewAnchor);
   const titleDate = parseYYYYMMDD(viewAnchor.slice(0, 8));
   const monthTitle = titleDate.toLocaleDateString(undefined, {
     month: "long",
     year: "numeric",
   });
+
+  const expandedDetail =
+    expandedDayYYYYMMDD != null
+      ? detailsByDay.get(normalizeDayKey(expandedDayYYYYMMDD))
+      : undefined;
+  const expandedDayLabel =
+    expandedDayYYYYMMDD != null
+      ? formatYYYYMMDDForDisplay(expandedDayYYYYMMDD.slice(0, 8))
+      : "";
 
   return (
     <View style={styles.wrap}>
@@ -167,40 +343,227 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
       </View>
 
       <View style={styles.grid}>
-        {cells.map((cell) => {
-          const logged = completionByDay.get(cell.yyyymmdd) ?? 0;
-          const inGoalRange =
-            cell.yyyymmdd >= trackable.startDayYYYYMMDD &&
-            cell.yyyymmdd <= trackable.endDayYYYYMMDD;
-          const done = logged > 0 && inGoalRange;
-          const faded = cell.inMonth === false || !inGoalRange;
-          const isToday = cell.yyyymmdd === todayYYYYMMDD();
+        {cellRows.map((row, rowIdx) => (
+          <View key={rowIdx} style={styles.gridRow}>
+            {row.map((cell) => {
+              const dayKey = normalizeDayKey(cell.yyyymmdd);
+              const detail = detailsByDay.get(dayKey);
+              const logged = detail?.numCompleted ?? 0;
+              const sec = detail?.secondsAttributed ?? 0;
+              const hoursLabel = formatHoursFromSeconds(sec);
+              const inGoalRange =
+                cell.yyyymmdd >= trackable.startDayYYYYMMDD &&
+                cell.yyyymmdd <= trackable.endDayYYYYMMDD;
+              const tasksArr = detail?.completedTaskNames ?? [];
+              const faded = cell.inMonth === false || !inGoalRange;
+              const isToday = cell.yyyymmdd === todayYYYYMMDD();
+              const hasTimeProgress = type === "TIME_TRACK" && sec > 0;
+              const hasCountProgress = type !== "TIME_TRACK" && logged > 0;
+              const done =
+                inGoalRange &&
+                (hasTimeProgress ||
+                  hasCountProgress ||
+                  (type === "TIME_TRACK" &&
+                    (logged > 0 || tasksArr.length > 0)));
+              const visibleTasks = tasksArr.slice(0, MAX_TASK_LINES);
+              const moreTaskCount = tasksArr.length - visibleTasks.length;
+              const comment = (detail?.comments ?? "").trim();
+              const dom = parseInt(cell.yyyymmdd.slice(6, 8), 10);
 
-          return (
-            <View
-              key={cell.yyyymmdd}
-              style={[
-                styles.dayCell,
-                done ? styles.dayDone : null,
-                faded ? styles.dayFaded : null,
-                isToday ? styles.dayTodayBorder : null,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.dayNum,
-                  faded ? styles.dayNumFaded : null,
-                  done ? styles.dayNumDone : null,
-                ]}
-              >
-                {parseInt(cell.yyyymmdd.slice(6, 8), 10)}
-              </Text>
-            </View>
-          );
-        })}
+              const a11yParts = [
+                `${dom}`,
+                inGoalRange ? "in goal range" : "outside goal range",
+                type === "TIME_TRACK" && sec > 0
+                  ? `time logged ${formatSecondsAsHM(sec)}`
+                  : null,
+                type !== "TIME_TRACK" && logged > 0 ? `progress ${logged}` : null,
+                tasksArr.length ? `tasks: ${tasksArr.join(", ")}` : null,
+                moreTaskCount > 0 ? `${moreTaskCount} more tasks not listed` : null,
+                comment ? `comment: ${comment}` : null,
+              ].filter(Boolean);
+
+              const a11yHint = "Opens full details for this day";
+
+              return (
+                <Pressable
+                  key={cell.yyyymmdd}
+                  onPress={() => setExpandedDayYYYYMMDD(cell.yyyymmdd)}
+                  style={({ pressed }) => [
+                    styles.dayCell,
+                    done ? styles.dayDone : null,
+                    faded ? styles.dayFaded : null,
+                    isToday ? styles.dayTodayBorder : null,
+                    pressed ? styles.dayCellPressed : null,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={a11yParts.join(". ")}
+                  accessibilityHint={a11yHint}
+                >
+                  <Text style={[styles.dayNumCorner, faded && styles.dayNumCornerFaded]}>
+                    {dom}
+                  </Text>
+                  <View style={styles.dayCellBody}>
+                    {type === "TIME_TRACK" && hasTimeProgress ? (
+                      <Text
+                        style={[
+                          styles.contributionNum,
+                          faded && styles.contributionNumFaded,
+                          done && styles.contributionNumDone,
+                        ]}
+                      >
+                        {hoursLabel}
+                      </Text>
+                    ) : type !== "TIME_TRACK" && logged > 0 ? (
+                      <Text
+                        style={[
+                          styles.contributionNum,
+                          faded && styles.contributionNumFaded,
+                          done && styles.contributionNumDone,
+                        ]}
+                      >
+                        {logged}
+                      </Text>
+                    ) : null}
+                    {visibleTasks.map((name, ti) => (
+                      <Text
+                        key={`${cell.yyyymmdd}-t-${ti}`}
+                        style={[styles.taskLine, faded && styles.metaFaded]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                        accessibilityLabel={name}
+                      >
+                        ✓ {name}
+                      </Text>
+                    ))}
+                    {moreTaskCount > 0 ? (
+                      <Text
+                        style={[styles.moreTasksLine, faded && styles.metaFaded]}
+                        accessibilityLabel={`${moreTaskCount} more completed tasks`}
+                      >
+                        +{moreTaskCount} more
+                      </Text>
+                    ) : null}
+                    {comment ? (
+                      <Text
+                        style={[styles.commentLine, faded && styles.metaFaded]}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                        accessibilityLabel={comment}
+                      >
+                        💬 {comment}
+                      </Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
       </View>
-      {daysSearch === undefined ? (
+      {calendarLoading ? (
         <Text style={styles.loadingHint}>Loading progress…</Text>
+      ) : null}
+
+      <Modal
+        visible={expandedDayYYYYMMDD != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExpandedDayYYYYMMDD(null)}
+      >
+        <View style={styles.modalRoot}>
+          <DialogOverlay onBackdropPress={() => setExpandedDayYYYYMMDD(null)}>
+            <DialogCard desktopWidth={440} style={styles.dayDetailCard}>
+              <DialogHeader
+                title={expandedDayLabel || "Day details"}
+                onClose={() => setExpandedDayYYYYMMDD(null)}
+              />
+              <ScrollView
+                style={styles.dayDetailScroll}
+                keyboardShouldPersistTaps="handled"
+              >
+                {expandedDayYYYYMMDD != null ? (
+                  <DayDetailModalBody
+                    yyyymmdd={expandedDayYYYYMMDD}
+                    trackable={trackable}
+                    detail={expandedDetail}
+                  />
+                ) : null}
+              </ScrollView>
+            </DialogCard>
+          </DialogOverlay>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+function DayDetailModalBody({
+  yyyymmdd,
+  trackable,
+  detail,
+}: {
+  yyyymmdd: string;
+  trackable: ProgressTabTrackable;
+  detail: DayDetail | undefined;
+}) {
+  const inGoalRange =
+    yyyymmdd >= trackable.startDayYYYYMMDD &&
+    yyyymmdd <= trackable.endDayYYYYMMDD;
+  const logged = detail?.numCompleted ?? 0;
+  const sec = detail?.secondsAttributed ?? 0;
+  const tasks = detail?.completedTaskNames ?? [];
+  const comment = (detail?.comments ?? "").trim();
+  const hasAny =
+    logged > 0 ||
+    sec > 0 ||
+    tasks.length > 0 ||
+    comment.length > 0;
+
+  return (
+    <View style={styles.modalBody}>
+      {!inGoalRange ? (
+        <Text style={styles.modalMuted}>
+          Outside this trackable's goal date range.
+        </Text>
+      ) : null}
+      <View style={styles.modalSection}>
+        <Text style={styles.modalSectionLabel}>
+          {trackable.trackableType === "TIME_TRACK" ? "Time logged" : "Contribution (count)"}
+        </Text>
+        <Text style={styles.modalBodyText}>
+          {trackable.trackableType === "TIME_TRACK"
+            ? sec > 0
+              ? formatSecondsAsHM(sec)
+              : "—"
+            : logged > 0
+              ? String(logged)
+              : "—"}
+        </Text>
+      </View>
+      <View style={styles.modalSection}>
+        <Text style={styles.modalSectionLabel}>
+          Completed tasks ({tasks.length})
+        </Text>
+        {tasks.length === 0 ? (
+          <Text style={styles.modalMuted}>—</Text>
+        ) : (
+          tasks.map((name, i) => (
+            <Text key={`${i}-${name.slice(0, 48)}`} style={styles.modalBullet}>
+              ✓ {name}
+            </Text>
+          ))
+        )}
+      </View>
+      <View style={styles.modalSection}>
+        <Text style={styles.modalSectionLabel}>Comment</Text>
+        <Text style={styles.modalBodyText}>{comment.length > 0 ? comment : "—"}</Text>
+      </View>
+      {!hasAny && inGoalRange ? (
+        <Text style={styles.modalMuted}>
+          {trackable.trackableType === "TIME_TRACK"
+            ? "No logged time, attributing task completions, or comments for this day."
+            : "No logged count, attributing task completions, or comments for this day."}
+        </Text>
       ) : null}
     </View>
   );
@@ -210,8 +573,11 @@ function progressCaption(t: ProgressTabTrackable): string | undefined {
   switch (t.trackableType) {
     case "NUMBER":
       return `Target: ${t.targetCount != null ? String(t.targetCount) : "—"}`;
-    case "TIME_TRACK":
-      return undefined;
+    case "TIME_TRACK": {
+      const h =
+        t.targetNumberOfHours != null ? String(t.targetNumberOfHours) : "—";
+      return `Target: ${h} hours total`;
+    }
     case "DAYS_A_WEEK": {
       const w = t.targetNumberOfWeeks != null ? String(t.targetNumberOfWeeks) : "—";
       const d =
@@ -256,23 +622,29 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   grid: {
+    marginTop: GAP,
+    gap: GAP,
+  },
+  gridRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 4,
-    marginTop: 4,
+    gap: GAP,
+    alignItems: "flex-start",
   },
   dayCell: {
-    width: "13.6%",
-    minWidth: 36,
-    maxWidth: 48,
+    flex: 1,
+    minWidth: 0,
     aspectRatio: 1,
-    alignItems: "center",
-    justifyContent: "center",
+    position: "relative",
     borderRadius: 6,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainer,
-    marginBottom: 2,
+    padding: 3,
+    paddingTop: 2,
+    overflow: "hidden",
+  },
+  dayCellPressed: {
+    opacity: 0.88,
   },
   dayFaded: { opacity: 0.38 },
   dayDone: {
@@ -283,12 +655,100 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.primary,
   },
-  dayNum: {
-    fontSize: 13,
+  dayNumCorner: {
+    position: "absolute",
+    top: 3,
+    right: 4,
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.text,
+    zIndex: 1,
+  },
+  dayNumCornerFaded: {
+    color: Colors.textTertiary,
+  },
+  dayCellBody: {
+    flex: 1,
+    width: "100%",
+    marginTop: 12,
+    gap: 2,
+    justifyContent: "flex-start",
+  },
+  contributionNum: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: Colors.text,
+    lineHeight: 18,
+  },
+  contributionNumFaded: {
+    color: Colors.textTertiary,
+  },
+  contributionNumDone: {
+    color: Colors.onPrimaryContainer,
+  },
+  taskLine: {
+    fontSize: 9,
     fontWeight: "500",
     color: Colors.text,
+    lineHeight: 12,
   },
-  dayNumFaded: { color: Colors.textTertiary },
-  dayNumDone: { color: Colors.onPrimaryContainer },
+  commentLine: {
+    fontSize: 9,
+    fontWeight: "400",
+    color: Colors.textSecondary,
+    lineHeight: 12,
+  },
+  moreTasksLine: {
+    fontSize: 9,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+    lineHeight: 12,
+    fontStyle: "italic",
+  },
+  metaFaded: {
+    color: Colors.textTertiary,
+  },
   loadingHint: { fontSize: 12, color: Colors.textSecondary, marginTop: 6 },
+  modalRoot: {
+    flex: 1,
+  },
+  dayDetailCard: {
+    padding: 20,
+    maxHeight: "85%",
+  },
+  dayDetailScroll: {
+    flexGrow: 0,
+    maxHeight: 360,
+  },
+  modalBody: {
+    gap: 16,
+    paddingBottom: 8,
+  },
+  modalSection: {
+    gap: 6,
+  },
+  modalSectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  modalBodyText: {
+    fontSize: 16,
+    color: Colors.text,
+    lineHeight: 22,
+  },
+  modalBullet: {
+    fontSize: 16,
+    color: Colors.text,
+    lineHeight: 22,
+    marginTop: 4,
+  },
+  modalMuted: {
+    fontSize: 14,
+    color: Colors.textTertiary,
+    fontStyle: "italic",
+    lineHeight: 20,
+  },
 });

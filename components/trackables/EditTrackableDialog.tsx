@@ -749,11 +749,15 @@ const styles = StyleSheet.create({
   historyTabPane: {
     flex: 1,
     minHeight: 0,
+    minWidth: 0,
     alignSelf: "stretch",
     width: "100%",
     maxWidth: "100%",
     paddingHorizontal: 8,
     overflow: "hidden",
+    ...(Platform.OS === "web"
+      ? ({ direction: "ltr" } as ViewStyle)
+      : ({} as ViewStyle)),
   },
   fieldBlock: { marginBottom: 16 },
   row: { flexDirection: "row", gap: 12, marginBottom: 4 },

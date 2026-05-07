@@ -175,13 +175,11 @@ export function EditTrackableHistoryTab({
   return (
     <View style={styles.trackerTabWrap}>
       <TrackingHistoryScroller
-        style={[
-          styles.scroll,
-          Platform.OS === "web" ? styles.historyScrollWeb : null,
-        ]}
+        style={styles.scroll}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
+        /* RN-web ScrollViewBase sets scrollbarWidth:none if EITHER indicator is false. */
         showsHorizontalScrollIndicator
       >
         <View style={styles.trackerTable}>
@@ -349,34 +347,34 @@ export function EditTrackableHistoryTab({
 
 const styles = StyleSheet.create({
   scroll: { flex: 1, minHeight: 0 },
-  historyScrollWeb:
-    Platform.OS === "web"
-      ? ({
-          overflowY: "scroll",
-          overflowX: "hidden",
-          flexGrow: 1,
-        } as unknown as ViewStyle)
-      : ({} as ViewStyle),
   center: { paddingVertical: 24, alignItems: "center" },
   muted: { fontSize: 14, color: Colors.textTertiary, textAlign: "center" },
   trackerTabWrap: {
     gap: 0,
     flex: 1,
     minHeight: 0,
+    minWidth: 0,
     marginTop: 8,
     paddingHorizontal: 0,
     alignSelf: "stretch",
     width: "100%",
     overflow: "hidden",
+    ...(Platform.OS === "web"
+      ? ({ direction: "ltr" } as ViewStyle)
+      : ({} as ViewStyle)),
   },
   trackerTable: {
     width: "100%",
     maxWidth: "100%",
+    minWidth: 0,
     alignSelf: "stretch",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
     borderRadius: 4,
     overflow: "hidden",
+    ...(Platform.OS === "web"
+      ? ({ direction: "ltr" } as ViewStyle)
+      : ({} as ViewStyle)),
   },
   trackerDataRow: {
     flexDirection: "row",

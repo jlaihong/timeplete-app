@@ -12,32 +12,7 @@ import {
 import { MaterialIcons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
 
-interface DialogOverlayProps {
-  children: React.ReactNode;
-  onBackdropPress: () => void;
-  align?: "center" | "bottom";
-  zIndex?: number;
-}
-
-export function DialogOverlay({
-  children,
-  onBackdropPress,
-  align = "center",
-  zIndex = 1000,
-}: DialogOverlayProps) {
-  return (
-    <Pressable
-      style={[
-        styles.overlay,
-        align === "center" ? styles.overlayCenter : styles.overlayBottom,
-        { zIndex },
-      ]}
-      onPress={onBackdropPress}
-    >
-      <Pressable onPress={(e) => e.stopPropagation?.()}>{children}</Pressable>
-    </Pressable>
-  );
-}
+export { DialogOverlay, type DialogOverlayProps } from "./DialogOverlay";
 
 interface DialogCardProps {
   children: React.ReactNode;
@@ -106,20 +81,6 @@ export function DialogFooter({ children }: { children: React.ReactNode }) {
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    ...Platform.select({
-      web: { position: "fixed" as any },
-      default: {},
-    }),
-  },
-  overlayCenter: { justifyContent: "center", alignItems: "center" },
-  overlayBottom: { justifyContent: "flex-end" },
   cardBase: {
     backgroundColor: Colors.surfaceContainerHigh,
     overflow: "hidden",

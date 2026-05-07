@@ -67,7 +67,7 @@ export function enrichTimeWindowsWithDisplayFields(
       }
 
       const resolvedTrackableId = resolveAttributedTrackableId(
-        { trackableId: w.trackableId, taskId: w.taskId },
+        { trackableId: w.trackableId, taskId: w.taskId, listId: w.listId },
         taskInfoMap,
         listIdToTrackableId
       );

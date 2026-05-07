@@ -137,7 +137,7 @@ export const search = query({
     for (const w of filtered) {
       if (w.activityType !== "TASK") continue;
       const resolved = resolveAttributedTrackableId(
-        { trackableId: w.trackableId, taskId: w.taskId },
+        { trackableId: w.trackableId, taskId: w.taskId, listId: w.listId },
         taskInfoMap,
         listIdToTrackableId
       );

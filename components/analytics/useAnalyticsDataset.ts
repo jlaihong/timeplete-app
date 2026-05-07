@@ -28,6 +28,7 @@ export interface TimeWindowLite {
   activityType: "TASK" | "EVENT" | "TRACKABLE";
   taskId?: string | null;
   trackableId?: string | null;
+  listId?: string | null;
   tagIds?: string[];
   budgetType: "ACTUAL" | "BUDGETED";
 }
@@ -96,11 +97,14 @@ export function useAnalyticsDataset() {
   const resolveTrackableId = useMemo(() => {
     return (w: TimeWindowLite): string | null => {
       if (w.trackableId) return w.trackableId;
-      if (!w.taskId) return null;
-      const task = tasks[w.taskId];
-      if (!task) return null;
-      if (task.trackableId) return task.trackableId;
-      if (task.listId) return listIdToTrackableId[task.listId] ?? null;
+      if (w.taskId) {
+        const task = tasks[w.taskId];
+        if (task) {
+          if (task.trackableId) return task.trackableId;
+          if (task.listId) return listIdToTrackableId[task.listId] ?? null;
+        }
+      }
+      if (w.listId) return listIdToTrackableId[w.listId] ?? null;
       return null;
     };
   }, [tasks, listIdToTrackableId]);

@@ -1,17 +1,17 @@
 import { Platform } from "react-native";
 import { Colors } from "@/constants/colors";
 
-const STYLE_ID = "timeplete-nonmac-scrollbar";
-const HISTORY_SCROLL_STYLE_ID = "timeplete-tracking-history-scrollbar";
-
 /**
- * Class on the **real** scroll `div` used on web for Edit Trackable → Tracking history
- * (see `TrackingHistoryScroller.web.tsx`). Scoped scrollbar CSS targets this + `data-*`.
+ * Opts the RN-web `ScrollView` host (see `TrackingHistoryScroller.web.tsx`) out of
+ * translucent-scrollbar rules below so the browser paints a normal scrollbar.
+ *
+ * Must stay in sync with `dataSet.trackingHistoryScroll` there (RN-web →
+ * `data-tracking-history-scroll` on the **scroll host** — the same `View` that
+ * `ScrollViewBase` wires `scrollRef` / `overflow` to).
  */
-export const TRACKING_HISTORY_SCROLL_DOM_CLASS = "timeplete-tracking-history-scroll-native";
+const TRACKING_HISTORY_EXCLUDED = "[data-tracking-history-scroll]";
 
-/** Must match the `data-*` attribute set on the scroll `div` (`TrackingHistoryScroller.web.tsx`). */
-export const TRACKING_HISTORY_SCROLL_ATTR_NAME = "data-tracking-history-scroll";
+const STYLE_ID = "timeplete-nonmac-scrollbar-v2";
 
 /** Applied to overflow elements while (or briefly after) the user scrolls them. */
 const SCROLL_REVEAL_CLASS = "timeplete-scrollbar-reveal";
@@ -67,52 +67,6 @@ function installScrollRevealListener(): () => void {
   };
 }
 
-/**
- * Persistent scrollbar chrome for Edit Trackable → tracking history overflow
- * (`TrackingHistoryScroller.web.tsx`) — overrides translucent `*` rules.
- */
-function installTrackingHistoryScrollbarStyles(): () => void {
-  if (typeof document === "undefined") return () => {};
-
-  if (!document.getElementById(HISTORY_SCROLL_STYLE_ID)) {
-    const thumb = Colors.outlineVariant;
-    const thumbHover = Colors.outline;
-    const track = Colors.surfaceContainer;
-    const persistentScrollSurfaces = `[${TRACKING_HISTORY_SCROLL_ATTR_NAME}],
-.${TRACKING_HISTORY_SCROLL_DOM_CLASS}`;
-
-    const style = document.createElement("style");
-    style.id = HISTORY_SCROLL_STYLE_ID;
-    style.textContent = `
-${persistentScrollSurfaces} {
-  scrollbar-width: thin !important;
-  scrollbar-color: ${thumb} ${track} !important;
-  scrollbar-gutter: stable;
-}
-${persistentScrollSurfaces}::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-${persistentScrollSurfaces}::-webkit-scrollbar-track {
-  background-color: ${track};
-  border-radius: 999px;
-}
-${persistentScrollSurfaces}::-webkit-scrollbar-thumb {
-  background-color: ${thumb} !important;
-  border-radius: 999px;
-}
-${persistentScrollSurfaces}::-webkit-scrollbar-thumb:hover {
-  background-color: ${thumbHover} !important;
-}
-`;
-    document.head.appendChild(style);
-  }
-
-  return () => {
-    document.getElementById(HISTORY_SCROLL_STYLE_ID)?.remove();
-  };
-}
-
 function installNonMacUniversalScrollbarStyles(): () => void {
   if (typeof document === "undefined") return () => {};
   if (shouldUseSystemScrollbars()) return () => {};
@@ -123,44 +77,45 @@ function installNonMacUniversalScrollbarStyles(): () => void {
   if (!document.getElementById(STYLE_ID)) {
     const thumb = Colors.outlineVariant;
     const thumbHover = Colors.outline;
+    const ns = `*:not(${TRACKING_HISTORY_EXCLUDED})`;
 
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-    * {
+    ${ns} {
       scrollbar-width: thin;
       scrollbar-color: transparent transparent;
     }
-    *:hover,
-    *:focus-within {
+    ${ns}:hover,
+    ${ns}:focus-within {
       scrollbar-color: ${thumb} transparent;
     }
-    .${SCROLL_REVEAL_CLASS} {
+    .${SCROLL_REVEAL_CLASS}:not(${TRACKING_HISTORY_EXCLUDED}) {
       scrollbar-color: ${thumb} transparent;
     }
 
-    *::-webkit-scrollbar {
+    ${ns}::-webkit-scrollbar {
       width: 6px;
       height: 6px;
     }
-    *::-webkit-scrollbar-track {
+    ${ns}::-webkit-scrollbar-track {
       background: transparent;
     }
-    *::-webkit-scrollbar-corner {
+    ${ns}::-webkit-scrollbar-corner {
       background: transparent;
     }
-    *::-webkit-scrollbar-thumb {
+    ${ns}::-webkit-scrollbar-thumb {
       background-color: transparent;
       border-radius: 9999px;
     }
-    *:hover::-webkit-scrollbar-thumb,
-    *:focus-within::-webkit-scrollbar-thumb,
-    .${SCROLL_REVEAL_CLASS}::-webkit-scrollbar-thumb {
+    ${ns}:hover::-webkit-scrollbar-thumb,
+    ${ns}:focus-within::-webkit-scrollbar-thumb,
+    .${SCROLL_REVEAL_CLASS}:not(${TRACKING_HISTORY_EXCLUDED})::-webkit-scrollbar-thumb {
       background-color: ${thumb};
     }
-    *:hover::-webkit-scrollbar-thumb:hover,
-    *:focus-within::-webkit-scrollbar-thumb:hover,
-    .${SCROLL_REVEAL_CLASS}::-webkit-scrollbar-thumb:hover {
+    ${ns}:hover::-webkit-scrollbar-thumb:hover,
+    ${ns}:focus-within::-webkit-scrollbar-thumb:hover,
+    .${SCROLL_REVEAL_CLASS}:not(${TRACKING_HISTORY_EXCLUDED})::-webkit-scrollbar-thumb:hover {
       background-color: ${thumbHover};
     }
   `;
@@ -178,20 +133,15 @@ function installNonMacUniversalScrollbarStyles(): () => void {
  * Installs global scrollbar appearance for react-native-web `ScrollView` and
  * other overflow regions (Chrome/Safari: webkit; Firefox: scrollbar-color).
  *
- * Non-mac: scrollbars stay hidden unless hover / focus-within / active scroll.
- * Persistent scroll surfaces on web (`TrackingHistoryScroller`) use matching
- * `data-*` + class hooks; stylesheet `installTrackingHistoryScrollbarStyles` styles them for visible thumbs.
+ * Non-mac: scrollbars stay hidden until hover / focus-within / active scroll,
+ * except **Edit Trackable → Tracking history**, which is excluded via
+ * `data-tracking-history-scroll` so the real scroll host keeps native-visible
+ * scrollbars (and is not forced to `scrollbar-width: none` — both indicator
+ * props must be true on that `ScrollView`; see `EditTrackableHistoryTab`).
  */
 export function installWebScrollbarStyles(): () => void {
   if (Platform.OS !== "web") return () => {};
   if (typeof document === "undefined") return () => {};
 
-  const cleanups: Array<() => void> = [
-    installTrackingHistoryScrollbarStyles(),
-    installNonMacUniversalScrollbarStyles(),
-  ];
-
-  return () => {
-    cleanups.forEach((c) => c());
-  };
+  return installNonMacUniversalScrollbarStyles();
 }
