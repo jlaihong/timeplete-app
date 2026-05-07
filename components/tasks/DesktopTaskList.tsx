@@ -37,8 +37,8 @@ import {
   todayYYYYMMDD,
   addDays,
   formatDisplayDate,
+  getDaysInRange,
   isToday,
-  isPast,
 } from "../../lib/dates";
 import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
@@ -67,8 +67,10 @@ interface DesktopTaskListProps {
   onAddTask?: (day?: string) => void;
   onSelectTask?: (taskId: Id<"tasks">) => void;
   /**
-   * First day of the home task query window (passed from the calendar’s
-   * selected day). Defaults to the device clock’s “today” when omitted.
+   * Calendar header day on home (`CalendarView` selection). The task panel
+   * window spans `min(this, clock today)…max(this, clock today)` (+ load more),
+   * matching productivity-one when stepping back a day still shows yesterday
+   * and today instead of shunting yesterday into Overdue.
    */
   rangeStartYYYYMMDD?: string;
 }
@@ -249,31 +251,35 @@ export function DesktopTaskList({
 }: DesktopTaskListProps) {
   const { profileReady } = useAuth();
   const clockToday = todayYYYYMMDD();
-  const rangeStart = rangeStartYYYYMMDD ?? clockToday;
-  // Server-driven pagination. Initial render = rangeStart only (rangeEndDays=0).
-  // Each "Load More" click extends the window by 7 days into the future,
-  // triggering a fresh query – we never preload future days client-side.
+  const calendarDay = rangeStartYYYYMMDD ?? clockToday;
+  /** Inclusive query/day-column span — always covers real today and the picked calendar day. */
+  const windowStart =
+    calendarDay < clockToday ? calendarDay : clockToday;
+  const windowEndBase =
+    calendarDay > clockToday ? calendarDay : clockToday;
+
+  // Server-driven pagination: extend forward from `windowEndBase` only (P1-style).
   const [rangeEndDays, setRangeEndDays] = useState(0);
 
-  /** Reset pagination when the calendar anchor moves — derive synchronously so the first query uses `rangeStart..rangeStart` (never stale extra days). */
-  const rangePagingAnchorRef = useRef(rangeStart);
-  const pagingAnchorMismatch = rangePagingAnchorRef.current !== rangeStart;
+  /** Reset load-more offset when the calendar picks a different day. */
+  const rangePagingAnchorRef = useRef(calendarDay);
+  const pagingAnchorMismatch = rangePagingAnchorRef.current !== calendarDay;
   const effectiveRangeEndDays = pagingAnchorMismatch ? 0 : rangeEndDays;
   if (pagingAnchorMismatch) {
-    rangePagingAnchorRef.current = rangeStart;
+    rangePagingAnchorRef.current = calendarDay;
   }
 
   useLayoutEffect(() => {
     setRangeEndDays(0);
-  }, [rangeStart]);
+  }, [calendarDay]);
 
-  const visibleEndDay = addDays(rangeStart, effectiveRangeEndDays);
+  const visibleEndDay = addDays(windowEndBase, effectiveRangeEndDays);
 
   const tasksQuery = useQuery(
     api.tasks.getHomeTasks,
     profileReady
       ? {
-          todayYYYYMMDD: rangeStart,
+          todayYYYYMMDD: windowStart,
           rangeEndYYYYMMDD: visibleEndDay,
         }
       : "skip",
@@ -283,17 +289,17 @@ export function DesktopTaskList({
    * Convex can briefly leave `tasksQuery` undefined while args change after
    * “Load more”. Keep showing the last snapshot until the extended window
    * resolves so the list does not flash empty / full-page loading (productivity-one
-   * keeps prior rows visible). Never reuse stale data when `rangeStart` changes.
+   * keeps prior rows visible). Never reuse stale data when `windowStart` changes.
    */
   const lastTasksResolvedRef = useRef<{
-    rangeStart: string;
+    queryWindowStart: string;
     visibleEndDay: string;
     tasks: TaskRowTask[];
   } | null>(null);
 
   if (tasksQuery !== undefined) {
     lastTasksResolvedRef.current = {
-      rangeStart,
+      queryWindowStart: windowStart,
       visibleEndDay,
       tasks: tasksQuery as TaskRowTask[],
     };
@@ -304,13 +310,13 @@ export function DesktopTaskList({
     const prev = lastTasksResolvedRef.current;
     if (
       prev &&
-      prev.rangeStart === rangeStart &&
+      prev.queryWindowStart === windowStart &&
       visibleEndDay.localeCompare(prev.visibleEndDay) > 0
     ) {
       return prev.tasks;
     }
     return undefined;
-  }, [tasksQuery, rangeStart, visibleEndDay]);
+  }, [tasksQuery, windowStart, visibleEndDay]);
   const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const sharedWithMeAccepted = useQuery(
@@ -326,7 +332,7 @@ export function DesktopTaskList({
   /* ──────────────────  Recurring instance materialization  ──────────────────
    * Recurring tasks live as a single `recurringTasks` rule plus zero-to-many
    * materialized `tasks` rows (one per occurrence). Materialization is lazy:
-   * the home page calls `generateInstances(rangeStart, visibleEndDay)` whenever
+   * the home page calls `generateInstances(windowStart, visibleEndDay)` whenever
    * its window changes, and the mutation idempotently fills any missing
    * `(ruleId, taskDay)` rows. Once the rows exist, the reactive
    * `getHomeTasks` query above pulls them in like any other task — no
@@ -348,14 +354,14 @@ export function DesktopTaskList({
     // subscription resolves, doubling RTTs on first paint.
     if (recurringRules === undefined) return;
     void generateInstances({
-      rangeStartYYYYMMDD: rangeStart,
+      rangeStartYYYYMMDD: windowStart,
       rangeEndYYYYMMDD: visibleEndDay,
     });
     // We intentionally key on the *content* of the rules array, not the
     // identity, so a rule mutation immediately re-materializes — but a
     // re-render with no rule change is a no-op.
   }, [
-    rangeStart,
+    windowStart,
     visibleEndDay,
     recurringRules?.length,
     recurringRules?.map((r) => r._id).join(","),
@@ -503,10 +509,12 @@ export function DesktopTaskList({
   /* Group tasks (server-authoritative).
    *
    * Server already constrained the payload to:
-   *   - overdue (incomplete + non-recurring + taskDay < rangeStart)
-   *   - tasks scheduled in [rangeStart, visibleEndDay]
-   *   - tasks completed in [rangeStart, visibleEndDay]
-   * so we only need to bucket them, not filter for date range or recurrence.
+   *   - overdue (incomplete + non-recurring + taskDay < windowStart)
+   *   - tasks scheduled in [windowStart, visibleEndDay]
+   *   - tasks completed in [windowStart, visibleEndDay]
+   * Group incomplete items into Overdue only when scheduled **before** this
+   * same `windowStart` — not merely “before real today”, so stepping the
+   * calendar back still shows that day’s column (productivity-one parity).
    */
   const serverGroups = useMemo(() => {
     if (!tasks) return [] as { id: string; tasks: TaskRowTask[] }[];
@@ -529,7 +537,7 @@ export function DesktopTaskList({
         continue;
       }
 
-      if (isPast(scheduleDay) && !isToday(scheduleDay)) {
+      if (scheduleDay < windowStart) {
         if (!groups.has(OVERDUE_GROUP_ID))
           groups.set(OVERDUE_GROUP_ID, []);
         groups.get(OVERDUE_GROUP_ID)!.push(task);
@@ -541,8 +549,7 @@ export function DesktopTaskList({
 
     // Always show every day in the visible window, even if empty,
     // so users have an obvious target for adding/scheduling tasks.
-    for (let i = 0; i <= rangeEndDays; i++) {
-      const d = addDays(rangeStart, i);
+    for (const d of getDaysInRange(windowStart, visibleEndDay)) {
       if (!groups.has(d)) groups.set(d, []);
     }
 
@@ -568,7 +575,7 @@ export function DesktopTaskList({
         return (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0);
       }),
     }));
-  }, [tasks, rangeStart, rangeEndDays]);
+  }, [tasks, windowStart, visibleEndDay]);
 
   /* Local optimistic state — mirrors serverGroups but is mutated during drag. */
   const [localGroups, setLocalGroups] = useState<
