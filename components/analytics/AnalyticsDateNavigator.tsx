@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -54,25 +55,8 @@ export function AnalyticsDateNavigator() {
 
   const hasWebPicker = !isYearly && Platform.OS === "web";
 
-  const prevBtn = (
-    <TouchableOpacity
-      onPress={goPrev}
-      style={styles.iconBtn}
-      accessibilityLabel="Previous"
-    >
-      <Ionicons name="chevron-back" size={22} color={Colors.primary} />
-    </TouchableOpacity>
-  );
-
-  const nextBtn = (
-    <TouchableOpacity
-      onPress={goNext}
-      style={styles.iconBtn}
-      accessibilityLabel="Next"
-    >
-      <Ionicons name="chevron-forward" size={22} color={Colors.primary} />
-    </TouchableOpacity>
-  );
+  const prevBtn = <NavChevron direction="back" onPress={goPrev} />;
+  const nextBtn = <NavChevron direction="forward" onPress={goNext} />;
 
   if (hasWebPicker) {
     return (
@@ -97,6 +81,37 @@ export function AnalyticsDateNavigator() {
       </TouchableOpacity>
       {nextBtn}
     </View>
+  );
+}
+
+function NavChevron({
+  direction,
+  onPress,
+}: {
+  direction: "back" | "forward";
+  onPress: () => void;
+}) {
+  const [hovered, setHovered] = React.useState(false);
+  const [pressed, setPressed] = React.useState(false);
+  const showCue = hovered || pressed;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={direction === "back" ? "Previous" : "Next"}
+      onPress={onPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      style={[styles.iconBtn, showCue && styles.iconBtnActive]}
+    >
+      <Ionicons
+        name={direction === "back" ? "chevron-back" : "chevron-forward"}
+        size={22}
+        color={Colors.primary}
+      />
+    </Pressable>
   );
 }
 
@@ -159,6 +174,24 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
+    ...Platform.select({
+      web: {
+        cursor: "pointer",
+        transition:
+          "background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease",
+      } as Record<string, unknown>,
+      default: {},
+    }),
+  },
+  iconBtnActive: {
+    backgroundColor: Colors.surfaceContainerHigh,
+    ...Platform.select({
+      web: {
+        boxShadow: "0 0 0 2px rgba(0, 218, 245, 0.35)",
+        transform: [{ scale: 1.05 }],
+      } as Record<string, unknown>,
+      default: {},
+    }),
   },
   labelTap: {
     alignSelf: "stretch",
