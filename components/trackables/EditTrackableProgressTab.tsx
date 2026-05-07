@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, Modal, ScrollView } from "react-native";
 import { useQuery } from "convex/react";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../convex/_generated/api";
@@ -7,11 +7,13 @@ import { Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
 import {
   formatYYYYMMDD,
+  formatYYYYMMDDForDisplay,
   parseYYYYMMDD,
   startOfMonth,
   todayYYYYMMDD,
 } from "../../lib/dates";
 import { useAuth } from "../../hooks/useAuth";
+import { DialogCard, DialogHeader, DialogOverlay } from "../ui/DialogScaffold";
 
 type GoalProgressType = "NUMBER" | "TIME_TRACK" | "DAYS_A_WEEK" | "MINUTES_A_WEEK";
 
@@ -88,8 +90,12 @@ function normalizeDayKey(ymd: string): string {
   return ymd.replace(/\D/g, "").slice(0, 8);
 }
 
-/** Match productivity-one `dayMaxEventRows`-style density so one busy day doesn’t blow up the grid. */
-const MAX_TASK_LINES = 2;
+/** In-cell preview lines; full lists open in the day-detail modal. */
+const MAX_TASK_LINES = 4;
+
+/** ~1.5× baseline (72px min square → 108). Typography scales similarly. */
+const CELL_MIN = Math.round(72 * 1.5);
+const GAP = Math.round(4 * 1.5);
 
 export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTabTrackable }) {
   const { profileReady } = useAuth();
@@ -99,7 +105,9 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     type === "NUMBER" || type === "DAYS_A_WEEK" || type === "MINUTES_A_WEEK";
 
   const defaultAnchor = clipYYYYMMDD(todayYYYYMMDD(), trackable.startDayYYYYMMDD, trackable.endDayYYYYMMDD);
-  const [viewAnchor, setViewAnchor] = useState(defaultAnchor);
+  const [expandedDayYYYYMMDD, setExpandedDayYYYYMMDD] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     setViewAnchor(
@@ -235,6 +243,15 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     year: "numeric",
   });
 
+  const expandedDetail =
+    expandedDayYYYYMMDD != null
+      ? detailsByDay.get(normalizeDayKey(expandedDayYYYYMMDD))
+      : undefined;
+  const expandedDayLabel =
+    expandedDayYYYYMMDD != null
+      ? formatYYYYMMDDForDisplay(expandedDayYYYYMMDD.slice(0, 8))
+      : "";
+
   return (
     <View style={styles.wrap}>
       {caption ? (
@@ -301,17 +318,22 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                 comment ? `comment: ${comment}` : null,
               ].filter(Boolean);
 
+              const a11yHint = "Opens full details for this day";
+
               return (
-                <View
+                <Pressable
                   key={cell.yyyymmdd}
-                  style={[
+                  onPress={() => setExpandedDayYYYYMMDD(cell.yyyymmdd)}
+                  style={({ pressed }) => [
                     styles.dayCell,
                     done ? styles.dayDone : null,
                     faded ? styles.dayFaded : null,
                     isToday ? styles.dayTodayBorder : null,
+                    pressed ? styles.dayCellPressed : null,
                   ]}
-                  accessibilityRole="text"
+                  accessibilityRole="button"
                   accessibilityLabel={a11yParts.join(". ")}
+                  accessibilityHint={a11yHint}
                 >
                   <Text style={[styles.dayNumCorner, faded && styles.dayNumCornerFaded]}>
                     {dom}
@@ -332,12 +354,9 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                       <Text
                         key={`${cell.yyyymmdd}-t-${ti}`}
                         style={[styles.taskLine, faded && styles.metaFaded]}
-                        numberOfLines={1}
+                        numberOfLines={2}
                         ellipsizeMode="tail"
                         accessibilityLabel={name}
-                        {...(Platform.OS === "web"
-                          ? ({ title: `✓ ${name}` } as { title: string })
-                          : {})}
                       >
                         ✓ {name}
                       </Text>
@@ -353,18 +372,15 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                     {comment ? (
                       <Text
                         style={[styles.commentLine, faded && styles.metaFaded]}
-                        numberOfLines={2}
+                        numberOfLines={3}
                         ellipsizeMode="tail"
                         accessibilityLabel={comment}
-                        {...(Platform.OS === "web"
-                          ? ({ title: `💬 ${comment}` } as { title: string })
-                          : {})}
                       >
                         💬 {comment}
                       </Text>
                     ) : null}
                   </View>
-                </View>
+                </Pressable>
               );
             })}
           </View>
@@ -372,6 +388,91 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
       </View>
       {calendarLoading ? (
         <Text style={styles.loadingHint}>Loading progress…</Text>
+      ) : null}
+
+      <Modal
+        visible={expandedDayYYYYMMDD != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExpandedDayYYYYMMDD(null)}
+      >
+        <View style={styles.modalRoot}>
+          <DialogOverlay onBackdropPress={() => setExpandedDayYYYYMMDD(null)}>
+            <DialogCard desktopWidth={440} style={styles.dayDetailCard}>
+              <DialogHeader
+                title={expandedDayLabel || "Day details"}
+                onClose={() => setExpandedDayYYYYMMDD(null)}
+              />
+              <ScrollView
+                style={styles.dayDetailScroll}
+                keyboardShouldPersistTaps="handled"
+              >
+                {expandedDayYYYYMMDD != null ? (
+                  <DayDetailModalBody
+                    yyyymmdd={expandedDayYYYYMMDD}
+                    trackable={trackable}
+                    detail={expandedDetail}
+                  />
+                ) : null}
+              </ScrollView>
+            </DialogCard>
+          </DialogOverlay>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+function DayDetailModalBody({
+  yyyymmdd,
+  trackable,
+  detail,
+}: {
+  yyyymmdd: string;
+  trackable: ProgressTabTrackable;
+  detail: DayDetail | undefined;
+}) {
+  const inGoalRange =
+    yyyymmdd >= trackable.startDayYYYYMMDD &&
+    yyyymmdd <= trackable.endDayYYYYMMDD;
+  const logged = detail?.numCompleted ?? 0;
+  const tasks = detail?.completedTaskNames ?? [];
+  const comment = (detail?.comments ?? "").trim();
+  const hasAny = logged > 0 || tasks.length > 0 || comment.length > 0;
+
+  return (
+    <View style={styles.modalBody}>
+      {!inGoalRange ? (
+        <Text style={styles.modalMuted}>
+          Outside this trackable's goal date range.
+        </Text>
+      ) : null}
+      <View style={styles.modalSection}>
+        <Text style={styles.modalSectionLabel}>Contribution (count)</Text>
+        <Text style={styles.modalBodyText}>{logged > 0 ? String(logged) : "—"}</Text>
+      </View>
+      <View style={styles.modalSection}>
+        <Text style={styles.modalSectionLabel}>
+          Completed tasks ({tasks.length})
+        </Text>
+        {tasks.length === 0 ? (
+          <Text style={styles.modalMuted}>—</Text>
+        ) : (
+          tasks.map((name, i) => (
+            <Text key={`${i}-${name.slice(0, 48)}`} style={styles.modalBullet}>
+              ✓ {name}
+            </Text>
+          ))
+        )}
+      </View>
+      <View style={styles.modalSection}>
+        <Text style={styles.modalSectionLabel}>Comment</Text>
+        <Text style={styles.modalBodyText}>{comment.length > 0 ? comment : "—"}</Text>
+      </View>
+      {!hasAny && inGoalRange ? (
+        <Text style={styles.modalMuted}>
+          No logged count, attributing task completions, or comments for this day.
+        </Text>
       ) : null}
     </View>
   );
@@ -427,25 +528,30 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   grid: {
-    marginTop: 4,
-    gap: 4,
+    marginTop: GAP,
+    gap: GAP,
   },
   gridRow: {
     flexDirection: "row",
-    gap: 4,
-    alignItems: "stretch",
+    gap: GAP,
+    alignItems: "flex-start",
   },
   dayCell: {
     flex: 1,
     minWidth: 0,
-    minHeight: 72,
+    minHeight: CELL_MIN,
+    aspectRatio: 1,
     position: "relative",
-    borderRadius: 6,
+    borderRadius: 9,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainer,
-    padding: 3,
-    paddingTop: 2,
+    padding: 5,
+    paddingTop: 4,
+    overflow: "hidden",
+  },
+  dayCellPressed: {
+    opacity: 0.88,
   },
   dayFaded: { opacity: 0.38 },
   dayDone: {
@@ -458,9 +564,9 @@ const styles = StyleSheet.create({
   },
   dayNumCorner: {
     position: "absolute",
-    top: 3,
-    right: 4,
-    fontSize: 11,
+    top: 5,
+    right: 6,
+    fontSize: 16,
     fontWeight: "600",
     color: Colors.text,
     zIndex: 1,
@@ -471,15 +577,15 @@ const styles = StyleSheet.create({
   dayCellBody: {
     flex: 1,
     width: "100%",
-    marginTop: 12,
-    gap: 2,
+    marginTop: 18,
+    gap: 4,
     justifyContent: "flex-start",
   },
   contributionNum: {
-    fontSize: 15,
+    fontSize: 22,
     fontWeight: "700",
     color: Colors.text,
-    lineHeight: 18,
+    lineHeight: 26,
   },
   contributionNumFaded: {
     color: Colors.textTertiary,
@@ -488,26 +594,68 @@ const styles = StyleSheet.create({
     color: Colors.onPrimaryContainer,
   },
   taskLine: {
-    fontSize: 9,
+    fontSize: 13,
     fontWeight: "500",
     color: Colors.text,
-    lineHeight: 12,
+    lineHeight: 17,
   },
   commentLine: {
-    fontSize: 9,
+    fontSize: 13,
     fontWeight: "400",
     color: Colors.textSecondary,
-    lineHeight: 12,
+    lineHeight: 17,
   },
   moreTasksLine: {
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: "600",
     color: Colors.textSecondary,
-    lineHeight: 12,
+    lineHeight: 16,
     fontStyle: "italic",
   },
   metaFaded: {
     color: Colors.textTertiary,
   },
   loadingHint: { fontSize: 12, color: Colors.textSecondary, marginTop: 6 },
+  modalRoot: {
+    flex: 1,
+  },
+  dayDetailCard: {
+    padding: 20,
+    maxHeight: "85%",
+  },
+  dayDetailScroll: {
+    flexGrow: 0,
+    maxHeight: 360,
+  },
+  modalBody: {
+    gap: 16,
+    paddingBottom: 8,
+  },
+  modalSection: {
+    gap: 6,
+  },
+  modalSectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Colors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  modalBodyText: {
+    fontSize: 16,
+    color: Colors.text,
+    lineHeight: 22,
+  },
+  modalBullet: {
+    fontSize: 16,
+    color: Colors.text,
+    lineHeight: 22,
+    marginTop: 4,
+  },
+  modalMuted: {
+    fontSize: 14,
+    color: Colors.textTertiary,
+    fontStyle: "italic",
+    lineHeight: 20,
+  },
 });
