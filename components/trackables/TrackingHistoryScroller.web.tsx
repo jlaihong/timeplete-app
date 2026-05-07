@@ -25,10 +25,19 @@ function domOuterStyle(scrollViewStyle: ScrollViewProps["style"]): CSSProperties
   return {
     ...out,
     ...(out.minHeight === undefined ? { minHeight: 0 } : null),
+    /**
+     * Global RTL (`dir=rtl`) moves the vertical scrollbar to the **left** and can
+     * lay out `flexDirection: "row"` table rows so the grid sits off-screen. This
+     * scroller is a data table — always use LTR flow independent of locale.
+     */
+    direction: "ltr",
+    minWidth: 0,
+    boxSizing: "border-box",
     overflowX: "hidden",
     overflowY: "auto",
     overscrollBehavior: "contain",
-    scrollbarGutter: "stable",
+    // `stable` reserves gutter space; combined with RTL it produced empty panes for reviewers.
+    scrollbarGutter: "auto",
   } as CSSProperties;
 }
 

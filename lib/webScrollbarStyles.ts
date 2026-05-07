@@ -85,9 +85,10 @@ function installTrackingHistoryScrollbarStyles(): () => void {
     style.id = HISTORY_SCROLL_STYLE_ID;
     style.textContent = `
 ${persistentScrollSurfaces} {
+  direction: ltr !important;
   scrollbar-width: thin !important;
   scrollbar-color: ${thumb} ${track} !important;
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
 }
 ${persistentScrollSurfaces}::-webkit-scrollbar {
   width: 10px;

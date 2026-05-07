@@ -363,20 +363,28 @@ const styles = StyleSheet.create({
     gap: 0,
     flex: 1,
     minHeight: 0,
+    minWidth: 0,
     marginTop: 8,
     paddingHorizontal: 0,
     alignSelf: "stretch",
     width: "100%",
     overflow: "hidden",
+    ...(Platform.OS === "web"
+      ? ({ direction: "ltr" } as ViewStyle)
+      : ({} as ViewStyle)),
   },
   trackerTable: {
     width: "100%",
     maxWidth: "100%",
+    minWidth: 0,
     alignSelf: "stretch",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
     borderRadius: 4,
     overflow: "hidden",
+    ...(Platform.OS === "web"
+      ? ({ direction: "ltr" } as ViewStyle)
+      : ({} as ViewStyle)),
   },
   trackerDataRow: {
     flexDirection: "row",
