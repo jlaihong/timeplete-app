@@ -3,6 +3,7 @@ import React, {
   useMemo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
 } from "react";
 import {
@@ -253,9 +254,22 @@ export function DesktopTaskList({
   // Each "Load More" click extends the window by 7 days into the future,
   // triggering a fresh query – we never preload future days client-side.
   const [rangeEndDays, setRangeEndDays] = useState(0);
-  const visibleEndDay = addDays(rangeStart, rangeEndDays);
 
-  const tasks = useQuery(
+  /** Reset pagination when the calendar anchor moves — derive synchronously so the first query uses `rangeStart..rangeStart` (never stale extra days). */
+  const rangePagingAnchorRef = useRef(rangeStart);
+  const pagingAnchorMismatch = rangePagingAnchorRef.current !== rangeStart;
+  const effectiveRangeEndDays = pagingAnchorMismatch ? 0 : rangeEndDays;
+  if (pagingAnchorMismatch) {
+    rangePagingAnchorRef.current = rangeStart;
+  }
+
+  useLayoutEffect(() => {
+    setRangeEndDays(0);
+  }, [rangeStart]);
+
+  const visibleEndDay = addDays(rangeStart, effectiveRangeEndDays);
+
+  const tasksQuery = useQuery(
     api.tasks.getHomeTasks,
     profileReady
       ? {
@@ -264,6 +278,39 @@ export function DesktopTaskList({
         }
       : "skip",
   );
+
+  /**
+   * Convex can briefly leave `tasksQuery` undefined while args change after
+   * “Load more”. Keep showing the last snapshot until the extended window
+   * resolves so the list does not flash empty / full-page loading (productivity-one
+   * keeps prior rows visible). Never reuse stale data when `rangeStart` changes.
+   */
+  const lastTasksResolvedRef = useRef<{
+    rangeStart: string;
+    visibleEndDay: string;
+    tasks: TaskRowTask[];
+  } | null>(null);
+
+  if (tasksQuery !== undefined) {
+    lastTasksResolvedRef.current = {
+      rangeStart,
+      visibleEndDay,
+      tasks: tasksQuery as TaskRowTask[],
+    };
+  }
+
+  const tasks = useMemo((): TaskRowTask[] | undefined => {
+    if (tasksQuery !== undefined) return tasksQuery as TaskRowTask[];
+    const prev = lastTasksResolvedRef.current;
+    if (
+      prev &&
+      prev.rangeStart === rangeStart &&
+      visibleEndDay.localeCompare(prev.visibleEndDay) > 0
+    ) {
+      return prev.tasks;
+    }
+    return undefined;
+  }, [tasksQuery, rangeStart, visibleEndDay]);
   const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const sharedWithMeAccepted = useQuery(

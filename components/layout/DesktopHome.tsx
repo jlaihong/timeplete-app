@@ -70,7 +70,6 @@ export function DesktopHome() {
 
           <View style={styles.centerColumn}>
             <DesktopTaskList
-              key={homeCalendarDay}
               title="Tasks"
               rangeStartYYYYMMDD={homeCalendarDay}
               onAddTask={(day) => {
