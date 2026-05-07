@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 10,
     paddingHorizontal: 16,
-    gap: 12,
+    gap: 6,
   },
   iconBtn: {
     width: 36,
@@ -142,12 +142,11 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
   },
   center: {
-    flex: 1,
-    minWidth: 0,
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
+    maxWidth: "100%",
   },
   middleLabel: {
     fontSize: 15,
