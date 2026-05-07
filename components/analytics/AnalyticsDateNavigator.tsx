@@ -18,7 +18,8 @@ import { useAnalyticsState } from "./AnalyticsState";
 
 /**
  * Date navigator — productivity-one's `analytics-date-navigator`.
- * - Daily/Weekly/Monthly: `< [picker] >` chevrons step the right amount.
+ * - Daily/Weekly/Monthly: centered label above native `<input type="date">`
+ *   on web; chevrons step the right amount.
  * - Yearly: hides the picker entirely (P1 has no datepicker on yearly),
  *   shows just `< YYYY >` arrows.
  */
@@ -67,15 +68,15 @@ export function AnalyticsDateNavigator() {
       </TouchableOpacity>
 
       <View style={styles.center}>
+        <TouchableOpacity onPress={goToday} style={styles.labelTap}>
+          <Text style={styles.middleLabel}>{middleLabel}</Text>
+        </TouchableOpacity>
         {!isYearly && Platform.OS === "web" && (
           <DateInputWeb
             value={selectedDate}
             onChange={setSelectedDate}
           />
         )}
-        <TouchableOpacity onPress={goToday}>
-          <Text style={styles.middleLabel}>{middleLabel}</Text>
-        </TouchableOpacity>
       </View>
 
       <TouchableOpacity
@@ -116,7 +117,6 @@ function DateInputWeb({
         padding: "6px 10px",
         fontSize: 13,
         fontFamily: "inherit",
-        marginRight: 10,
       }}
     />
   );
@@ -138,16 +138,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  labelTap: {
+    alignSelf: "stretch",
+  },
   center: {
-    flexDirection: "row",
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "column",
     alignItems: "center",
-    flexWrap: "wrap",
     justifyContent: "center",
-    gap: 6,
+    gap: 8,
   },
   middleLabel: {
     fontSize: 15,
     fontWeight: "600",
     color: Colors.text,
+    textAlign: "center",
   },
 });
