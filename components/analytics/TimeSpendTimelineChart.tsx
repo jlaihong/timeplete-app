@@ -7,50 +7,44 @@ import {
   Platform,
 } from "react-native";
 import { Colors } from "../../constants/colors";
-import { level1Shadow } from "../../theme/panels";
 import type { TimeWindowLite } from "./useAnalyticsDataset";
 import type { TrackableLite } from "./useAnalyticsDataset";
 import {
-  assignOverlapLanes,
   buildBlocksForDay,
   SECONDS_PER_DAY,
   type TimelineBlock,
 } from "./timeSpendTimelineUtils";
 
 /**
- * Wall-clock axis: top = 00:00, bottom = 24:00 (Productivity-One style).
+ * Vertical wall-clock strip: top = 00:00, bottom = 24:00 — calendar / day-planner
+ * parity (not a compact dashboard chart).
  */
 const TICK_LABELS = ["00:00", "06:00", "12:00", "18:00", "24:00"] as const;
 const TICK_POSITION_PCT = [0, 25, 50, 75, 100] as const;
 
-const AXIS_W_NARROW = 38;
-const AXIS_W_WIDE = 46;
-const LABEL_COL_NARROW = 44;
-const LABEL_COL_WIDE = 58;
+/** Hours 1–23 for faint grid (6h multiples slightly stronger). */
+const HOUR_MARKERS = Array.from({ length: 23 }, (_, i) => i + 1);
 
-const TRACK_PADDING = 5;
-const WELL_RADIUS = 10;
-const BLOCK_RADIUS = 5;
+const AXIS_W_NARROW = 42;
+const AXIS_W_WIDE = 50;
+const LABEL_COL_NARROW = 48;
+const LABEL_COL_WIDE = 64;
 
+/** Pixels per hour — tall strip so morning/afternoon/evening read at a glance. */
 function trackHeightForWidth(windowWidth: number): number {
-  if (windowWidth < 360) return 220;
-  if (windowWidth < 480) return 272;
-  return 320;
+  const pxPerHour =
+    windowWidth < 380 ? 32 : windowWidth < 720 ? 36 : 42;
+  return pxPerHour * 24;
 }
 
-const blockChrome = Platform.select({
-  web: {
-    boxShadow:
-      "0 1px 2px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.14)",
-  } as object,
-  default: {
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.35,
-    shadowRadius: 1.5,
-  },
-});
+function sortBlocksForOverlapDraw(blocks: TimelineBlock[]): TimelineBlock[] {
+  return [...blocks].sort(
+    (a, b) =>
+      a.startSec - b.startSec ||
+      b.endSec - a.endSec ||
+      a.windowId.localeCompare(b.windowId),
+  );
+}
 
 export interface TimeSpendTimelineChartProps {
   days: string[];
@@ -59,7 +53,7 @@ export interface TimeSpendTimelineChartProps {
   trackables: Record<string, TrackableLite | undefined>;
   fallbackColour: string;
   dayLabel: (dayYYYYMMDD: string) => string;
-  /** Extra gap between stacked day rows (weekly/monthly). */
+  /** Extra gap between days (weekly / monthly). */
   rowGap?: number;
 }
 
@@ -70,13 +64,12 @@ export function TimeSpendTimelineChart({
   trackables,
   fallbackColour,
   dayLabel,
-  rowGap = 12,
+  rowGap = 24,
 }: TimeSpendTimelineChartProps) {
   const { width } = useWindowDimensions();
   const labelColW = width < 400 ? LABEL_COL_NARROW : LABEL_COL_WIDE;
   const axisW = width < 400 ? AXIS_W_NARROW : AXIS_W_WIDE;
   const trackHeight = trackHeightForWidth(width);
-  const innerHeight = Math.max(0, trackHeight - TRACK_PADDING * 2);
 
   const rows = useMemo(() => {
     return days.map((day) => {
@@ -87,23 +80,23 @@ export function TimeSpendTimelineChart({
         trackables,
         fallbackColour,
       );
-      const lanes =
-        blocks.length > 0 ? assignOverlapLanes(blocks) : ([] as number[]);
-      const maxLane = lanes.length ? Math.max(...lanes) : 0;
-      const laneCount = Math.max(1, maxLane + 1);
-      return { day, blocks, lanes, laneCount };
+      return { day, blocks: sortBlocksForOverlapDraw(blocks) };
     });
   }, [days, timeWindows, resolveTrackableId, trackables, fallbackColour]);
 
   return (
     <View style={styles.wrap}>
-      {rows.map(({ day, blocks, lanes, laneCount }, rowIdx) => (
+      {rows.map(({ day, blocks }, rowIdx) => (
         <View
           key={day}
           style={[
             styles.dayRow,
-            rowIdx < rows.length - 1 && { marginBottom: rowGap },
-            rowIdx < rows.length - 1 && styles.dayRowDivider,
+            rowIdx < rows.length - 1 && {
+              marginBottom: rowGap,
+              paddingBottom: 6,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: "rgba(186, 201, 205, 0.2)",
+            },
           ]}
         >
           <View style={[styles.dayLabelCol, { width: labelColW }]}>
@@ -122,7 +115,11 @@ export function TimeSpendTimelineChart({
                     transform: [
                       {
                         translateY:
-                          idx === 0 ? 0 : idx === TICK_LABELS.length - 1 ? -11 : -6,
+                          idx === 0
+                            ? 0
+                            : idx === TICK_LABELS.length - 1
+                              ? -12
+                              : -7,
                       },
                     ],
                   },
@@ -132,15 +129,16 @@ export function TimeSpendTimelineChart({
               </Text>
             ))}
           </View>
-          <View style={[styles.trackChrome, { height: trackHeight }]}>
-            <View style={[styles.trackWell, { height: innerHeight }]}>
-              <DayTrack
-                blocks={blocks}
-                lanes={lanes}
-                laneCount={laneCount}
-                trackHeight={innerHeight}
-              />
-            </View>
+          <View
+            style={[
+              styles.scheduleStrip,
+              { height: trackHeight },
+              Platform.OS === "web"
+                ? ({ userSelect: "none" } as object)
+                : null,
+            ]}
+          >
+            <DayTrack blocks={blocks} trackHeight={trackHeight} />
           </View>
         </View>
       ))}
@@ -150,48 +148,46 @@ export function TimeSpendTimelineChart({
 
 function DayTrack({
   blocks,
-  lanes,
-  laneCount,
   trackHeight,
 }: {
   blocks: TimelineBlock[];
-  lanes: number[];
-  laneCount: number;
   trackHeight: number;
 }) {
-  const laneGapPct = laneCount > 1 ? 0.5 : 0;
-  const slotPct = (100 - laneGapPct * (laneCount - 1)) / laneCount;
+  const minHeightPct = Math.max((5 / trackHeight) * 100, 0.09);
 
   return (
     <View style={[styles.track, { height: trackHeight }]}>
       <View style={styles.grid} pointerEvents="none">
-        {[1, 2, 3].map((i) => (
+        {HOUR_MARKERS.map((h) => (
           <View
-            key={i}
-            style={[styles.gridLineH, { top: `${(i / 4) * 100}%` }]}
+            key={h}
+            style={[
+              styles.hourLine,
+              {
+                top: `${(h / 24) * 100}%`,
+                opacity: h % 6 === 0 ? 0.1 : 0.045,
+              },
+            ]}
           />
         ))}
       </View>
       {blocks.map((b, i) => {
-        const lane = lanes[i] ?? 0;
         const span = Math.max(b.endSec - b.startSec, 0);
         const topPct = (b.startSec / SECONDS_PER_DAY) * 100;
-        const heightPct = Math.max((span / SECONDS_PER_DAY) * 100, 0.22);
-        const leftPct = lane * (slotPct + laneGapPct);
-        const widthPct = slotPct;
-
+        const heightPct = Math.max(
+          (span / SECONDS_PER_DAY) * 100,
+          minHeightPct,
+        );
         return (
           <View
             key={b.windowId}
             style={[
               styles.block,
-              blockChrome,
               {
                 top: `${topPct}%`,
                 height: `${heightPct}%`,
-                left: `${leftPct}%`,
-                width: `${widthPct}%`,
                 backgroundColor: b.colour,
+                zIndex: i + 1,
               },
             ]}
           />
@@ -203,61 +199,43 @@ function DayTrack({
 
 const styles = StyleSheet.create({
   wrap: {
-    marginBottom: 6,
+    marginBottom: 8,
   },
   dayRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    paddingBottom: 4,
-  },
-  dayRowDivider: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.borderLight,
   },
   dayLabelCol: {
-    paddingRight: 10,
-    paddingTop: 6,
+    paddingRight: 12,
+    paddingTop: 8,
   },
   dayLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "500",
     color: Colors.textSecondary,
     textAlign: "right",
-    letterSpacing: 0.15,
+    letterSpacing: 0.1,
+    lineHeight: 18,
   },
   axisCol: {
     position: "relative",
-    paddingRight: 8,
+    paddingRight: 10,
   },
   axisTick: {
     position: "absolute",
     right: 0,
     fontSize: 11,
-    lineHeight: 13,
+    lineHeight: 14,
     color: Colors.textTertiary,
     fontVariant: ["tabular-nums"],
-    letterSpacing: 0.2,
   },
-  trackChrome: {
+  scheduleStrip: {
     flex: 1,
     minWidth: 0,
-    padding: TRACK_PADDING,
-    backgroundColor: Colors.surfaceContainerLow,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.outlineVariant,
-    ...level1Shadow,
-    ...(Platform.OS === "web"
-      ? ({ userSelect: "none" } as object)
-      : null),
-  },
-  trackWell: {
-    width: "100%",
-    backgroundColor: Colors.surfaceContainerHighest,
-    borderRadius: WELL_RADIUS,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.22)",
+    paddingLeft: 10,
+    marginLeft: 2,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: "rgba(186, 201, 205, 0.35)",
   },
   track: {
     position: "relative",
@@ -266,19 +244,19 @@ const styles = StyleSheet.create({
   grid: {
     ...StyleSheet.absoluteFillObject,
   },
-  gridLineH: {
+  hourLine: {
     position: "absolute",
     left: 0,
     right: 0,
     height: StyleSheet.hairlineWidth,
     marginTop: -StyleSheet.hairlineWidth,
-    backgroundColor: Colors.outline,
-    opacity: 0.2,
+    backgroundColor: Colors.outlineVariant,
   },
   block: {
     position: "absolute",
-    borderRadius: BLOCK_RADIUS,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.22)",
+    left: "2%",
+    width: "96%",
+    borderRadius: 3,
+    opacity: 0.84,
   },
 });
