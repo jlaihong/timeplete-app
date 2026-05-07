@@ -14,7 +14,15 @@ export function DesktopBrandedHeaderTitle({
   return (
     <View style={styles.row}>
       <Text style={styles.brand}>Timeplete</Text>
-      {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      {subtitle ? (
+        <Text
+          style={styles.subtitle}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {subtitle}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -25,6 +33,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexWrap: "nowrap",
     paddingRight: 8,
+    flex: 1,
+    minWidth: 0,
   },
   brand: {
     fontSize: 20,
@@ -38,5 +48,6 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     letterSpacing: -0.2,
     marginLeft: 10,
+    flexShrink: 1,
   },
 });

@@ -8,6 +8,7 @@ import {
 } from "../../../components/shared/CalendarView";
 import { EventDialog } from "../../../components/calendar/EventDialog";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
+import { useRegisterDesktopSubtitle } from "../../../components/layout/DesktopAppChrome";
 
 /**
  * Single dialog state — there is one EventDialog instance reused for
@@ -26,6 +27,7 @@ type DialogState =
 export default function CalendarScreen() {
   const isDesktop = useIsDesktop();
   const [dialog, setDialog] = useState<DialogState>(null);
+  useRegisterDesktopSubtitle("Calendar");
 
   return (
     <View style={styles.container}>

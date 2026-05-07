@@ -2,7 +2,6 @@ import { Stack } from "expo-router";
 import { stackHeaderChromeOptions } from "../../../constants/colors";
 import { DrawerMenuButton } from "../../../components/layout/DrawerMenuButton";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
-import { DesktopBrandedHeaderTitle } from "../../../components/layout/DesktopBrandedHeaderTitle";
 
 export default function ListsLayout() {
   const isDesktop = useIsDesktop();
@@ -10,21 +9,8 @@ export default function ListsLayout() {
     <Stack
       screenOptions={{
         ...stackHeaderChromeOptions,
+        headerShown: !isDesktop,
         headerLeft: () => <DrawerMenuButton />,
-        ...(isDesktop
-          ? {
-              headerTitleAlign: "left",
-              headerTitle: (props) => (
-                <DesktopBrandedHeaderTitle
-                  subtitle={
-                    typeof props.children === "string"
-                      ? props.children
-                      : undefined
-                  }
-                />
-              ),
-            }
-          : {}),
       }}
     />
   );

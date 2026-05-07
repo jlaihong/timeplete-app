@@ -3,6 +3,7 @@ import { View, StyleSheet } from "react-native";
 import { Colors } from "../../../constants/colors";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
 import { DesktopHome } from "../../../components/layout/DesktopHome";
+import { useRegisterDesktopSubtitle } from "../../../components/layout/DesktopAppChrome";
 import { TaskList } from "../../../components/shared/TaskList";
 import { AddTaskSheet } from "../../../components/tasks/AddTaskSheet";
 import { TaskDetailSheet } from "../../../components/tasks/TaskDetailSheet";
@@ -11,6 +12,7 @@ import { Id } from "../../../convex/_generated/dataModel";
 
 export default function TasksScreen() {
   const isDesktop = useIsDesktop();
+  useRegisterDesktopSubtitle("Tasks");
 
   if (isDesktop) {
     return <DesktopHome />;

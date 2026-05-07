@@ -17,6 +17,10 @@ import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useDrawerSelection } from "../../hooks/useDrawerSelection";
 import { TimerDisplay } from "../../components/timer/TimerDisplay";
+import {
+  DesktopAppChromeProvider,
+  DesktopAppTopBar,
+} from "../../components/layout/DesktopAppChrome";
 
 const drawerItemStyle = { borderRadius: 8 };
 
@@ -242,31 +246,38 @@ export default function AppLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <TimerDisplay />
-      <Drawer
-        drawerContent={(p) => <CustomDrawerContent {...p} />}
-        defaultStatus={isDesktop ? "open" : "closed"}
-        screenOptions={{
-          headerShown: false,
-          drawerType: isDesktop ? "permanent" : "slide",
-          swipeEnabled: !isDesktop,
-          overlayColor: "transparent",
-          drawerStyle: {
-            backgroundColor: Colors.sidenav,
-            width: 250,
-            borderRightWidth: 0,
-          },
-        }}
-      >
-        <Drawer.Screen name="(tabs)" />
-        <Drawer.Screen name="inbox" options={{ title: "Inbox" }} />
-        <Drawer.Screen name="tags" options={{ title: "Tags" }} />
-        <Drawer.Screen name="lists" options={{ title: "Lists" }} />
-        <Drawer.Screen name="shared" options={{ title: "Shared" }} />
-        <Drawer.Screen
-          name="edit-trackable"
-          options={{ title: "Edit Goal" }}
-        />
-      </Drawer>
+      <DesktopAppChromeProvider>
+        <View style={{ flex: 1 }}>
+          {isDesktop ? <DesktopAppTopBar /> : null}
+          <View style={{ flex: 1, minHeight: 0 }}>
+            <Drawer
+              drawerContent={(p) => <CustomDrawerContent {...p} />}
+              defaultStatus={isDesktop ? "open" : "closed"}
+              screenOptions={{
+                headerShown: false,
+                drawerType: isDesktop ? "permanent" : "slide",
+                swipeEnabled: !isDesktop,
+                overlayColor: "transparent",
+                drawerStyle: {
+                  backgroundColor: Colors.sidenav,
+                  width: 250,
+                  borderRightWidth: 0,
+                },
+              }}
+            >
+              <Drawer.Screen name="(tabs)" />
+              <Drawer.Screen name="inbox" options={{ title: "Inbox" }} />
+              <Drawer.Screen name="tags" options={{ title: "Tags" }} />
+              <Drawer.Screen name="lists" options={{ title: "Lists" }} />
+              <Drawer.Screen name="shared" options={{ title: "Shared" }} />
+              <Drawer.Screen
+                name="edit-trackable"
+                options={{ title: "Edit Goal" }}
+              />
+            </Drawer>
+          </View>
+        </View>
+      </DesktopAppChromeProvider>
       {overlayBlocked && (
         <View
           style={styles.bootstrapOverlay}
