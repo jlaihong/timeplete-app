@@ -175,14 +175,11 @@ export function EditTrackableHistoryTab({
   return (
     <View style={styles.trackerTabWrap}>
       <TrackingHistoryScroller
-        style={[
-          styles.scroll,
-          Platform.OS === "web" ? styles.historyScrollWeb : null,
-        ]}
+        style={styles.scroll}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
-        showsHorizontalScrollIndicator
+        showsHorizontalScrollIndicator={false}
       >
         <View style={styles.trackerTable}>
           <View style={[styles.trackerDataRow, styles.trackerHeadRowBg]}>
@@ -349,14 +346,6 @@ export function EditTrackableHistoryTab({
 
 const styles = StyleSheet.create({
   scroll: { flex: 1, minHeight: 0 },
-  historyScrollWeb:
-    Platform.OS === "web"
-      ? ({
-          overflowY: "scroll",
-          overflowX: "hidden",
-          flexGrow: 1,
-        } as unknown as ViewStyle)
-      : ({} as ViewStyle),
   center: { paddingVertical: 24, alignItems: "center" },
   muted: { fontSize: 14, color: Colors.textTertiary, textAlign: "center" },
   trackerTabWrap: {
