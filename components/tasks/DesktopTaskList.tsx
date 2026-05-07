@@ -56,6 +56,7 @@ import {
   taskCompletedForFilters,
   taskMatchesUserFilter,
 } from "../../lib/taskFilters";
+import { applySetTimeSpentOptimisticUpdate } from "../../lib/setTimeSpentOptimisticUpdate";
 
 const isWeb = Platform.OS === "web";
 const LOAD_MORE_DAYS = 7;
@@ -485,7 +486,11 @@ export function DesktopTaskList({
   );
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
-  const setTimeSpentMutation = useMutation(api.tasks.setTimeSpent);
+  const setTimeSpentMutation = useMutation(
+    api.tasks.setTimeSpent,
+  ).withOptimisticUpdate((localStore, args) => {
+    applySetTimeSpentOptimisticUpdate(localStore, args);
+  });
   const timer = useTimer();
 
   const homeFilterScope = useMemo(() => ({ kind: "home" as const }), []);

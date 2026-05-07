@@ -42,6 +42,7 @@ import {
   taskCompletedForFilters,
   taskMatchesUserFilter,
 } from "../../../lib/taskFilters";
+import { applySetTimeSpentOptimisticUpdate } from "../../../lib/setTimeSpentOptimisticUpdate";
 
 /** `lists.getPaginated` enriches rows with `tagIds` like `tasks.search`. */
 type ListPageTask = Doc<"tasks"> & { tagIds?: Id<"tags">[] };
@@ -218,7 +219,11 @@ export default function ListDetailScreen() {
   const upsertTask = useMutation(api.tasks.upsert);
   const removeTask = useMutation(api.tasks.remove);
   const deleteRecurringInstance = useMutation(api.recurringTasks.deleteInstance);
-  const setTimeSpentMutation = useMutation(api.tasks.setTimeSpent);
+  const setTimeSpentMutation = useMutation(
+    api.tasks.setTimeSpent,
+  ).withOptimisticUpdate((localStore, args) => {
+    applySetTimeSpentOptimisticUpdate(localStore, args);
+  });
   const upsertSection = useMutation(api.listSections.upsert);
   const moveBetweenSections = useMutation(api.tasks.moveBetweenSections);
 
