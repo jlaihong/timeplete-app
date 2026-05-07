@@ -1,6 +1,7 @@
 /**
- * Synchronously patches Convex query caches when `tasks.setTimeSpent` runs,
- * so task rows and the task detail sheet reflect the new total immediately.
+ * Synchronously patches Convex query caches when task time-spent changes:
+ * - `tasks.setTimeSpent` (absolute target)
+ * - `timers.stop` via {@link applyTimeSpentDeltaOptimisticUpdate} (additive slice)
  */
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
@@ -124,12 +125,64 @@ function optimisticTimeTrackedValue(
   return { totalSeconds: target, sessions: nextSessions };
 }
 
+/**
+ * Applies `tasks.setTimeSpent` optimistic cache patches using an **absolute** target
+ * for `timeSpentInSecondsUnallocated` (and mirrored `getTimeTracked` shape).
+ */
 export function applySetTimeSpentOptimisticUpdate(
   localStore: OptimisticLocalStore,
   args: { taskId: Id<"tasks">; timeSpentInSecondsUnallocated: number },
 ): void {
-  const taskId = args.taskId;
-  const nextSeconds = args.timeSpentInSecondsUnallocated;
+  patchTaskTimeSpentCaches(localStore, args.taskId, {
+    mode: "absolute",
+    nextSeconds: args.timeSpentInSecondsUnallocated,
+  });
+}
+
+/**
+ * Adds `deltaSeconds` to cached task time for list/search/paginated rows and to
+ * `getTimeTracked.totalSeconds`, without assuming a single source of truth (each
+ * subscription updates from its own previous snapshot). Used when stopping a task
+ * timer so the play icon and duration do not flicker while waiting for the server.
+ */
+export function applyTimeSpentDeltaOptimisticUpdate(
+  localStore: OptimisticLocalStore,
+  taskId: Id<"tasks">,
+  deltaSeconds: number,
+): void {
+  if (deltaSeconds <= 0) return;
+  patchTaskTimeSpentCaches(localStore, taskId, {
+    mode: "delta",
+    deltaSeconds,
+  });
+}
+
+function patchTaskTimeSpentCaches(
+  localStore: OptimisticLocalStore,
+  taskId: Id<"tasks">,
+  spec:
+    | { mode: "absolute"; nextSeconds: number }
+    | { mode: "delta"; deltaSeconds: number },
+): void {
+  const nextForRow = (
+    rowSeconds: number | undefined,
+  ): number => {
+    if (spec.mode === "absolute") return spec.nextSeconds;
+    return Math.max(0, Math.floor((rowSeconds ?? 0) + spec.deltaSeconds));
+  };
+
+  const nextForTimeTracked = (
+    prev: TimeTrackedValue | undefined,
+  ): TimeTrackedValue => {
+    if (spec.mode === "absolute") {
+      return optimisticTimeTrackedValue(prev, spec.nextSeconds);
+    }
+    const target = Math.max(
+      0,
+      Math.floor((prev?.totalSeconds ?? 0) + spec.deltaSeconds),
+    );
+    return optimisticTimeTrackedValue(prev, target);
+  };
 
   for (const q of localStore.getAllQueries(api.tasks.getHomeTasks)) {
     const value = q.value;
@@ -137,7 +190,13 @@ export function applySetTimeSpentOptimisticUpdate(
     const idx = value.findIndex((t) => t._id === taskId);
     if (idx === -1) continue;
     const next = [...value];
-    next[idx] = { ...value[idx], timeSpentInSecondsUnallocated: nextSeconds };
+    const row = value[idx];
+    next[idx] = {
+      ...row,
+      timeSpentInSecondsUnallocated: nextForRow(
+        row.timeSpentInSecondsUnallocated,
+      ),
+    };
     localStore.setQuery(api.tasks.getHomeTasks, q.args, next);
   }
 
@@ -147,7 +206,13 @@ export function applySetTimeSpentOptimisticUpdate(
     const idx = value.findIndex((t) => t._id === taskId);
     if (idx === -1) continue;
     const next = [...value];
-    next[idx] = { ...value[idx], timeSpentInSecondsUnallocated: nextSeconds };
+    const row = value[idx];
+    next[idx] = {
+      ...row,
+      timeSpentInSecondsUnallocated: nextForRow(
+        row.timeSpentInSecondsUnallocated,
+      ),
+    };
     localStore.setQuery(api.tasks.searchWithCriteria, q.args, next);
   }
 
@@ -157,7 +222,13 @@ export function applySetTimeSpentOptimisticUpdate(
     const idx = value.findIndex((t) => t._id === taskId);
     if (idx === -1) continue;
     const next = [...value];
-    next[idx] = { ...value[idx], timeSpentInSecondsUnallocated: nextSeconds };
+    const row = value[idx];
+    next[idx] = {
+      ...row,
+      timeSpentInSecondsUnallocated: nextForRow(
+        row.timeSpentInSecondsUnallocated,
+      ),
+    };
     localStore.setQuery(api.tasks.search, q.args, next);
   }
 
@@ -167,7 +238,7 @@ export function applySetTimeSpentOptimisticUpdate(
     localStore.setQuery(
       api.tasks.getTimeTracked,
       q.args,
-      optimisticTimeTrackedValue(prev, nextSeconds) as FunctionReturnType<
+      nextForTimeTracked(prev) as FunctionReturnType<
         typeof api.tasks.getTimeTracked
       >,
     );
@@ -182,9 +253,12 @@ export function applySetTimeSpentOptimisticUpdate(
       if (idx === -1) return s;
       touched = true;
       const tasks = [...s.tasks];
+      const row = tasks[idx];
       tasks[idx] = {
-        ...tasks[idx],
-        timeSpentInSecondsUnallocated: nextSeconds,
+        ...row,
+        timeSpentInSecondsUnallocated: nextForRow(
+          row.timeSpentInSecondsUnallocated,
+        ),
       };
       return { ...s, tasks };
     });

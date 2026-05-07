@@ -3,13 +3,18 @@ import { api } from "../convex/_generated/api";
 import { useState, useEffect, useRef } from "react";
 import { Id } from "../convex/_generated/dataModel";
 import { useAuth } from "./useAuth";
+import { applyStopTimerOptimisticUpdate } from "../lib/stopTimerOptimisticUpdate";
 
 export function useTimer() {
   const { profileReady } = useAuth();
   const timerData = useQuery(api.timers.get, profileReady ? {} : "skip");
   const startTaskTimer = useMutation(api.timers.startTaskTimer);
   const startTrackableTimer = useMutation(api.timers.startTrackableTimer);
-  const stopTimer = useMutation(api.timers.stop);
+  const stopTimer = useMutation(api.timers.stop).withOptimisticUpdate(
+    (localStore) => {
+      applyStopTimerOptimisticUpdate(localStore);
+    },
+  );
   const adjustTimer = useMutation(api.timers.adjust);
 
   const [localElapsed, setLocalElapsed] = useState(0);
