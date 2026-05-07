@@ -1,14 +1,13 @@
 import React, {
   createContext,
-  useCallback,
   useContext,
   useLayoutEffect,
   useMemo,
-  useState,
+  useRef,
 } from "react";
 import { View, StyleSheet, Platform, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { DrawerNavigationHelpers } from "@react-navigation/drawer";
+import type { DrawerNavigationProp } from "@react-navigation/drawer";
 import {
   DrawerActions,
   type NavigationProp,
@@ -21,8 +20,10 @@ import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { DesktopBrandedHeaderTitle } from "./DesktopBrandedHeaderTitle";
 
 type DesktopAppChromeContextValue = {
-  drawerNavigation: DrawerNavigationHelpers | null;
-  setDrawerNavigation: (nav: DrawerNavigationHelpers | null) => void;
+  /** Set synchronously from drawer content render so the out-of-tree top bar can toggle. */
+  drawerNavigationRef: React.MutableRefObject<
+    DrawerNavigationProp<ParamListBase> | null
+  >;
 };
 
 const DesktopAppChromeContext =
@@ -33,22 +34,15 @@ export function DesktopAppChromeProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [drawerNavigation, setDrawerNavigationState] =
-    useState<DrawerNavigationHelpers | null>(null);
-
-  const setDrawerNavigation = useCallback(
-    (nav: DrawerNavigationHelpers | null) => {
-      setDrawerNavigationState(nav);
-    },
-    [],
+  const drawerNavigationRef = useRef<DrawerNavigationProp<ParamListBase> | null>(
+    null,
   );
 
   const value = useMemo(
     () => ({
-      drawerNavigation,
-      setDrawerNavigation,
+      drawerNavigationRef,
     }),
-    [drawerNavigation, setDrawerNavigation],
+    [],
   );
 
   return (
@@ -74,14 +68,17 @@ function useDesktopAppChrome(): DesktopAppChromeContextValue {
  * navigation target (the top bar renders outside `<Drawer>`).
  */
 export function useRegisterDrawerNavigationForDesktopChrome(
-  drawerNav: DrawerNavigationHelpers,
+  drawerNav: DrawerNavigationProp<ParamListBase>,
 ) {
-  const { setDrawerNavigation } = useDesktopAppChrome();
+  const { drawerNavigationRef } = useDesktopAppChrome();
+
+  drawerNavigationRef.current = drawerNav;
 
   useLayoutEffect(() => {
-    setDrawerNavigation(drawerNav);
-    return () => setDrawerNavigation(null);
-  }, [drawerNav, setDrawerNavigation]);
+    return () => {
+      drawerNavigationRef.current = null;
+    };
+  }, [drawerNav, drawerNavigationRef]);
 }
 
 /**
@@ -125,11 +122,12 @@ export function DesktopAppTopBar() {
   const paddingTop = Platform.OS === "web" ? 0 : insets.top;
 
   const onToggleDrawer = () => {
-    if (ctx.drawerNavigation) {
-      ctx.drawerNavigation.dispatch(DrawerActions.toggleDrawer());
+    const drawerNav = ctx.drawerNavigationRef.current;
+    if (drawerNav) {
+      drawerNav.dispatch(DrawerActions.toggleDrawer());
       return;
     }
-    dispatchDrawerToggle(navigation);
+    dispatchDrawerToggle(navigation as NavigationProp<ParamListBase>);
   };
 
   return (
