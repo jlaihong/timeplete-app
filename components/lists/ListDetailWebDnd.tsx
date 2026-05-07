@@ -708,7 +708,7 @@ export function ListDetailWebDnd({
             })}
         {footer}
       </ScrollView>
-      <DragOverlay dropAnimation={null}>
+      <DragOverlay dropAnimation={null} style={{ pointerEvents: "none" }}>
         {activeDrag ? (
           <View style={{ width: "100%", maxWidth: 672, opacity: 0.95 }}>
             <TaskRowDesktop
