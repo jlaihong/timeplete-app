@@ -160,9 +160,11 @@ export function EditTrackableDialog({
   const trackableType = trackable.trackableType as TrackableType;
   const isGoal = trackableType !== "TRACKER";
 
-  /** Productivity-one: primary Save lives on the commitment/edit tab, not on history. */
+  /** Save on commitment/details and on motivations so reasons and order persist without switching tabs. */
   const showSaveFooter =
-    isGoal ? goalTab === "commitment" : trackerTab === "details";
+    isGoal
+      ? goalTab === "commitment" || goalTab === "motivations"
+      : trackerTab === "details";
 
   const cardFlexStyle: ViewStyle[] = [
     Platform.OS === "web"
