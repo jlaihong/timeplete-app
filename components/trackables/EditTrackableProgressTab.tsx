@@ -27,6 +27,12 @@ type ProgressTabTrackable = {
   targetNumberOfWeeks?: number;
 };
 
+type DayDetail = {
+  numCompleted: number;
+  comments: string;
+  completedTaskNames: string[];
+};
+
 function clipYYYYMMDD(day: string, start: string, end: string): string {
   if (day < start) return start;
   if (day > end) return end;
@@ -78,6 +84,10 @@ function buildMonthCells(monthAnchorYYYYMMDD: string): Array<{
   return cells.slice(0, trimTo + 1);
 }
 
+function normalizeDayKey(ymd: string): string {
+  return ymd.replace(/\D/g, "").slice(0, 8);
+}
+
 export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTabTrackable }) {
   const { profileReady } = useAuth();
   const type = trackable.trackableType;
@@ -94,19 +104,47 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     );
   }, [trackable._id, trackable.startDayYYYYMMDD, trackable.endDayYYYYMMDD]);
 
-  const daysSearch = useQuery(
-    api.trackableDays.search,
-    profileReady && showCalendar ? { trackableIds: [trackable._id] } : "skip",
+  const cells = useMemo(() => buildMonthCells(viewAnchor), [viewAnchor]);
+
+  const calendarBounds = useMemo(() => {
+    if (cells.length === 0) return null;
+    return {
+      start: cells[0]!.yyyymmdd,
+      end: cells[cells.length - 1]!.yyyymmdd,
+    };
+  }, [cells]);
+
+  const calendarDetails = useQuery(
+    api.trackableDays.progressCalendarDetails,
+    profileReady && showCalendar && calendarBounds
+      ? {
+          trackableId: trackable._id,
+          startDay: calendarBounds.start,
+          endDay: calendarBounds.end,
+        }
+      : "skip",
   );
 
-  const completionByDay = useMemo(() => {
-    const m = new Map<string, number>();
-    if (!daysSearch) return m;
-    for (const row of daysSearch) {
-      m.set(row.dayYYYYMMDD.replace(/\D/g, "").slice(0, 8), row.numCompleted);
+  const detailsByDay = useMemo(() => {
+    const m = new Map<string, DayDetail>();
+    if (!calendarDetails) return m;
+    for (const row of calendarDetails) {
+      m.set(normalizeDayKey(row.dayYYYYMMDD), {
+        numCompleted: row.numCompleted,
+        comments: row.comments,
+        completedTaskNames: row.completedTaskNames,
+      });
     }
     return m;
-  }, [daysSearch]);
+  }, [calendarDetails]);
+
+  const cellRows = useMemo(() => {
+    const rows: (typeof cells)[] = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      rows.push(cells.slice(i, i + 7));
+    }
+    return rows;
+  }, [cells]);
 
   const prevMonth = useCallback(() => {
     setViewAnchor(addMonthsYYYYMMDD(viewAnchor, -1));
@@ -121,11 +159,6 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     return <View style={{ minHeight: 120 }} />;
   }
 
-  const cells = buildMonthCells(viewAnchor);
-  const cellRows: (typeof cells)[] = [];
-  for (let i = 0; i < cells.length; i += 7) {
-    cellRows.push(cells.slice(i, i + 7));
-  }
   const titleDate = parseYYYYMMDD(viewAnchor.slice(0, 8));
   const monthTitle = titleDate.toLocaleDateString(undefined, {
     month: "long",
@@ -174,13 +207,26 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
         {cellRows.map((row, rowIdx) => (
           <View key={rowIdx} style={styles.gridRow}>
             {row.map((cell) => {
-              const logged = completionByDay.get(cell.yyyymmdd) ?? 0;
+              const dayKey = normalizeDayKey(cell.yyyymmdd);
+              const detail = detailsByDay.get(dayKey);
+              const logged = detail?.numCompleted ?? 0;
               const inGoalRange =
                 cell.yyyymmdd >= trackable.startDayYYYYMMDD &&
                 cell.yyyymmdd <= trackable.endDayYYYYMMDD;
               const done = logged > 0 && inGoalRange;
               const faded = cell.inMonth === false || !inGoalRange;
               const isToday = cell.yyyymmdd === todayYYYYMMDD();
+              const tasks = detail?.completedTaskNames ?? [];
+              const comment = (detail?.comments ?? "").trim();
+              const dom = parseInt(cell.yyyymmdd.slice(6, 8), 10);
+
+              const a11yParts = [
+                `${dom}`,
+                inGoalRange ? "in goal range" : "outside goal range",
+                logged > 0 ? `progress ${logged}` : null,
+                tasks.length ? `tasks: ${tasks.join(", ")}` : null,
+                comment ? `comment: ${comment}` : null,
+              ].filter(Boolean);
 
               return (
                 <View
@@ -191,23 +237,51 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                     faded ? styles.dayFaded : null,
                     isToday ? styles.dayTodayBorder : null,
                   ]}
+                  accessibilityRole="text"
+                  accessibilityLabel={a11yParts.join(". ")}
                 >
-                  <Text
-                    style={[
-                      styles.dayNum,
-                      faded ? styles.dayNumFaded : null,
-                      done ? styles.dayNumDone : null,
-                    ]}
-                  >
-                    {parseInt(cell.yyyymmdd.slice(6, 8), 10)}
+                  <Text style={[styles.dayNumCorner, faded && styles.dayNumCornerFaded]}>
+                    {dom}
                   </Text>
+                  <View style={styles.dayCellBody}>
+                    {logged > 0 ? (
+                      <Text
+                        style={[
+                          styles.contributionNum,
+                          faded && styles.contributionNumFaded,
+                          done && styles.contributionNumDone,
+                        ]}
+                      >
+                        {logged}
+                      </Text>
+                    ) : null}
+                    {tasks.map((name, ti) => (
+                      <Text
+                        key={`${cell.yyyymmdd}-t-${ti}`}
+                        style={[styles.taskLine, faded && styles.metaFaded]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        ✓ {name}
+                      </Text>
+                    ))}
+                    {comment ? (
+                      <Text
+                        style={[styles.commentLine, faded && styles.metaFaded]}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                      >
+                        💬 {comment}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
               );
             })}
           </View>
         ))}
       </View>
-      {daysSearch === undefined ? (
+      {calendarDetails === undefined ? (
         <Text style={styles.loadingHint}>Loading progress…</Text>
       ) : null}
     </View>
@@ -274,13 +348,16 @@ const styles = StyleSheet.create({
   dayCell: {
     flex: 1,
     minWidth: 0,
+    minHeight: 72,
     aspectRatio: 1,
-    alignItems: "center",
-    justifyContent: "center",
+    position: "relative",
     borderRadius: 6,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainer,
+    overflow: "hidden",
+    padding: 3,
+    paddingTop: 2,
   },
   dayFaded: { opacity: 0.38 },
   dayDone: {
@@ -291,12 +368,51 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.primary,
   },
-  dayNum: {
-    fontSize: 13,
+  dayNumCorner: {
+    position: "absolute",
+    top: 3,
+    right: 4,
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.text,
+    zIndex: 1,
+  },
+  dayNumCornerFaded: {
+    color: Colors.textTertiary,
+  },
+  dayCellBody: {
+    flex: 1,
+    width: "100%",
+    marginTop: 12,
+    gap: 2,
+    justifyContent: "flex-start",
+  },
+  contributionNum: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: Colors.text,
+    lineHeight: 18,
+  },
+  contributionNumFaded: {
+    color: Colors.textTertiary,
+  },
+  contributionNumDone: {
+    color: Colors.onPrimaryContainer,
+  },
+  taskLine: {
+    fontSize: 9,
     fontWeight: "500",
     color: Colors.text,
+    lineHeight: 12,
   },
-  dayNumFaded: { color: Colors.textTertiary },
-  dayNumDone: { color: Colors.onPrimaryContainer },
+  commentLine: {
+    fontSize: 9,
+    fontWeight: "400",
+    color: Colors.textSecondary,
+    lineHeight: 12,
+  },
+  metaFaded: {
+    color: Colors.textTertiary,
+  },
   loadingHint: { fontSize: 12, color: Colors.textSecondary, marginTop: 6 },
 });
