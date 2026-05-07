@@ -1,6 +1,86 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
+import { buildListIdToTrackableId } from "./_helpers/trackableAttribution";
+import { isYYYYMMDDCompact, toCompactYYYYMMDD } from "./_helpers/compactYYYYMMDD";
+
+/**
+ * One round-trip for the edit-trackable Progress tab month grid:
+ * per-day manual count (`numCompleted`), saved comments, and completed
+ * task titles that attribute to the trackable (same rules as
+ * `trackables.getCompletedTaskNamesForDay` / productivity-one
+ * `monthly-trackable-calendar`).
+ */
+export const progressCalendarDetails = query({
+  args: {
+    trackableId: v.id("trackables"),
+    startDay: v.string(),
+    endDay: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
+
+    const start = toCompactYYYYMMDD(args.startDay);
+    const end = toCompactYYYYMMDD(args.endDay);
+    if (!isYYYYMMDDCompact(start) || !isYYYYMMDDCompact(end) || start > end) {
+      return [];
+    }
+
+    const trackable = await ctx.db.get(args.trackableId);
+    if (!trackable || trackable.userId !== user._id) {
+      return [];
+    }
+
+    const days = await ctx.db
+      .query("trackableDays")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", args.trackableId))
+      .collect();
+
+    const byDay = new Map<
+      string,
+      { numCompleted: number; comments: string }
+    >();
+    for (const d of days) {
+      const day = toCompactYYYYMMDD(d.dayYYYYMMDD);
+      if (!day || day < start || day > end) continue;
+      byDay.set(day, {
+        numCompleted: d.numCompleted,
+        comments: (d.comments ?? "").trim(),
+      });
+    }
+
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const links = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const listIdToTrackableId = buildListIdToTrackableId(links);
+
+      const attributesToTrackable =
+        t.trackableId === args.trackableId ||
+        (t.listId != null && listIdToTrackableId.get(t.listId) === args.trackableId);
+      if (!attributesToTrackable) continue;
+
+      const arr = taskNamesByDay.get(dayCompact) ?? [];
+      arr.push(t.name);
+      taskNamesByDay.set(dayCompact, arr);
+    }
+
+    const allDays = new Set<string>([...byDay.keys(), ...taskNamesByDay.keys()]);
+    return [...allDays]
+      .sort()
+      .map((dayYYYYMMDD) => ({
+        dayYYYYMMDD,
+        numCompleted: byDay.get(dayYYYYMMDD)?.numCompleted ?? 0,
+        comments: byDay.get(dayYYYYMMDD)?.comments ?? "",
+        completedTaskNames: taskNamesByDay.get(dayYYYYMMDD) ?? [],
+      }));
+  },
+});
 
 export const search = query({
   args: {
