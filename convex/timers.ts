@@ -6,6 +6,7 @@ import {
   resolveSnapshotTrackableIdForTask,
 } from "./_helpers/trackableAttribution";
 import { resolveActiveTimerCalendarDisplay } from "./_helpers/activeTimerCalendarDisplay";
+import { wallClockInTimeZone } from "./_helpers/wallClockTimeZone";
 
 export const get = query({
   args: {},
@@ -121,10 +122,10 @@ async function finalizeTimer(
 ): Promise<number> {
   const elapsed = Math.floor((Date.now() - timer.startTime) / 1000);
   if (elapsed > 0) {
-    const now = new Date();
-    const day = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-    const hours = String(now.getHours()).padStart(2, "0");
-    const mins = String(now.getMinutes()).padStart(2, "0");
+    const { startDayYYYYMMDD: day, startTimeHHMM } = wallClockInTimeZone(
+      timer.startTime,
+      timer.timeZone,
+    );
 
     // Snapshot the resolved trackableId onto the window so reassigning the
     // task later does not retroactively move historical time. Mirrors
@@ -146,7 +147,7 @@ async function finalizeTimer(
     }
 
     await ctx.db.insert("timeWindows", {
-      startTimeHHMM: `${hours}:${mins}`,
+      startTimeHHMM,
       startDayYYYYMMDD: day,
       durationSeconds: elapsed,
       userId: timer.userId,
