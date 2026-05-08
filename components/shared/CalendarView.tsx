@@ -434,9 +434,9 @@ function packOverlappingEvents(
 /* ────────────────────────────────────────────────────────────────────────
  *  HourSlot — fixed-height droppable backdrop row.
  *
- *  Renders the hour boundary line, the droppable backdrop for the row, and
- *  registers the DOM node for coordinate mapping. Events are painted above
- *  in `eventsLayer`.
+ *  Renders the hour boundary line plus a lighter mid-hour (30 min) guide,
+ *  the droppable backdrop for the row, and registers the DOM node for
+ *  coordinate mapping. Events are painted above in `eventsLayer`.
  * ──────────────────────────────────────────────────────────────────────── */
 interface HourSlotProps {
   hour: number;
@@ -466,6 +466,7 @@ function HourSlot({ hour, registerEl, isOverPreview }: HourSlotProps) {
       ]}
     >
       <View style={styles.hourLine} />
+      <View style={styles.halfHourLine} />
     </View>
   );
 }
@@ -1997,13 +1998,22 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
     borderLeftColor: Colors.outlineVariant,
   },
-  hourSlot: { height: HOUR_HEIGHT, paddingLeft: 12 },
+  hourSlot: { height: HOUR_HEIGHT, paddingLeft: 12, position: "relative" },
   hourSlotDropTarget: {
     backgroundColor: Colors.primary + "10",
   },
   hourLine: {
     height: 1,
     backgroundColor: Colors.outlineVariant,
+  },
+  /** Lighter mid-hour guide; no time label (hourly labels stay as-is). */
+  halfHourLine: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: HOUR_HEIGHT / 2,
+    height: 1,
+    backgroundColor: withAlpha(Colors.outlineVariant, "33"),
   },
 
   eventsLayer: {
