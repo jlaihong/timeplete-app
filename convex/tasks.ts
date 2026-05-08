@@ -7,6 +7,7 @@ import {
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
+import { resolveTaskTimerCalendarDisplay } from "./_helpers/activeTimerCalendarDisplay";
 
 /**
  * productivity-backend `upsert_task` sets `section_id` from `list_id` when the
@@ -108,6 +109,22 @@ export const search = query({
         ...t,
         tagIds: tagMap.get(t._id) ?? [],
       }));
+  },
+});
+
+/**
+ * Calendar live-timer fallback when `timers.get` runs on an older deployment
+ * that omits `displayTitle` / `displayColor` — same resolution as
+ * `resolveActiveTimerCalendarDisplay` for task-backed timers.
+ */
+export const getTimerDisplayForTask = query({
+  args: { taskId: v.id("tasks") },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return null;
+    const task = await ctx.db.get(args.taskId);
+    if (!task || task.userId !== user._id) return null;
+    return resolveTaskTimerCalendarDisplay(ctx, user._id, task);
   },
 });
 
