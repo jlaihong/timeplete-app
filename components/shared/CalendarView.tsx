@@ -74,6 +74,8 @@ const DEFAULT_CREATE_DURATION_MINUTES = 15;
 const CREATE_DRAG_THRESHOLD_PX = 5;
 const HOUR_LABEL_WIDTH = 56;
 const RESIZE_HANDLE_HEIGHT = 6;
+/** Minimum vertical hit strip for resize; capped per-side so tiny tiles keep a draggable middle. */
+const RESIZE_EDGE_HIT_MIN_PX = 10;
 const HOUR_DROPPABLE_PREFIX = "cal-hour-";
 const isWeb = Platform.OS === "web";
 /** iOS-calendar-style red accent for “now” on today's timeline */
@@ -488,13 +490,14 @@ function HourSlot({ hour, registerEl, isOverPreview }: HourSlotProps) {
  *       that's wrong for in-place drag/resize where we want instant
  *       response.
  *
- *  Hit areas (top to bottom):
- *    [0, 6 px]              → resize top (`ns-resize` cursor)
- *    [6 px, height-6 px]    → drag to move (`grab`/`grabbing` cursor)
- *    [height-6 px, height]  → resize bottom (`ns-resize` cursor)
+ *  Hit areas:
+ *    Top / bottom strips (`resizeEdgeHitZone`) are `position:absolute` with a
+ *    higher z-index than the body so `ns-resize` wins over `grab` on hover.
+ *    Strip height is at least `RESIZE_EDGE_HIT_MIN_PX` (and the tier handle
+ *    size) but never more than half the block minus 1px, so a short tile
+ *    still has a move region.
  *
- *  When the event is shorter than 18 px, resize handles are suppressed
- *  (drag-only) to avoid the entire card being a handle.
+ *  Mini/small tiers keep drag-only (no resize strips).
  * ──────────────────────────────────────────────────────────────────────── */
 interface CalendarEventBlockProps {
   tw: TimeWindowDoc;
@@ -569,6 +572,14 @@ function CalendarEventBlock({
   const tierLayout = pickTierLayout(height);
   const showHandles = isInteractive && tierLayout.handlePx > 0;
   const handlePx = showHandles ? tierLayout.handlePx : 0;
+  const maxResizeEdgePx =
+    showHandles && height > 4
+      ? Math.max(1, Math.floor(height / 2) - 1)
+      : 0;
+  const resizeHitPx =
+    showHandles && maxResizeEdgePx > 0
+      ? Math.min(Math.max(handlePx, RESIZE_EDGE_HIT_MIN_PX), maxResizeEdgePx)
+      : 0;
 
   const startInteraction = useCallback(
     (mode: EventInteractionMode, ev: any) => {
@@ -712,24 +723,34 @@ function CalendarEventBlock({
         ],
       } as Record<string, unknown>);
 
-  const topHandleProps = showHandles
-    ? ({
-        onPointerDown: (e: any) => startInteraction("resize-top", e),
-        style: [
-          styles.resizeHandle,
-          { height: handlePx, cursor: "ns-resize" } as any,
-        ],
-      } as Record<string, unknown>)
-    : null;
-  const bottomHandleProps = showHandles
-    ? ({
-        onPointerDown: (e: any) => startInteraction("resize-bottom", e),
-        style: [
-          styles.resizeHandle,
-          { height: handlePx, cursor: "ns-resize" } as any,
-        ],
-      } as Record<string, unknown>)
-    : null;
+  const topResizeProps =
+    resizeHitPx > 0
+      ? ({
+          onPointerDown: (e: any) => startInteraction("resize-top", e),
+          style: [
+            styles.resizeEdgeHitZone,
+            {
+              height: resizeHitPx,
+              top: 0,
+              cursor: "ns-resize" as const,
+            } as any,
+          ],
+        } as Record<string, unknown>)
+      : null;
+  const bottomResizeProps =
+    resizeHitPx > 0
+      ? ({
+          onPointerDown: (e: any) => startInteraction("resize-bottom", e),
+          style: [
+            styles.resizeEdgeHitZone,
+            {
+              height: resizeHitPx,
+              bottom: 0,
+              cursor: "ns-resize" as const,
+            } as any,
+          ],
+        } as Record<string, unknown>)
+      : null;
 
   // Use the server-computed displayTitle (explicit title → derived
   // name → fallback). Falls back here only for the live-timer
@@ -805,8 +826,14 @@ function CalendarEventBlock({
           isInteracting && styles.eventBlockDragging,
         ]}
       >
-        {topHandleProps && <View {...topHandleProps} />}
-        <View {...bodyHandlers}>
+        <View
+          style={{
+            flex: 1,
+            marginTop: resizeHitPx > 0 ? resizeHitPx : 0,
+            marginBottom: resizeHitPx > 0 ? resizeHitPx : 0,
+          }}
+        >
+          <View {...bodyHandlers}>
           {/* While dragging or resizing, swap the title for the live
               start–end times so the user can see exactly what slot
               they're moving the event to. The time text reuses the
@@ -874,7 +901,9 @@ function CalendarEventBlock({
             </>
           )}
         </View>
-        {bottomHandleProps && <View {...bottomHandleProps} />}
+        </View>
+        {topResizeProps && <View {...topResizeProps} />}
+        {bottomResizeProps && <View {...bottomResizeProps} />}
       </View>
     </View>
   );
@@ -2038,6 +2067,7 @@ const styles = StyleSheet.create({
   // stripe, and rounded corners all live here.
   eventBlock: {
     flex: 1,
+    position: "relative",
     borderRadius: 4,
     overflow: "hidden",
     ...Platform.select({
@@ -2077,10 +2107,12 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
     overflow: "hidden",
   },
-  resizeHandle: {
-    // Width fills the parent; height is set inline per-tier so the
-    // shorter tiles get smaller hit areas (4 px) and don't crowd out
-    // the title.
+  /** Invisible top/bottom layer: receives hover before `eventBody` so resize cursor wins. */
+  resizeEdgeHitZone: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    zIndex: 3,
   },
 
   // Title text — one style per size tier. `lineHeight` is set tight
