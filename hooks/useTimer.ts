@@ -39,7 +39,8 @@ export function useTimer() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [timerData?._id]);
+    // `_id` covers start/stop; `startTime` covers `timers.adjust` (same row, new baseline).
+  }, [timerData?._id, timerData?.startTime]);
 
   return {
     isRunning: !!timerData,
