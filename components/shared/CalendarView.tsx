@@ -43,12 +43,12 @@ import { DEFAULT_EVENT_COLOR } from "../../lib/eventColors";
  *  Productivity-One uses FullCalendar with `slotDuration: '00:05:00'` and
  *  `snapDuration: '00:05:00'`. We mirror that with a pixel-per-minute grid:
  *  `PX_PER_MINUTE = 2` doubles the day timeline vs the original 1 px/min
- *  so hour rows and snap targets are easier to hit; short events still get
- *  a minimum on-screen height (see `eventBlockHeightPx`) so resize handles
- *  remain reachable.
+ *  so hour rows and snap targets are easier to hit. Events shorter than
+ *  five minutes still *render* at five minutes tall (see `eventBlockHeightPx`);
+ *  persisted times are unchanged.
  *
  *  Events are absolute-positioned over the 24h timeline: a 30 min block is
- *  60 px tall at this scale before the display-height floor is applied.
+ *  30 × PX_PER_MINUTE px tall.
  * ──────────────────────────────────────────────────────────────────────── */
 const PX_PER_MINUTE = 2;
 const HOUR_HEIGHT = 60 * PX_PER_MINUTE;
@@ -65,8 +65,6 @@ const DEFAULT_DROP_DURATION = 1800;
  * ("Very small drag → default to minimum duration, e.g. 15 min").
  */
 const DEFAULT_CREATE_DURATION_MINUTES = 15;
-/** Visual floor so brief events stay tall enough to read and grab resize handles. */
-const MIN_EVENT_DISPLAY_HEIGHT_PX = 44;
 /**
  * Pixel distance the user must move from the initial pointerdown before
  * we treat the gesture as a "create new event" drag (vs an accidental
@@ -83,12 +81,9 @@ const CURRENT_TIME_LINE_COLOR = "#FF3B30";
 /** Roughly one-third of a typical viewport so “now” is not glued to the top edge */
 const SCROLL_PADDING_ABOVE_NOW_PX = 160;
 
+/** On-screen height: at least five minutes of grid, even when the event is shorter. */
 function eventBlockHeightPx(durationMinutes: number): number {
-  const durationPx = Math.max(
-    MIN_DURATION_MINUTES * PX_PER_MINUTE,
-    durationMinutes * PX_PER_MINUTE
-  );
-  return Math.max(MIN_EVENT_DISPLAY_HEIGHT_PX, durationPx);
+  return Math.max(MIN_DURATION_MINUTES, durationMinutes) * PX_PER_MINUTE;
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -439,10 +434,9 @@ function packOverlappingEvents(
 /* ────────────────────────────────────────────────────────────────────────
  *  HourSlot — fixed-height droppable backdrop row.
  *
- *  Renders the hour label + grid line. Events do NOT live here anymore —
- *  they're absolute-positioned in `EventLayer` over the entire timeline so
- *  their height accurately reflects duration. This row exists purely as a
- *  visual guide and as a `useDroppable` target for task→calendar drops.
+ *  Renders the hour boundary line, the droppable backdrop for the row, and
+ *  registers the DOM node for coordinate mapping. Events are painted above
+ *  in `eventsLayer`.
  * ──────────────────────────────────────────────────────────────────────── */
 interface HourSlotProps {
   hour: number;
