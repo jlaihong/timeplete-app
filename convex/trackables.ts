@@ -10,7 +10,6 @@ import {
   timeWindowAttributedToTrackable,
 } from "./_helpers/trackableAttribution";
 import { isYYYYMMDDCompact, toCompactYYYYMMDD } from "./_helpers/compactYYYYMMDD";
-import { resolveTrackableDocCalendarDisplay } from "./_helpers/activeTimerCalendarDisplay";
 
 export const search = query({
   args: { archived: v.optional(v.boolean()) },
@@ -28,21 +27,6 @@ export const search = query({
     }
 
     return trackables.sort((a, b) => a.orderIndex - b.orderIndex);
-  },
-});
-
-/**
- * Calendar live-timer fallback when `timers.get` omits display fields
- * (see `tasks.getTimerDisplayForTask`).
- */
-export const getTimerDisplayForTrackable = query({
-  args: { trackableId: v.id("trackables") },
-  handler: async (ctx, args) => {
-    const user = await requireApprovedUserOrEmpty(ctx);
-    if (!user) return null;
-    const trackable = await ctx.db.get(args.trackableId);
-    if (!trackable || trackable.userId !== user._id) return null;
-    return resolveTrackableDocCalendarDisplay(trackable);
   },
 });
 
