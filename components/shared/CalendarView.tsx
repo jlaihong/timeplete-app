@@ -37,6 +37,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { useTimer } from "../../hooks/useTimer";
 import { Id } from "../../convex/_generated/dataModel";
 import { DEFAULT_EVENT_COLOR } from "../../lib/eventColors";
+import { wallClockInTimeZone } from "../../lib/wallClockTimeZone";
 
 /* ────────────────────────────────────────────────────────────────────────
  *  Constants
@@ -1367,7 +1368,16 @@ export function CalendarView({
       if (todayYYYYMMDD() !== selectedDay) return;
       const startMs = localDayStartMinutesToEpochMs(selectedDay, startMinutes);
       if (startMs > Date.now()) return;
-      void timerHook.adjust(startMs);
+      void timerHook.adjust({
+        startTimeEpochMs: startMs,
+        calendarStartDayYYYYMMDD: selectedDay,
+        calendarStartTimeHHMM: minutesToHHMM(
+          Math.max(
+            0,
+            Math.min(DAY_MINUTES - 1, Math.round(startMinutes)),
+          ),
+        ),
+      });
     },
     [selectedDay, timerHook]
   );
@@ -1628,21 +1638,28 @@ export function CalendarView({
     if (!timerHook.isRunning) return null;
     const timerDay = todayYYYYMMDD();
     if (timerDay !== selectedDay) return null;
+    const tz =
+      timerHook.timeZone ??
+      Intl.DateTimeFormat().resolvedOptions().timeZone;
     const startSec =
       timerHook.elapsed > 0
         ? Date.now() / 1000 - timerHook.elapsed
         : Date.now() / 1000;
-    const startDate = new Date(startSec * 1000);
-    const hh = String(startDate.getHours()).padStart(2, "0");
-    const mm = String(startDate.getMinutes()).padStart(2, "0");
+    const epochMs = startSec * 1000;
+    const startTimeHHMM =
+      timerHook.calendarStartDayYYYYMMDD &&
+      timerHook.calendarStartTimeHHMM &&
+      timerHook.calendarStartDayYYYYMMDD === selectedDay
+        ? timerHook.calendarStartTimeHHMM
+        : wallClockInTimeZone(epochMs, tz).startTimeHHMM;
     return {
       _id: LIVE_TIMER_EVENT_ID,
-      startTimeHHMM: `${hh}:${mm}`,
+      startTimeHHMM,
       startDayYYYYMMDD: selectedDay,
       durationSeconds: timerHook.elapsed,
       activityType: timerHook.taskId ? "TASK" : "TRACKABLE",
       budgetType: "ACTUAL",
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      timeZone: tz,
       isLive: true,
       displayTitle: timerHook.displayTitle?.trim() || undefined,
       displayColor: timerHook.displayColor ?? DEFAULT_EVENT_COLOR,
@@ -1658,6 +1675,9 @@ export function CalendarView({
     timerHook.displayTitle,
     timerHook.displayColor,
     timerHook.secondaryColor,
+    timerHook.timeZone,
+    timerHook.calendarStartDayYYYYMMDD,
+    timerHook.calendarStartTimeHHMM,
     selectedDay,
   ]);
 

@@ -9,7 +9,7 @@ import type { Id } from "../convex/_generated/dataModel";
 import type { OptimisticLocalStore } from "convex/browser";
 import type { FunctionReturnType } from "convex/server";
 import { applyTimeSpentDeltaOptimisticUpdate } from "./setTimeSpentOptimisticUpdate";
-import { wallClockInTimeZone } from "./wallClockTimeZone";
+import { timerCalendarWallStart } from "./wallClockTimeZone";
 import { DEFAULT_EVENT_COLOR } from "./eventColors";
 
 type TimerSnapshot = NonNullable<FunctionReturnType<typeof api.timers.get>>;
@@ -69,7 +69,10 @@ export function applyStopTimerOptimisticUpdate(
   }
   if (!snapshot) return;
 
-  const elapsed = Math.floor((Date.now() - snapshot.startTime) / 1000);
+  const elapsed = Math.max(
+    0,
+    Math.floor((Date.now() - snapshot.startTime) / 1000),
+  );
   if (elapsed > 0) {
     if (snapshot.taskId) {
       applyTimeSpentDeltaOptimisticUpdate(
@@ -79,7 +82,9 @@ export function applyStopTimerOptimisticUpdate(
       );
     }
 
-    const { startDayYYYYMMDD: day, startTimeHHMM } = wallClockInTimeZone(
+    const { startDayYYYYMMDD: day, startTimeHHMM } = timerCalendarWallStart(
+      snapshot.calendarStartDayYYYYMMDD,
+      snapshot.calendarStartTimeHHMM,
       snapshot.startTime,
       snapshot.timeZone,
     );

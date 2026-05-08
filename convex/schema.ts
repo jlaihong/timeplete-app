@@ -218,6 +218,14 @@ export default defineSchema({
     trackableId: v.optional(v.id("trackables")),
     timeZone: v.string(),
     startTime: v.number(),
+    /**
+     * When the user drags the live timer on the calendar, we store the exact
+     * grid fields they saw (`localDayStartMinutesToEpochMs` + day column) so
+     * `finalizeTimer` writes the same start as the UI — `wallClockInTimeZone`
+     * alone can diverge (e.g. browser local vs IANA interpretation).
+     */
+    calendarStartDayYYYYMMDD: v.optional(v.string()),
+    calendarStartTimeHHMM: v.optional(v.string()),
     legacyId: v.optional(v.string()),
   })
     .index("by_user", ["userId"])

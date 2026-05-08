@@ -94,7 +94,7 @@ export function useTimer() {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
     // `_id` covers start/stop; `startTime` covers `timers.adjust` (same row, new baseline).
-  }, [timerData?._id, timerData?.startTime]);
+  }, [timerData?._id, timerData?.startTime, timerData?.calendarStartDayYYYYMMDD, timerData?.calendarStartTimeHHMM]);
 
   return {
     isRunning: !!timerData,
@@ -109,7 +109,15 @@ export function useTimer() {
     startForTrackable: (trackableId: Id<"trackables">, timeZone: string) =>
       startTrackableTimer({ trackableId, timeZone }),
     stop: () => stopTimer(),
-    adjust: (startTimeEpochMs: number) =>
-      adjustTimer({ startTimeEpochMs }),
+    adjust: (opts: {
+      startTimeEpochMs: number;
+      calendarStartDayYYYYMMDD?: string;
+      calendarStartTimeHHMM?: string;
+    }) => adjustTimer(opts),
+    timeZone:
+      timerData?.timeZone ??
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    calendarStartDayYYYYMMDD: timerData?.calendarStartDayYYYYMMDD ?? null,
+    calendarStartTimeHHMM: timerData?.calendarStartTimeHHMM ?? null,
   };
 }

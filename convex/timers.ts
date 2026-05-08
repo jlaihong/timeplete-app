@@ -6,7 +6,10 @@ import {
   resolveSnapshotTrackableIdForTask,
 } from "./_helpers/trackableAttribution";
 import { resolveActiveTimerCalendarDisplay } from "./_helpers/activeTimerCalendarDisplay";
-import { wallClockInTimeZone } from "./_helpers/wallClockTimeZone";
+import {
+  parseCalendarGridStart,
+  timerCalendarWallStart,
+} from "../../lib/wallClockTimeZone";
 
 export const get = query({
   args: {},
@@ -106,7 +109,11 @@ export const stop = mutation({
 });
 
 export const adjust = mutation({
-  args: { startTimeEpochMs: v.number() },
+  args: {
+    startTimeEpochMs: v.number(),
+    calendarStartDayYYYYMMDD: v.optional(v.string()),
+    calendarStartTimeHHMM: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
     const timer = await ctx.db
@@ -122,7 +129,16 @@ export const adjust = mutation({
     // start instant or `finalizeTimer` sees negative elapsed and skips the
     // time window (while optimistic UI may still bump task time).
     if (start > now) start = now;
-    await ctx.db.patch(timer._id, { startTime: start });
+
+    const dayRaw = args.calendarStartDayYYYYMMDD?.trim();
+    const hhmmRaw = args.calendarStartTimeHHMM;
+    const parsed = parseCalendarGridStart(dayRaw, hhmmRaw);
+
+    await ctx.db.patch(timer._id, {
+      startTime: start,
+      calendarStartDayYYYYMMDD: parsed?.startDayYYYYMMDD,
+      calendarStartTimeHHMM: parsed?.startTimeHHMM,
+    });
   },
 });
 
@@ -135,7 +151,9 @@ async function finalizeTimer(
     Math.floor((Date.now() - timer.startTime) / 1000),
   );
   if (elapsed > 0) {
-    const { startDayYYYYMMDD: day, startTimeHHMM } = wallClockInTimeZone(
+    const { startDayYYYYMMDD: day, startTimeHHMM } = timerCalendarWallStart(
+      timer.calendarStartDayYYYYMMDD,
+      timer.calendarStartTimeHHMM,
       timer.startTime,
       timer.timeZone,
     );
