@@ -76,6 +76,8 @@ const HOUR_LABEL_WIDTH = 56;
 const RESIZE_HANDLE_HEIGHT = 6;
 /** Minimum vertical hit strip for resize; capped per-side so tiny tiles keep a draggable middle. */
 const RESIZE_EDGE_HIT_MIN_PX = 10;
+/** Minimum height of the center band where move/drag is preferred (grab cursor). */
+const MIN_DRAG_MIDDLE_BAND_PX = 8;
 const HOUR_DROPPABLE_PREFIX = "cal-hour-";
 const isWeb = Platform.OS === "web";
 /** iOS-calendar-style red accent for “now” on today's timeline */
@@ -493,9 +495,8 @@ function HourSlot({ hour, registerEl, isOverPreview }: HourSlotProps) {
  *  Hit areas:
  *    Top / bottom strips (`resizeEdgeHitZone`) are `position:absolute` with a
  *    higher z-index than the body so `ns-resize` wins over `grab` on hover.
- *    Strip height uses `RESIZE_EDGE_HIT_MIN_PX` and caps at half the tile so
- *    a move band remains. Mini/small tiers use the same strips (`handlePx`
- *    is only 0 for those tiers' legacy layout fields).
+ *    Strip height uses `RESIZE_EDGE_HIT_MIN_PX` and caps per side so at least
+ *    `MIN_DRAG_MIDDLE_BAND_PX` remains for move/drag (grab cursor).
  * ──────────────────────────────────────────────────────────────────────── */
 interface CalendarEventBlockProps {
   tw: TimeWindowDoc;
@@ -572,7 +573,13 @@ function CalendarEventBlock({
   const tierHandlePx = tierLayout.handlePx;
   const maxResizeEdgePx =
     allowResizeEdges && height > 4
-      ? Math.max(1, Math.floor(height / 2) - 1)
+      ? Math.max(
+          1,
+          Math.min(
+            Math.floor((height - MIN_DRAG_MIDDLE_BAND_PX) / 2),
+            Math.floor(height / 2) - 1
+          )
+        )
       : 0;
   const resizeHitPx =
     allowResizeEdges && maxResizeEdgePx > 0
@@ -828,11 +835,18 @@ function CalendarEventBlock({
         ]}
       >
         <View
-          style={{
-            flex: 1,
-            marginTop: resizeHitPx > 0 ? resizeHitPx : 0,
-            marginBottom: resizeHitPx > 0 ? resizeHitPx : 0,
-          }}
+          style={[
+            {
+              flex: 1,
+              marginTop: resizeHitPx > 0 ? resizeHitPx : 0,
+              marginBottom: resizeHitPx > 0 ? resizeHitPx : 0,
+            },
+            isInteractive
+              ? ({
+                  cursor: isInteracting ? "grabbing" : "grab",
+                } as any)
+              : null,
+          ]}
         >
           <View {...bodyHandlers}>
           {/* While dragging or resizing, swap the title for the live
