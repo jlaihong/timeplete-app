@@ -5,6 +5,7 @@ import {
   buildListIdToTrackableId,
   resolveSnapshotTrackableIdForTask,
 } from "./_helpers/trackableAttribution";
+import { resolveActiveTimerCalendarDisplay } from "./_helpers/activeTimerCalendarDisplay";
 
 export const get = query({
   args: {},
@@ -20,9 +21,14 @@ export const get = query({
     if (!timer) return null;
 
     const elapsed = Math.floor((Date.now() - timer.startTime) / 1000);
+    const { displayTitle, displayColor, secondaryColor } =
+      await resolveActiveTimerCalendarDisplay(ctx, user._id, timer);
     return {
       ...timer,
       elapsedSeconds: elapsed,
+      displayTitle,
+      displayColor,
+      secondaryColor,
     };
   },
 });
