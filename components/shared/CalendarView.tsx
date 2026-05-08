@@ -30,6 +30,7 @@ import {
   addDays,
   formatDisplayDateLong,
   formatSecondsAsHM,
+  parseYYYYMMDD,
 } from "../../lib/dates";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useAuth } from "../../hooks/useAuth";
@@ -78,6 +79,8 @@ const RESIZE_HANDLE_HEIGHT = 6;
 const RESIZE_EDGE_HIT_MIN_PX = 10;
 /** Minimum height of the center band where move/drag is preferred (grab cursor). */
 const MIN_DRAG_MIDDLE_BAND_PX = 8;
+/** Pseudo–time window row for the in-progress timer (not a Convex document). */
+const LIVE_TIMER_EVENT_ID = "__live_timer__";
 const HOUR_DROPPABLE_PREFIX = "cal-hour-";
 const isWeb = Platform.OS === "web";
 /** iOS-calendar-style red accent for “now” on today's timeline */
@@ -248,6 +251,25 @@ function getDateMinutesSinceMidnight(d: Date): number {
     d.getSeconds() / 60 +
     d.getMilliseconds() / 60000
   );
+}
+
+/** Local calendar day + snapped minutes since midnight → epoch ms for `timers.adjust`. */
+function localDayStartMinutesToEpochMs(
+  dayYyyymmdd: string,
+  startMinutes: number
+): number {
+  const d = parseYYYYMMDD(dayYyyymmdd);
+  const safeMin = Math.max(
+    0,
+    Math.min(DAY_MINUTES - 1, Math.round(startMinutes))
+  );
+  d.setHours(
+    Math.floor(safeMin / 60),
+    safeMin % 60,
+    0,
+    0
+  );
+  return d.getTime();
 }
 
 function formatClockTime(absMinutes: number): string {
@@ -538,14 +560,20 @@ function CalendarEventBlock({
   } | null>(null);
 
   useEffect(() => {
+    if (!pendingCommit) return;
+    if (tw.isLive) {
+      if (Math.abs(pendingCommit.start - baseStart) <= SNAP_MINUTES + 1) {
+        setPendingCommit(null);
+      }
+      return;
+    }
     if (
-      pendingCommit &&
       pendingCommit.start === baseStart &&
       pendingCommit.duration === baseDuration
     ) {
       setPendingCommit(null);
     }
-  }, [baseStart, baseDuration, pendingCommit]);
+  }, [baseStart, baseDuration, pendingCommit, tw.isLive]);
 
   /**
    * Tag the rendered DOM node with `data-calendar-event-id` so the
@@ -567,12 +595,14 @@ function CalendarEventBlock({
   const height = eventBlockHeightPx(renderDuration);
 
   const isLive = !!tw.isLive;
-  const isInteractive = isWeb && !isLive;
+  const canDragBody = isWeb && !isLive;
+  const allowLiveTopResize = isWeb && isLive;
+
   const tierLayout = pickTierLayout(height);
-  const allowResizeEdges = isInteractive;
   const tierHandlePx = tierLayout.handlePx;
+
   const maxResizeEdgePx =
-    allowResizeEdges && height > 4
+    canDragBody && height > 4
       ? Math.max(
           1,
           Math.min(
@@ -581,13 +611,25 @@ function CalendarEventBlock({
           )
         )
       : 0;
-  const resizeHitPx =
-    allowResizeEdges && maxResizeEdgePx > 0
+
+  const resizeHitPxBoth =
+    canDragBody && maxResizeEdgePx > 0
       ? Math.min(
           Math.max(tierHandlePx, RESIZE_EDGE_HIT_MIN_PX),
           maxResizeEdgePx
         )
       : 0;
+
+  const liveTopHitPx =
+    allowLiveTopResize && height > 4
+      ? Math.min(
+          RESIZE_EDGE_HIT_MIN_PX,
+          Math.max(1, height - 4)
+        )
+      : 0;
+
+  const resizeHitPxTop = allowLiveTopResize ? liveTopHitPx : resizeHitPxBoth;
+  const resizeHitPxBottom = allowLiveTopResize ? 0 : resizeHitPxBoth;
 
   const startInteraction = useCallback(
     (mode: EventInteractionMode, ev: any) => {
@@ -628,6 +670,24 @@ function CalendarEventBlock({
           return { start: newStart, duration: initialDuration };
         }
         if (mode === "resize-top") {
+          if (tw.isLive) {
+            const nowMin = getDateMinutesSinceMidnight(new Date());
+            const maxStart = Math.max(
+              0,
+              Math.floor((nowMin - MIN_DURATION_MINUTES) / SNAP_MINUTES) *
+                SNAP_MINUTES
+            );
+            const newStart = clamp(
+              snapMinutes(initialStart + deltaMin),
+              0,
+              maxStart
+            );
+            const newDuration = Math.max(
+              MIN_DURATION_MINUTES,
+              Math.round(nowMin - newStart)
+            );
+            return { start: newStart, duration: newDuration };
+          }
           const newStart = clamp(
             initialStart + deltaMin,
             0,
@@ -670,10 +730,13 @@ function CalendarEventBlock({
           if (onEditRequest) onEditRequest();
           return;
         }
-        if (
-          finalDraft.start !== initialStart ||
-          finalDraft.duration !== initialDuration
-        ) {
+        const durationChanged =
+          finalDraft.duration !== initialDuration;
+        const startChanged = finalDraft.start !== initialStart;
+        const shouldCommit = tw.isLive
+          ? mode === "resize-top" && startChanged
+          : startChanged || durationChanged;
+        if (shouldCommit) {
           setPendingCommit(finalDraft);
           onCommit(tw._id, finalDraft.start, finalDraft.duration);
         }
@@ -683,7 +746,7 @@ function CalendarEventBlock({
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [baseStart, baseDuration, onCommit, onEditRequest, tw._id]
+    [baseStart, baseDuration, onCommit, onEditRequest, tw._id, tw.isLive]
   );
 
   // Colour composition — server-provided `displayColor` (trackable
@@ -707,7 +770,7 @@ function CalendarEventBlock({
   // RN-Web forwards `onPointerDown` and `style.cursor` at runtime, but the
   // TS types don't expose them on `ViewProps`. Bundle them as web-only
   // props (same pattern used elsewhere — see TaskRowDesktop).
-  const bodyHandlers = isInteractive
+  const bodyHandlers = canDragBody
     ? ({
         onPointerDown: (e: any) => startInteraction("drag", e),
         style: [
@@ -724,6 +787,7 @@ function CalendarEventBlock({
         style: [
           styles.eventBody,
           {
+            ...(isWeb ? { cursor: "default" as const } : {}),
             paddingTop: tierLayout.padTop,
             paddingBottom: tierLayout.padBottom,
             paddingHorizontal: tierLayout.padHorizontal,
@@ -732,13 +796,13 @@ function CalendarEventBlock({
       } as Record<string, unknown>);
 
   const topResizeProps =
-    resizeHitPx > 0
+    resizeHitPxTop > 0
       ? ({
           onPointerDown: (e: any) => startInteraction("resize-top", e),
           style: [
             styles.resizeEdgeHitZone,
             {
-              height: resizeHitPx,
+              height: resizeHitPxTop,
               top: 0,
               cursor: "ns-resize" as const,
             } as any,
@@ -746,13 +810,13 @@ function CalendarEventBlock({
         } as Record<string, unknown>)
       : null;
   const bottomResizeProps =
-    resizeHitPx > 0
+    resizeHitPxBottom > 0
       ? ({
           onPointerDown: (e: any) => startInteraction("resize-bottom", e),
           style: [
             styles.resizeEdgeHitZone,
             {
-              height: resizeHitPx,
+              height: resizeHitPxBottom,
               bottom: 0,
               cursor: "ns-resize" as const,
             } as any,
@@ -838,10 +902,10 @@ function CalendarEventBlock({
           style={[
             {
               flex: 1,
-              marginTop: resizeHitPx > 0 ? resizeHitPx : 0,
-              marginBottom: resizeHitPx > 0 ? resizeHitPx : 0,
+              marginTop: resizeHitPxTop > 0 ? resizeHitPxTop : 0,
+              marginBottom: resizeHitPxBottom > 0 ? resizeHitPxBottom : 0,
             },
-            isInteractive
+            canDragBody
               ? ({
                   cursor: isInteracting ? "grabbing" : "grab",
                 } as any)
@@ -1269,6 +1333,20 @@ export function CalendarView({
 
   /* ─── In-calendar event drag/resize commit ───────────────────────── */
   /**
+   * Shift the running timer's `startTime` (Convex) — calendar top-edge resize.
+   * Clamped client-side so the start cannot move past "now".
+   */
+  const handleLiveTimerStartResize = useCallback(
+    (startMinutes: number) => {
+      if (todayYYYYMMDD() !== selectedDay) return;
+      const startMs = localDayStartMinutesToEpochMs(selectedDay, startMinutes);
+      if (startMs > Date.now()) return;
+      void timerHook.adjust(startMs);
+    },
+    [selectedDay, timerHook]
+  );
+
+  /**
    * Persist a moved or resized event. We must spread *all* existing
    * fields because `timeWindows.upsert` does a full replacement (`patch`
    * with the supplied keys) — omitting e.g. `taskId` would null it out
@@ -1532,7 +1610,7 @@ export function CalendarView({
     const hh = String(startDate.getHours()).padStart(2, "0");
     const mm = String(startDate.getMinutes()).padStart(2, "0");
     return {
-      _id: "__live_timer__",
+      _id: LIVE_TIMER_EVENT_ID,
       startTimeHHMM: `${hh}:${mm}`,
       startDayYYYYMMDD: selectedDay,
       durationSeconds: timerHook.elapsed,
@@ -1673,16 +1751,16 @@ export function CalendarView({
                   laneCount: 1,
                 };
                 if (tw.isLive) {
-                  // Render the live timer as a non-interactive block at its
-                  // current start. CalendarEventBlock already short-circuits
-                  // interaction for `tw.isLive`. No `onDelete` — the live
-                  // timer is a pseudo-row, not a real document.
                   return (
                     <CalendarEventBlock
                       key={tw._id}
                       tw={tw}
                       layout={layout}
-                      onCommit={() => undefined}
+                      onCommit={(id, startMinutes) => {
+                        if (id === LIVE_TIMER_EVENT_ID) {
+                          handleLiveTimerStartResize(startMinutes);
+                        }
+                      }}
                     />
                   );
                 }
