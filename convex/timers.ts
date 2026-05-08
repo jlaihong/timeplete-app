@@ -21,7 +21,10 @@ export const get = query({
 
     if (!timer) return null;
 
-    const elapsed = Math.floor((Date.now() - timer.startTime) / 1000);
+    const elapsed = Math.max(
+      0,
+      Math.floor((Date.now() - timer.startTime) / 1000),
+    );
     const { displayTitle, displayColor, secondaryColor } =
       await resolveActiveTimerCalendarDisplay(ctx, user._id, timer);
     return {
@@ -112,7 +115,14 @@ export const adjust = mutation({
       .first();
 
     if (!timer) throw new Error("No active timer");
-    await ctx.db.patch(timer._id, { startTime: args.startTimeEpochMs });
+    let start = args.startTimeEpochMs;
+    if (!Number.isFinite(start)) throw new Error("Invalid start time");
+    const now = Date.now();
+    // Client clock can run ahead of the Convex host; never persist a future
+    // start instant or `finalizeTimer` sees negative elapsed and skips the
+    // time window (while optimistic UI may still bump task time).
+    if (start > now) start = now;
+    await ctx.db.patch(timer._id, { startTime: start });
   },
 });
 
@@ -120,7 +130,10 @@ async function finalizeTimer(
   ctx: any,
   timer: any
 ): Promise<number> {
-  const elapsed = Math.floor((Date.now() - timer.startTime) / 1000);
+  const elapsed = Math.max(
+    0,
+    Math.floor((Date.now() - timer.startTime) / 1000),
+  );
   if (elapsed > 0) {
     const { startDayYYYYMMDD: day, startTimeHHMM } = wallClockInTimeZone(
       timer.startTime,
