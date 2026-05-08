@@ -493,11 +493,9 @@ function HourSlot({ hour, registerEl, isOverPreview }: HourSlotProps) {
  *  Hit areas:
  *    Top / bottom strips (`resizeEdgeHitZone`) are `position:absolute` with a
  *    higher z-index than the body so `ns-resize` wins over `grab` on hover.
- *    Strip height is at least `RESIZE_EDGE_HIT_MIN_PX` (and the tier handle
- *    size) but never more than half the block minus 1px, so a short tile
- *    still has a move region.
- *
- *  Mini/small tiers keep drag-only (no resize strips).
+ *    Strip height uses `RESIZE_EDGE_HIT_MIN_PX` and caps at half the tile so
+ *    a move band remains. Mini/small tiers use the same strips (`handlePx`
+ *    is only 0 for those tiers' legacy layout fields).
  * ──────────────────────────────────────────────────────────────────────── */
 interface CalendarEventBlockProps {
   tw: TimeWindowDoc;
@@ -570,15 +568,18 @@ function CalendarEventBlock({
   const isLive = !!tw.isLive;
   const isInteractive = isWeb && !isLive;
   const tierLayout = pickTierLayout(height);
-  const showHandles = isInteractive && tierLayout.handlePx > 0;
-  const handlePx = showHandles ? tierLayout.handlePx : 0;
+  const allowResizeEdges = isInteractive;
+  const tierHandlePx = tierLayout.handlePx;
   const maxResizeEdgePx =
-    showHandles && height > 4
+    allowResizeEdges && height > 4
       ? Math.max(1, Math.floor(height / 2) - 1)
       : 0;
   const resizeHitPx =
-    showHandles && maxResizeEdgePx > 0
-      ? Math.min(Math.max(handlePx, RESIZE_EDGE_HIT_MIN_PX), maxResizeEdgePx)
+    allowResizeEdges && maxResizeEdgePx > 0
+      ? Math.min(
+          Math.max(tierHandlePx, RESIZE_EDGE_HIT_MIN_PX),
+          maxResizeEdgePx
+        )
       : 0;
 
   const startInteraction = useCallback(
