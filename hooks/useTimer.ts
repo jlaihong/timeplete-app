@@ -45,6 +45,9 @@ export function useTimer() {
   return {
     isRunning: !!timerData,
     elapsed: localElapsed,
+    displayTitle: timerData?.displayTitle,
+    displayColor: timerData?.displayColor,
+    secondaryColor: timerData?.secondaryColor,
     taskId: timerData?.taskId ?? null,
     trackableId: timerData?.trackableId ?? null,
     startForTask: (taskId: Id<"tasks">, timeZone: string) =>

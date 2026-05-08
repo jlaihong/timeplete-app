@@ -836,7 +836,7 @@ function CalendarEventBlock({
   const displayTitle =
     (tw.displayTitle && tw.displayTitle.trim()) ||
     (tw.title && tw.title.trim()) ||
-    (isLive ? "Timer running…" : fallbackByType);
+    (isLive ? "Timer" : fallbackByType);
 
   // Per-tier text styles. Title is ALWAYS rendered (numberOfLines=1 +
   // ellipsis). Time row only when the tier flags it.
@@ -1025,6 +1025,32 @@ export function CalendarView({
   useEffect(() => {
     const id = setInterval(() => setNowPulse((n) => n + 1), 30_000);
     return () => clearInterval(id);
+  }, []);
+
+  /** Web-only keyframes for the live timer’s pulsing green outline (see `eventBlockLive`). */
+  useLayoutEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    const id = "cal-live-timer-outline-pulse-v1";
+    if (document.getElementById(id)) return;
+    const c = Colors.success;
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = `
+      @keyframes calLiveTimerOutlinePulse {
+        0%, 100% {
+          outline-color: ${c}99;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 0 4px ${c}40;
+        }
+        50% {
+          outline-color: ${c};
+          box-shadow: 0 1px 2px rgba(0,0,0,0.08), 0 0 12px ${c}80;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.getElementById(id)?.remove();
+    };
   }, []);
 
   /**
@@ -1616,15 +1642,24 @@ export function CalendarView({
       durationSeconds: timerHook.elapsed,
       activityType: timerHook.taskId ? "TASK" : "TRACKABLE",
       budgetType: "ACTUAL",
-      title: "Timer running…",
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       isLive: true,
-      // Live timer uses the success accent (matches P1's pulsing-green
-      // live-timer-event class). The component still wraps the bg through
-      // the contrast pipeline so the green is text-readable.
-      displayColor: Colors.success,
+      displayTitle: timerHook.displayTitle?.trim() || undefined,
+      displayColor: timerHook.displayColor ?? DEFAULT_EVENT_COLOR,
+      secondaryColor: timerHook.secondaryColor,
+      ...(timerHook.taskId ? { taskId: timerHook.taskId } : {}),
+      ...(timerHook.trackableId ? { trackableId: timerHook.trackableId } : {}),
     };
-  }, [timerHook.isRunning, timerHook.elapsed, timerHook.taskId, selectedDay]);
+  }, [
+    timerHook.isRunning,
+    timerHook.elapsed,
+    timerHook.taskId,
+    timerHook.trackableId,
+    timerHook.displayTitle,
+    timerHook.displayColor,
+    timerHook.secondaryColor,
+    selectedDay,
+  ]);
 
   const eventsToRender = useMemo<TimeWindowDoc[]>(() => {
     const base = [...sortedWindows];
@@ -2171,19 +2206,23 @@ const styles = StyleSheet.create({
     }),
   },
   eventBlockLive: {
-    // P1 wraps the live-timer event in a 2px green border + pulse glow.
-    // We keep the border (animation is web-only and lives in the global
-    // pulse-green keyframes; for now the static border is enough to
-    // signal liveness). `borderColor` overrides the per-event left
-    // stripe colour for live events.
-    borderColor: Colors.success,
-    borderWidth: 2,
-    borderLeftWidth: 2,
+    // Green outline + glow pulse (web); fill and left stripe stay normal
+    // event colours from `displayColor` / `secondaryColor`.
     ...Platform.select({
       web: {
-        boxShadow: "0 0 8px rgba(2, 230, 0, 0.5)",
+        outlineStyle: "solid" as const,
+        outlineWidth: 2,
+        outlineOffset: 0,
+        outlineColor: Colors.success,
+        animation: "calLiveTimerOutlinePulse 2.4s ease-in-out infinite",
       } as any,
-      default: {},
+      default: {
+        // Native: soft ring without replacing the list/trackable stripe.
+        shadowColor: Colors.success,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.45,
+        shadowRadius: 5,
+      },
     }),
   },
   eventBlockDragging: {
