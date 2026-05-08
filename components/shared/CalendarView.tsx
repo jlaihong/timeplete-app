@@ -42,15 +42,15 @@ import { DEFAULT_EVENT_COLOR } from "../../lib/eventColors";
  *
  *  Productivity-One uses FullCalendar with `slotDuration: '00:05:00'` and
  *  `snapDuration: '00:05:00'`. We mirror that with a pixel-per-minute grid:
- *  `PX_PER_MINUTE = 1` gives `HOUR_HEIGHT = 60` (matches the previous
- *  `minHeight: 60` so visual density is unchanged).
+ *  `PX_PER_MINUTE = 2` doubles the day timeline vs the original 1 px/min
+ *  so hour rows and snap targets are easier to hit; short events still get
+ *  a minimum on-screen height (see `eventBlockHeightPx`) so resize handles
+ *  remain reachable.
  *
- *  The big change vs the old layout is that events no longer live as flow
- *  children of an hour cell — they're absolute-positioned in a single
- *  layer over the entire 24h timeline, so a 30 min event renders at 30 px
- *  (= half a 1-hour slot), a 5 min event renders at 5 px, etc.
+ *  Events are absolute-positioned over the 24h timeline: a 30 min block is
+ *  60 px tall at this scale before the display-height floor is applied.
  * ──────────────────────────────────────────────────────────────────────── */
-const PX_PER_MINUTE = 1;
+const PX_PER_MINUTE = 2;
 const HOUR_HEIGHT = 60 * PX_PER_MINUTE;
 const DAY_MINUTES = 24 * 60;
 const DAY_HEIGHT = DAY_MINUTES * PX_PER_MINUTE;
@@ -65,6 +65,8 @@ const DEFAULT_DROP_DURATION = 1800;
  * ("Very small drag → default to minimum duration, e.g. 15 min").
  */
 const DEFAULT_CREATE_DURATION_MINUTES = 15;
+/** Visual floor so brief events stay tall enough to read and grab resize handles. */
+const MIN_EVENT_DISPLAY_HEIGHT_PX = 44;
 /**
  * Pixel distance the user must move from the initial pointerdown before
  * we treat the gesture as a "create new event" drag (vs an accidental
@@ -80,6 +82,14 @@ const isWeb = Platform.OS === "web";
 const CURRENT_TIME_LINE_COLOR = "#FF3B30";
 /** Roughly one-third of a typical viewport so “now” is not glued to the top edge */
 const SCROLL_PADDING_ABOVE_NOW_PX = 160;
+
+function eventBlockHeightPx(durationMinutes: number): number {
+  const durationPx = Math.max(
+    MIN_DURATION_MINUTES * PX_PER_MINUTE,
+    durationMinutes * PX_PER_MINUTE
+  );
+  return Math.max(MIN_EVENT_DISPLAY_HEIGHT_PX, durationPx);
+}
 
 /* ────────────────────────────────────────────────────────────────────────
  *  Types
@@ -262,19 +272,21 @@ function withAlpha(hex: string, alphaHex: string): string {
  *  Title is the single piece of content the user actually needs at every
  *  size. P1 lets FullCalendar prioritise the title and only adds time +
  *  duration + badges when there's vertical room. We do the same with
- *  explicit tiers + per-tier padding so even a 30-minute (~30 px) tile
+ *  explicit tiers + per-tier padding so even a 30-minute block (scaled by
+ *  `PX_PER_MINUTE`) still has room for its title.
  *  always shows its name. Critical: the previous tiering reserved 6px
  *  top + 6px bottom for resize handles AND tried to fit title + time at
  *  medium, which left 0 px of usable vertical room → blank tile. The
  *  new tiers shrink handles + drop the time row earlier.
  *
- *  Tiers (height in px ≈ duration in minutes because PX_PER_MINUTE = 1):
+ *  Tiers (outer height in px; duration in minutes × PX_PER_MINUTE before the
+ *  display minimum — see `eventBlockHeightPx`):
  *
  *    mini   ( <14): truncated title, 9 px font,    handles=0, pad=1
  *    small  (14-29): title only,    11 px font,    handles=0, pad=2
  *    medium (30-49): title only,    12 px font,    handles=4, pad=0
  *    large  ( ≥50): title + time,   13/11 px,      handles=6, pad=0
- *                   + duration + budget/live badge at ≥60 px
+ *                   + duration + budget/live badge at ≥ HOUR_HEIGHT
  *
  *  Title is rendered at every tier with `numberOfLines={1}` so long
  *  names ellipsize instead of disappearing.
@@ -343,9 +355,9 @@ function pickTierLayout(height: number): TierLayout {
     padHorizontal: 6,
     showTime: true,
     // Duration + badges only render when the tile is tall enough that
-    // they don't push the title out (≥ 60 px ≈ 1 hour).
-    showDuration: height >= 60,
-    showBadges: height >= 60,
+    // they don't push the title out (one hour tall at the current scale).
+    showDuration: height >= HOUR_HEIGHT,
+    showBadges: height >= HOUR_HEIGHT,
   };
 }
 
@@ -555,10 +567,7 @@ function CalendarEventBlock({
   const renderStart = draft?.start ?? pendingCommit?.start ?? baseStart;
   const renderDuration = draft?.duration ?? pendingCommit?.duration ?? baseDuration;
   const top = renderStart * PX_PER_MINUTE;
-  const height = Math.max(
-    MIN_DURATION_MINUTES * PX_PER_MINUTE,
-    renderDuration * PX_PER_MINUTE
-  );
+  const height = eventBlockHeightPx(renderDuration);
 
   const isLive = !!tw.isLive;
   const isInteractive = isWeb && !isLive;
@@ -1517,7 +1526,7 @@ export function CalendarView({
 
   const previewTop = dropPreview ? dropPreview.startMinutes * PX_PER_MINUTE : 0;
   const previewHeight = dropPreview
-    ? Math.max(MIN_DURATION_MINUTES * PX_PER_MINUTE, dropPreview.durationMinutes * PX_PER_MINUTE)
+    ? eventBlockHeightPx(dropPreview.durationMinutes)
     : 0;
   const previewEnd = dropPreview
     ? dropPreview.startMinutes + dropPreview.durationMinutes
@@ -1676,7 +1685,7 @@ export function CalendarView({
                     MIN_DURATION_MINUTES,
                     creationDraft.endMinutes - creationDraft.startMinutes
                   );
-                  const cHeight = cDuration * PX_PER_MINUTE;
+                  const cHeight = eventBlockHeightPx(cDuration);
                   return (
                     <View
                       pointerEvents="none"
