@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Id } from "../convex/_generated/dataModel";
 import { useAuth } from "./useAuth";
 import { applyStopTimerOptimisticUpdate } from "../lib/stopTimerOptimisticUpdate";
@@ -8,6 +8,64 @@ import { applyStopTimerOptimisticUpdate } from "../lib/stopTimerOptimisticUpdate
 export function useTimer() {
   const { profileReady } = useAuth();
   const timerData = useQuery(api.timers.get, profileReady ? {} : "skip");
+
+  // When `timers.get` is served by an older deployment (or the row lacks
+  // embedded display fields), fetch title + colours the same way as the
+  // server helper — keeps the calendar live tile correct without relying on
+  // a single query shape.
+  const serverDisplayIncomplete =
+    !timerData ||
+    timerData.displayTitle == null ||
+    timerData.displayTitle.trim() === "" ||
+    timerData.displayColor == null;
+
+  const useTaskTimerFallback =
+    !!timerData?.taskId && serverDisplayIncomplete;
+  const useTrackableTimerFallback =
+    !!timerData?.trackableId &&
+    !timerData.taskId &&
+    serverDisplayIncomplete;
+
+  const taskTimerDisplay = useQuery(
+    api.tasks.getTimerDisplayForTask,
+    profileReady && useTaskTimerFallback && timerData?.taskId
+      ? { taskId: timerData.taskId }
+      : "skip",
+  );
+  const trackableTimerDisplay = useQuery(
+    api.trackables.getTimerDisplayForTrackable,
+    profileReady && useTrackableTimerFallback && timerData?.trackableId
+      ? { trackableId: timerData.trackableId }
+      : "skip",
+  );
+
+  const mergedDisplay = useMemo(() => {
+    const title =
+      timerData?.displayTitle?.trim() ||
+      taskTimerDisplay?.displayTitle?.trim() ||
+      trackableTimerDisplay?.displayTitle?.trim() ||
+      undefined;
+    const color =
+      timerData?.displayColor ??
+      taskTimerDisplay?.displayColor ??
+      trackableTimerDisplay?.displayColor;
+    const secondary =
+      timerData?.secondaryColor ??
+      taskTimerDisplay?.secondaryColor ??
+      trackableTimerDisplay?.secondaryColor;
+    return { displayTitle: title, displayColor: color, secondaryColor: secondary };
+  }, [
+    timerData?.displayTitle,
+    timerData?.displayColor,
+    timerData?.secondaryColor,
+    taskTimerDisplay?.displayTitle,
+    taskTimerDisplay?.displayColor,
+    taskTimerDisplay?.secondaryColor,
+    trackableTimerDisplay?.displayTitle,
+    trackableTimerDisplay?.displayColor,
+    trackableTimerDisplay?.secondaryColor,
+  ]);
+
   const startTaskTimer = useMutation(api.timers.startTaskTimer);
   const startTrackableTimer = useMutation(api.timers.startTrackableTimer);
   const stopTimer = useMutation(api.timers.stop).withOptimisticUpdate(
@@ -45,9 +103,9 @@ export function useTimer() {
   return {
     isRunning: !!timerData,
     elapsed: localElapsed,
-    displayTitle: timerData?.displayTitle,
-    displayColor: timerData?.displayColor,
-    secondaryColor: timerData?.secondaryColor,
+    displayTitle: mergedDisplay.displayTitle,
+    displayColor: mergedDisplay.displayColor,
+    secondaryColor: mergedDisplay.secondaryColor,
     taskId: timerData?.taskId ?? null,
     trackableId: timerData?.trackableId ?? null,
     startForTask: (taskId: Id<"tasks">, timeZone: string) =>
