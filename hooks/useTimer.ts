@@ -17,6 +17,10 @@ export function useTimer() {
     },
   );
   const adjustTimer = useMutation(api.timers.adjust);
+  const resizeLiveTimerMutation = useMutation(api.timers.resizeLiveTimer);
+  const syncTimerClientTimeZoneMutation = useMutation(
+    api.timers.syncTimerClientTimeZone,
+  );
   const setLiveTimerCalendarAnchorMutation = useMutation(
     api.timers.setLiveTimerCalendarAnchor,
   );
@@ -27,17 +31,39 @@ export function useTimer() {
       calendarStartDayYYYYMMDD: string,
       calendarStartTimeHHMM: string,
     ) => {
+      const clientTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      try {
+        await resizeLiveTimerMutation({
+          startTimeEpochMs,
+          calendarStartDayYYYYMMDD,
+          calendarStartTimeHHMM,
+          clientTimeZone,
+        });
+        return;
+      } catch {
+        /* Older deployment: no combined mutation */
+      }
       await adjustTimer({ startTimeEpochMs });
+      try {
+        await syncTimerClientTimeZoneMutation({ clientTimeZone });
+      } catch {
+        /* sync mutation missing */
+      }
       try {
         await setLiveTimerCalendarAnchorMutation({
           calendarStartDayYYYYMMDD,
           calendarStartTimeHHMM,
         });
       } catch {
-        /* Older Convex deployment: no anchor columns / mutation */
+        /* Older deployment: no anchor */
       }
     },
-    [adjustTimer, setLiveTimerCalendarAnchorMutation],
+    [
+      adjustTimer,
+      resizeLiveTimerMutation,
+      syncTimerClientTimeZoneMutation,
+      setLiveTimerCalendarAnchorMutation,
+    ],
   );
 
   // Trackable-only timers: if the deployment’s `timers.get` has not picked up
@@ -118,6 +144,20 @@ export function useTimer() {
     // `_id` covers start/stop; `startTime` covers `timers.adjust` (same row, new baseline).
   }, [timerData?._id, timerData?.startTime, timerData?.calendarStartDayYYYYMMDD, timerData?.calendarStartTimeHHMM]);
 
+  const stop = useCallback(async () => {
+    const clientTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    try {
+      await stopTimer({ clientTimeZone });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/validation|ArgumentValidation|validate arguments/i.test(msg)) {
+        throw e;
+      }
+      /* Older deployment: `stop` has no args */
+      await stopTimer({});
+    }
+  }, [stopTimer]);
+
   return {
     isRunning: !!timerData,
     elapsed: localElapsed,
@@ -130,7 +170,7 @@ export function useTimer() {
       startTaskTimer({ taskId, timeZone }),
     startForTrackable: (trackableId: Id<"trackables">, timeZone: string) =>
       startTrackableTimer({ trackableId, timeZone }),
-    stop: () => stopTimer(),
+    stop,
     commitLiveTimerResize,
     timeZone:
       timerData?.timeZone ??

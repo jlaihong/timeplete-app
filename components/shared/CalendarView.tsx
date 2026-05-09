@@ -526,7 +526,11 @@ interface CalendarEventBlockProps {
   /** Lane assignment from `packOverlappingEvents`. */
   layout: EventLayout;
   /** Notify parent to persist start/duration changes. */
-  onCommit: (id: string, startMinutes: number, durationMinutes: number) => void;
+  onCommit: (
+    id: string,
+    startMinutes: number,
+    durationMinutes: number
+  ) => void | Promise<void>;
   /**
    * Notify parent that the user clicked the event without dragging or
    * resizing. Used to open the edit dialog. Omitted for the live timer
@@ -739,7 +743,9 @@ function CalendarEventBlock({
           : startChanged || durationChanged;
         if (shouldCommit) {
           setPendingCommit(finalDraft);
-          onCommit(tw._id, finalDraft.start, finalDraft.duration);
+          void Promise.resolve(
+            onCommit(tw._id, finalDraft.start, finalDraft.duration)
+          );
         }
       };
 
@@ -1364,11 +1370,11 @@ export function CalendarView({
    * Clamped client-side so the start cannot move past "now".
    */
   const handleLiveTimerStartResize = useCallback(
-    (startMinutes: number) => {
+    async (startMinutes: number) => {
       if (todayYYYYMMDD() !== selectedDay) return;
       const startMs = localDayStartMinutesToEpochMs(selectedDay, startMinutes);
       if (startMs > Date.now()) return;
-      void timerHook.commitLiveTimerResize(
+      await timerHook.commitLiveTimerResize(
         startMs,
         selectedDay,
         minutesToHHMM(
@@ -1813,7 +1819,7 @@ export function CalendarView({
                       layout={layout}
                       onCommit={(id, startMinutes) => {
                         if (id === LIVE_TIMER_EVENT_ID) {
-                          handleLiveTimerStartResize(startMinutes);
+                          return handleLiveTimerStartResize(startMinutes);
                         }
                       }}
                     />

@@ -9,7 +9,7 @@ import { resolveActiveTimerCalendarDisplay } from "./_helpers/activeTimerCalenda
 import {
   parseCalendarGridStart,
   timerCalendarWallStart,
-} from "../../lib/wallClockTimeZone";
+} from "../lib/wallClockTimeZone";
 
 export const get = query({
   args: {},
@@ -93,15 +93,21 @@ export const startTrackableTimer = mutation({
 });
 
 export const stop = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { clientTimeZone: v.optional(v.string()) },
+  handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
-    const timer = await ctx.db
+    let timer = await ctx.db
       .query("taskTimers")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .first();
 
     if (!timer) throw new Error("No active timer");
+
+    const tz = args.clientTimeZone?.trim();
+    if (tz) {
+      await ctx.db.patch(timer._id, { timeZone: tz });
+      timer = { ...timer, timeZone: tz };
+    }
 
     const elapsed = await finalizeTimer(ctx, timer);
     return { elapsedSeconds: elapsed };
@@ -131,9 +137,70 @@ export const adjust = mutation({
 });
 
 /**
- * Calendar grid anchor for the running timer (after `adjust`). Split from
- * `adjust` so deployments that only accept `{ startTimeEpochMs }` on adjust
- * still work; call this immediately after adjust when the schema supports it.
+ * One transaction for calendar top-edge resize: epoch start + grid anchor + browser
+ * IANA zone. Avoids pausing between `adjust` and `setLiveTimerCalendarAnchor` with
+ * no anchor but a local epoch — finalize would then use wallClock(epoch, timer.timeZone)
+ * and a stale/wrong zone (e.g. UTC) shifts HH:MM by hours on the local calendar.
+ */
+export const resizeLiveTimer = mutation({
+  args: {
+    startTimeEpochMs: v.number(),
+    calendarStartDayYYYYMMDD: v.string(),
+    calendarStartTimeHHMM: v.string(),
+    clientTimeZone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const timer = await ctx.db
+      .query("taskTimers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+    if (!timer) throw new Error("No active timer");
+
+    let start = args.startTimeEpochMs;
+    if (!Number.isFinite(start)) throw new Error("Invalid start time");
+    const now = Date.now();
+    if (start > now) start = now;
+
+    const parsed = parseCalendarGridStart(
+      args.calendarStartDayYYYYMMDD,
+      args.calendarStartTimeHHMM,
+    );
+    if (!parsed) throw new Error("Invalid calendar anchor");
+
+    const tz = args.clientTimeZone?.trim();
+    await ctx.db.patch(timer._id, {
+      startTime: start,
+      calendarStartDayYYYYMMDD: parsed.startDayYYYYMMDD,
+      calendarStartTimeHHMM: parsed.startTimeHHMM,
+      ...(tz ? { timeZone: tz } : {}),
+    });
+  },
+});
+
+/**
+ * Refresh `taskTimers.timeZone` from the browser so `finalizeTimer` wall-clock
+ * fallback matches the same zone used by `localDayStartMinutesToEpochMs`.
+ */
+export const syncTimerClientTimeZone = mutation({
+  args: { clientTimeZone: v.string() },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const timer = await ctx.db
+      .query("taskTimers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+    if (!timer) return;
+    const tz = args.clientTimeZone.trim();
+    if (!tz) return;
+    await ctx.db.patch(timer._id, { timeZone: tz });
+  },
+});
+
+/**
+ * Calendar grid anchor for the running timer (after `adjust`). Used when
+ * `resizeLiveTimer` is unavailable; pair with `syncTimerClientTimeZone` after
+ * `adjust` so wall-clock fallback uses the browser zone.
  */
 export const setLiveTimerCalendarAnchor = mutation({
   args: {

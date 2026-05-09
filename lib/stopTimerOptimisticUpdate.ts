@@ -82,11 +82,12 @@ export function applyStopTimerOptimisticUpdate(
       );
     }
 
+    const clientTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const { startDayYYYYMMDD: day, startTimeHHMM } = timerCalendarWallStart(
       snapshot.calendarStartDayYYYYMMDD,
       snapshot.calendarStartTimeHHMM,
       snapshot.startTime,
-      snapshot.timeZone,
+      clientTz,
     );
     const activityType = snapshot.taskId ? ("TASK" as const) : ("TRACKABLE" as const);
     const label =
@@ -103,7 +104,7 @@ export function applyStopTimerOptimisticUpdate(
       activityType,
       taskId: snapshot.taskId,
       trackableId: snapshot.trackableId,
-      timeZone: snapshot.timeZone,
+      timeZone: clientTz,
       isRecurringInstance: false,
       source: "timer" as const,
       displayTitle: label,
