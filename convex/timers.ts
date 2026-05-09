@@ -109,11 +109,7 @@ export const stop = mutation({
 });
 
 export const adjust = mutation({
-  args: {
-    startTimeEpochMs: v.number(),
-    calendarStartDayYYYYMMDD: v.optional(v.string()),
-    calendarStartTimeHHMM: v.optional(v.string()),
-  },
+  args: { startTimeEpochMs: v.number() },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
     const timer = await ctx.db
@@ -130,14 +126,35 @@ export const adjust = mutation({
     // time window (while optimistic UI may still bump task time).
     if (start > now) start = now;
 
-    const dayRaw = args.calendarStartDayYYYYMMDD?.trim();
-    const hhmmRaw = args.calendarStartTimeHHMM;
-    const parsed = parseCalendarGridStart(dayRaw, hhmmRaw);
+    await ctx.db.patch(timer._id, { startTime: start });
+  },
+});
 
+/**
+ * Calendar grid anchor for the running timer (after `adjust`). Split from
+ * `adjust` so deployments that only accept `{ startTimeEpochMs }` on adjust
+ * still work; call this immediately after adjust when the schema supports it.
+ */
+export const setLiveTimerCalendarAnchor = mutation({
+  args: {
+    calendarStartDayYYYYMMDD: v.string(),
+    calendarStartTimeHHMM: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const timer = await ctx.db
+      .query("taskTimers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+    if (!timer) throw new Error("No active timer");
+    const parsed = parseCalendarGridStart(
+      args.calendarStartDayYYYYMMDD,
+      args.calendarStartTimeHHMM,
+    );
+    if (!parsed) throw new Error("Invalid calendar anchor");
     await ctx.db.patch(timer._id, {
-      startTime: start,
-      calendarStartDayYYYYMMDD: parsed?.startDayYYYYMMDD,
-      calendarStartTimeHHMM: parsed?.startTimeHHMM,
+      calendarStartDayYYYYMMDD: parsed.startDayYYYYMMDD,
+      calendarStartTimeHHMM: parsed.startTimeHHMM,
     });
   },
 });

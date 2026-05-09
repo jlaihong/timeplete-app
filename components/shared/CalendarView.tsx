@@ -1368,16 +1368,16 @@ export function CalendarView({
       if (todayYYYYMMDD() !== selectedDay) return;
       const startMs = localDayStartMinutesToEpochMs(selectedDay, startMinutes);
       if (startMs > Date.now()) return;
-      void timerHook.adjust({
-        startTimeEpochMs: startMs,
-        calendarStartDayYYYYMMDD: selectedDay,
-        calendarStartTimeHHMM: minutesToHHMM(
+      void timerHook.commitLiveTimerResize(
+        startMs,
+        selectedDay,
+        minutesToHHMM(
           Math.max(
             0,
             Math.min(DAY_MINUTES - 1, Math.round(startMinutes)),
           ),
         ),
-      });
+      );
     },
     [selectedDay, timerHook]
   );

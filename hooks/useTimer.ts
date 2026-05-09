@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Id } from "../convex/_generated/dataModel";
 import { useAuth } from "./useAuth";
 import { deriveEventColors } from "../lib/eventColors";
@@ -17,6 +17,28 @@ export function useTimer() {
     },
   );
   const adjustTimer = useMutation(api.timers.adjust);
+  const setLiveTimerCalendarAnchorMutation = useMutation(
+    api.timers.setLiveTimerCalendarAnchor,
+  );
+
+  const commitLiveTimerResize = useCallback(
+    async (
+      startTimeEpochMs: number,
+      calendarStartDayYYYYMMDD: string,
+      calendarStartTimeHHMM: string,
+    ) => {
+      await adjustTimer({ startTimeEpochMs });
+      try {
+        await setLiveTimerCalendarAnchorMutation({
+          calendarStartDayYYYYMMDD,
+          calendarStartTimeHHMM,
+        });
+      } catch {
+        /* Older Convex deployment: no anchor columns / mutation */
+      }
+    },
+    [adjustTimer, setLiveTimerCalendarAnchorMutation],
+  );
 
   // Trackable-only timers: if the deployment’s `timers.get` has not picked up
   // display fields yet, resolve name + colour from the long-lived
@@ -109,11 +131,7 @@ export function useTimer() {
     startForTrackable: (trackableId: Id<"trackables">, timeZone: string) =>
       startTrackableTimer({ trackableId, timeZone }),
     stop: () => stopTimer(),
-    adjust: (opts: {
-      startTimeEpochMs: number;
-      calendarStartDayYYYYMMDD?: string;
-      calendarStartTimeHHMM?: string;
-    }) => adjustTimer(opts),
+    commitLiveTimerResize,
     timeZone:
       timerData?.timeZone ??
       Intl.DateTimeFormat().resolvedOptions().timeZone,
