@@ -6,33 +6,6 @@ import { useAuth } from "./useAuth";
 import { deriveEventColors } from "../lib/eventColors";
 import { applyStopTimerOptimisticUpdate } from "../lib/stopTimerOptimisticUpdate";
 
-function convexErrorDiagnostics(e: unknown): string {
-  const parts: string[] = [];
-  if (e instanceof Error) {
-    parts.push(e.message);
-    const data = (e as Error & { data?: unknown }).data;
-    if (data !== undefined) {
-      try {
-        parts.push(JSON.stringify(data));
-      } catch {
-        parts.push(String(data));
-      }
-    }
-  }
-  try {
-    parts.push(JSON.stringify(e));
-  } catch {
-    parts.push(String(e));
-  }
-  return parts.join(" ");
-}
-
-function isLikelyConvexArgumentMismatch(e: unknown): boolean {
-  return /ArgumentValidation|argument validation|invalid argument|validator|unexpected field|extra field|excess property|does not match/i.test(
-    convexErrorDiagnostics(e),
-  );
-}
-
 export function useTimer() {
   const { profileReady } = useAuth();
   const timerData = useQuery(api.timers.get, profileReady ? {} : "skip");
@@ -44,59 +17,14 @@ export function useTimer() {
     },
   );
   const adjustTimer = useMutation(api.timers.adjust);
-  const resizeLiveTimerMutation = useMutation(api.timers.resizeLiveTimer);
-  const syncTimerClientTimeZoneMutation = useMutation(
-    api.timers.syncTimerClientTimeZone,
-  );
-  const setLiveTimerCalendarAnchorMutation = useMutation(
-    api.timers.setLiveTimerCalendarAnchor,
-  );
 
   const commitLiveTimerResize = useCallback(
-    async (
-      startTimeEpochMs: number,
-      calendarStartDayYYYYMMDD: string,
-      calendarStartTimeHHMM: string,
-    ) => {
-      const clientTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      try {
-        await resizeLiveTimerMutation({
-          startTimeEpochMs,
-          calendarStartDayYYYYMMDD,
-          calendarStartTimeHHMM,
-          clientTimeZone,
-        });
-        return;
-      } catch {
-        /* Older deployment: no combined mutation */
-      }
+    async (startTimeEpochMs: number) => {
       await adjustTimer({ startTimeEpochMs });
-      try {
-        await syncTimerClientTimeZoneMutation({ clientTimeZone });
-      } catch {
-        /* sync mutation missing */
-      }
-      try {
-        await setLiveTimerCalendarAnchorMutation({
-          calendarStartDayYYYYMMDD,
-          calendarStartTimeHHMM,
-        });
-      } catch {
-        /* Older deployment: no anchor */
-      }
     },
-    [
-      adjustTimer,
-      resizeLiveTimerMutation,
-      syncTimerClientTimeZoneMutation,
-      setLiveTimerCalendarAnchorMutation,
-    ],
+    [adjustTimer],
   );
 
-  // Trackable-only timers: if the deployment’s `timers.get` has not picked up
-  // display fields yet, resolve name + colour from the long-lived
-  // `trackables.search` query (no new Convex functions required). Task timers
-  // still need `timers.get` enrichment on the server.
   const trackableDisplayIncomplete =
     !!timerData &&
     !!timerData.trackableId &&
@@ -168,19 +96,7 @@ export function useTimer() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-    // `_id` covers start/stop; `startTime` covers `timers.adjust` (same row, new baseline).
-  }, [timerData?._id, timerData?.startTime, timerData?.calendarStartDayYYYYMMDD, timerData?.calendarStartTimeHHMM]);
-
-  const stop = useCallback(async () => {
-    const clientTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    try {
-      await stopTimer({ clientTimeZone });
-    } catch (e) {
-      if (!isLikelyConvexArgumentMismatch(e)) throw e;
-      /* Older deployment: `stop` has no args */
-      await stopTimer({});
-    }
-  }, [stopTimer]);
+  }, [timerData?._id, timerData?.startTime]);
 
   return {
     isRunning: !!timerData,
@@ -194,12 +110,10 @@ export function useTimer() {
       startTaskTimer({ taskId, timeZone }),
     startForTrackable: (trackableId: Id<"trackables">, timeZone: string) =>
       startTrackableTimer({ trackableId, timeZone }),
-    stop,
+    stop: () => stopTimer({}),
     commitLiveTimerResize,
     timeZone:
       timerData?.timeZone ??
       Intl.DateTimeFormat().resolvedOptions().timeZone,
-    calendarStartDayYYYYMMDD: timerData?.calendarStartDayYYYYMMDD ?? null,
-    calendarStartTimeHHMM: timerData?.calendarStartTimeHHMM ?? null,
   };
 }

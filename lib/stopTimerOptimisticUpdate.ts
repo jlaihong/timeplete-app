@@ -9,7 +9,7 @@ import type { Id } from "../convex/_generated/dataModel";
 import type { OptimisticLocalStore } from "convex/browser";
 import type { FunctionReturnType } from "convex/server";
 import { applyTimeSpentDeltaOptimisticUpdate } from "./setTimeSpentOptimisticUpdate";
-import { timerCalendarWallStart } from "./wallClockTimeZone";
+import { wallClockInTimeZone } from "./wallClockTimeZone";
 import { DEFAULT_EVENT_COLOR } from "./eventColors";
 
 type TimerSnapshot = NonNullable<FunctionReturnType<typeof api.timers.get>>;
@@ -82,12 +82,13 @@ export function applyStopTimerOptimisticUpdate(
       );
     }
 
-    const clientTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const { startDayYYYYMMDD: day, startTimeHHMM } = timerCalendarWallStart(
-      snapshot.calendarStartDayYYYYMMDD,
-      snapshot.calendarStartTimeHHMM,
+    const tz =
+      typeof snapshot.timeZone === "string" && snapshot.timeZone.trim() !== ""
+        ? snapshot.timeZone.trim()
+        : Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const { startDayYYYYMMDD: day, startTimeHHMM } = wallClockInTimeZone(
       snapshot.startTime,
-      clientTz,
+      tz,
     );
     const activityType = snapshot.taskId ? ("TASK" as const) : ("TRACKABLE" as const);
     const label =
@@ -104,7 +105,7 @@ export function applyStopTimerOptimisticUpdate(
       activityType,
       taskId: snapshot.taskId,
       trackableId: snapshot.trackableId,
-      timeZone: clientTz,
+      timeZone: tz,
       isRecurringInstance: false,
       source: "timer" as const,
       displayTitle: label,

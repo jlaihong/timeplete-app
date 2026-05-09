@@ -30,14 +30,14 @@ import {
   addDays,
   formatDisplayDateLong,
   formatSecondsAsHM,
-  parseYYYYMMDD,
 } from "../../lib/dates";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useAuth } from "../../hooks/useAuth";
 import { useTimer } from "../../hooks/useTimer";
 import { Id } from "../../convex/_generated/dataModel";
 import { DEFAULT_EVENT_COLOR } from "../../lib/eventColors";
-import { wallClockInTimeZone } from "../../lib/wallClockTimeZone";
+import { wallClockInTimeZone, wallClockGridToEpochMs } from "../../lib/wallClockTimeZone";
+import { traceTimer } from "../../lib/timerTimeTrace";
 
 /* ────────────────────────────────────────────────────────────────────────
  *  Constants
@@ -252,25 +252,6 @@ function getDateMinutesSinceMidnight(d: Date): number {
     d.getSeconds() / 60 +
     d.getMilliseconds() / 60000
   );
-}
-
-/** Local calendar day + snapped minutes since midnight → epoch ms for `timers.adjust`. */
-function localDayStartMinutesToEpochMs(
-  dayYyyymmdd: string,
-  startMinutes: number
-): number {
-  const d = parseYYYYMMDD(dayYyyymmdd);
-  const safeMin = Math.max(
-    0,
-    Math.min(DAY_MINUTES - 1, Math.round(startMinutes))
-  );
-  d.setHours(
-    Math.floor(safeMin / 60),
-    safeMin % 60,
-    0,
-    0
-  );
-  return d.getTime();
 }
 
 function formatClockTime(absMinutes: number): string {
@@ -1366,8 +1347,8 @@ export function CalendarView({
 
   /* ─── In-calendar event drag/resize commit ───────────────────────── */
   /**
-   * Shift the running timer's `startTime` (Convex) — calendar top-edge resize.
-   * Clamped client-side so the start cannot move past "now".
+   * Shift the running timer's `startTime` (Convex). Epoch is computed with
+   * `wallClockGridToEpochMs` in `timerHook.timeZone` — same zone as finalize.
    */
   const handleLiveTimerStartResize = useCallback(
     async (startMinutes: number) => {
@@ -1379,27 +1360,30 @@ export function CalendarView({
           ? Date.now() - timerHook.elapsed * 1000
           : Date.now();
       const wall = wallClockInTimeZone(epochMs, tz);
-      const anchorDay = timerHook.calendarStartDayYYYYMMDD;
-      const anchorTime = timerHook.calendarStartTimeHHMM;
-      const anchorOnSelected =
-        !!anchorDay &&
-        !!anchorTime &&
-        anchorDay === selectedDay;
-      const instantOnSelected = wall.startDayYYYYMMDD === selectedDay;
-      if (!anchorOnSelected && !instantOnSelected) return;
+      if (wall.startDayYYYYMMDD !== selectedDay) return;
 
-      const startMs = localDayStartMinutesToEpochMs(selectedDay, startMinutes);
-      if (startMs > Date.now()) return;
-      await timerHook.commitLiveTimerResize(
-        startMs,
-        selectedDay,
-        minutesToHHMM(
-          Math.max(
-            0,
-            Math.min(DAY_MINUTES - 1, Math.round(startMinutes)),
-          ),
-        ),
+      const safeMin = Math.max(
+        0,
+        Math.min(DAY_MINUTES - 1, Math.round(startMinutes)),
       );
+      let startMs: number;
+      try {
+        startMs = wallClockGridToEpochMs(selectedDay, safeMin, tz);
+      } catch {
+        return;
+      }
+      if (startMs > Date.now()) return;
+
+      traceTimer("resizeCommit", {
+        selectedDay,
+        minutesFromMidnight: safeMin,
+        timeZoneIANA: tz,
+        startTimeEpochMs: startMs,
+        startIso: new Date(startMs).toISOString(),
+        roundTripWall: wallClockInTimeZone(startMs, tz),
+      });
+
+      await timerHook.commitLiveTimerResize(startMs);
     },
     [selectedDay, timerHook]
   );
@@ -1666,21 +1650,11 @@ export function CalendarView({
         ? Date.now() - timerHook.elapsed * 1000
         : Date.now();
     const wall = wallClockInTimeZone(epochMs, tz);
-    const anchorDay = timerHook.calendarStartDayYYYYMMDD;
-    const anchorTime = timerHook.calendarStartTimeHHMM;
-    const anchorOnSelected =
-      !!anchorDay &&
-      !!anchorTime &&
-      anchorDay === selectedDay;
-    const instantOnSelected = wall.startDayYYYYMMDD === selectedDay;
-    if (!anchorOnSelected && !instantOnSelected) return null;
+    if (wall.startDayYYYYMMDD !== selectedDay) return null;
 
-    const startTimeHHMM = anchorOnSelected
-      ? anchorTime!
-      : wall.startTimeHHMM;
     return {
       _id: LIVE_TIMER_EVENT_ID,
-      startTimeHHMM,
+      startTimeHHMM: wall.startTimeHHMM,
       startDayYYYYMMDD: selectedDay,
       durationSeconds: timerHook.elapsed,
       activityType: timerHook.taskId ? "TASK" : "TRACKABLE",
@@ -1702,8 +1676,6 @@ export function CalendarView({
     timerHook.displayColor,
     timerHook.secondaryColor,
     timerHook.timeZone,
-    timerHook.calendarStartDayYYYYMMDD,
-    timerHook.calendarStartTimeHHMM,
     selectedDay,
   ]);
 

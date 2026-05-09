@@ -6,10 +6,7 @@ import {
   resolveSnapshotTrackableIdForTask,
 } from "./_helpers/trackableAttribution";
 import { resolveActiveTimerCalendarDisplay } from "./_helpers/activeTimerCalendarDisplay";
-import {
-  parseCalendarGridStart,
-  timerCalendarWallStart,
-} from "./_helpers/wallClockTimeZone";
+import { wallClockInTimeZone } from "./_helpers/wallClockTimeZone";
 
 export const get = query({
   args: {},
@@ -93,8 +90,8 @@ export const startTrackableTimer = mutation({
 });
 
 export const stop = mutation({
-  args: { clientTimeZone: v.optional(v.string()) },
-  handler: async (ctx, args) => {
+  args: {},
+  handler: async (ctx) => {
     const user = await requireApprovedUser(ctx);
     const timer = await ctx.db
       .query("taskTimers")
@@ -103,19 +100,16 @@ export const stop = mutation({
 
     if (!timer) throw new Error("No active timer");
 
-    const tz = args.clientTimeZone?.trim();
-    if (tz) {
-      await ctx.db.patch(timer._id, { timeZone: tz });
-    }
-
-    const fresh = await ctx.db.get(timer._id);
-    if (!fresh) throw new Error("No active timer");
-
-    const elapsed = await finalizeTimer(ctx, fresh);
+    const elapsed = await finalizeTimer(ctx, timer);
     return { elapsedSeconds: elapsed };
   },
 });
 
+/**
+ * Move the running timer start instant (`startTime` UTC epoch ms).
+ * Client must send an epoch produced by `wallClockGridToEpochMs(day, minutes, timer.timeZone)`
+ * so grid gestures and server finalization share one IANA zone + one instant.
+ */
 export const adjust = mutation({
   args: { startTimeEpochMs: v.number() },
   handler: async (ctx, args) => {
@@ -129,129 +123,45 @@ export const adjust = mutation({
     let start = args.startTimeEpochMs;
     if (!Number.isFinite(start)) throw new Error("Invalid start time");
     const now = Date.now();
-    // Client clock can run ahead of the Convex host; never persist a future
-    // start instant or `finalizeTimer` sees negative elapsed and skips the
-    // time window (while optimistic UI may still bump task time).
     if (start > now) start = now;
 
-    await ctx.db.patch(timer._id, { startTime: start });
-  },
-});
-
-/**
- * One transaction for calendar top-edge resize: epoch start + grid anchor + browser
- * IANA zone. Avoids pausing between `adjust` and `setLiveTimerCalendarAnchor` with
- * no anchor but a local epoch — finalize would then use wallClock(epoch, timer.timeZone)
- * and a stale/wrong zone (e.g. UTC) shifts HH:MM by hours on the local calendar.
- */
-export const resizeLiveTimer = mutation({
-  args: {
-    startTimeEpochMs: v.number(),
-    calendarStartDayYYYYMMDD: v.string(),
-    calendarStartTimeHHMM: v.string(),
-    clientTimeZone: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
-    const timer = await ctx.db
-      .query("taskTimers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-    if (!timer) throw new Error("No active timer");
-
-    let start = args.startTimeEpochMs;
-    if (!Number.isFinite(start)) throw new Error("Invalid start time");
-    const now = Date.now();
-    if (start > now) start = now;
-
-    const parsed = parseCalendarGridStart(
-      args.calendarStartDayYYYYMMDD,
-      args.calendarStartTimeHHMM,
-    );
-    if (!parsed) throw new Error("Invalid calendar anchor");
-
-    const tz = args.clientTimeZone?.trim();
     await ctx.db.patch(timer._id, {
       startTime: start,
-      calendarStartDayYYYYMMDD: parsed.startDayYYYYMMDD,
-      calendarStartTimeHHMM: parsed.startTimeHHMM,
-      ...(tz ? { timeZone: tz } : {}),
+      calendarStartDayYYYYMMDD: undefined,
+      calendarStartTimeHHMM: undefined,
     });
   },
 });
 
-/**
- * Refresh `taskTimers.timeZone` from the browser so `finalizeTimer` wall-clock
- * fallback matches the same zone used by `localDayStartMinutesToEpochMs`.
- */
-export const syncTimerClientTimeZone = mutation({
-  args: { clientTimeZone: v.string() },
-  handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
-    const timer = await ctx.db
-      .query("taskTimers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-    if (!timer) return;
-    const tz = args.clientTimeZone.trim();
-    if (!tz) return;
-    await ctx.db.patch(timer._id, { timeZone: tz });
-  },
-});
-
-/**
- * Calendar grid anchor for the running timer (after `adjust`). Used when
- * `resizeLiveTimer` is unavailable; pair with `syncTimerClientTimeZone` after
- * `adjust` so wall-clock fallback uses the browser zone.
- */
-export const setLiveTimerCalendarAnchor = mutation({
-  args: {
-    calendarStartDayYYYYMMDD: v.string(),
-    calendarStartTimeHHMM: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireApprovedUser(ctx);
-    const timer = await ctx.db
-      .query("taskTimers")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .first();
-    if (!timer) throw new Error("No active timer");
-    const parsed = parseCalendarGridStart(
-      args.calendarStartDayYYYYMMDD,
-      args.calendarStartTimeHHMM,
-    );
-    if (!parsed) throw new Error("Invalid calendar anchor");
-    await ctx.db.patch(timer._id, {
-      calendarStartDayYYYYMMDD: parsed.startDayYYYYMMDD,
-      calendarStartTimeHHMM: parsed.startTimeHHMM,
-    });
-  },
-});
-
-async function finalizeTimer(
-  ctx: any,
-  timer: any
-): Promise<number> {
+async function finalizeTimer(ctx: any, timer: any): Promise<number> {
   const now = Date.now();
-  // Never let a bogus future startTime produce zero/negative elapsed; client
-  // clocks can skew relative to Convex.
   const effectiveStart = Math.min(timer.startTime, now);
   const elapsed = Math.max(0, Math.floor((now - effectiveStart) / 1000));
-  if (elapsed > 0) {
-    const tz =
-      typeof timer.timeZone === "string" && timer.timeZone.trim() !== ""
-        ? timer.timeZone.trim()
-        : "UTC";
-    const { startDayYYYYMMDD: day, startTimeHHMM } = timerCalendarWallStart(
-      timer.calendarStartDayYYYYMMDD,
-      timer.calendarStartTimeHHMM,
-      timer.startTime,
-      tz,
-    );
 
-    // Snapshot the resolved trackableId onto the window so reassigning the
-    // task later does not retroactively move historical time. Mirrors
-    // productivity-one's `task.store.timer.facade.ts:startTaskTimer`.
+  const tz =
+    typeof timer.timeZone === "string" && timer.timeZone.trim() !== ""
+      ? timer.timeZone.trim()
+      : "UTC";
+
+  const wall = wallClockInTimeZone(timer.startTime, tz);
+  console.log(
+    JSON.stringify({
+      tag: "timers.finalizeTimer",
+      timerId: timer._id,
+      startTimeEpochMs: timer.startTime,
+      startTimeIso: new Date(timer.startTime).toISOString(),
+      serverNowEpochMs: now,
+      serverNowIso: new Date(now).toISOString(),
+      timeZoneIANA: tz,
+      derivedStartDayYYYYMMDD: wall.startDayYYYYMMDD,
+      derivedStartTimeHHMM: wall.startTimeHHMM,
+      elapsedSeconds: elapsed,
+    }),
+  );
+
+  if (elapsed > 0) {
+    const { startDayYYYYMMDD: day, startTimeHHMM } = wall;
+
     let snapshotTrackableId: any = timer.trackableId;
     if (timer.taskId && !snapshotTrackableId) {
       const task = await ctx.db.get(timer.taskId);

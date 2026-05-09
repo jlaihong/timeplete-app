@@ -1,5 +1,4 @@
 export {
   wallClockInTimeZone,
-  parseCalendarGridStart,
-  timerCalendarWallStart,
+  wallClockGridToEpochMs,
 } from "../../lib/wallClockTimeZone";
