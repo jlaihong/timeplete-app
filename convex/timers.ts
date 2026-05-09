@@ -9,7 +9,7 @@ import { resolveActiveTimerCalendarDisplay } from "./_helpers/activeTimerCalenda
 import {
   parseCalendarGridStart,
   timerCalendarWallStart,
-} from "../lib/wallClockTimeZone";
+} from "./_helpers/wallClockTimeZone";
 
 export const get = query({
   args: {},
@@ -96,7 +96,7 @@ export const stop = mutation({
   args: { clientTimeZone: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
-    let timer = await ctx.db
+    const timer = await ctx.db
       .query("taskTimers")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .first();
@@ -106,10 +106,12 @@ export const stop = mutation({
     const tz = args.clientTimeZone?.trim();
     if (tz) {
       await ctx.db.patch(timer._id, { timeZone: tz });
-      timer = { ...timer, timeZone: tz };
     }
 
-    const elapsed = await finalizeTimer(ctx, timer);
+    const fresh = await ctx.db.get(timer._id);
+    if (!fresh) throw new Error("No active timer");
+
+    const elapsed = await finalizeTimer(ctx, fresh);
     return { elapsedSeconds: elapsed };
   },
 });
@@ -230,16 +232,21 @@ async function finalizeTimer(
   ctx: any,
   timer: any
 ): Promise<number> {
-  const elapsed = Math.max(
-    0,
-    Math.floor((Date.now() - timer.startTime) / 1000),
-  );
+  const now = Date.now();
+  // Never let a bogus future startTime produce zero/negative elapsed; client
+  // clocks can skew relative to Convex.
+  const effectiveStart = Math.min(timer.startTime, now);
+  const elapsed = Math.max(0, Math.floor((now - effectiveStart) / 1000));
   if (elapsed > 0) {
+    const tz =
+      typeof timer.timeZone === "string" && timer.timeZone.trim() !== ""
+        ? timer.timeZone.trim()
+        : "UTC";
     const { startDayYYYYMMDD: day, startTimeHHMM } = timerCalendarWallStart(
       timer.calendarStartDayYYYYMMDD,
       timer.calendarStartTimeHHMM,
       timer.startTime,
-      timer.timeZone,
+      tz,
     );
 
     // Snapshot the resolved trackableId onto the window so reassigning the
@@ -270,7 +277,7 @@ async function finalizeTimer(
       activityType: timer.taskId ? ("TASK" as const) : ("TRACKABLE" as const),
       taskId: timer.taskId,
       trackableId: snapshotTrackableId,
-      timeZone: timer.timeZone,
+      timeZone: tz,
       isRecurringInstance: false,
       source: "timer" as const,
     });

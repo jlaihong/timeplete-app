@@ -1371,7 +1371,23 @@ export function CalendarView({
    */
   const handleLiveTimerStartResize = useCallback(
     async (startMinutes: number) => {
-      if (todayYYYYMMDD() !== selectedDay) return;
+      const tz =
+        timerHook.timeZone ??
+        Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const epochMs =
+        timerHook.elapsed > 0
+          ? Date.now() - timerHook.elapsed * 1000
+          : Date.now();
+      const wall = wallClockInTimeZone(epochMs, tz);
+      const anchorDay = timerHook.calendarStartDayYYYYMMDD;
+      const anchorTime = timerHook.calendarStartTimeHHMM;
+      const anchorOnSelected =
+        !!anchorDay &&
+        !!anchorTime &&
+        anchorDay === selectedDay;
+      const instantOnSelected = wall.startDayYYYYMMDD === selectedDay;
+      if (!anchorOnSelected && !instantOnSelected) return;
+
       const startMs = localDayStartMinutesToEpochMs(selectedDay, startMinutes);
       if (startMs > Date.now()) return;
       await timerHook.commitLiveTimerResize(
@@ -1642,22 +1658,26 @@ export function CalendarView({
   /* ─── Live timer pseudo-event ─────────────────────────────────────── */
   const liveTimerWindow = useMemo<TimeWindowDoc | null>(() => {
     if (!timerHook.isRunning) return null;
-    const timerDay = todayYYYYMMDD();
-    if (timerDay !== selectedDay) return null;
     const tz =
       timerHook.timeZone ??
       Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const startSec =
+    const epochMs =
       timerHook.elapsed > 0
-        ? Date.now() / 1000 - timerHook.elapsed
-        : Date.now() / 1000;
-    const epochMs = startSec * 1000;
-    const startTimeHHMM =
-      timerHook.calendarStartDayYYYYMMDD &&
-      timerHook.calendarStartTimeHHMM &&
-      timerHook.calendarStartDayYYYYMMDD === selectedDay
-        ? timerHook.calendarStartTimeHHMM
-        : wallClockInTimeZone(epochMs, tz).startTimeHHMM;
+        ? Date.now() - timerHook.elapsed * 1000
+        : Date.now();
+    const wall = wallClockInTimeZone(epochMs, tz);
+    const anchorDay = timerHook.calendarStartDayYYYYMMDD;
+    const anchorTime = timerHook.calendarStartTimeHHMM;
+    const anchorOnSelected =
+      !!anchorDay &&
+      !!anchorTime &&
+      anchorDay === selectedDay;
+    const instantOnSelected = wall.startDayYYYYMMDD === selectedDay;
+    if (!anchorOnSelected && !instantOnSelected) return null;
+
+    const startTimeHHMM = anchorOnSelected
+      ? anchorTime!
+      : wall.startTimeHHMM;
     return {
       _id: LIVE_TIMER_EVENT_ID,
       startTimeHHMM,
