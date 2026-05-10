@@ -149,6 +149,12 @@ export default defineSchema({
   timeWindows: defineTable({
     startTimeHHMM: v.string(),
     startDayYYYYMMDD: v.string(),
+    /**
+     * Canonical UTC instant for the window start. Layout / rendering should
+     * derive wall-clock position from this + `timeZone`; `startTimeHHMM` is
+     * for search/sort and legacy rows without this field.
+     */
+    startTimeEpochMs: v.optional(v.number()),
     durationSeconds: v.number(),
     userId: v.id("users"),
     budgetType: v.union(v.literal("ACTUAL"), v.literal("BUDGETED")),

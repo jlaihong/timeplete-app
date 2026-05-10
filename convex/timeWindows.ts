@@ -9,6 +9,29 @@ import {
   resolveSnapshotTrackableIdForTask,
 } from "./_helpers/trackableAttribution";
 import { enrichTimeWindowsWithDisplayFields } from "./_helpers/timeWindowDisplayEnrichment";
+import { wallClockGridToEpochMs } from "./_helpers/wallClockTimeZone";
+
+function minutesFromHHMM(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
+}
+
+function computeStartEpochMsForWindow(
+  day: string,
+  hhmm: string,
+  timeZone: string,
+): number | undefined {
+  const tz =
+    typeof timeZone === "string" && timeZone.trim() !== ""
+      ? timeZone.trim()
+      : "UTC";
+  try {
+    return wallClockGridToEpochMs(day, minutesFromHHMM(hhmm), tz);
+  } catch {
+    return undefined;
+  }
+}
 
 export const search = query({
   args: {
@@ -234,12 +257,19 @@ export const upsert = mutation({
       });
     }
 
+    const startTimeEpochMs = computeStartEpochMsForWindow(
+      args.startDayYYYYMMDD,
+      args.startTimeHHMM,
+      args.timeZone,
+    );
+
     if (args.id) {
       const existing = await ctx.db.get(args.id);
       if (!existing) throw new Error("Time window not found");
       await ctx.db.patch(args.id, {
         startTimeHHMM: args.startTimeHHMM,
         startDayYYYYMMDD: args.startDayYYYYMMDD,
+        startTimeEpochMs,
         durationSeconds: args.durationSeconds,
         budgetType: args.budgetType,
         activityType: args.activityType,
@@ -258,6 +288,7 @@ export const upsert = mutation({
     return await ctx.db.insert("timeWindows", {
       startTimeHHMM: args.startTimeHHMM,
       startDayYYYYMMDD: args.startDayYYYYMMDD,
+      startTimeEpochMs,
       durationSeconds: args.durationSeconds,
       userId: user._id,
       budgetType: args.budgetType,

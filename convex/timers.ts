@@ -130,6 +130,18 @@ export const adjust = mutation({
       calendarStartDayYYYYMMDD: undefined,
       calendarStartTimeHHMM: undefined,
     });
+
+    const stored = await ctx.db.get(timer._id);
+    console.log(
+      JSON.stringify({
+        tag: "timers.adjust.storedTaskTimer",
+        timerId: timer._id,
+        startTimeEpochMs: stored?.startTime,
+        timeZoneIANA: stored?.timeZone,
+        calendarStartDayYYYYMMDD: stored?.calendarStartDayYYYYMMDD,
+        calendarStartTimeHHMM: stored?.calendarStartTimeHHMM,
+      }),
+    );
   },
 });
 
@@ -178,9 +190,10 @@ async function finalizeTimer(ctx: any, timer: any): Promise<number> {
       });
     }
 
-    await ctx.db.insert("timeWindows", {
+    const twId = await ctx.db.insert("timeWindows", {
       startTimeHHMM,
       startDayYYYYMMDD: day,
+      startTimeEpochMs: timer.startTime,
       durationSeconds: elapsed,
       userId: timer.userId,
       budgetType: "ACTUAL" as const,
@@ -191,6 +204,15 @@ async function finalizeTimer(ctx: any, timer: any): Promise<number> {
       isRecurringInstance: false,
       source: "timer" as const,
     });
+
+    const inserted = await ctx.db.get(twId);
+    console.log(
+      JSON.stringify({
+        tag: "timers.finalize.insertedTimeWindow",
+        timeWindowId: twId,
+        row: inserted,
+      }),
+    );
 
     if (timer.taskId) {
       const task = await ctx.db.get(timer.taskId);
