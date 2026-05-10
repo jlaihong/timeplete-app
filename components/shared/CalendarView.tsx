@@ -139,6 +139,8 @@ interface TimeWindowDoc {
   comments?: string;
   tagIds?: string[];
   timeZone: string;
+  /** Canonical start instant when present; grid uses this + `timeZone`. */
+  startTimeEpochMs?: number;
   recurringEventId?: string;
   isRecurringInstance?: boolean;
   source?: "timer" | "manual" | "calendar" | "tracker_entry";
@@ -229,6 +231,22 @@ function hhmmToMinutes(hhmm: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
+/** Calendar column Y position: epoch + row IANA zone when available. */
+function eventGridStartMinutes(w: {
+  startTimeHHMM: string;
+  timeZone: string;
+  startTimeEpochMs?: number;
+}): number {
+  if (
+    typeof w.startTimeEpochMs === "number" &&
+    Number.isFinite(w.startTimeEpochMs)
+  ) {
+    const wall = wallClockInTimeZone(w.startTimeEpochMs, w.timeZone);
+    return hhmmToMinutes(wall.startTimeHHMM);
+  }
+  return hhmmToMinutes(w.startTimeHHMM);
+}
+
 function minutesToHHMM(min: number): string {
   const safe = Math.max(0, Math.min(DAY_MINUTES - 1, Math.round(min)));
   const h = Math.floor(safe / 60);
@@ -242,16 +260,6 @@ function snapMinutes(min: number): number {
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
-}
-
-/** Local wall-clock fractional minutes since midnight [0, 1440). */
-function getDateMinutesSinceMidnight(d: Date): number {
-  return (
-    d.getHours() * 60 +
-    d.getMinutes() +
-    d.getSeconds() / 60 +
-    d.getMilliseconds() / 60000
-  );
 }
 
 function formatClockTime(absMinutes: number): string {
@@ -402,7 +410,7 @@ function packOverlappingEvents(
   windows: TimeWindowDoc[]
 ): Map<string, EventLayout> {
   const items = windows.map((w) => {
-    const start = hhmmToMinutes(w.startTimeHHMM);
+    const start = eventGridStartMinutes(w);
     const end =
       start +
       Math.max(MIN_DURATION_MINUTES, Math.round(w.durationSeconds / 60));
@@ -526,7 +534,11 @@ function CalendarEventBlock({
   onCommit,
   onEditRequest,
 }: CalendarEventBlockProps) {
-  const baseStart = useMemo(() => hhmmToMinutes(tw.startTimeHHMM), [tw.startTimeHHMM]);
+  const baseStart = useMemo(() => eventGridStartMinutes(tw), [
+    tw.startTimeEpochMs,
+    tw.startTimeHHMM,
+    tw.timeZone,
+  ]);
   const baseDuration = useMemo(
     () => Math.max(MIN_DURATION_MINUTES, Math.round(tw.durationSeconds / 60)),
     [tw.durationSeconds]
@@ -657,7 +669,11 @@ function CalendarEventBlock({
         }
         if (mode === "resize-top") {
           if (tw.isLive) {
-            const nowMin = getDateMinutesSinceMidnight(new Date());
+            const wallNow = wallClockInTimeZone(Date.now(), tw.timeZone);
+            const nowMin =
+              wallNow.startDayYYYYMMDD === tw.startDayYYYYMMDD
+                ? hhmmToMinutes(wallNow.startTimeHHMM)
+                : 0;
             const maxStart = Math.max(
               0,
               Math.floor((nowMin - MIN_DURATION_MINUTES) / SNAP_MINUTES) *
@@ -734,7 +750,7 @@ function CalendarEventBlock({
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [baseStart, baseDuration, onCommit, onEditRequest, tw._id, tw.isLive]
+    [baseStart, baseDuration, onCommit, onEditRequest, tw._id, tw.isLive, tw.startDayYYYYMMDD, tw.timeZone]
   );
 
   // Colour composition — server-provided `displayColor` (trackable
@@ -987,6 +1003,11 @@ export function CalendarView({
 }: CalendarViewProps) {
   const isDesktop = useIsDesktop();
   const { profileReady } = useAuth();
+  const timerHook = useTimer();
+  const gridTimeZone =
+    timerHook.isRunning && timerHook.canonicalTimeZone
+      ? timerHook.canonicalTimeZone
+      : Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [selectedDay, setSelectedDay] = useState(todayYYYYMMDD());
 
   useEffect(() => {
@@ -1046,10 +1067,12 @@ export function CalendarView({
    * transition to viewing this `selectedDay` (including refresh: remount resets state).
    */
   useLayoutEffect(() => {
-    const todayStr = todayYYYYMMDD();
-    if (selectedDay !== todayStr) return;
+    const todayInGrid = wallClockInTimeZone(Date.now(), gridTimeZone)
+      .startDayYYYYMMDD;
+    if (selectedDay !== todayInGrid) return;
 
-    const minutes = getDateMinutesSinceMidnight(new Date());
+    const wall = wallClockInTimeZone(Date.now(), gridTimeZone);
+    const minutes = hhmmToMinutes(wall.startTimeHHMM);
     const y = Math.max(
       0,
       minutes * PX_PER_MINUTE - SCROLL_PADDING_ABOVE_NOW_PX
@@ -1068,14 +1091,20 @@ export function CalendarView({
       clearTimeout(tMid);
       clearTimeout(tLate);
     };
-  }, [selectedDay]);
+  }, [selectedDay, gridTimeZone]);
 
-  const todayStr = todayYYYYMMDD();
-  const isViewingToday = selectedDay === todayStr;
+  const todayInGridZone = useMemo(() => {
+    void nowPulse;
+    return wallClockInTimeZone(Date.now(), gridTimeZone).startDayYYYYMMDD;
+  }, [gridTimeZone, nowPulse]);
+
+  const isTodayColumn = selectedDay === todayInGridZone;
   const currentTimeMinutesSinceMidnight = useMemo(() => {
     void nowPulse;
-    return getDateMinutesSinceMidnight(new Date());
-  }, [nowPulse]);
+    const wall = wallClockInTimeZone(Date.now(), gridTimeZone);
+    if (wall.startDayYYYYMMDD !== selectedDay) return null;
+    return hhmmToMinutes(wall.startTimeHHMM);
+  }, [nowPulse, gridTimeZone, selectedDay]);
 
   /**
    * Right-click context menu. A single state object means "only one menu
@@ -1118,7 +1147,6 @@ export function CalendarView({
   );
   const upsertTimeWindow = useMutation(api.timeWindows.upsert);
   const removeTimeWindow = useMutation(api.timeWindows.remove);
-  const timerHook = useTimer();
 
   const hourElsRef = useRef<Map<number, HTMLElement>>(new Map());
   const registerHourEl = useCallback(
@@ -1164,6 +1192,33 @@ export function CalendarView({
     );
   }, [timeWindows]);
 
+  /** Dev trace: calendar row with canonical epoch (stage F). Deduped by id+instant. */
+  const tracedCalendarRenderRef = useRef(new Set<string>());
+  useEffect(() => {
+    for (const w of sortedWindows) {
+      if (w.startDayYYYYMMDD !== selectedDay) continue;
+      if (typeof w.startTimeEpochMs !== "number" || !Number.isFinite(w.startTimeEpochMs)) {
+        continue;
+      }
+      const sig = `${String(w._id)}:${w.startTimeEpochMs}:${w.startDayYYYYMMDD}`;
+      if (tracedCalendarRenderRef.current.has(sig)) continue;
+      tracedCalendarRenderRef.current.add(sig);
+      const wall = wallClockInTimeZone(w.startTimeEpochMs, w.timeZone);
+      traceTimer("F_calendarRender", {
+        stage: "F",
+        timeWindowId: w._id,
+        startTimeEpochMs: w.startTimeEpochMs,
+        rowTimeZoneIANA: w.timeZone,
+        gridTimeZoneIANA: gridTimeZone,
+        sameZoneAsGrid: w.timeZone === gridTimeZone,
+        wallFromEpochInRowZone: wall,
+        renderedGridStartMinutes: eventGridStartMinutes(w),
+        persistedStartTimeHHMM: w.startTimeHHMM,
+        source: w.source,
+      });
+    }
+  }, [sortedWindows, selectedDay, gridTimeZone]);
+
   const totalDuration = useMemo(() => {
     if (!timeWindows) return 0;
     return (timeWindows as TimeWindowDoc[])
@@ -1199,7 +1254,7 @@ export function CalendarView({
       // calendar label automatically).
       _taskName: string
     ) => {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const tz = gridTimeZone;
       void upsertTimeWindow({
         startTimeHHMM: minutesToHHMM(startMinutes),
         startDayYYYYMMDD: selectedDay,
@@ -1214,7 +1269,7 @@ export function CalendarView({
       });
       setDropPreview(null);
     },
-    [selectedDay, upsertTimeWindow]
+    [selectedDay, upsertTimeWindow, gridTimeZone]
   );
 
   /**
@@ -1352,9 +1407,7 @@ export function CalendarView({
    */
   const handleLiveTimerStartResize = useCallback(
     async (startMinutes: number) => {
-      const tz =
-        timerHook.timeZone ??
-        Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const tz = gridTimeZone;
       const epochMs =
         timerHook.elapsed > 0
           ? Date.now() - timerHook.elapsed * 1000
@@ -1374,10 +1427,13 @@ export function CalendarView({
       }
       if (startMs > Date.now()) return;
 
-      traceTimer("resizeCommit", {
+      traceTimer("A_resizeGesture_and_B_adjustPayload", {
+        stage: "A-B",
         selectedDay,
-        minutesFromMidnight: safeMin,
-        timeZoneIANA: tz,
+        draggedWallClockMinutes: safeMin,
+        draggedWallClockHHMM: minutesToHHMM(safeMin),
+        canonicalTimeZoneIANA: tz,
+        sameZoneAsTimerRow: tz === timerHook.canonicalTimeZone,
         startTimeEpochMs: startMs,
         startIso: new Date(startMs).toISOString(),
         roundTripWall: wallClockInTimeZone(startMs, tz),
@@ -1385,7 +1441,7 @@ export function CalendarView({
 
       await timerHook.commitLiveTimerResize(startMs);
     },
-    [selectedDay, timerHook]
+    [selectedDay, timerHook, gridTimeZone]
   );
 
   /**
@@ -1396,7 +1452,7 @@ export function CalendarView({
    */
   const handleEventUpdate = useCallback(
     (id: string, startMinutes: number, durationMinutes: number) => {
-      const tw = sortedWindows.find((w) => w._id === id);
+      const tw = sortedWindows.find((w) => String(w._id) === id);
       if (!tw) return;
       void upsertTimeWindow({
         id: tw._id as Id<"timeWindows">,
@@ -1411,8 +1467,6 @@ export function CalendarView({
         taskId: tw.taskId as Id<"tasks"> | undefined,
         trackableId: tw.trackableId as Id<"trackables"> | undefined,
         listId: tw.listId as Id<"lists"> | undefined,
-        // Pass the PERSISTED title (not displayTitle) so move/resize
-        // never accidentally promotes a derived title to explicit.
         title: tw.title,
         comments: tw.comments,
         tagIds: tw.tagIds as Id<"tags">[] | undefined,
@@ -1642,9 +1696,7 @@ export function CalendarView({
   /* ─── Live timer pseudo-event ─────────────────────────────────────── */
   const liveTimerWindow = useMemo<TimeWindowDoc | null>(() => {
     if (!timerHook.isRunning) return null;
-    const tz =
-      timerHook.timeZone ??
-      Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tz = gridTimeZone;
     const epochMs =
       timerHook.elapsed > 0
         ? Date.now() - timerHook.elapsed * 1000
@@ -1656,6 +1708,7 @@ export function CalendarView({
       _id: LIVE_TIMER_EVENT_ID,
       startTimeHHMM: wall.startTimeHHMM,
       startDayYYYYMMDD: selectedDay,
+      startTimeEpochMs: epochMs,
       durationSeconds: timerHook.elapsed,
       activityType: timerHook.taskId ? "TASK" : "TRACKABLE",
       budgetType: "ACTUAL",
@@ -1675,7 +1728,8 @@ export function CalendarView({
     timerHook.displayTitle,
     timerHook.displayColor,
     timerHook.secondaryColor,
-    timerHook.timeZone,
+    timerHook.canonicalTimeZone,
+    gridTimeZone,
     selectedDay,
   ]);
 
@@ -1944,7 +1998,7 @@ export function CalendarView({
             </View>
           </View>
 
-          {isViewingToday ? (
+          {isTodayColumn && currentTimeMinutesSinceMidnight != null ? (
             <View
               pointerEvents="none"
               style={[

@@ -85,36 +85,41 @@ export function applyStopTimerOptimisticUpdate(
     const tz =
       typeof snapshot.timeZone === "string" && snapshot.timeZone.trim() !== ""
         ? snapshot.timeZone.trim()
-        : Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const { startDayYYYYMMDD: day, startTimeHHMM } = wallClockInTimeZone(
-      snapshot.startTime,
-      tz,
-    );
-    const activityType = snapshot.taskId ? ("TASK" as const) : ("TRACKABLE" as const);
-    const label =
-      snapshot.displayTitle?.trim() ||
-      (activityType === "TASK" ? "Task" : "Trackable");
-    const row = {
-      _id: OPTIMISTIC_TIMER_WINDOW_ID,
-      _creationTime: Date.now(),
-      startTimeHHMM,
-      startDayYYYYMMDD: day,
-      durationSeconds: elapsed,
-      userId: snapshot.userId,
-      budgetType: "ACTUAL" as const,
-      activityType,
-      taskId: snapshot.taskId,
-      trackableId: snapshot.trackableId,
-      timeZone: tz,
-      isRecurringInstance: false,
-      source: "timer" as const,
-      displayTitle: label,
-      derivedTitle: label,
-      displayColor: snapshot.displayColor ?? DEFAULT_EVENT_COLOR,
-      secondaryColor: snapshot.secondaryColor,
-    } as TimeWindowSearchRow;
+        : null;
+    if (tz) {
+      const { startDayYYYYMMDD: day, startTimeHHMM } = wallClockInTimeZone(
+        snapshot.startTime,
+        tz,
+      );
+      const activityType = snapshot.taskId
+        ? ("TASK" as const)
+        : ("TRACKABLE" as const);
+      const label =
+        snapshot.displayTitle?.trim() ||
+        (activityType === "TASK" ? "Task" : "Trackable");
+      const row = {
+        _id: OPTIMISTIC_TIMER_WINDOW_ID,
+        _creationTime: Date.now(),
+        startTimeHHMM,
+        startDayYYYYMMDD: day,
+        startTimeEpochMs: snapshot.startTime,
+        durationSeconds: elapsed,
+        userId: snapshot.userId,
+        budgetType: "ACTUAL" as const,
+        activityType,
+        taskId: snapshot.taskId,
+        trackableId: snapshot.trackableId,
+        timeZone: tz,
+        isRecurringInstance: false,
+        source: "timer" as const,
+        displayTitle: label,
+        derivedTitle: label,
+        displayColor: snapshot.displayColor ?? DEFAULT_EVENT_COLOR,
+        secondaryColor: snapshot.secondaryColor,
+      } as TimeWindowSearchRow;
 
-    patchTimeWindowsSearchForCalendar(localStore, day, row);
+      patchTimeWindowsSearchForCalendar(localStore, day, row);
+    }
   }
 
   for (const q of localStore.getAllQueries(api.timers.get)) {

@@ -98,6 +98,11 @@ export function useTimer() {
     };
   }, [timerData?._id, timerData?.startTime]);
 
+  const rowTz =
+    typeof timerData?.timeZone === "string" && timerData.timeZone.trim() !== ""
+      ? timerData.timeZone.trim()
+      : null;
+
   return {
     isRunning: !!timerData,
     elapsed: localElapsed,
@@ -112,8 +117,9 @@ export function useTimer() {
       startTrackableTimer({ trackableId, timeZone }),
     stop: () => stopTimer({}),
     commitLiveTimerResize,
-    timeZone:
-      timerData?.timeZone ??
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    /** IANA zone stored on the active `taskTimers` row — never a device fallback. */
+    canonicalTimeZone: rowTz,
+    /** @deprecated Prefer `canonicalTimeZone`; kept for call sites expecting `timeZone`. */
+    timeZone: rowTz,
   };
 }
