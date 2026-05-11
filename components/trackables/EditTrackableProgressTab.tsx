@@ -14,7 +14,8 @@ import {
   todayYYYYMMDD,
 } from "../../lib/dates";
 import { useAuth } from "../../hooks/useAuth";
-import { DialogCard, DialogHeader, DialogOverlay } from "../ui/DialogScaffold";
+import { dialogOverlayStyles } from "../ui/dialogOverlayShared";
+import { DialogCard, DialogHeader } from "../ui/DialogScaffold";
 
 type GoalProgressType = "NUMBER" | "TIME_TRACK" | "DAYS_A_WEEK" | "MINUTES_A_WEEK";
 
@@ -471,26 +472,40 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
         onRequestClose={() => setExpandedDayYYYYMMDD(null)}
       >
         <View style={styles.modalRoot}>
-          <DialogOverlay onBackdropPress={() => setExpandedDayYYYYMMDD(null)}>
-            <DialogCard desktopWidth={440} style={styles.dayDetailCard}>
-              <DialogHeader
-                title={expandedDayLabel || "Day details"}
-                onClose={() => setExpandedDayYYYYMMDD(null)}
-              />
-              <ScrollView
-                style={styles.dayDetailScroll}
-                keyboardShouldPersistTaps="handled"
-              >
-                {expandedDayYYYYMMDD != null ? (
-                  <DayDetailModalBody
-                    yyyymmdd={expandedDayYYYYMMDD}
-                    trackable={trackable}
-                    detail={expandedDetail}
-                  />
-                ) : null}
-              </ScrollView>
-            </DialogCard>
-          </DialogOverlay>
+          {/*
+            Inline backdrop (not DialogOverlay): on web, DialogOverlay portals to
+            document.body, which leaves clicks under RN Modal's layer — Escape still
+            works via onRequestClose but the header X does not.
+          */}
+          <Pressable
+            style={[
+              dialogOverlayStyles.overlay,
+              dialogOverlayStyles.overlayCenter,
+              { zIndex: 1000 },
+            ]}
+            onPress={() => setExpandedDayYYYYMMDD(null)}
+          >
+            <Pressable onPress={(e) => e.stopPropagation?.()}>
+              <DialogCard desktopWidth={440} style={styles.dayDetailCard}>
+                <DialogHeader
+                  title={expandedDayLabel || "Day details"}
+                  onClose={() => setExpandedDayYYYYMMDD(null)}
+                />
+                <ScrollView
+                  style={styles.dayDetailScroll}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {expandedDayYYYYMMDD != null ? (
+                    <DayDetailModalBody
+                      yyyymmdd={expandedDayYYYYMMDD}
+                      trackable={trackable}
+                      detail={expandedDetail}
+                    />
+                  ) : null}
+                </ScrollView>
+              </DialogCard>
+            </Pressable>
+          </Pressable>
         </View>
       </Modal>
     </View>
