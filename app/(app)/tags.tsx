@@ -160,7 +160,7 @@ export default function TagsScreen() {
         style={styles.fab}
         onPress={() => setEditing({ name: "", colour: "#4A90D9" })}
       >
-        <Ionicons name="add" size={28} color={Colors.white} />
+        <Ionicons name="add" size={24} color={Colors.white} />
       </TouchableOpacity>
     </View>
   );

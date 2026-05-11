@@ -52,7 +52,7 @@ export function NumberWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
             initialComments: todayEntry?.comments ?? "",
           })
         }
-        icon={<Ionicons name="add" size={16} color={Colors.text} />}
+        icon={<Ionicons name="add" size={20} color={Colors.primary} />}
         style={styles.addBtn}
       />
 

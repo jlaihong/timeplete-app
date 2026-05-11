@@ -29,7 +29,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { MaterialIcons, Ionicons } from "@expo/vector-icons";
+import { MaterialIcons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
@@ -43,6 +43,7 @@ import {
 import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
 import { EmptyState } from "../ui/EmptyState";
+import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import {
   TaskRowDesktop,
   TaskRowTask,
@@ -1210,20 +1211,16 @@ export function DesktopTaskList({
                         </Text>
                       </Text>
                       {group.id !== OVERDUE_GROUP_ID && onAddTask && (
-                        <Pressable
-                          onPress={(e) => {
-                            e.stopPropagation?.();
+                        <SectionHeadingAddButton
+                          onPress={() =>
                             onAddTask(
                               group.id === UNSCHEDULED_GROUP_ID
                                 ? undefined
                                 : group.id
-                            );
-                          }}
-                          hitSlop={8}
-                          style={styles.addButton}
-                        >
-                          <Ionicons name="add" size={20} color={Colors.text} />
-                        </Pressable>
+                            )
+                          }
+                          accessibilityLabel={`Add task to ${group.label}`}
+                        />
                       )}
                     </Pressable>
 
@@ -1411,13 +1408,6 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     color: Colors.textTertiary,
     fontSize: 13,
-  },
-  addButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
   },
   divider: {
     height: 1,

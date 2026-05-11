@@ -235,7 +235,7 @@ export function TrackTrackerDialog({
                   style={styles.stepperBtn}
                   onPress={() => setCount((c) => (c ?? 0) + 1)}
                 >
-                  <Ionicons name="add" size={22} color={Colors.text} />
+                  <Ionicons name="add" size={24} color={Colors.primary} />
                 </TouchableOpacity>
               </View>
             </>

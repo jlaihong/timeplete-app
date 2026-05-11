@@ -50,7 +50,7 @@ export function TimeTrackWidget({
           onPress={() =>
             onRequestLog({ kind: "time", goal, dayYYYYMMDD: today })
           }
-          icon={<Ionicons name="add" size={16} color={Colors.text} />}
+          icon={<Ionicons name="add" size={20} color={Colors.primary} />}
           style={styles.addBtn}
         />
       </View>

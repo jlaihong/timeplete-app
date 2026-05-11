@@ -1,9 +1,9 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Card } from "../ui/Card";
+import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import { Colors } from "../../constants/colors";
 import { formatSecondsAsHM } from "../../lib/dates";
-import { Ionicons } from "@expo/vector-icons";
 
 interface GoalWidgetProps {
   goal: {
@@ -75,9 +75,13 @@ export function GoalWidget({ goal, onPress, onTrack }: GoalWidgetProps) {
       </TouchableOpacity>
 
       {onTrack && (
-        <TouchableOpacity style={styles.trackButton} onPress={onTrack}>
-          <Ionicons name="add-circle" size={24} color={goal.colour} />
-        </TouchableOpacity>
+        <View style={styles.trackButton} pointerEvents="box-none">
+          <SectionHeadingAddButton
+            onPress={onTrack}
+            accessibilityLabel={`Log progress for ${goal.name}`}
+            iconColor={goal.colour}
+          />
+        </View>
       )}
     </Card>
   );

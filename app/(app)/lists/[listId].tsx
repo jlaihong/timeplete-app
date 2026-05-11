@@ -20,6 +20,7 @@ import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { api } from "../../../convex/_generated/api";
 import { Colors } from "../../../constants/colors";
 import { EmptyState } from "../../../components/ui/EmptyState";
+import { SectionHeadingAddButton } from "../../../components/ui/SectionHeadingAddButton";
 import { ListDialog } from "../../../components/lists/ListDialog";
 import { AddTaskSheet } from "../../../components/tasks/AddTaskSheet";
 import { TaskDetailSheet } from "../../../components/tasks/TaskDetailSheet";
@@ -694,15 +695,11 @@ export default function ListDetailScreen() {
                   <Text style={styles.sectionCountInline}>{countSuffix}</Text>
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
+              <SectionHeadingAddButton
                 onPress={() => setAddTaskSectionId(section.sectionId)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                style={styles.sectionAddBtn}
-                accessibilityRole="button"
                 accessibilityLabel={`Add task to ${section.title}`}
-              >
-                <Ionicons name="add" size={26} color={Colors.primary} />
-              </TouchableOpacity>
+                hitSlop={10}
+              />
             </View>
           );
         }}
@@ -856,7 +853,7 @@ export default function ListDetailScreen() {
         accessibilityRole="button"
         accessibilityLabel="Add task"
       >
-        <Ionicons name="add" size={28} color={Colors.white} />
+        <Ionicons name="add" size={24} color={Colors.white} />
       </TouchableOpacity>
 
       <ListDialog
@@ -993,9 +990,6 @@ const styles = StyleSheet.create({
       web: { cursor: "pointer" } as object,
       default: {},
     }),
-  },
-  sectionAddBtn: {
-    padding: 4,
   },
   sectionExpandArrow: {
     ...Platform.select({

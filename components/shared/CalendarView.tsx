@@ -2130,7 +2130,7 @@ export function CalendarView({
           style={styles.fab}
           onPress={() => onAddEvent(selectedDay)}
         >
-          <Ionicons name="add" size={28} color={Colors.onPrimary} />
+          <Ionicons name="add" size={24} color={Colors.onPrimary} />
         </TouchableOpacity>
       )}
 
@@ -2264,7 +2264,7 @@ function CalendarContextMenu({
           onPress={onCreate}
           accessibilityLabel="Create event at this time"
         >
-          <Ionicons name="add-circle-outline" size={16} color={Colors.text} />
+          <Ionicons name="add" size={16} color={Colors.primary} />
           <Text style={[styles.contextMenuItemText, { color: Colors.text }]}>
             Create event at this time
           </Text>

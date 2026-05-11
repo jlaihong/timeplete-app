@@ -217,13 +217,10 @@ export function TrackableList({
         >
           <View style={styles.trackablesPageTitleRow}>
             <Text style={styles.trackablesPageTitle}>{pageTitle}</Text>
-            <TouchableOpacity
+            <SectionHeadingAddButton
               onPress={openAddTrackable}
-              accessibilityRole="button"
               accessibilityLabel="Add trackable"
-            >
-              <Ionicons name="add-circle" size={28} color={Colors.primary} />
-            </TouchableOpacity>
+            />
           </View>
 
           <Text style={styles.trackablesPageSectionHeading}>
@@ -315,13 +312,11 @@ export function TrackableList({
     <View style={styles.container}>
       {productivityGoalsChrome ? (
         <View style={styles.pOneGoalsBanner}>
-          <TouchableOpacity
+          <SectionHeadingAddButton
             onPress={openAddTrackable}
-            accessibilityRole="button"
             accessibilityLabel="Add trackable"
-          >
-            <Ionicons name="add-circle-outline" size={34} color={Colors.white} />
-          </TouchableOpacity>
+            tone="onInverse"
+          />
           <Text style={styles.pOneGoalsBannerTitle}>{title}</Text>
           <View style={styles.pOneGoalsBannerSpacer} />
         </View>
@@ -362,12 +357,10 @@ export function TrackableList({
             </Text>
           </TouchableOpacity>
           {!title && !productivityGoalsChrome && isDesktop && (
-            <TouchableOpacity
+            <SectionHeadingAddButton
               onPress={openAddTrackable}
-              style={styles.inlineAdd}
-            >
-              <Ionicons name="add-circle" size={22} color={Colors.primary} />
-            </TouchableOpacity>
+              accessibilityLabel="Add trackable"
+            />
           )}
         </View>
       )}
@@ -413,7 +406,7 @@ export function TrackableList({
 
       {!isDesktop && (
         <TouchableOpacity style={styles.fab} onPress={openAddTrackable}>
-          <Ionicons name="add" size={28} color={Colors.onPrimary} />
+          <Ionicons name="add" size={24} color={Colors.onPrimary} />
         </TouchableOpacity>
       )}
 
@@ -481,7 +474,6 @@ const styles = StyleSheet.create({
   activeTab: { backgroundColor: Colors.primary },
   tabText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
   activeTabText: { color: Colors.onPrimary },
-  inlineAdd: { marginLeft: "auto" },
   listContent: { padding: 16, paddingBottom: 80 },
   trackablesPageScroll: { flex: 1 },
   trackablesPageScrollContent: {

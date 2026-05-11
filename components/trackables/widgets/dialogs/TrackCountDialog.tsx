@@ -117,7 +117,7 @@ export function TrackCountDialog({
               onPress={() => setCount((c) => c + 1)}
               accessibilityLabel="Increment"
             >
-              <Ionicons name="add" size={22} color={Colors.text} />
+              <Ionicons name="add" size={24} color={Colors.primary} />
             </TouchableOpacity>
           </View>
 

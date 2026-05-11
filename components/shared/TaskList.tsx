@@ -15,6 +15,7 @@ import { Colors } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { Card } from "../ui/Card";
 import { EmptyState } from "../ui/EmptyState";
+import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import {
   todayYYYYMMDD,
   addDays,
@@ -387,9 +388,10 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{title}</Text>
           {isDesktop && onAddTask && (
-            <TouchableOpacity onPress={() => onAddTask(today)}>
-              <Ionicons name="add-circle" size={24} color={Colors.primary} />
-            </TouchableOpacity>
+            <SectionHeadingAddButton
+              onPress={() => onAddTask(today)}
+              accessibilityLabel="Add task"
+            />
           )}
         </View>
       )}
@@ -483,20 +485,16 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                     </Text>
                   </Text>
                   {group.day !== "overdue" && onAddTask && (
-                    <TouchableOpacity
-                      onPress={(e) => {
-                        e.stopPropagation?.();
+                    <SectionHeadingAddButton
+                      onPress={() =>
                         onAddTask(
                           group.day === "unscheduled"
                             ? undefined
                             : group.day
-                        );
-                      }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      style={styles.addButton}
-                    >
-                      <Ionicons name="add" size={20} color={Colors.text} />
-                    </TouchableOpacity>
+                        )
+                      }
+                      accessibilityLabel={`Add task to ${group.label}`}
+                    />
                   )}
                 </TouchableOpacity>
 
@@ -741,7 +739,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
           style={styles.fab}
           onPress={() => onAddTask(today)}
         >
-          <Ionicons name="add" size={28} color={Colors.onPrimary} />
+          <Ionicons name="add" size={24} color={Colors.onPrimary} />
         </TouchableOpacity>
       )}
     </View>
@@ -808,13 +806,6 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
     fontSize: 13,
     marginLeft: 4,
-  },
-  addButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
   },
   divider: {
     height: 1,

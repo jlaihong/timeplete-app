@@ -41,7 +41,7 @@ import {
   sortableKeyboardCoordinates,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../../constants/colors";
 import { Input } from "../../ui/Input";
 import { DateField as MaterialDateField } from "../../ui/DateField";
@@ -436,7 +436,7 @@ export function DraggableTextList({
 
   const listFooter = (
     <Pressable onPress={handleAdd} style={styles.addBtn}>
-      <MaterialIcons name="add" size={18} color={Colors.primary} />
+      <Ionicons name="add" size={20} color={Colors.primary} />
       <Text style={styles.addBtnText}>{addLabel}</Text>
     </Pressable>
   );

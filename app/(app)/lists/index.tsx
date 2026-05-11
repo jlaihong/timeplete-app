@@ -121,7 +121,7 @@ export default function ListsScreen() {
         style={styles.fab}
         onPress={() => setDialogState("new")}
       >
-        <Ionicons name="add" size={28} color={Colors.white} />
+        <Ionicons name="add" size={24} color={Colors.white} />
       </TouchableOpacity>
 
       {dialogState && (

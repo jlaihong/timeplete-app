@@ -31,7 +31,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useMutation, useQuery } from "convex/react";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
@@ -275,9 +275,9 @@ export function ReviewQuestionsSettingsModal({
                               style={styles.addQuestionBtn}
                               onPress={() => setShowAddInput(true)}
                             >
-                              <MaterialIcons
+                              <Ionicons
                                 name="add"
-                                size={18}
+                                size={20}
                                 color={Colors.primary}
                               />
                               <Text style={styles.addQuestionBtnText}>
