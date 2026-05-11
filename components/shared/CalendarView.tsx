@@ -262,6 +262,34 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
 }
 
+/** Nearest scrollable ancestor (vertical); used to keep drag previews in sync when the wheel scrolls. */
+function findVerticalScrollHost(from: HTMLElement | null): HTMLElement | null {
+  if (
+    typeof document === "undefined" ||
+    typeof window === "undefined" ||
+    !from
+  ) {
+    return null;
+  }
+  let el: HTMLElement | null = from;
+  while (el) {
+    if (el === document.documentElement || el === document.body) {
+      el = el.parentElement;
+      continue;
+    }
+    const style = window.getComputedStyle(el);
+    const oy = style.overflowY;
+    if (
+      (oy === "auto" || oy === "scroll" || oy === "overlay") &&
+      el.scrollHeight > el.clientHeight + 1
+    ) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return null;
+}
+
 function formatClockTime(absMinutes: number): string {
   const safe = ((Math.round(absMinutes) % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES;
   const hour = Math.floor(safe / 60);
@@ -656,9 +684,33 @@ function CalendarEventBlock({
       const initialDuration = baseDuration;
       const initialEnd = initialStart + initialDuration;
 
+      const gridEl =
+        (typeof ev?.currentTarget === "object" &&
+          ev?.currentTarget &&
+          "closest" in ev.currentTarget &&
+          (ev.currentTarget as HTMLElement).closest?.(
+            "[data-calendar-grid='1']"
+          )) ||
+        eventBlockRef.current?.closest?.("[data-calendar-grid='1']") ||
+        null;
+
+      let initialGridMinuteFloat = 0;
+      if (gridEl) {
+        const rect0 = gridEl.getBoundingClientRect();
+        initialGridMinuteFloat = (startY - rect0.top) / PX_PER_MINUTE;
+      }
+
+      const minuteDeltaFromClientY = (clientY: number): number => {
+        if (!gridEl) {
+          return snapMinutes((clientY - startY) / PX_PER_MINUTE);
+        }
+        const rect = gridEl.getBoundingClientRect();
+        const currentGridMinute = (clientY - rect.top) / PX_PER_MINUTE;
+        return snapMinutes(currentGridMinute - initialGridMinuteFloat);
+      };
+
       const compute = (clientY: number) => {
-        const deltaY = clientY - startY;
-        const deltaMin = snapMinutes(deltaY / PX_PER_MINUTE);
+        const deltaMin = minuteDeltaFromClientY(clientY);
         if (mode === "drag") {
           const newStart = clamp(
             initialStart + deltaMin,
@@ -713,19 +765,50 @@ function CalendarEventBlock({
       // even sub-snap-grid jitter still counts as a click.
       const CLICK_MOVE_THRESHOLD_PX = 4;
       let movedPx = 0;
+      let lastPointerY = startY;
+      let gestureMoved = false;
+
+      const scrollHost =
+        isWeb && typeof document !== "undefined" && gridEl
+          ? findVerticalScrollHost(gridEl)
+          : null;
+
+      const markGestureIfChanged = (d: { start: number; duration: number }) => {
+        if (
+          d.start !== initialStart ||
+          d.duration !== initialDuration
+        ) {
+          gestureMoved = true;
+        }
+      };
 
       const onMove = (e: PointerEvent) => {
+        lastPointerY = e.clientY;
         const dy = Math.abs(e.clientY - startY);
         if (dy > movedPx) movedPx = dy;
-        setDraft(compute(e.clientY));
+        const d = compute(e.clientY);
+        markGestureIfChanged(d);
+        setDraft(d);
       };
+
+      const onScroll = () => {
+        const d = compute(lastPointerY);
+        markGestureIfChanged(d);
+        setDraft(d);
+      };
+
       const onUp = (e: PointerEvent) => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onUp);
+        if (scrollHost) {
+          scrollHost.removeEventListener("scroll", onScroll);
+        }
         const finalDraft = compute(e.clientY);
         const wasClick =
-          mode === "drag" && movedPx < CLICK_MOVE_THRESHOLD_PX;
+          mode === "drag" &&
+          movedPx < CLICK_MOVE_THRESHOLD_PX &&
+          !gestureMoved;
         setDraft(null);
         if (wasClick) {
           // Clean click on the event body — open edit dialog.
@@ -746,6 +829,7 @@ function CalendarEventBlock({
         }
       };
 
+      scrollHost?.addEventListener("scroll", onScroll, { passive: true });
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
@@ -1622,12 +1706,31 @@ export function CalendarView({
       );
 
       let activated = false;
+      let lastClientY = initialClientY;
+
       const minuteFromClientY = (clientY: number): number => {
-        const offset = clientY - rect.top;
+        const r = grid.getBoundingClientRect();
+        const offset = clientY - r.top;
         return clamp(snapMinutes(offset / PX_PER_MINUTE), 0, DAY_MINUTES);
       };
 
+      const scrollHost =
+        findVerticalScrollHost(grid);
+
+      const onScroll = () => {
+        if (!activated) return;
+        const currentMin = minuteFromClientY(lastClientY);
+        const start = Math.min(startMinAtDown, currentMin);
+        const end = Math.max(startMinAtDown, currentMin);
+        setCreationDraft((prev) =>
+          prev && prev.startMinutes === start && prev.endMinutes === end
+            ? prev
+            : { startMinutes: start, endMinutes: end }
+        );
+      };
+
       const onMove = (ev: PointerEvent) => {
+        lastClientY = ev.clientY;
         if (!activated) {
           if (Math.abs(ev.clientY - initialClientY) < CREATE_DRAG_THRESHOLD_PX) {
             return;
@@ -1648,6 +1751,9 @@ export function CalendarView({
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         window.removeEventListener("pointercancel", onCancel);
+        if (scrollHost) {
+          scrollHost.removeEventListener("scroll", onScroll);
+        }
       };
 
       const onUp = (ev: PointerEvent) => {
@@ -1689,6 +1795,7 @@ export function CalendarView({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onCancel);
+      scrollHost?.addEventListener("scroll", onScroll, { passive: true });
     },
     [selectedDay, onAddEvent]
   );
