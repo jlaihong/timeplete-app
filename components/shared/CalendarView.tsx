@@ -24,6 +24,7 @@ import {
 } from "@dnd-kit/core";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
+import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import { Ionicons } from "@expo/vector-icons";
 import {
   todayYYYYMMDD,
@@ -1872,9 +1873,10 @@ export function CalendarView({
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{title}</Text>
           {isDesktop && onAddEvent && (
-            <TouchableOpacity onPress={() => onAddEvent(selectedDay)}>
-              <Ionicons name="add-circle" size={24} color={Colors.primary} />
-            </TouchableOpacity>
+            <SectionHeadingAddButton
+              onPress={() => onAddEvent(selectedDay)}
+              accessibilityLabel="Add event"
+            />
           )}
         </View>
       )}

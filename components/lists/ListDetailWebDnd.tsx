@@ -33,8 +33,9 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { MaterialIcons, Ionicons } from "@expo/vector-icons";
+import { MaterialIcons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
+import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import {
   TaskRowDesktop,
   TaskRowTask,
@@ -644,25 +645,12 @@ export function ListDetailWebDnd({
                       </Text>
                     </Pressable>
                     {onAddTaskToSection ? (
-                      <Pressable
-                        onPress={(e: { stopPropagation?: () => void }) => {
-                          e?.stopPropagation?.();
-                          onAddTaskToSection(group.sectionId);
-                        }}
-                        style={({ hovered }: { hovered?: boolean }) => [
-                          styles.sectionAddBtn,
-                          hovered && styles.sectionAddBtnHover,
-                        ]}
-                        accessibilityRole="button"
+                      <SectionHeadingAddButton
+                        onPress={() =>
+                          onAddTaskToSection(group.sectionId)
+                        }
                         accessibilityLabel={`Add task to ${group.title}`}
-                        hitSlop={8}
-                      >
-                        <Ionicons
-                          name="add"
-                          size={24}
-                          color={Colors.primary}
-                        />
-                      </Pressable>
+                      />
                     ) : null}
                   </View>
                   <View style={styles.sectionDivider} />
@@ -752,17 +740,6 @@ const styles = StyleSheet.create({
       web: { cursor: "pointer" } as object,
       default: {},
     }),
-  },
-  sectionAddBtn: {
-    padding: 6,
-    borderRadius: 20,
-    ...Platform.select({
-      web: { cursor: "pointer" } as object,
-      default: {},
-    }),
-  },
-  sectionAddBtnHover: {
-    backgroundColor: "rgba(255,255,255,0.06)",
   },
   sectionDivider: {
     height: StyleSheet.hairlineWidth,

@@ -15,6 +15,7 @@ import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { EmptyState } from "../ui/EmptyState";
+import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useAuth } from "../../hooks/useAuth";
 import { AddTrackableFlow } from "../trackables/AddTrackableFlow";
@@ -329,9 +330,10 @@ export function TrackableList({
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>{title}</Text>
             {isDesktop && (
-              <TouchableOpacity onPress={openAddTrackable}>
-                <Ionicons name="add-circle" size={24} color={Colors.primary} />
-              </TouchableOpacity>
+              <SectionHeadingAddButton
+                onPress={openAddTrackable}
+                accessibilityLabel="Add trackable"
+              />
             )}
           </View>
         )
