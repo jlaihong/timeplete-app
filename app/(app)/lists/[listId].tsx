@@ -440,6 +440,10 @@ export default function ListDetailScreen() {
       await setTimeSpentMutation({
         taskId,
         timeSpentInSecondsUnallocated: safe,
+        // Must mirror the optimistic update above so the wall-clock
+        // slice the server inserts lines up byte-for-byte with what
+        // the cache already shows.
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
     },
     [setTimeSpentMutation],

@@ -740,6 +740,25 @@ export const setTimeSpent = mutation({
   args: {
     taskId: v.id("tasks"),
     timeSpentInSecondsUnallocated: v.number(),
+    /**
+     * IANA zone of the user's *current* wall clock (browser
+     * `Intl.DateTimeFormat().resolvedOptions().timeZone`).
+     *
+     * The client's optimistic patch uses this zone to compute the
+     * synthetic slice's `startTimeHHMM` / `startDayYYYYMMDD`. The
+     * server must use the SAME zone for the real slice it inserts,
+     * otherwise the wall-clock fields differ and the displayed start
+     * time jumps as soon as the optimistic cache is replaced by the
+     * server response — that's the "moves back ~2 hours after 1
+     * second" symptom users see when the inferred zone (Amsterdam /
+     * UTC / etc., from older windows on this task) disagrees with the
+     * browser zone (e.g. America/Vancouver today).
+     *
+     * Optional only because old clients may still call this mutation
+     * without it; in that case we fall back to inference for
+     * backwards compatibility.
+     */
+    timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
@@ -801,7 +820,16 @@ export const setTimeSpent = mutation({
     const deltaSec = Math.max(0, Math.floor(deltaToAdd));
     if (deltaSec <= 0) return;
 
-    const tz = await inferIANAZoneForManualTaskSlice(ctx, user._id, args.taskId);
+    // Primary signal: the client's current browser zone. The
+    // optimistic update on the client uses this exact zone, so using
+    // it here too guarantees the wall-clock fields (startTimeHHMM /
+    // startDayYYYYMMDD) the server inserts match the optimistic
+    // placeholder the client just displayed — no visible jump when
+    // the cache flips over to the server's value. Inference is only
+    // a fallback for callers that haven't been updated yet.
+    const tz =
+      pickValidIANAZone(args.timeZone) ??
+      (await inferIANAZoneForManualTaskSlice(ctx, user._id, args.taskId));
 
     const now = Date.now();
     const startEpochMs = now - deltaSec * 1000;
