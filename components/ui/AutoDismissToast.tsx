@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Colors } from "../../constants/colors";
 
 type Props = {
@@ -8,7 +8,13 @@ type Props = {
   /** Called after the toast has auto-dismissed. */
   onDismiss: () => void;
   durationMs?: number;
+  /** Optional action (e.g. Undo) — enables longer default duration and tap handling. */
+  actionLabel?: string | null;
+  onAction?: () => void;
 };
+
+const DEFAULT_DURATION_MS = 2600;
+const ACTION_DURATION_MS = 5600;
 
 /**
  * Lightweight snackbar-style toast (same pattern on web + native).
@@ -17,22 +23,49 @@ type Props = {
 export function AutoDismissToast({
   message,
   onDismiss,
-  durationMs = 2600,
+  durationMs,
+  actionLabel,
+  onAction,
 }: Props) {
+  const hasAction = Boolean(actionLabel && onAction);
+  const resolvedDuration =
+    durationMs ??
+    (hasAction ? ACTION_DURATION_MS : DEFAULT_DURATION_MS);
+
   useEffect(() => {
     if (!message) return;
     const id = setTimeout(() => {
       onDismiss();
-    }, durationMs);
+    }, resolvedDuration);
     return () => clearTimeout(id);
-  }, [message, durationMs, onDismiss]);
+  }, [message, resolvedDuration, onDismiss]);
 
   if (!message) return null;
 
   return (
-    <View style={styles.wrap} pointerEvents="none">
-      <View style={styles.pill}>
-        <Text style={styles.text}>{message}</Text>
+    <View
+      style={styles.wrap}
+      pointerEvents={hasAction ? "box-none" : "none"}
+    >
+      <View style={styles.pill} pointerEvents="auto">
+        {hasAction ? (
+          <View style={styles.pillRow}>
+            <Text style={[styles.text, styles.textFlexible]}>{message}</Text>
+            <TouchableOpacity
+              onPress={() => {
+                onAction?.();
+                onDismiss();
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={actionLabel ?? "Action"}
+            >
+              <Text style={styles.actionText}>{actionLabel}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <Text style={styles.text}>{message}</Text>
+        )}
       </View>
     </View>
   );
@@ -62,10 +95,25 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 10,
   },
+  pillRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    maxWidth: "100%",
+  },
+  textFlexible: {
+    flexShrink: 1,
+    textAlign: "left",
+  },
   text: {
     color: Colors.text,
     fontSize: 15,
     fontWeight: "500",
     textAlign: "center",
+  },
+  actionText: {
+    color: Colors.primary,
+    fontSize: 15,
+    fontWeight: "600",
   },
 });
