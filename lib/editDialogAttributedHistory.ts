@@ -271,4 +271,49 @@ export function mergeTrackerDetailsHistory(opts: {
   return rows;
 }
 
+export type TimeWindowHistoryInput = Pick<
+  TW,
+  | "_id"
+  | "startDayYYYYMMDD"
+  | "startTimeHHMM"
+  | "durationSeconds"
+  | "title"
+  | "comments"
+> & {
+  /** From `timeWindows.search` (`enrichTimeWindowsWithDisplayFields`). */
+  displayTitle: string;
+};
+
+/**
+ * History rows for a single task — same shape as {@link mergeTrackerDetailsHistory}
+ * `time_window` entries so the edit dialog can reuse `TrackingHistoryTable`.
+ */
+export function timeWindowsToTrackerHistoryRows(
+  windows: TimeWindowHistoryInput[],
+): TrackerDetailsHistoryRow[] {
+  const rows: TrackerDetailsHistoryRow[] = [];
+  for (const tw of windows) {
+    const titleTrim =
+      typeof tw.title === "string" && tw.title.trim().length > 0
+        ? tw.title.trim()
+        : undefined;
+    const commentsTrim =
+      typeof tw.comments === "string" && tw.comments.trim().length > 0
+        ? tw.comments.trim()
+        : undefined;
+    const commentsUnified =
+      titleTrim ?? commentsTrim ?? tw.displayTitle ?? "Untitled";
+    rows.push({
+      source: "time_window",
+      id: String(tw._id),
+      sortKey: `${tw.startDayYYYYMMDD}\u0001${tw.startTimeHHMM ?? ""}\u0001${tw._id}`,
+      startDayYYYYMMDD: tw.startDayYYYYMMDD,
+      startTimeHHMM: tw.startTimeHHMM,
+      durationSeconds: tw.durationSeconds,
+      commentsUnified,
+    });
+  }
+  rows.sort((a, b) => (a.sortKey < b.sortKey ? 1 : a.sortKey > b.sortKey ? -1 : 0));
+  return rows;
+}
 
