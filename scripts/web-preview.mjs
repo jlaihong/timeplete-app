@@ -7,7 +7,7 @@
  * listening (e.g. only Expo was started for review), runs `npx convex dev` first
  * so Better Auth login does not fail with "Failed to fetch".
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
@@ -111,6 +111,23 @@ async function isConvexSiteReachable(siteUrl) {
   return false;
 }
 
+/** One-shot push so UI and local Convex validators cannot drift during review. */
+function syncConvexFunctionsIfLocal(siteUrl) {
+  if (!shouldAutoStartLocalConvex(siteUrl)) return;
+  console.warn("[web:preview] Pushing Convex functions to local backend (one-shot)…");
+  const r = spawnSync("npm", ["run", "convex-push-local"], {
+    cwd: root,
+    stdio: "inherit",
+    shell: false,
+    env: { ...process.env },
+  });
+  if (r.status !== 0) {
+    console.error(
+      "[web:preview] `convex-push-local` failed; preview may hit ArgumentValidationError for new mutation args.",
+    );
+  }
+}
+
 async function waitForConvexSite(siteUrl, proc, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -153,6 +170,8 @@ if (!(await isConvexSiteReachable(siteUrl))) {
     process.exit(1);
   }
 }
+
+syncConvexFunctionsIfLocal(siteUrl);
 
 function stopConvexIfStarted() {
   if (convexProc && !convexProc.killed) convexProc.kill("SIGTERM");
