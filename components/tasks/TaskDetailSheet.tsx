@@ -15,12 +15,10 @@
  *     same as productivity-one.
  *
  * Time tracked single source of truth:
- *   Both the "Details" meta chip and the "Time Tracked" tab read from
- *   `getTimeTracked.totalSeconds` (the time-windows aggregate). The
- *   denormalized `task.timeSpentInSecondsUnallocated` field exists for
- *   list rendering perf but can drift from the windows total — using
- *   the windows total everywhere in this dialog guarantees the two
- *   tabs always agree.
+ *   Both the "Details" meta chip and the "Time Tracked" tab derive totals
+ *   from `timeWindows.search` (ACTUAL / TASK rows for this taskId). The
+ *   tab UI reuses `TrackingHistoryTable` with the same row shape as edit
+ *   trackable → Time Tracked.
  */
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
@@ -33,6 +31,8 @@ import {
   useWindowDimensions,
   Platform,
   Pressable,
+  Alert,
+  type ViewStyle,
 } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -52,6 +52,14 @@ import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { formatSecondsAsHM, formatDisplayDate, todayYYYYMMDD } from "../../lib/dates";
+import {
+  timeWindowsToTrackerHistoryRows,
+  type TrackerDetailsHistoryRow,
+} from "../../lib/editDialogAttributedHistory";
+import {
+  TrackingHistoryPlaceholder,
+  TrackingHistoryTable,
+} from "../trackables/TrackingHistoryTable";
 import { Id } from "../../convex/_generated/dataModel";
 import { DialogOverlay } from "../ui/DialogScaffold";
 import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
@@ -100,9 +108,15 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     profileReady ? { includeCompleted: true } : "skip",
   );
   const task = tasks?.find((t) => t._id === taskId);
-  const timeTracked = useQuery(
-    api.tasks.getTimeTracked,
-    profileReady ? { taskId } : "skip",
+  const taskTimeWindows = useQuery(
+    api.timeWindows.search,
+    profileReady
+      ? {
+          taskId,
+          budgetType: "ACTUAL",
+          activityType: "TASK",
+        }
+      : "skip",
   );
   const comments = useQuery(
     api.taskComments.search,
@@ -140,6 +154,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const recordDeletedOccurrence = useMutation(
     (api as any).recurringTasks.recordDeletedOccurrence
   );
+  const removeTimeWindow = useMutation(api.timeWindows.remove);
   const timer = useTimer();
 
   const [activeTab, setActiveTab] = useState<Tab>("details");
@@ -189,10 +204,45 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     onClose();
   }, [onClose]);
 
-  /** Single source of truth for total time on this task — used by both
-   *  the Details meta chip AND the Time Tracked tab summary, so the two
-   *  numbers can never disagree. */
-  const totalTrackedSeconds = timeTracked?.totalSeconds ?? 0;
+  const totalTrackedSeconds = useMemo(() => {
+    if (!taskTimeWindows) return 0;
+    return taskTimeWindows.reduce((sum, w) => sum + w.durationSeconds, 0);
+  }, [taskTimeWindows]);
+
+  const taskHistoryRows = useMemo(() => {
+    if (!taskTimeWindows?.length) return [];
+    return timeWindowsToTrackerHistoryRows(taskTimeWindows);
+  }, [taskTimeWindows]);
+
+  const confirmDeleteTaskTimeWindow = useCallback(
+    (rowId: Id<"timeWindows">) => {
+      const run = async () => {
+        try {
+          await removeTimeWindow({ id: rowId });
+        } catch (e) {
+          console.error(e);
+        }
+      };
+      const title = "Remove this time row?";
+      if (Platform.OS === "web") {
+        if (window.confirm(title)) void run();
+        return;
+      }
+      Alert.alert("Remove time", title, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Remove", style: "destructive", onPress: () => void run() },
+      ]);
+    },
+    [removeTimeWindow],
+  );
+
+  const handleDeleteTaskHistoryRow = useCallback(
+    (row: TrackerDetailsHistoryRow) => {
+      if (row.source !== "time_window") return;
+      confirmDeleteTaskTimeWindow(row.id as Id<"timeWindows">);
+    },
+    [confirmDeleteTaskTimeWindow],
+  );
 
   // Dirty check — drives the Save button's disabled state. We compare
   // against the persisted task, not against the initial form snapshot,
@@ -685,14 +735,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   );
 
   const renderTimeTab = () => (
-    <>
-      <View style={styles.timeSummary}>
-        <Text style={styles.timeSummaryLabel}>Total tracked</Text>
-        <Text style={styles.timeSummaryValue}>
-          {formatSecondsAsHM(totalTrackedSeconds)}
-        </Text>
-      </View>
-
+    <View style={styles.timeTabInner}>
       {isTimerActive && (
         <View style={[styles.sessionRow, styles.sessionRowActive]}>
           <View style={styles.sessionDot} />
@@ -705,31 +748,21 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
         </View>
       )}
 
-      {timeTracked?.sessions.map((session) => (
-        <View key={session.day} style={styles.sessionGroup}>
-          <Text style={styles.sessionDayHeader}>
-            {formatDisplayDate(session.day)}
-            <Text style={styles.sessionDayTotal}>
-              {" "}
-              — {formatSecondsAsHM(session.totalSeconds)}
-            </Text>
-          </Text>
-          {session.windows.map((w) => (
-            <View key={w.id} style={styles.sessionRow}>
-              <Text style={styles.sessionTime}>{w.startTime}</Text>
-              <Text style={styles.sessionDuration}>
-                {formatSecondsAsHM(w.durationSeconds)}
-              </Text>
-            </View>
-          ))}
-        </View>
-      ))}
-
-      {(!timeTracked || timeTracked.sessions.length === 0) &&
-        !isTimerActive && (
-          <Text style={styles.emptyText}>No time tracked yet</Text>
-        )}
-    </>
+      {taskTimeWindows === undefined ? (
+        <TrackingHistoryPlaceholder>Loading…</TrackingHistoryPlaceholder>
+      ) : taskHistoryRows.length === 0 ? (
+        <TrackingHistoryPlaceholder>
+          No tracking history yet.
+        </TrackingHistoryPlaceholder>
+      ) : (
+        <TrackingHistoryTable
+          rows={taskHistoryRows}
+          showValueColumn={false}
+          showTimeColumns
+          onDeleteRow={handleDeleteTaskHistoryRow}
+        />
+      )}
+    </View>
   );
 
   const renderCommentsTab = () => (
@@ -854,14 +887,19 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
       {/* Tab Content — `flex: 1` makes the scroll region absorb all
           remaining vertical space inside the fixed-height dialog,
           guaranteeing the panel itself never resizes per tab. */}
-      <ScrollView
-        style={styles.contentScroll}
-        contentContainerStyle={styles.content}
-      >
-        {activeTab === "details" && renderDetailsTab()}
-        {activeTab === "time" && renderTimeTab()}
-        {activeTab === "comments" && renderCommentsTab()}
-      </ScrollView>
+      {activeTab === "time" ? (
+        <View style={[styles.contentScroll, styles.timeTabOuter]}>
+          {renderTimeTab()}
+        </View>
+      ) : (
+        <ScrollView
+          style={styles.contentScroll}
+          contentContainerStyle={styles.content}
+        >
+          {activeTab === "details" && renderDetailsTab()}
+          {activeTab === "comments" && renderCommentsTab()}
+        </ScrollView>
+      )}
 
       {/* Footer — only on the Details tab, since it's the only tab
           with controlled-form fields. Pinned outside the scroll
@@ -1247,26 +1285,24 @@ const styles = StyleSheet.create({
   tagDot: { width: 8, height: 8, borderRadius: 4 },
   tagText: { fontSize: 12, color: Colors.text },
 
-  timeSummary: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
+  timeTabOuter: {
+    flex: 1,
+    minHeight: 0,
+    minWidth: 0,
+    paddingHorizontal: 8,
+    overflow: "hidden",
+    ...(Platform.OS === "web"
+      ? ({ direction: "ltr" } as ViewStyle)
+      : {}),
   },
-  timeSummaryLabel: { fontSize: 14, color: Colors.textSecondary },
-  timeSummaryValue: { fontSize: 18, fontWeight: "700", color: Colors.text },
+  timeTabInner: {
+    flex: 1,
+    minHeight: 0,
+    alignSelf: "stretch",
+    width: "100%",
+    gap: 8,
+  },
 
-  sessionGroup: { marginBottom: 16 },
-  sessionDayHeader: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-    marginBottom: 6,
-  },
-  sessionDayTotal: { fontWeight: "400" },
   sessionRow: {
     flexDirection: "row",
     alignItems: "center",
