@@ -59,6 +59,7 @@ import {
 } from "../../lib/taskFilters";
 import { applySetTimeSpentOptimisticUpdate } from "../../lib/setTimeSpentOptimisticUpdate";
 import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
+import { applyTaskRemoveOptimisticUpdate } from "../../lib/taskRemoveOptimisticUpdate";
 
 const isWeb = Platform.OS === "web";
 const LOAD_MORE_DAYS = 7;
@@ -432,13 +433,21 @@ export function DesktopTaskList({
       applyTaskUpsertOptimisticUpdate(localStore, args);
     }
   );
-  const removeTask = useMutation(api.tasks.remove);
+  const removeTask = useMutation(api.tasks.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      applyTaskRemoveOptimisticUpdate(localStore, args.id);
+    }
+  );
   // Recurring-instance delete uses a dedicated mutation that adds the date
   // to `deletedRecurringOccurrences` (the skip set) before removing the
   // task row, so the next `generateInstances` call doesn't recreate it.
   const deleteRecurringInstance = useMutation(
     api.recurringTasks.deleteInstance
-  );
+  ).withOptimisticUpdate((localStore, args) => {
+    applyTaskRemoveOptimisticUpdate(localStore, args.taskId, {
+      cascadeRootChildren: false,
+    });
+  });
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
   const setTimeSpentMutation = useMutation(
