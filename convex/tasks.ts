@@ -7,6 +7,11 @@ import {
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
+import {
+  buildListIdToTrackableId,
+  resolveSnapshotTrackableIdForTask,
+} from "./_helpers/trackableAttribution";
+import { wallClockInTimeZone } from "./_helpers/wallClockTimeZone";
 
 /**
  * productivity-backend `upsert_task` sets `section_id` from `list_id` when the
@@ -45,6 +50,31 @@ function compareTasksForListReorder(
   const bDone = isTaskCompletedForListReorder(b);
   if (aDone !== bDone) return Number(aDone) - Number(bDone);
   return a.sectionOrderIndex - b.sectionOrderIndex;
+}
+
+function windowEndEpochMs(w: Doc<"timeWindows">): number | null {
+  const s = w.startTimeEpochMs;
+  if (s == null || !Number.isFinite(s)) return null;
+  return s + Math.max(0, w.durationSeconds ?? 0) * 1000;
+}
+
+/** Trim/delete ACTUAL TASK windows newest-by-(UTC end instant) first. */
+function compareActualTaskWindowsNewestFirst(
+  a: Doc<"timeWindows">,
+  b: Doc<"timeWindows">,
+): number {
+  const endA = windowEndEpochMs(a);
+  const endB = windowEndEpochMs(b);
+  if (endA != null && endB != null) return endB - endA;
+  if (endA != null) return -1;
+  if (endB != null) return 1;
+  const dayCmp = (b.startDayYYYYMMDD ?? "").localeCompare(
+    a.startDayYYYYMMDD ?? "",
+  );
+  if (dayCmp !== 0) return dayCmp;
+  const timeCmp = (b.startTimeHHMM ?? "").localeCompare(a.startTimeHHMM ?? "");
+  if (timeCmp !== 0) return timeCmp;
+  return (b._creationTime ?? 0) - (a._creationTime ?? 0);
 }
 
 export const search = query({
@@ -658,6 +688,11 @@ export const setTimeSpent = mutation({
   args: {
     taskId: v.id("tasks"),
     timeSpentInSecondsUnallocated: v.number(),
+    /**
+     * IANA zone for wall-clock fields (same source as `taskTimers.timeZone` /
+     * `timers.startTaskTimer`). Defaults to UTC when omitted.
+     */
+    timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
@@ -671,9 +706,10 @@ export const setTimeSpent = mutation({
     /**
      * Reconcile task windows to match the newly requested total.
      *
-     * - Decrease: trim/delete from latest windows backward.
-     * - Increase: extend the latest existing task window (P1 behavior).
-     *   If no task windows exist yet, create a manual window.
+     * - Decrease: trim/delete from latest windows backward (by wall-clock end
+     *   instant when `startTimeEpochMs` exists).
+     * - Increase: add a **new** ACTUAL slice ending at `Date.now()` with
+     *   duration = delta, matching productivity-one / `timers.finalizeTimer`.
      */
     const allWindows = await ctx.db
       .query("timeWindows")
@@ -693,13 +729,9 @@ export const setTimeSpent = mutation({
 
     if (desiredTotal < currentTotal) {
       let toTrim = currentTotal - desiredTotal;
-      const newestFirst = [...taskActualWindows].sort((a, b) => {
-        const dayCmp = (b.startDayYYYYMMDD ?? "").localeCompare(
-          a.startDayYYYYMMDD ?? ""
-        );
-        if (dayCmp !== 0) return dayCmp;
-        return (b.startTimeHHMM ?? "").localeCompare(a.startTimeHHMM ?? "");
-      });
+      const newestFirst = [...taskActualWindows].sort(
+        compareActualTaskWindowsNewestFirst,
+      );
 
       for (const w of newestFirst) {
         if (toTrim <= 0) break;
@@ -718,41 +750,40 @@ export const setTimeSpent = mutation({
     }
 
     const deltaToAdd = desiredTotal - currentTotal;
-    const newestFirst = [...taskActualWindows].sort((a, b) => {
-      const dayCmp = (b.startDayYYYYMMDD ?? "").localeCompare(
-        a.startDayYYYYMMDD ?? ""
-      );
-      if (dayCmp !== 0) return dayCmp;
-      const timeCmp = (b.startTimeHHMM ?? "").localeCompare(a.startTimeHHMM ?? "");
-      if (timeCmp !== 0) return timeCmp;
-      return (b._creationTime ?? 0) - (a._creationTime ?? 0);
-    });
-    const latest = newestFirst[0];
-    if (latest) {
-      await ctx.db.patch(latest._id, {
-        durationSeconds: Math.max(0, (latest.durationSeconds ?? 0) + deltaToAdd),
-      });
-      return;
-    }
+    const deltaSec = Math.max(0, Math.floor(deltaToAdd));
+    if (deltaSec <= 0) return;
 
-    const day =
-      task.taskDay ??
-      (() => {
-        const now = new Date();
-        return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
-          now.getDate()
-        ).padStart(2, "0")}`;
-      })();
+    const tzRaw = args.timeZone?.trim();
+    const tz = tzRaw && tzRaw.length > 0 ? tzRaw : "UTC";
+
+    const now = Date.now();
+    const startEpochMs = now - deltaSec * 1000;
+    const { startDayYYYYMMDD: day, startTimeHHMM } = wallClockInTimeZone(
+      startEpochMs,
+      tz,
+    );
+
+    const links = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .collect();
+    const listIdToTrackableId = buildListIdToTrackableId(links);
+    const snapshotTrackableId = resolveSnapshotTrackableIdForTask({
+      task: { trackableId: task.trackableId, listId: task.listId },
+      listIdToTrackableId,
+    });
 
     await ctx.db.insert("timeWindows", {
-      startTimeHHMM: "00:00",
+      startTimeHHMM,
       startDayYYYYMMDD: day,
-      durationSeconds: deltaToAdd,
+      startTimeEpochMs: startEpochMs,
+      durationSeconds: deltaSec,
       userId: user._id,
       budgetType: "ACTUAL" as const,
       activityType: "TASK" as const,
       taskId: args.taskId,
-      timeZone: "UTC",
+      trackableId: snapshotTrackableId,
+      timeZone: tz,
       isRecurringInstance: false,
       source: "manual" as const,
     });

@@ -11,6 +11,7 @@
 import type * as _admin_cleanup from "../_admin/cleanup.js";
 import type * as _admin_cognitoBridge from "../_admin/cognitoBridge.js";
 import type * as _admin_import from "../_admin/import.js";
+import type * as _helpers_activeTimerCalendarDisplay from "../_helpers/activeTimerCalendarDisplay.js";
 import type * as _helpers_auth from "../_helpers/auth.js";
 import type * as _helpers_compactYYYYMMDD from "../_helpers/compactYYYYMMDD.js";
 import type * as _helpers_eventColors from "../_helpers/eventColors.js";
@@ -19,6 +20,7 @@ import type * as _helpers_permissions from "../_helpers/permissions.js";
 import type * as _helpers_recurrence from "../_helpers/recurrence.js";
 import type * as _helpers_timeWindowDisplayEnrichment from "../_helpers/timeWindowDisplayEnrichment.js";
 import type * as _helpers_trackableAttribution from "../_helpers/trackableAttribution.js";
+import type * as _helpers_wallClockTimeZone from "../_helpers/wallClockTimeZone.js";
 import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
@@ -48,6 +50,7 @@ declare const fullApi: ApiFromModules<{
   "_admin/cleanup": typeof _admin_cleanup;
   "_admin/cognitoBridge": typeof _admin_cognitoBridge;
   "_admin/import": typeof _admin_import;
+  "_helpers/activeTimerCalendarDisplay": typeof _helpers_activeTimerCalendarDisplay;
   "_helpers/auth": typeof _helpers_auth;
   "_helpers/compactYYYYMMDD": typeof _helpers_compactYYYYMMDD;
   "_helpers/eventColors": typeof _helpers_eventColors;
@@ -56,6 +59,7 @@ declare const fullApi: ApiFromModules<{
   "_helpers/recurrence": typeof _helpers_recurrence;
   "_helpers/timeWindowDisplayEnrichment": typeof _helpers_timeWindowDisplayEnrichment;
   "_helpers/trackableAttribution": typeof _helpers_trackableAttribution;
+  "_helpers/wallClockTimeZone": typeof _helpers_wallClockTimeZone;
   analytics: typeof analytics;
   auth: typeof auth;
   http: typeof http;

@@ -7,7 +7,8 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import type { OptimisticLocalStore } from "convex/browser";
 import type { FunctionReturnType } from "convex/server";
-import { todayYYYYMMDD } from "./dates";
+import { DEFAULT_EVENT_COLOR } from "./eventColors";
+import { wallClockInTimeZone } from "./wallClockTimeZone";
 
 type TrackedWindow = {
   id: string;
@@ -26,24 +27,67 @@ type TimeTrackedValue = {
   sessions: TrackedSession[];
 };
 
+type TimeWindowSearchRow = NonNullable<
+  FunctionReturnType<typeof api.timeWindows.search>
+>[number];
+
+/** Stable optimistic id — one synthetic manual slice per task in local cache. */
+export function optimisticManualTimeSpentWindowId(
+  taskId: Id<"tasks">,
+): Id<"timeWindows"> {
+  return `__optimistic_manual_tw__:${taskId}` as Id<"timeWindows">;
+}
+
+function stripManualOptimisticFromTracked(
+  prev: TimeTrackedValue | undefined,
+  taskId: Id<"tasks">,
+): TimeTrackedValue | undefined {
+  if (!prev?.sessions?.length) return prev;
+  const oid = optimisticManualTimeSpentWindowId(taskId);
+  const sessions: TrackedSession[] = [];
+  for (const s of prev.sessions) {
+    const wins = s.windows.filter((w) => w.id !== oid);
+    if (!wins.length) continue;
+    const totalSeconds = wins.reduce(
+      (acc, w) => acc + w.durationSeconds,
+      0,
+    );
+    sessions.push({ day: s.day, totalSeconds, windows: wins });
+  }
+  if (!sessions.length) {
+    return { totalSeconds: 0, sessions: [] };
+  }
+  const totalSeconds = sessions.reduce((a, s) => a + s.totalSeconds, 0);
+  return { totalSeconds, sessions };
+}
+
 function optimisticTimeTrackedValue(
   prev: TimeTrackedValue | undefined,
+  taskId: Id<"tasks">,
   targetTotal: number,
+  timeZone: string,
 ): TimeTrackedValue {
+  const stripped = stripManualOptimisticFromTracked(prev, taskId);
   const target = Math.max(0, Math.floor(targetTotal));
+  const tz = timeZone.trim() || "UTC";
+
   if (target === 0) return { totalSeconds: 0, sessions: [] };
-  if (!prev?.sessions.length) {
-    const day = todayYYYYMMDD();
+
+  if (!stripped?.sessions.length) {
+    const nowMs = Date.now();
+    const startMs = nowMs - target * 1000;
+    const wall = wallClockInTimeZone(startMs, tz);
+    const oid = String(optimisticManualTimeSpentWindowId(taskId));
     return {
       totalSeconds: target,
       sessions: [
         {
-          day,
+          day: wall.startDayYYYYMMDD,
           totalSeconds: target,
           windows: [
             {
-              id: "__optimistic__",
-              startTime: "00:00",
+              id: oid,
+              startTime: wall.startTimeHHMM,
               durationSeconds: target,
             },
           ],
@@ -52,7 +96,7 @@ function optimisticTimeTrackedValue(
     };
   }
 
-  const sessions: TrackedSession[] = prev.sessions.map((s) => ({
+  const sessions: TrackedSession[] = stripped.sessions.map((s) => ({
     day: s.day,
     totalSeconds: s.totalSeconds,
     windows: s.windows.map((w) => ({ ...w })),
@@ -65,8 +109,9 @@ function optimisticTimeTrackedValue(
       refs.push({ sIdx, wIdx });
     }
   }
+
   if (refs.length === 0) {
-    return optimisticTimeTrackedValue(undefined, target);
+    return optimisticTimeTrackedValue(undefined, taskId, target, tz);
   }
 
   refs.sort((a, b) => {
@@ -86,8 +131,29 @@ function optimisticTimeTrackedValue(
   const delta = target - currentSum;
 
   if (delta > 0) {
-    const newest = refs[0];
-    sessions[newest.sIdx].windows[newest.wIdx].durationSeconds += delta;
+    const nowMs = Date.now();
+    const startMs = nowMs - delta * 1000;
+    const wall = wallClockInTimeZone(startMs, tz);
+    const oid = String(optimisticManualTimeSpentWindowId(taskId));
+    const newWin: TrackedWindow = {
+      id: oid,
+      startTime: wall.startTimeHHMM,
+      durationSeconds: delta,
+    };
+    const day = wall.startDayYYYYMMDD;
+    const sIdx = sessions.findIndex((s) => s.day === day);
+    if (sIdx === -1) {
+      sessions.push({ day, totalSeconds: delta, windows: [newWin] });
+    } else {
+      sessions[sIdx].windows.push(newWin);
+      sessions[sIdx].windows.sort((a, b) =>
+        a.startTime.localeCompare(b.startTime),
+      );
+      sessions[sIdx].totalSeconds = sessions[sIdx].windows.reduce(
+        (a, w) => a + w.durationSeconds,
+        0,
+      );
+    }
   } else {
     let toTrim = -delta;
     for (const r of refs) {
@@ -110,11 +176,14 @@ function optimisticTimeTrackedValue(
   let sum = nextSessions.reduce((a, s) => a + s.totalSeconds, 0);
   if (sum !== target) {
     if (!nextSessions.length) {
-      return optimisticTimeTrackedValue(undefined, target);
+      return optimisticTimeTrackedValue(undefined, taskId, target, tz);
     }
     const newestDay = nextSessions[0];
     const lastW = newestDay.windows[newestDay.windows.length - 1];
-    lastW.durationSeconds = Math.max(0, lastW.durationSeconds + (target - sum));
+    lastW.durationSeconds = Math.max(
+      0,
+      lastW.durationSeconds + (target - sum),
+    );
     newestDay.totalSeconds = newestDay.windows.reduce(
       (a, w) => a + w.durationSeconds,
       0,
@@ -125,18 +194,221 @@ function optimisticTimeTrackedValue(
   return { totalSeconds: target, sessions: nextSessions };
 }
 
+function findTaskRowInLocalStore(
+  localStore: OptimisticLocalStore,
+  taskId: Id<"tasks">,
+):
+  | {
+      userId: Id<"users">;
+      name?: string;
+      trackableId?: Id<"trackables">;
+    }
+  | undefined {
+  type R = {
+    _id: Id<"tasks">;
+    userId?: Id<"users">;
+    name?: string;
+    trackableId?: Id<"trackables">;
+  };
+  const scan = (tasks: unknown[] | undefined) =>
+    tasks?.find((t) => (t as R)._id === taskId) as R | undefined;
+
+  for (const q of localStore.getAllQueries(api.tasks.getHomeTasks)) {
+    const hit = scan(q.value as unknown[]);
+    if (hit?.userId) {
+      return {
+        userId: hit.userId,
+        name: hit.name,
+        trackableId: hit.trackableId,
+      };
+    }
+  }
+  for (const q of localStore.getAllQueries(api.tasks.searchWithCriteria)) {
+    const hit = scan(q.value as unknown[]);
+    if (hit?.userId) {
+      return {
+        userId: hit.userId,
+        name: hit.name,
+        trackableId: hit.trackableId,
+      };
+    }
+  }
+  for (const q of localStore.getAllQueries(api.tasks.search)) {
+    const hit = scan(q.value as unknown[]);
+    if (hit?.userId) {
+      return {
+        userId: hit.userId,
+        name: hit.name,
+        trackableId: hit.trackableId,
+      };
+    }
+  }
+  for (const q of localStore.getAllQueries(api.lists.getPaginated)) {
+    const page = q.value as
+      | { sections?: { tasks: unknown[] }[] }
+      | undefined;
+    if (!page?.sections) continue;
+    for (const s of page.sections) {
+      const hit = scan(s.tasks);
+      if (hit?.userId) {
+        return {
+          userId: hit.userId,
+          name: hit.name,
+          trackableId: hit.trackableId,
+        };
+      }
+    }
+  }
+  return undefined;
+}
+
+function removeManualOptimisticFromTimeWindowSearch(
+  localStore: OptimisticLocalStore,
+  taskId: Id<"tasks">,
+): void {
+  const oid = optimisticManualTimeSpentWindowId(taskId);
+  for (const q of localStore.getAllQueries(api.timeWindows.search)) {
+    const prev = (q.value ?? []) as TimeWindowSearchRow[];
+    if (!prev.some((w) => w._id === oid)) continue;
+    const next = prev.filter((w) => w._id !== oid);
+    localStore.setQuery(api.timeWindows.search, q.args, next);
+  }
+}
+
+function patchTimeWindowsSearchForManualIncrease(
+  localStore: OptimisticLocalStore,
+  params: {
+    taskId: Id<"tasks">;
+    timeZone: string;
+    deltaSeconds: number;
+  },
+): void {
+  const floored = Math.max(0, Math.floor(params.deltaSeconds));
+  if (floored <= 0) return;
+
+  const task = findTaskRowInLocalStore(localStore, params.taskId);
+  if (!task?.userId) return;
+
+  const tz = params.timeZone.trim() || "UTC";
+  const nowMs = Date.now();
+  const startMs = nowMs - floored * 1000;
+  const wall = wallClockInTimeZone(startMs, tz);
+  const oid = optimisticManualTimeSpentWindowId(params.taskId);
+  const label =
+    typeof task.name === "string" && task.name.trim().length > 0
+      ? task.name.trim()
+      : "Task";
+
+  const endWall = wallClockInTimeZone(nowMs, tz);
+  const minDay =
+    wall.startDayYYYYMMDD <= endWall.startDayYYYYMMDD
+      ? wall.startDayYYYYMMDD
+      : endWall.startDayYYYYMMDD;
+  const maxDay =
+    wall.startDayYYYYMMDD >= endWall.startDayYYYYMMDD
+      ? wall.startDayYYYYMMDD
+      : endWall.startDayYYYYMMDD;
+
+  const row = {
+    _id: oid,
+    _creationTime: nowMs,
+    startTimeHHMM: wall.startTimeHHMM,
+    startDayYYYYMMDD: wall.startDayYYYYMMDD,
+    startTimeEpochMs: startMs,
+    durationSeconds: floored,
+    userId: task.userId,
+    budgetType: "ACTUAL" as const,
+    activityType: "TASK" as const,
+    taskId: params.taskId,
+    trackableId: task.trackableId,
+    timeZone: tz,
+    isRecurringInstance: false,
+    source: "manual" as const,
+    displayTitle: label,
+    derivedTitle: label,
+    displayColor: DEFAULT_EVENT_COLOR,
+    secondaryColor: undefined,
+  } satisfies Partial<TimeWindowSearchRow>;
+
+  const mergedSort = (
+    xs: TimeWindowSearchRow[],
+  ): TimeWindowSearchRow[] =>
+    [...xs].sort((a, b) => {
+      const ae = a.startTimeEpochMs;
+      const be = b.startTimeEpochMs;
+      if (ae != null && be != null) return ae - be;
+      if (ae != null) return -1;
+      if (be != null) return 1;
+      return String(a.startTimeHHMM).localeCompare(String(b.startTimeHHMM));
+    });
+
+  for (const q of localStore.getAllQueries(api.timeWindows.search)) {
+    const args = q.args as {
+      startDay?: string;
+      endDay?: string;
+      taskId?: Id<"tasks">;
+      trackableId?: Id<"trackables">;
+      budgetType?: string;
+      activityType?: string;
+    };
+    if (typeof args.startDay !== "string" || typeof args.endDay !== "string") {
+      continue;
+    }
+    if (args.startDay > maxDay || args.endDay < minDay) continue;
+    if (args.budgetType != null && args.budgetType !== "ACTUAL") continue;
+    if (args.activityType != null && args.activityType !== "TASK") continue;
+    if (args.trackableId != null) continue;
+    if (args.taskId != null && args.taskId !== params.taskId) continue;
+
+    const prev = (q.value ?? []) as TimeWindowSearchRow[];
+    const without = prev.filter((w) => w._id !== oid);
+    const next = mergedSort([...without, row as TimeWindowSearchRow]);
+    localStore.setQuery(api.timeWindows.search, q.args, next);
+  }
+}
+
 /**
  * Applies `tasks.setTimeSpent` optimistic cache patches using an **absolute** target
  * for `timeSpentInSecondsUnallocated` (and mirrored `getTimeTracked` shape).
  */
 export function applySetTimeSpentOptimisticUpdate(
   localStore: OptimisticLocalStore,
-  args: { taskId: Id<"tasks">; timeSpentInSecondsUnallocated: number },
+  args: {
+    taskId: Id<"tasks">;
+    timeSpentInSecondsUnallocated: number;
+    timeZone?: string;
+  },
 ): void {
+  const tz = args.timeZone?.trim() || "UTC";
+
+  let strippedSnapshot: TimeTrackedValue | undefined;
+  for (const q of localStore.getAllQueries(api.tasks.getTimeTracked)) {
+    if (q.args.taskId !== args.taskId) continue;
+    strippedSnapshot = stripManualOptimisticFromTracked(
+      q.value as TimeTrackedValue | undefined,
+      args.taskId,
+    );
+    break;
+  }
+  const currentSum = strippedSnapshot?.totalSeconds ?? 0;
+  const target = Math.max(0, Math.floor(args.timeSpentInSecondsUnallocated));
+  const calendarDelta = target - currentSum;
+
+  removeManualOptimisticFromTimeWindowSearch(localStore, args.taskId);
+
   patchTaskTimeSpentCaches(localStore, args.taskId, {
     mode: "absolute",
     nextSeconds: args.timeSpentInSecondsUnallocated,
+    timeZone: tz,
   });
+
+  if (calendarDelta > 0) {
+    patchTimeWindowsSearchForManualIncrease(localStore, {
+      taskId: args.taskId,
+      timeZone: tz,
+      deltaSeconds: calendarDelta,
+    });
+  }
 }
 
 /**
@@ -151,9 +423,14 @@ export function applyTimeSpentDeltaOptimisticUpdate(
   deltaSeconds: number,
 ): void {
   if (deltaSeconds <= 0) return;
+  const tz =
+    typeof Intl !== "undefined"
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : "UTC";
   patchTaskTimeSpentCaches(localStore, taskId, {
     mode: "delta",
     deltaSeconds,
+    timeZone: tz,
   });
 }
 
@@ -161,8 +438,8 @@ function patchTaskTimeSpentCaches(
   localStore: OptimisticLocalStore,
   taskId: Id<"tasks">,
   spec:
-    | { mode: "absolute"; nextSeconds: number }
-    | { mode: "delta"; deltaSeconds: number },
+    | { mode: "absolute"; nextSeconds: number; timeZone: string }
+    | { mode: "delta"; deltaSeconds: number; timeZone: string },
 ): void {
   const nextForRow = (
     rowSeconds: number | undefined,
@@ -174,14 +451,20 @@ function patchTaskTimeSpentCaches(
   const nextForTimeTracked = (
     prev: TimeTrackedValue | undefined,
   ): TimeTrackedValue => {
+    const tz = spec.timeZone;
     if (spec.mode === "absolute") {
-      return optimisticTimeTrackedValue(prev, spec.nextSeconds);
+      return optimisticTimeTrackedValue(
+        prev,
+        taskId,
+        spec.nextSeconds,
+        tz,
+      );
     }
     const target = Math.max(
       0,
       Math.floor((prev?.totalSeconds ?? 0) + spec.deltaSeconds),
     );
-    return optimisticTimeTrackedValue(prev, target);
+    return optimisticTimeTrackedValue(prev, taskId, target, tz);
   };
 
   for (const q of localStore.getAllQueries(api.tasks.getHomeTasks)) {
