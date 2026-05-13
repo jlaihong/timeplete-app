@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -12,6 +12,7 @@ import { todayYYYYMMDD } from "../../lib/dates";
 import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
 import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
+import { AutoDismissToast } from "../ui/AutoDismissToast";
 
 interface AddTaskSheetProps {
   day?: string;
@@ -47,9 +48,17 @@ export function AddTaskSheet({
   const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
     (localStore, args) => {
       applyTaskUpsertOptimisticUpdate(localStore, args);
-    }
+    },
   );
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastKey, setToastKey] = useState(0);
+  const clearToast = useCallback(() => setToastMessage(null), []);
+
+  const showToast = useCallback((msg: string) => {
+    setToastKey((k) => k + 1);
+    setToastMessage(msg);
+  }, []);
   const inboxListId =
     lists?.find((l) => l.isInbox)?._id ?? null;
 
@@ -73,7 +82,9 @@ export function AddTaskSheet({
   };
 
   const handleCreate = () => {
-    if (!name.trim()) return;
+    const title = name.trim();
+    if (!title) return;
+
     // P1's `AddTask.onSave` resolution order:
     //   1. trackable selected → use the goal's list (we don't pre-fetch
     //      that here; the server is the source of truth for goal-list
@@ -86,20 +97,20 @@ export function AddTaskSheet({
         ? initialListId
         : (listId ?? inboxListId ?? undefined);
 
+    setName("");
+    showToast("Task added");
+
     void upsertTask({
-      name: name.trim(),
+      name: title,
       taskDay: day ?? todayYYYYMMDD(),
       listId: effectiveListId,
       sectionId,
       parentId,
       trackableId: trackableId ?? undefined,
-    }).catch((err) =>
-      console.error("[AddTaskSheet] Failed to create task:", err),
-    );
-
-    // Close immediately: optimistic Convex updates populate the lists while the
-    // mutation round-trips; awaiting here made the UX feel slow.
-    onClose();
+    }).catch((err) => {
+      console.error("[AddTaskSheet] Failed to create task:", err);
+      showToast("Could not create task");
+    });
   };
 
   return (
@@ -141,6 +152,11 @@ export function AddTaskSheet({
           </View>
         </ScrollView>
       </Card>
+      <AutoDismissToast
+        key={toastKey}
+        message={toastMessage}
+        onDismiss={clearToast}
+      />
     </View>
   );
 }
