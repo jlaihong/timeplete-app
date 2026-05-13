@@ -39,6 +39,8 @@ import { Id } from "../../convex/_generated/dataModel";
 import { DEFAULT_EVENT_COLOR } from "../../lib/eventColors";
 import { wallClockInTimeZone, wallClockGridToEpochMs } from "../../lib/wallClockTimeZone";
 import { traceTimer } from "../../lib/timerTimeTrace";
+import { AutoDismissToast } from "../ui/AutoDismissToast";
+import { applyRemoveTimeWindowOptimisticUpdate } from "../../lib/removeTimeWindowOptimisticUpdate";
 
 /* ────────────────────────────────────────────────────────────────────────
  *  Constants
@@ -229,6 +231,35 @@ export interface EditEventPayload {
   taskId?: string | null;
   recurringEventId?: string | null;
   isRecurringInstance?: boolean;
+}
+
+/** Convex `upsert` args rebuilt from a calendar row for undo-after-delete. */
+function undoUpsertPayloadFromCalendarRow(tw: TimeWindowDoc) {
+  return {
+    startTimeHHMM: tw.startTimeHHMM,
+    startDayYYYYMMDD: tw.startDayYYYYMMDD,
+    durationSeconds: tw.durationSeconds,
+    budgetType: tw.budgetType,
+    activityType: tw.activityType,
+    taskId: tw.taskId ? (tw.taskId as Id<"tasks">) : undefined,
+    trackableId: tw.trackableId ? (tw.trackableId as Id<"trackables">) : undefined,
+    listId: tw.listId ? (tw.listId as Id<"lists">) : undefined,
+    title: tw.title,
+    comments: tw.comments,
+    tagIds:
+      Array.isArray(tw.tagIds) && tw.tagIds.length > 0
+        ? (tw.tagIds as Id<"tags">[])
+        : undefined,
+    timeZone: tw.timeZone,
+    source: tw.source,
+    recurringEventId: tw.recurringEventId
+      ? (tw.recurringEventId as Id<"recurringEvents">)
+      : undefined,
+    isRecurringInstance:
+      typeof tw.isRecurringInstance === "boolean"
+        ? tw.isRecurringInstance
+        : undefined,
+  };
 }
 
 interface CalendarViewProps {
@@ -1275,6 +1306,16 @@ export function CalendarView({
     null
   );
 
+  const undoDeletedEventSnapshotRef = useRef<TimeWindowDoc | null>(null);
+  const [deletedEventToastKey, setDeletedEventToastKey] = useState(0);
+  const [deletedEventToastMessage, setDeletedEventToastMessage] = useState<
+    string | null
+  >(null);
+  const clearDeletedEventToast = useCallback(() => {
+    undoDeletedEventSnapshotRef.current = null;
+    setDeletedEventToastMessage(null);
+  }, []);
+
   const timeWindows = useQuery(
     api.timeWindows.search,
     profileReady
@@ -1292,7 +1333,11 @@ export function CalendarView({
     (api as any).recurringEvents.generateInstances
   );
   const upsertTimeWindow = useMutation(api.timeWindows.upsert);
-  const removeTimeWindow = useMutation(api.timeWindows.remove);
+  const removeTimeWindow = useMutation(
+    api.timeWindows.remove,
+  ).withOptimisticUpdate((localStore, args) => {
+    applyRemoveTimeWindowOptimisticUpdate(localStore, args.id);
+  });
 
   const hourElsRef = useRef<Map<number, HTMLElement>>(new Map());
   const registerHourEl = useCallback(
@@ -1624,16 +1669,27 @@ export function CalendarView({
   );
 
   /**
-   * Delete a time window. Used by the right-click context menu on
-   * `CalendarEventBlock`. Convex's reactive query will refetch
-   * automatically and the block will unmount.
+   * Delete a time window. Optimistic cache update + undo toast (`AutoDismissToast`).
    */
   const handleEventDelete = useCallback(
     (id: string) => {
-      void removeTimeWindow({ id: id as Id<"timeWindows"> });
+      const tw = sortedWindows.find((w) => String(w._id) === String(id));
+      if (!tw || tw.isLive) return;
+      undoDeletedEventSnapshotRef.current = tw;
+      setDeletedEventToastKey((k) => k + 1);
+      setDeletedEventToastMessage("Event deleted");
+      removeTimeWindow({ id: id as Id<"timeWindows"> }).catch(() => {
+        clearDeletedEventToast();
+      });
     },
-    [removeTimeWindow]
+    [sortedWindows, removeTimeWindow, clearDeletedEventToast],
   );
+
+  const restoreDeletedCalendarEvent = useCallback(() => {
+    const snapshot = undoDeletedEventSnapshotRef.current;
+    if (!snapshot || snapshot.isLive) return;
+    void upsertTimeWindow(undoUpsertPayloadFromCalendarRow(snapshot));
+  }, [upsertTimeWindow]);
 
   /* ─── Right-click context menu ───────────────────────────────────── */
   /**
@@ -2243,6 +2299,14 @@ export function CalendarView({
           }}
         />
       )}
+
+      <AutoDismissToast
+        key={deletedEventToastKey}
+        message={deletedEventToastMessage}
+        onDismiss={clearDeletedEventToast}
+        actionLabel="Undo"
+        onAction={restoreDeletedCalendarEvent}
+      />
     </View>
   );
 }
