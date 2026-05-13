@@ -90,6 +90,30 @@ const CURRENT_TIME_LINE_COLOR = "#FF3B30";
 /** Roughly one-third of a typical viewport so “now” is not glued to the top edge */
 const SCROLL_PADDING_ABOVE_NOW_PX = 160;
 
+/**
+ * `wallClockGridToEpochMs` scans minutes in a ±40h window — fine once, but N
+ * rows × no `startTimeEpochMs` stalls the JS thread long enough that web
+ * font loading hits its 6000ms timeout on large days.
+ */
+const WALL_CLOCK_GRID_EPOCH_CACHE = new Map<string, number>();
+const WALL_CLOCK_GRID_EPOCH_CACHE_LIMIT = 6144;
+
+function cachedWallClockGridToEpochMs(
+  dayYYYYMMDD: string,
+  minutesFromMidnight: number,
+  tz: string,
+): number {
+  const key = `${dayYYYYMMDD}\n${minutesFromMidnight}\n${tz}`;
+  const hit = WALL_CLOCK_GRID_EPOCH_CACHE.get(key);
+  if (hit !== undefined) return hit;
+  const v = wallClockGridToEpochMs(dayYYYYMMDD, minutesFromMidnight, tz);
+  if (WALL_CLOCK_GRID_EPOCH_CACHE.size >= WALL_CLOCK_GRID_EPOCH_CACHE_LIMIT) {
+    WALL_CLOCK_GRID_EPOCH_CACHE.clear();
+  }
+  WALL_CLOCK_GRID_EPOCH_CACHE.set(key, v);
+  return v;
+}
+
 /** On-screen height: at least five minutes of grid, even when the event is shorter. */
 function eventBlockHeightPx(durationMinutes: number): number {
   return Math.max(MIN_DURATION_MINUTES, durationMinutes) * PX_PER_MINUTE;
@@ -242,20 +266,32 @@ function eventGridStartMinutes(
   },
   gridTimeZone: string,
 ): number {
+  const gridTz = gridTimeZone.trim() || "UTC";
+  const rowTz = (typeof w.timeZone === "string" ? w.timeZone : "").trim() || "UTC";
+
   if (
     typeof w.startTimeEpochMs === "number" &&
     Number.isFinite(w.startTimeEpochMs)
   ) {
-    const wall = wallClockInTimeZone(w.startTimeEpochMs, gridTimeZone);
+    const wall = wallClockInTimeZone(w.startTimeEpochMs, gridTz);
     return hhmmToMinutes(wall.startTimeHHMM);
   }
+
+  if (rowTz === gridTz) {
+    return hhmmToMinutes(w.startTimeHHMM);
+  }
+
+  if (!/^\d{8}$/.test(w.startDayYYYYMMDD)) {
+    return hhmmToMinutes(w.startTimeHHMM);
+  }
+
   try {
-    const epochMs = wallClockGridToEpochMs(
+    const epochMs = cachedWallClockGridToEpochMs(
       w.startDayYYYYMMDD,
       hhmmToMinutes(w.startTimeHHMM),
-      w.timeZone,
+      rowTz,
     );
-    const wall = wallClockInTimeZone(epochMs, gridTimeZone);
+    const wall = wallClockInTimeZone(epochMs, gridTz);
     return hhmmToMinutes(wall.startTimeHHMM);
   } catch {
     return hhmmToMinutes(w.startTimeHHMM);
@@ -1112,10 +1148,12 @@ export function CalendarView({
   const isDesktop = useIsDesktop();
   const { profileReady } = useAuth();
   const timerHook = useTimer();
-  const gridTimeZone =
-    timerHook.isRunning && timerHook.canonicalTimeZone
-      ? timerHook.canonicalTimeZone
-      : Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const gridTimeZone = useMemo(() => {
+    if (timerHook.isRunning && timerHook.canonicalTimeZone) {
+      return timerHook.canonicalTimeZone;
+    }
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  }, [timerHook.isRunning, timerHook.canonicalTimeZone]);
   const [selectedDay, setSelectedDay] = useState(todayYYYYMMDD());
 
   useEffect(() => {
