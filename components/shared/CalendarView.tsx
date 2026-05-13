@@ -140,7 +140,7 @@ interface TimeWindowDoc {
   comments?: string;
   tagIds?: string[];
   timeZone: string;
-  /** Canonical start instant when present; grid uses this + `timeZone`. */
+  /** Canonical UTC start instant when present (authoritative positioning). */
   startTimeEpochMs?: number;
   recurringEventId?: string;
   isRecurringInstance?: boolean;
@@ -232,20 +232,34 @@ function hhmmToMinutes(hhmm: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
-/** Calendar column Y position: epoch + row IANA zone when available. */
-function eventGridStartMinutes(w: {
-  startTimeHHMM: string;
-  timeZone: string;
-  startTimeEpochMs?: number;
-}): number {
+/** Calendar column Y position: derive minutes on the GRID timezone axis from UTC instant when possible. */
+function eventGridStartMinutes(
+  w: {
+    startTimeHHMM: string;
+    startTimeEpochMs?: number;
+    startDayYYYYMMDD: string;
+    timeZone: string;
+  },
+  gridTimeZone: string,
+): number {
   if (
     typeof w.startTimeEpochMs === "number" &&
     Number.isFinite(w.startTimeEpochMs)
   ) {
-    const wall = wallClockInTimeZone(w.startTimeEpochMs, w.timeZone);
+    const wall = wallClockInTimeZone(w.startTimeEpochMs, gridTimeZone);
     return hhmmToMinutes(wall.startTimeHHMM);
   }
-  return hhmmToMinutes(w.startTimeHHMM);
+  try {
+    const epochMs = wallClockGridToEpochMs(
+      w.startDayYYYYMMDD,
+      hhmmToMinutes(w.startTimeHHMM),
+      w.timeZone,
+    );
+    const wall = wallClockInTimeZone(epochMs, gridTimeZone);
+    return hhmmToMinutes(wall.startTimeHHMM);
+  } catch {
+    return hhmmToMinutes(w.startTimeHHMM);
+  }
 }
 
 function minutesToHHMM(min: number): string {
@@ -436,10 +450,11 @@ interface EventLayout {
 }
 
 function packOverlappingEvents(
-  windows: TimeWindowDoc[]
+  windows: TimeWindowDoc[],
+  gridTimeZone: string,
 ): Map<string, EventLayout> {
   const items = windows.map((w) => {
-    const start = eventGridStartMinutes(w);
+    const start = eventGridStartMinutes(w, gridTimeZone);
     const end =
       start +
       Math.max(MIN_DURATION_MINUTES, Math.round(w.durationSeconds / 60));
@@ -541,6 +556,8 @@ function HourSlot({ hour, registerEl, isOverPreview }: HourSlotProps) {
  * ──────────────────────────────────────────────────────────────────────── */
 interface CalendarEventBlockProps {
   tw: TimeWindowDoc;
+  /** Matches `CalendarView`'s hourly grid (`Intl` or timer row). */
+  gridTimeZone: string;
   /** Lane assignment from `packOverlappingEvents`. */
   layout: EventLayout;
   /** Notify parent to persist start/duration changes. */
@@ -559,15 +576,21 @@ interface CalendarEventBlockProps {
 
 function CalendarEventBlock({
   tw,
+  gridTimeZone,
   layout,
   onCommit,
   onEditRequest,
 }: CalendarEventBlockProps) {
-  const baseStart = useMemo(() => eventGridStartMinutes(tw), [
-    tw.startTimeEpochMs,
-    tw.startTimeHHMM,
-    tw.timeZone,
-  ]);
+  const baseStart = useMemo(
+    () => eventGridStartMinutes(tw, gridTimeZone),
+    [
+      gridTimeZone,
+      tw.startTimeEpochMs,
+      tw.startTimeHHMM,
+      tw.startDayYYYYMMDD,
+      tw.timeZone,
+    ],
+  );
   const baseDuration = useMemo(
     () => Math.max(MIN_DURATION_MINUTES, Math.round(tw.durationSeconds / 60)),
     [tw.durationSeconds]
@@ -722,7 +745,7 @@ function CalendarEventBlock({
         }
         if (mode === "resize-top") {
           if (tw.isLive) {
-            const wallNow = wallClockInTimeZone(Date.now(), tw.timeZone);
+            const wallNow = wallClockInTimeZone(Date.now(), gridTimeZone);
             const nowMin =
               wallNow.startDayYYYYMMDD === tw.startDayYYYYMMDD
                 ? hhmmToMinutes(wallNow.startTimeHHMM)
@@ -835,7 +858,7 @@ function CalendarEventBlock({
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [baseStart, baseDuration, onCommit, onEditRequest, tw._id, tw.isLive, tw.startDayYYYYMMDD, tw.timeZone]
+    [baseStart, baseDuration, onCommit, onEditRequest, tw._id, tw.isLive, tw.startDayYYYYMMDD, gridTimeZone]
   );
 
   // Colour composition — server-provided `displayColor` (trackable
@@ -1297,7 +1320,7 @@ export function CalendarView({
         gridTimeZoneIANA: gridTimeZone,
         sameZoneAsGrid: w.timeZone === gridTimeZone,
         wallFromEpochInRowZone: wall,
-        renderedGridStartMinutes: eventGridStartMinutes(w),
+        renderedGridStartMinutes: eventGridStartMinutes(w, gridTimeZone),
         persistedStartTimeHHMM: w.startTimeHHMM,
         source: w.source,
       });
@@ -1852,8 +1875,8 @@ export function CalendarView({
   // packing pass only re-runs when the event set actually changes — not on
   // every drag-frame re-render.
   const eventLayouts = useMemo(
-    () => packOverlappingEvents(eventsToRender),
-    [eventsToRender]
+    () => packOverlappingEvents(eventsToRender, gridTimeZone),
+    [eventsToRender, gridTimeZone]
   );
 
   const previewTop = dropPreview ? dropPreview.startMinutes * PX_PER_MINUTE : 0;
@@ -1971,6 +1994,7 @@ export function CalendarView({
                     <CalendarEventBlock
                       key={tw._id}
                       tw={tw}
+                      gridTimeZone={gridTimeZone}
                       layout={layout}
                       onCommit={(id, startMinutes) => {
                         if (id === LIVE_TIMER_EVENT_ID) {
@@ -1984,6 +2008,7 @@ export function CalendarView({
                   <CalendarEventBlock
                     key={tw._id}
                     tw={tw}
+                    gridTimeZone={gridTimeZone}
                     layout={layout}
                     onCommit={handleEventUpdate}
                     onEditRequest={
