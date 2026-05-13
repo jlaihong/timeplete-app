@@ -740,8 +740,6 @@ export const setTimeSpent = mutation({
   args: {
     taskId: v.id("tasks"),
     timeSpentInSecondsUnallocated: v.number(),
-    /** When set to a valid IANA zone (browser grid / timer zone), anchors wall-clock labels. */
-    clientCalendarTimeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
@@ -758,9 +756,8 @@ export const setTimeSpent = mutation({
      * - Decrease: trim/delete from latest windows backward (by wall-clock end
      *   instant when `startTimeEpochMs` exists).
      * - Increase: add a **new** ACTUAL slice ending at `Date.now()` with
-     *   duration = delta. Wall-clock labels use `wallClockInTimeZone` when
-     *   `clientCalendarTimeZone` is a valid IANA zone (calendar grid parity);
-     *   otherwise `inferIANAZoneForManualTaskSlice` (no client arg / invalid).
+     *   duration = delta (wall-clock via `inferIANAZoneForManualTaskSlice`; the
+     *   client aligns optimistic patches with its grid TZ without mutation args).
      */
     const allWindows = await ctx.db
       .query("timeWindows")
@@ -804,10 +801,7 @@ export const setTimeSpent = mutation({
     const deltaSec = Math.max(0, Math.floor(deltaToAdd));
     if (deltaSec <= 0) return;
 
-    const fromClientGrid = pickValidIANAZone(args.clientCalendarTimeZone);
-    const tz =
-      fromClientGrid ??
-      (await inferIANAZoneForManualTaskSlice(ctx, user._id, args.taskId));
+    const tz = await inferIANAZoneForManualTaskSlice(ctx, user._id, args.taskId);
 
     const now = Date.now();
     const startEpochMs = now - deltaSec * 1000;

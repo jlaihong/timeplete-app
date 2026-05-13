@@ -377,12 +377,16 @@ export function applySetTimeSpentOptimisticUpdate(
   args: {
     taskId: Id<"tasks">;
     timeSpentInSecondsUnallocated: number;
-    clientCalendarTimeZone?: string;
+    /**
+     * From the React layer only (Convex mutation must stay validator-stable across
+     * deploy lag). Mirrors `CalendarView` grid TZ for cache patches — not sent RPC.
+     */
+    optimisticGridIANAZone?: string;
   },
 ): void {
   const tzArg = validatedOptionalIANATimeZone(
-    typeof args.clientCalendarTimeZone === "string"
-      ? args.clientCalendarTimeZone
+    typeof args.optimisticGridIANAZone === "string"
+      ? args.optimisticGridIANAZone
       : undefined,
   );
   const tz =

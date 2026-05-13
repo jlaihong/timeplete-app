@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useMemo,
   useEffect,
+  useRef,
 } from "react";
 import {
   View,
@@ -235,10 +236,16 @@ export default function ListDetailScreen() {
       }),
     [timer.isRunning, timer.canonicalTimeZone],
   );
+  const optimisticGridTzRef = useRef(clientCalendarIANAZone);
+  optimisticGridTzRef.current = clientCalendarIANAZone;
   const setTimeSpentMutation = useMutation(
     api.tasks.setTimeSpent,
   ).withOptimisticUpdate((localStore, args) => {
-    applySetTimeSpentOptimisticUpdate(localStore, args);
+    applySetTimeSpentOptimisticUpdate(localStore, {
+      taskId: args.taskId,
+      timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated,
+      optimisticGridIANAZone: optimisticGridTzRef.current,
+    });
   });
   const moveBetweenSections = useMutation(api.tasks.moveBetweenSections);
 
@@ -433,10 +440,9 @@ export default function ListDetailScreen() {
       await setTimeSpentMutation({
         taskId,
         timeSpentInSecondsUnallocated: safe,
-        clientCalendarTimeZone: clientCalendarIANAZone,
       });
     },
-    [setTimeSpentMutation, clientCalendarIANAZone],
+    [setTimeSpentMutation],
   );
 
   const handleDelete = useCallback(

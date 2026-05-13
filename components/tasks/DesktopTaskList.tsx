@@ -451,10 +451,16 @@ export function DesktopTaskList({
       }),
     [timer.isRunning, timer.canonicalTimeZone],
   );
+  const optimisticGridTzRef = useRef(clientCalendarIANAZone);
+  optimisticGridTzRef.current = clientCalendarIANAZone;
   const setTimeSpentMutation = useMutation(
     api.tasks.setTimeSpent,
   ).withOptimisticUpdate((localStore, args) => {
-    applySetTimeSpentOptimisticUpdate(localStore, args);
+    applySetTimeSpentOptimisticUpdate(localStore, {
+      taskId: args.taskId,
+      timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated,
+      optimisticGridIANAZone: optimisticGridTzRef.current,
+    });
   });
   const homeFilterScope = useMemo(() => ({ kind: "home" as const }), []);
   const {
@@ -746,10 +752,9 @@ export function DesktopTaskList({
       await setTimeSpentMutation({
         taskId,
         timeSpentInSecondsUnallocated: safe,
-        clientCalendarTimeZone: clientCalendarIANAZone,
       });
     },
-    [setTimeSpentMutation, clientCalendarIANAZone]
+    [setTimeSpentMutation]
   );
 
   /* ───── DnD ─────
