@@ -28,6 +28,7 @@ import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { Id } from "../../convex/_generated/dataModel";
+import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
 
 const LOAD_MORE_DAYS = 7;
 const isWeb = Platform.OS === "web";
@@ -52,7 +53,11 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const trackables = useQuery(api.trackables.search, profileReady ? {} : "skip");
-  const upsertTask = useMutation(api.tasks.upsert);
+  const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
+    (localStore, args) => {
+      applyTaskUpsertOptimisticUpdate(localStore, args);
+    }
+  );
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
   const timer = useTimer();

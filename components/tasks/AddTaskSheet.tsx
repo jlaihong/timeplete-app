@@ -11,6 +11,7 @@ import { ListPicker } from "./ListPicker";
 import { todayYYYYMMDD } from "../../lib/dates";
 import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
+import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
 
 interface AddTaskSheetProps {
   day?: string;
@@ -42,10 +43,12 @@ export function AddTaskSheet({
   const [listId, setListId] = useState<Id<"lists"> | null>(
     initialListId ?? null
   );
-  const [loading, setLoading] = useState(false);
-
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
-  const upsertTask = useMutation(api.tasks.upsert);
+  const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
+    (localStore, args) => {
+      applyTaskUpsertOptimisticUpdate(localStore, args);
+    }
+  );
 
   const inboxListId =
     lists?.find((l) => l.isInbox)?._id ?? null;
@@ -69,34 +72,34 @@ export function AddTaskSheet({
     if (id) setTrackableId(null);
   };
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
     if (!name.trim()) return;
-    setLoading(true);
-    try {
-      // P1's `AddTask.onSave` resolution order:
-      //   1. trackable selected → use the goal's list (we don't pre-fetch
-      //      that here; the server is the source of truth for goal-list
-      //      attribution, so we just send `trackableId`).
-      //   2. else, manual `listId`.
-      //   3. else, fall back to inbox.
-      const effectiveListId: Id<"lists"> | undefined = trackableId
-        ? undefined
-        : listPickerLocked && initialListId
-          ? initialListId
-          : (listId ?? inboxListId ?? undefined);
+    // P1's `AddTask.onSave` resolution order:
+    //   1. trackable selected → use the goal's list (we don't pre-fetch
+    //      that here; the server is the source of truth for goal-list
+    //      attribution, so we just send `trackableId`).
+    //   2. else, manual `listId`.
+    //   3. else, fall back to inbox.
+    const effectiveListId: Id<"lists"> | undefined = trackableId
+      ? undefined
+      : listPickerLocked && initialListId
+        ? initialListId
+        : (listId ?? inboxListId ?? undefined);
 
-      await upsertTask({
-        name: name.trim(),
-        taskDay: day ?? todayYYYYMMDD(),
-        listId: effectiveListId,
-        sectionId,
-        parentId,
-        trackableId: trackableId ?? undefined,
-      });
-      onClose();
-    } finally {
-      setLoading(false);
-    }
+    void upsertTask({
+      name: name.trim(),
+      taskDay: day ?? todayYYYYMMDD(),
+      listId: effectiveListId,
+      sectionId,
+      parentId,
+      trackableId: trackableId ?? undefined,
+    }).catch((err) =>
+      console.error("[AddTaskSheet] Failed to create task:", err),
+    );
+
+    // Close immediately: optimistic Convex updates populate the lists while the
+    // mutation round-trips; awaiting here made the UX feel slow.
+    onClose();
   };
 
   return (
@@ -134,11 +137,7 @@ export function AddTaskSheet({
 
           <View style={styles.actions}>
             <Button title="Cancel" variant="outline" onPress={onClose} />
-            <Button
-              title="Create Task"
-              onPress={handleCreate}
-              loading={loading}
-            />
+            <Button title="Create Task" onPress={handleCreate} />
           </View>
         </ScrollView>
       </Card>

@@ -58,6 +58,7 @@ import {
   taskMatchesUserFilter,
 } from "../../lib/taskFilters";
 import { applySetTimeSpentOptimisticUpdate } from "../../lib/setTimeSpentOptimisticUpdate";
+import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
 
 const isWeb = Platform.OS === "web";
 const LOAD_MORE_DAYS = 7;
@@ -426,56 +427,9 @@ export function DesktopTaskList({
     recurringRules?.map((r) => r._id).join(","),
     generateInstances,
   ]);
-  // Optimistic update: when `upsert` is called with an existing `id`, patch the
-  // matching task in every active home-task subscription synchronously so
-  // the UI updates in <1 frame. The server response will reconcile when it
-  // arrives. INSERT (no id) skips optimistic – the server has to assign the
-  // id, and create is rarely on the perceived-latency critical path.
   const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
     (localStore, args) => {
-      if (!args.id) return;
-
-      const patchRow = (existing: TaskRowTask): TaskRowTask => {
-        const patched = { ...existing };
-        if (args.name !== undefined) patched.name = args.name;
-        if (args.dateCompleted !== undefined) {
-          patched.dateCompleted = args.dateCompleted ?? undefined;
-        }
-        if (args.taskDay !== undefined) patched.taskDay = args.taskDay;
-        if (args.taskDayOrderIndex !== undefined) {
-          patched.taskDayOrderIndex = args.taskDayOrderIndex;
-        }
-        if (args.listId !== undefined) patched.listId = args.listId;
-        if (args.dueDateYYYYMMDD !== undefined) {
-          patched.dueDateYYYYMMDD = args.dueDateYYYYMMDD;
-        }
-        if (args.timeSpentInSecondsUnallocated !== undefined) {
-          patched.timeSpentInSecondsUnallocated =
-            args.timeSpentInSecondsUnallocated;
-        }
-        if (args.tagIds !== undefined) patched.tagIds = args.tagIds;
-        return patched;
-      };
-
-      for (const q of localStore.getAllQueries(api.tasks.getHomeTasks)) {
-        const value = q.value;
-        if (!value) continue;
-        const idx = value.findIndex((t) => t._id === args.id);
-        if (idx === -1) continue;
-        const next = [...value];
-        next[idx] = patchRow(value[idx] as TaskRowTask);
-        localStore.setQuery(api.tasks.getHomeTasks, q.args, next);
-      }
-
-      for (const q of localStore.getAllQueries(api.tasks.searchWithCriteria)) {
-        const value = q.value;
-        if (!value) continue;
-        const idx = value.findIndex((t) => t._id === args.id);
-        if (idx === -1) continue;
-        const next = [...value];
-        next[idx] = patchRow(value[idx] as TaskRowTask);
-        localStore.setQuery(api.tasks.searchWithCriteria, q.args, next);
-      }
+      applyTaskUpsertOptimisticUpdate(localStore, args);
     }
   );
   const removeTask = useMutation(api.tasks.remove);
