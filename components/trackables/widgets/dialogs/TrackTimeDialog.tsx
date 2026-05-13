@@ -22,6 +22,7 @@ import {
   normalizeClockHhMm,
 } from "../../../../lib/dates";
 import { defaultStartTimeQuarterHour } from "../../../../lib/trackableLogPresets";
+import { useRegisterEscapeClose } from "../../../../hooks/useRegisterEscapeClose";
 import {
   TrackableLogDurationBlock,
   TrackableLogStartTimeBlock,
@@ -49,6 +50,7 @@ export function TrackTimeDialog({
   dayYYYYMMDD,
   onClose,
 }: TrackTimeDialogProps) {
+  useRegisterEscapeClose(onClose);
   const [startTime, setStartTime] = useState(defaultStartTimeQuarterHour);
   const [durationHhmm, setDurationHhmm] = useState("0:30");
   const [comments, setComments] = useState("");

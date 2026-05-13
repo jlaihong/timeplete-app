@@ -13,6 +13,7 @@ import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
 import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
 import { AutoDismissToast } from "../ui/AutoDismissToast";
+import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
 
 interface AddTaskSheetProps {
   day?: string;
@@ -34,6 +35,7 @@ export function AddTaskSheet({
   lockListToContext = false,
   onClose,
 }: AddTaskSheetProps) {
+  useRegisterEscapeClose(onClose);
   const { profileReady } = useAuth();
   const titleInputRef = useRef<TextInput>(null);
   const [name, setName] = useState("");

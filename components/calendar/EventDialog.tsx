@@ -25,7 +25,6 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  Platform,
   useWindowDimensions,
   Switch,
 } from "react-native";
@@ -205,19 +204,6 @@ export function EventDialog({
     }
     setRecurrence(null);
   }, [existingRule?._id]);
-
-  /* ESC dismisses the dialog (parity with MatDialog / AddTrackableFlow). */
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const previousDay = (yyyymmdd: string) => {
     const y = parseInt(yyyymmdd.slice(0, 4), 10);

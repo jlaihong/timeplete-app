@@ -18,6 +18,7 @@ import { Card } from "../../../ui/Card";
 import { Button } from "../../../ui/Button";
 import { formatYYYYMMDDtoDDMMM } from "../../../../lib/dates";
 import { useAuth } from "../../../../hooks/useAuth";
+import { useRegisterEscapeClose } from "../../../../hooks/useRegisterEscapeClose";
 
 interface TrackPeriodicDialogProps {
   trackableId: Id<"trackables">;
@@ -45,6 +46,7 @@ export function TrackPeriodicDialog({
   initialComments,
   onClose,
 }: TrackPeriodicDialogProps) {
+  useRegisterEscapeClose(onClose);
   const { profileReady } = useAuth();
   const [isCompleted, setIsCompleted] = useState(initialNumCompleted > 0);
   const [comments, setComments] = useState(initialComments);

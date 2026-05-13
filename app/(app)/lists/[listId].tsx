@@ -47,6 +47,8 @@ import {
 import { applySetTimeSpentOptimisticUpdate } from "../../../lib/setTimeSpentOptimisticUpdate";
 import { calendarGridIANAZoneForManualEvents } from "../../../lib/calendarGridTimeZone";
 import { applyTaskUpsertOptimisticUpdate } from "../../../lib/taskUpsertOptimisticUpdate";
+import { applyTaskRemoveOptimisticUpdate } from "../../../lib/taskRemoveOptimisticUpdate";
+import { useRegisterEscapeClose } from "../../../hooks/useRegisterEscapeClose";
 
 /** `lists.getPaginated` enriches rows with `tagIds` like `tasks.search`. */
 type ListPageTask = Doc<"tasks"> & { tagIds?: Id<"tags">[] };
@@ -225,8 +227,18 @@ export default function ListDetailScreen() {
       applyTaskUpsertOptimisticUpdate(localStore, args);
     }
   );
-  const removeTask = useMutation(api.tasks.remove);
-  const deleteRecurringInstance = useMutation(api.recurringTasks.deleteInstance);
+  const removeTask = useMutation(api.tasks.remove).withOptimisticUpdate(
+    (localStore, args) => {
+      applyTaskRemoveOptimisticUpdate(localStore, args.id);
+    },
+  );
+  const deleteRecurringInstance = useMutation(
+    api.recurringTasks.deleteInstance,
+  ).withOptimisticUpdate((localStore, args) => {
+    applyTaskRemoveOptimisticUpdate(localStore, args.taskId, {
+      cascadeRootChildren: false,
+    });
+  });
   const timer = useTimer();
   const clientCalendarIANAZone = useMemo(
     () =>
@@ -247,6 +259,7 @@ export default function ListDetailScreen() {
       optimisticGridIANAZone: optimisticGridTzRef.current,
     });
   });
+  const upsertSection = useMutation(api.listSections.upsert);
   const moveBetweenSections = useMutation(api.tasks.moveBetweenSections);
 
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -271,6 +284,10 @@ export default function ListDetailScreen() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showAddSection, setShowAddSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
+  useRegisterEscapeClose(
+    () => setShowAddSection(false),
+    showAddSection,
+  );
   const [collapsedSectionKeys, setCollapsedSectionKeys] = useState<Set<string>>(
     () => new Set(),
   );

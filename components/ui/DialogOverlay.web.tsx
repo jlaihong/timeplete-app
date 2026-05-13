@@ -5,6 +5,7 @@ import {
   dialogOverlayStyles,
   type DialogOverlayProps,
 } from "./dialogOverlayShared";
+import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
 
 export type { DialogOverlayProps } from "./dialogOverlayShared";
 
@@ -14,6 +15,8 @@ export function DialogOverlay({
   align = "center",
   zIndex = 1000,
 }: DialogOverlayProps) {
+  useRegisterEscapeClose(onBackdropPress);
+
   const tree = (
     <Pressable
       style={[

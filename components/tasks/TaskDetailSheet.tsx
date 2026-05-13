@@ -185,26 +185,9 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     }
   }, [task, form, recurringRules, existingRule]);
 
-  // Stable callback so the document-level keydown listener below
-  // doesn't re-attach on every render.
   const handleClose = useCallback(() => {
     onClose();
   }, [onClose]);
-
-  // Escape closes the dialog and discards unsaved edits — listener
-  // attached at document level so it works even when focus is inside
-  // an input field.
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        handleClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [handleClose]);
 
   /** Single source of truth for total time on this task — used by both
    *  the Details meta chip AND the Time Tracked tab summary, so the two

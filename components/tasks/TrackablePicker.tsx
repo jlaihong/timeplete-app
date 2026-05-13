@@ -15,6 +15,7 @@ import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
 import { useAuth } from "../../hooks/useAuth";
+import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
 
 interface TrackablePickerProps {
   value: Id<"trackables"> | null | undefined;
@@ -40,6 +41,7 @@ export function TrackablePicker({
 }: TrackablePickerProps) {
   const { profileReady } = useAuth();
   const [open, setOpen] = useState(false);
+  useRegisterEscapeClose(() => setOpen(false), open);
   const trackables = useQuery(
     api.trackables.search,
     profileReady ? { archived: false } : "skip",

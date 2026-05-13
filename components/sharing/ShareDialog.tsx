@@ -6,6 +6,7 @@ import { Card } from "../ui/Card";
 import { Id } from "../../convex/_generated/dataModel";
 import { ListSharePanel } from "./ListSharePanel";
 import { TrackableSharePanel } from "./TrackableSharePanel";
+import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
 
 interface ShareDialogProps {
   type: "list" | "trackable";
@@ -14,6 +15,7 @@ interface ShareDialogProps {
 }
 
 export function ShareDialog({ type, entityId, onClose }: ShareDialogProps) {
+  useRegisterEscapeClose(onClose);
   return (
     <View style={styles.overlay}>
       <Card style={styles.dialog}>

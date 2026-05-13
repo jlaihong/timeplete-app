@@ -39,6 +39,7 @@ export interface TaskRowTask {
    * tasks at a glance — same affordance as productivity-one's row.
    */
   isRecurringInstance?: boolean;
+  recurringTaskId?: Id<"tasks">;
 }
 
 export interface TaskRowMeta {
