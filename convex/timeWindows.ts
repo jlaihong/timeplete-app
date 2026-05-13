@@ -225,6 +225,10 @@ export const upsert = mutation({
         v.literal("tracker_entry")
       )
     ),
+    /** Restore after delete (`insert` branch only — see handler). */
+    recurringEventId: v.optional(v.id("recurringEvents")),
+    /** Restore after delete (`insert` branch only — defaults to `false`). */
+    isRecurringInstance: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
@@ -300,7 +304,8 @@ export const upsert = mutation({
       comments: args.comments,
       tagIds: args.tagIds,
       timeZone: args.timeZone,
-      isRecurringInstance: false,
+      recurringEventId: args.recurringEventId,
+      isRecurringInstance: args.isRecurringInstance ?? false,
       source: args.source,
     });
   },
