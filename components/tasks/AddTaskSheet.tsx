@@ -1,5 +1,5 @@
-import React, { useCallback, useState } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import React, { useCallback, useRef, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, TextInput } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -35,6 +35,7 @@ export function AddTaskSheet({
   onClose,
 }: AddTaskSheetProps) {
   const { profileReady } = useAuth();
+  const titleInputRef = useRef<TextInput>(null);
   const [name, setName] = useState("");
   const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(
     initialTrackableId ?? null
@@ -99,6 +100,9 @@ export function AddTaskSheet({
 
     setName("");
     showToast("Task added");
+    // Keep the title field focused after Enter so rapid multi-add UX works;
+    // submit still blurs on some platforms without an explicit refocus.
+    queueMicrotask(() => titleInputRef.current?.focus());
 
     void upsertTask({
       name: title,
@@ -122,13 +126,14 @@ export function AddTaskSheet({
           </Text>
 
           <Input
+            ref={titleInputRef}
             label="Task Name"
             value={name}
             onChangeText={setName}
             placeholder="What needs to be done?"
             autoFocus
             returnKeyType="done"
-            blurOnSubmit
+            blurOnSubmit={false}
             onSubmitEditing={handleCreate}
           />
 
