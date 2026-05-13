@@ -423,14 +423,9 @@ export default function ListDetailScreen() {
   const handleSetTimeSpent = useCallback(
     async (taskId: Id<"tasks">, newSeconds: number) => {
       const safe = Math.max(0, Math.floor(newSeconds));
-      const timeZone =
-        typeof Intl !== "undefined"
-          ? Intl.DateTimeFormat().resolvedOptions().timeZone
-          : "UTC";
       await setTimeSpentMutation({
         taskId,
         timeSpentInSecondsUnallocated: safe,
-        timeZone,
       });
     },
     [setTimeSpentMutation],

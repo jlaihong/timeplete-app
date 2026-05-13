@@ -77,6 +77,58 @@ function compareActualTaskWindowsNewestFirst(
   return (b._creationTime ?? 0) - (a._creationTime ?? 0);
 }
 
+function pickValidIANAZone(raw: string | undefined): string | null {
+  const t = raw?.trim();
+  if (!t) return null;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: t }).format(0);
+  } catch {
+    return null;
+  }
+  return t;
+}
+
+async function inferIANAZoneForManualTaskSlice(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  taskId: Id<"tasks">,
+): Promise<string> {
+  const taskRows = await ctx.db
+    .query("timeWindows")
+    .withIndex("by_task", (q) => q.eq("taskId", taskId))
+    .collect();
+
+  const forThisTask = taskRows.filter(
+    (w) => w.activityType === "TASK" && w.budgetType === "ACTUAL",
+  );
+  forThisTask.sort(compareActualTaskWindowsNewestFirst);
+  for (const w of forThisTask) {
+    const z = pickValidIANAZone(w.timeZone);
+    if (z) return z;
+  }
+
+  const timer = await ctx.db
+    .query("taskTimers")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .first();
+  const fromTimer = pickValidIANAZone(timer?.timeZone);
+  if (fromTimer) return fromTimer;
+
+  const userRecent = await ctx.db
+    .query("timeWindows")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .order("desc")
+    .take(120);
+
+  for (const w of userRecent) {
+    if (w.activityType !== "TASK" || w.budgetType !== "ACTUAL") continue;
+    const z = pickValidIANAZone(w.timeZone);
+    if (z) return z;
+  }
+
+  return "UTC";
+}
+
 export const search = query({
   args: {
     startDay: v.optional(v.string()),
@@ -688,11 +740,6 @@ export const setTimeSpent = mutation({
   args: {
     taskId: v.id("tasks"),
     timeSpentInSecondsUnallocated: v.number(),
-    /**
-     * IANA zone for wall-clock fields (same source as `taskTimers.timeZone` /
-     * `timers.startTaskTimer`). Defaults to UTC when omitted.
-     */
-    timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
@@ -709,7 +756,8 @@ export const setTimeSpent = mutation({
      * - Decrease: trim/delete from latest windows backward (by wall-clock end
      *   instant when `startTimeEpochMs` exists).
      * - Increase: add a **new** ACTUAL slice ending at `Date.now()` with
-     *   duration = delta, matching productivity-one / `timers.finalizeTimer`.
+     *   duration = delta (wall-clock derived via `inferIANAZoneForManualTaskSlice`
+     *   so the client mutation stays compatible with older deployed validators).
      */
     const allWindows = await ctx.db
       .query("timeWindows")
@@ -753,8 +801,7 @@ export const setTimeSpent = mutation({
     const deltaSec = Math.max(0, Math.floor(deltaToAdd));
     if (deltaSec <= 0) return;
 
-    const tzRaw = args.timeZone?.trim();
-    const tz = tzRaw && tzRaw.length > 0 ? tzRaw : "UTC";
+    const tz = await inferIANAZoneForManualTaskSlice(ctx, user._id, args.taskId);
 
     const now = Date.now();
     const startEpochMs = now - deltaSec * 1000;

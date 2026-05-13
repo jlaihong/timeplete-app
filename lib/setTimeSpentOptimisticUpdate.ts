@@ -373,13 +373,12 @@ function patchTimeWindowsSearchForManualIncrease(
  */
 export function applySetTimeSpentOptimisticUpdate(
   localStore: OptimisticLocalStore,
-  args: {
-    taskId: Id<"tasks">;
-    timeSpentInSecondsUnallocated: number;
-    timeZone?: string;
-  },
+  args: { taskId: Id<"tasks">; timeSpentInSecondsUnallocated: number },
 ): void {
-  const tz = args.timeZone?.trim() || "UTC";
+  const tz =
+    typeof Intl !== "undefined"
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone.trim() || "UTC"
+      : "UTC";
 
   let strippedSnapshot: TimeTrackedValue | undefined;
   for (const q of localStore.getAllQueries(api.tasks.getTimeTracked)) {
