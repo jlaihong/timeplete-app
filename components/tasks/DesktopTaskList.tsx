@@ -58,6 +58,7 @@ import {
   taskMatchesUserFilter,
 } from "../../lib/taskFilters";
 import { applySetTimeSpentOptimisticUpdate } from "../../lib/setTimeSpentOptimisticUpdate";
+import { calendarGridIANAZoneForManualEvents } from "../../lib/calendarGridTimeZone";
 import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
 
 const isWeb = Platform.OS === "web";
@@ -441,13 +442,20 @@ export function DesktopTaskList({
   );
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
+  const timer = useTimer();
+  const clientCalendarIANAZone = useMemo(
+    () =>
+      calendarGridIANAZoneForManualEvents({
+        isTimerRunning: timer.isRunning,
+        canonicalTimerIANAZone: timer.canonicalTimeZone,
+      }),
+    [timer.isRunning, timer.canonicalTimeZone],
+  );
   const setTimeSpentMutation = useMutation(
     api.tasks.setTimeSpent,
   ).withOptimisticUpdate((localStore, args) => {
     applySetTimeSpentOptimisticUpdate(localStore, args);
   });
-  const timer = useTimer();
-
   const homeFilterScope = useMemo(() => ({ kind: "home" as const }), []);
   const {
     showCompleted,
@@ -738,9 +746,10 @@ export function DesktopTaskList({
       await setTimeSpentMutation({
         taskId,
         timeSpentInSecondsUnallocated: safe,
+        clientCalendarTimeZone: clientCalendarIANAZone,
       });
     },
-    [setTimeSpentMutation]
+    [setTimeSpentMutation, clientCalendarIANAZone]
   );
 
   /* ───── DnD ─────

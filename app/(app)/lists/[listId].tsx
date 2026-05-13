@@ -44,6 +44,7 @@ import {
   taskMatchesUserFilter,
 } from "../../../lib/taskFilters";
 import { applySetTimeSpentOptimisticUpdate } from "../../../lib/setTimeSpentOptimisticUpdate";
+import { calendarGridIANAZoneForManualEvents } from "../../../lib/calendarGridTimeZone";
 import { applyTaskUpsertOptimisticUpdate } from "../../../lib/taskUpsertOptimisticUpdate";
 
 /** `lists.getPaginated` enriches rows with `tagIds` like `tasks.search`. */
@@ -225,15 +226,21 @@ export default function ListDetailScreen() {
   );
   const removeTask = useMutation(api.tasks.remove);
   const deleteRecurringInstance = useMutation(api.recurringTasks.deleteInstance);
+  const timer = useTimer();
+  const clientCalendarIANAZone = useMemo(
+    () =>
+      calendarGridIANAZoneForManualEvents({
+        isTimerRunning: timer.isRunning,
+        canonicalTimerIANAZone: timer.canonicalTimeZone,
+      }),
+    [timer.isRunning, timer.canonicalTimeZone],
+  );
   const setTimeSpentMutation = useMutation(
     api.tasks.setTimeSpent,
   ).withOptimisticUpdate((localStore, args) => {
     applySetTimeSpentOptimisticUpdate(localStore, args);
   });
-  const upsertSection = useMutation(api.listSections.upsert);
   const moveBetweenSections = useMutation(api.tasks.moveBetweenSections);
-
-  const timer = useTimer();
 
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
@@ -426,9 +433,10 @@ export default function ListDetailScreen() {
       await setTimeSpentMutation({
         taskId,
         timeSpentInSecondsUnallocated: safe,
+        clientCalendarTimeZone: clientCalendarIANAZone,
       });
     },
-    [setTimeSpentMutation],
+    [setTimeSpentMutation, clientCalendarIANAZone],
   );
 
   const handleDelete = useCallback(

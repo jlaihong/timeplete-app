@@ -8,6 +8,7 @@ import type { Id } from "../convex/_generated/dataModel";
 import type { OptimisticLocalStore } from "convex/browser";
 import type { FunctionReturnType } from "convex/server";
 import { DEFAULT_EVENT_COLOR } from "./eventColors";
+import { validatedOptionalIANATimeZone } from "./calendarGridTimeZone";
 import { wallClockInTimeZone } from "./wallClockTimeZone";
 
 type TrackedWindow = {
@@ -373,12 +374,22 @@ function patchTimeWindowsSearchForManualIncrease(
  */
 export function applySetTimeSpentOptimisticUpdate(
   localStore: OptimisticLocalStore,
-  args: { taskId: Id<"tasks">; timeSpentInSecondsUnallocated: number },
+  args: {
+    taskId: Id<"tasks">;
+    timeSpentInSecondsUnallocated: number;
+    clientCalendarTimeZone?: string;
+  },
 ): void {
+  const tzArg = validatedOptionalIANATimeZone(
+    typeof args.clientCalendarTimeZone === "string"
+      ? args.clientCalendarTimeZone
+      : undefined,
+  );
   const tz =
-    typeof Intl !== "undefined"
+    tzArg ??
+    (typeof Intl !== "undefined"
       ? Intl.DateTimeFormat().resolvedOptions().timeZone.trim() || "UTC"
-      : "UTC";
+      : "UTC");
 
   let strippedSnapshot: TimeTrackedValue | undefined;
   for (const q of localStore.getAllQueries(api.tasks.getTimeTracked)) {
