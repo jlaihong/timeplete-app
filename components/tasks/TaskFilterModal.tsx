@@ -11,6 +11,7 @@ import {
 import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
 import type { TaskFilterMember } from "../../lib/taskFilters";
+import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
 
 export type TaskFilterModalProps = {
   visible: boolean;
@@ -36,6 +37,7 @@ export function TaskFilterModal({
   assignableMembers,
   showCollaboratorFilter,
 }: TaskFilterModalProps) {
+  useRegisterEscapeClose(onClose, visible);
   return (
     <Modal
       visible={visible}

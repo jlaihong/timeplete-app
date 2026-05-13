@@ -18,6 +18,7 @@ import { Card } from "../../../ui/Card";
 import { Button } from "../../../ui/Button";
 import { formatYYYYMMDDtoDDMMM } from "../../../../lib/dates";
 import { useAuth } from "../../../../hooks/useAuth";
+import { useRegisterEscapeClose } from "../../../../hooks/useRegisterEscapeClose";
 
 interface TrackCountDialogProps {
   trackableId: Id<"trackables">;
@@ -44,6 +45,7 @@ export function TrackCountDialog({
   initialComments,
   onClose,
 }: TrackCountDialogProps) {
+  useRegisterEscapeClose(onClose);
   const { profileReady } = useAuth();
   const [count, setCount] = useState(initialCount);
   const [comments, setComments] = useState(initialComments);

@@ -26,6 +26,7 @@ import {
 import {
   defaultStartTimeQuarterHour,
 } from "../../../../lib/trackableLogPresets";
+import { useRegisterEscapeClose } from "../../../../hooks/useRegisterEscapeClose";
 import {
   TrackableLogDurationBlock,
   TrackableLogStartTimeBlock,
@@ -63,6 +64,7 @@ export function TrackTrackerDialog({
   isRatingTracker,
   onClose,
 }: TrackTrackerDialogProps) {
+  useRegisterEscapeClose(onClose);
   const [count, setCount] = useState<number | null>(
     isRatingTracker ? null : 1
   );

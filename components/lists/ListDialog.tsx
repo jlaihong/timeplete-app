@@ -21,6 +21,7 @@ import { ColorPicker } from "../ui/ColorPicker";
 import { Card } from "../ui/Card";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { ListSharePanel } from "../sharing/ListSharePanel";
+import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
 
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
@@ -55,6 +56,7 @@ export function ListDialog({
   onClose,
   visible: visibleProp = true,
 }: ListDialogProps) {
+  useRegisterEscapeClose(onClose, visibleProp);
   const { height: windowHeight } = useWindowDimensions();
   /** Must match `padding` in `styles.overlay` (24 × 2 vertically). */
   const overlayVerticalPaddingPx = 48;

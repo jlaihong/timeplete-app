@@ -15,6 +15,7 @@ import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
 import { useAuth } from "../../hooks/useAuth";
+import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
 
 export interface ListPickerProps {
   /**
@@ -58,6 +59,7 @@ export function ListPicker({
 }: ListPickerProps) {
   const { profileReady } = useAuth();
   const [open, setOpen] = useState(false);
+  useRegisterEscapeClose(() => setOpen(false), open);
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
 
   const inboxList = useMemo(

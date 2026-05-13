@@ -46,6 +46,7 @@ import {
 import { applySetTimeSpentOptimisticUpdate } from "../../../lib/setTimeSpentOptimisticUpdate";
 import { applyTaskUpsertOptimisticUpdate } from "../../../lib/taskUpsertOptimisticUpdate";
 import { applyTaskRemoveOptimisticUpdate } from "../../../lib/taskRemoveOptimisticUpdate";
+import { useRegisterEscapeClose } from "../../../hooks/useRegisterEscapeClose";
 
 /** `lists.getPaginated` enriches rows with `tagIds` like `tasks.search`. */
 type ListPageTask = Doc<"tasks"> & { tagIds?: Id<"tags">[] };
@@ -268,6 +269,10 @@ export default function ListDetailScreen() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showAddSection, setShowAddSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
+  useRegisterEscapeClose(
+    () => setShowAddSection(false),
+    showAddSection,
+  );
   const [collapsedSectionKeys, setCollapsedSectionKeys] = useState<Set<string>>(
     () => new Set(),
   );
