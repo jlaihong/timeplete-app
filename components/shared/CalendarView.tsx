@@ -2179,7 +2179,7 @@ export function CalendarView({
                   top: clamp(
                     currentTimeMinutesSinceMidnight * PX_PER_MINUTE,
                     0,
-                    DAY_HEIGHT - 2
+                    DAY_HEIGHT - 1
                   ),
                 },
               ]}
@@ -2373,12 +2373,12 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: HOUR_LABEL_WIDTH,
     right: 0,
-    height: 2,
+    height: 1,
     backgroundColor: CURRENT_TIME_LINE_COLOR,
     zIndex: 20,
     ...Platform.select({
       web: {
-        boxShadow: `0 0 2px ${CURRENT_TIME_LINE_COLOR}`,
+        boxShadow: `0 0 1px ${CURRENT_TIME_LINE_COLOR}`,
       } as any,
       default: {},
     }),
