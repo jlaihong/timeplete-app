@@ -127,6 +127,9 @@ export function AddTaskSheet({
             onChangeText={setName}
             placeholder="What needs to be done?"
             autoFocus
+            returnKeyType="done"
+            blurOnSubmit
+            onSubmitEditing={handleCreate}
           />
 
           <TrackablePicker
