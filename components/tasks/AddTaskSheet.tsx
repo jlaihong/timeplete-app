@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TextInput } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -14,13 +14,22 @@ import { useAuth } from "../../hooks/useAuth";
 import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
 import { AutoDismissToast } from "../ui/AutoDismissToast";
 import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
+import {
+  addTaskContextKey,
+  initialAssignmentStateFromAddTaskContext,
+  resolveEffectiveListIdForTaskCreate,
+} from "../../lib/addTaskDefaults";
 
 interface AddTaskSheetProps {
   day?: string;
   listId?: Id<"lists">;
   sectionId?: Id<"listSections">;
   parentId?: Id<"tasks">;
-  trackableId?: Id<"trackables">;
+  /**
+   * Default trackable when the sheet opens (e.g. list↔goal link). Re-derived on
+   * context navigation until the user edits list/trackable assignment.
+   */
+  defaultTrackableId?: Id<"trackables"> | null;
   /** Hide list picker — keeps tasks on the list/section that opened this sheet. */
   lockListToContext?: boolean;
   onClose: () => void;
@@ -28,10 +37,10 @@ interface AddTaskSheetProps {
 
 export function AddTaskSheet({
   day,
-  listId: initialListId,
+  listId: contextualListId,
   sectionId,
   parentId,
-  trackableId: initialTrackableId,
+  defaultTrackableId,
   lockListToContext = false,
   onClose,
 }: AddTaskSheetProps) {
@@ -39,14 +48,55 @@ export function AddTaskSheet({
   const { profileReady } = useAuth();
   const titleInputRef = useRef<TextInput>(null);
   const [name, setName] = useState("");
-  const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(
-    initialTrackableId ?? null
+  const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(() =>
+    initialAssignmentStateFromAddTaskContext({
+      contextualListId,
+      contextualSectionId: sectionId,
+      defaultTrackableId,
+      lockListToContext,
+    }).trackableId,
   );
   // Local manual list selection. `null` here means "no manual list" — on
   // save we fall back to the inbox list (mirrors P1's `AddTask.onSave`).
-  const [listId, setListId] = useState<Id<"lists"> | null>(
-    initialListId ?? null
+  const [listId, setListId] = useState<Id<"lists"> | null>(() =>
+    initialAssignmentStateFromAddTaskContext({
+      contextualListId,
+      contextualSectionId: sectionId,
+      defaultTrackableId,
+      lockListToContext,
+    }).listId,
   );
+
+  /** Once the user touches either picker, contextual defaults stop auto-tracking. */
+  const assignmentTouchedRef = useRef(false);
+  const contextKey = useMemo(
+    () =>
+      addTaskContextKey({
+        contextualListId,
+        contextualSectionId: sectionId,
+        defaultTrackableId,
+        lockListToContext,
+      }),
+    [contextualListId, sectionId, defaultTrackableId, lockListToContext],
+  );
+
+  useEffect(() => {
+    if (assignmentTouchedRef.current) return;
+    const next = initialAssignmentStateFromAddTaskContext({
+      contextualListId,
+      contextualSectionId: sectionId,
+      defaultTrackableId,
+      lockListToContext,
+    });
+    setTrackableId(next.trackableId);
+    setListId(next.listId);
+  }, [
+    contextKey,
+    contextualListId,
+    sectionId,
+    defaultTrackableId,
+    lockListToContext,
+  ]);
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
     (localStore, args) => {
@@ -65,21 +115,19 @@ export function AddTaskSheet({
   const inboxListId =
     lists?.find((l) => l.isInbox)?._id ?? null;
 
-  // P1: when a trackable is locked at open time (e.g. opened from a
-  // trackable widget) the list field is hidden. Same when the user
-  // manually picks a trackable in this dialog.
-  const isTrackableLocked = !!initialTrackableId;
   const hasGoalSelected = !!trackableId;
-  const listPickerLocked =
-    lockListToContext && !!initialListId && !isTrackableLocked;
+  const hideListPicker =
+    hasGoalSelected || (!!contextualListId && lockListToContext);
 
   // Mutual exclusion handlers — verbatim from P1's
   // `onGoalSelectionChange` / `onListSelectionChange`.
   const handleTrackableChange = (id: Id<"trackables"> | null) => {
+    assignmentTouchedRef.current = true;
     setTrackableId(id);
     if (id) setListId(null);
   };
   const handleListChange = (id: Id<"lists"> | null) => {
+    assignmentTouchedRef.current = true;
     setListId(id);
     if (id) setTrackableId(null);
   };
@@ -88,17 +136,15 @@ export function AddTaskSheet({
     const title = name.trim();
     if (!title) return;
 
-    // P1's `AddTask.onSave` resolution order:
-    //   1. trackable selected → use the goal's list (we don't pre-fetch
-    //      that here; the server is the source of truth for goal-list
-    //      attribution, so we just send `trackableId`).
-    //   2. else, manual `listId`.
-    //   3. else, fall back to inbox.
-    const effectiveListId: Id<"lists"> | undefined = trackableId
-      ? undefined
-      : listPickerLocked && initialListId
-        ? initialListId
-        : (listId ?? inboxListId ?? undefined);
+    // P1 ordering, extended so list-detail (`lockListToContext`) always passes the
+    // page list id when appropriate — Convex + optimistic list pagination rely on it.
+    const effectiveListId = resolveEffectiveListIdForTaskCreate({
+      trackableId,
+      lockListToContext,
+      contextualListId,
+      explicitListId: listId,
+      inboxListId,
+    });
 
     setName("");
     showToast("Task added");
@@ -144,11 +190,8 @@ export function AddTaskSheet({
             onChange={handleTrackableChange}
           />
 
-          {/* List picker is hidden when a trackable is selected (the
-              trackable's backing list is used) or when this dialog was
-              opened with a locked trackable. Mirrors P1's
-              `@if (!hasGoalSelected() && !isTrackableLocked)`. */}
-          {!hasGoalSelected && !isTrackableLocked && !listPickerLocked && (
+          {/* List picker hidden when a trackable is selected, or list context locks the roster. */}
+          {!hideListPicker && (
             <ListPicker
               value={listId}
               onChange={handleListChange}

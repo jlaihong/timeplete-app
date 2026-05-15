@@ -907,6 +907,11 @@ export default function ListDetailScreen() {
           listId={listId}
           sectionId={addTaskSectionId}
           lockListToContext
+          defaultTrackableId={
+            fullList != null && fullList.trackableId != null
+              ? (fullList.trackableId as Id<"trackables">)
+              : undefined
+          }
           onClose={() => setAddTaskSectionId(null)}
         />
       )}
