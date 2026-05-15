@@ -50,9 +50,7 @@ export function AddTaskSheet({
   const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(() =>
     initialAssignmentStateFromAddTaskContext({
       contextualListId,
-      contextualSectionId: sectionId,
       defaultTrackableId,
-      lockListToContext,
     }).trackableId,
   );
   // Local manual list selection. `null` here means "no manual list" — on
@@ -60,9 +58,7 @@ export function AddTaskSheet({
   const [listId, setListId] = useState<Id<"lists"> | null>(() =>
     initialAssignmentStateFromAddTaskContext({
       contextualListId,
-      contextualSectionId: sectionId,
       defaultTrackableId,
-      lockListToContext,
     }).listId,
   );
 
@@ -73,13 +69,11 @@ export function AddTaskSheet({
     if (assignmentTouchedRef.current) return;
     const next = initialAssignmentStateFromAddTaskContext({
       contextualListId,
-      contextualSectionId: sectionId,
       defaultTrackableId,
-      lockListToContext,
     });
     setTrackableId(next.trackableId);
     setListId(next.listId);
-  }, [contextualListId, sectionId, defaultTrackableId, lockListToContext]);
+  }, [contextualListId, defaultTrackableId]);
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
     (localStore, args) => {

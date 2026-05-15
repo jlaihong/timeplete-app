@@ -4,12 +4,10 @@
  */
 import type { Id } from "../convex/_generated/dataModel";
 
-export type AddTaskContextIds = {
+export type AddTaskAssignmentDefaultsInput = {
   contextualListId: Id<"lists"> | undefined;
-  contextualSectionId: Id<"listSections"> | undefined;
   /** Optional default trackable from a list↔goal link (`lists.search.trackableId`). */
   defaultTrackableId?: Id<"trackables"> | null;
-  lockListToContext?: boolean;
 };
 
 /**
@@ -17,7 +15,7 @@ export type AddTaskContextIds = {
  * so the UX matches productivity-one mutual exclusion on open.
  */
 export function initialAssignmentStateFromAddTaskContext(
-  parts: AddTaskContextIds,
+  parts: AddTaskAssignmentDefaultsInput,
 ): {
   listId: Id<"lists"> | null;
   trackableId: Id<"trackables"> | null;
