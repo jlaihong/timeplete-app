@@ -11,7 +11,7 @@ import {
   DrawerItem,
   type DrawerContentComponentProps,
 } from "@react-navigation/drawer";
-import { router, Redirect, type Href } from "expo-router";
+import { router, Redirect, useRouter, useSegments, type Href } from "expo-router";
 import { authClient } from "../../lib/auth-client";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
@@ -31,6 +31,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { profileReady } = useAuth();
   const isDesktop = useIsDesktop();
   const sel = useDrawerSelection();
+  const expoRouter = useRouter();
+  const segments = useSegments();
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const inboxList =
     lists
@@ -39,7 +41,28 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       .sort((a, b) => a.orderIndex - b.orderIndex)[0] ?? null;
 
   const go = (href: Href) => {
-    router.push(href);
+    const s = segments as readonly string[];
+    const onListDetail =
+      s[0] === "(app)" &&
+      s[1] === "lists" &&
+      typeof s[2] === "string";
+
+    let useReplace = false;
+    if (typeof href === "string") {
+      const prefix = "/(app)/lists/";
+      if (onListDetail && href.startsWith(prefix)) {
+        const idPart = href.slice(prefix.length);
+        if (idPart.length > 0 && !idPart.includes("/")) {
+          useReplace = true;
+        }
+      }
+    }
+
+    if (useReplace) {
+      expoRouter.replace(href);
+    } else {
+      expoRouter.push(href);
+    }
     if (!isDesktop) {
       navigation.closeDrawer();
     }
