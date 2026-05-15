@@ -142,8 +142,6 @@ export function AddTaskSheet({
       showToast("Task added");
     });
 
-    // Deferred to the next macrotask so the dialog can paint before the optimistic
-    // pass (iteration over all cached queries); avoids a “frozen” click on large caches.
     const payload = {
       name: title,
       taskDay: day ?? todayYYYYMMDD(),
@@ -154,13 +152,13 @@ export function AddTaskSheet({
       clientViewerUserId:
         profileReady && profile ? profile._id : undefined,
     };
-    setTimeout(() => {
-      titleInputRef.current?.focus();
-      void upsertTask(payload).catch((err) => {
-        console.error("[AddTaskSheet] Failed to create task:", err);
-        showToast("Could not create task");
-      });
-    }, 0);
+
+    void upsertTask(payload).catch((err) => {
+      console.error("[AddTaskSheet] Failed to create task:", err);
+      showToast("Could not create task");
+    });
+
+    queueMicrotask(() => titleInputRef.current?.focus());
   };
 
   return (

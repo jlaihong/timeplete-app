@@ -4,7 +4,7 @@
  */
 import React, {
   useState,
-  useEffect,
+  useLayoutEffect,
   useCallback,
   useMemo,
   useRef,
@@ -326,8 +326,9 @@ export function ListDetailWebDnd({
   const pendingReorderTaskCountRef = useRef(0);
   const pendingReorderDeadlineMsRef = useRef(0);
 
-  useEffect(() => {
-    // Mirror `DesktopTaskList`: resync from server whenever `sections` changes.
+  useLayoutEffect(() => {
+    // Same resync rules as before, but before paint so optimistic list rows appear
+    // in the same frame as `lists.getPaginated` updates (parity with home task list).
     // A key that only tracked task ids missed field edits (e.g. `taskDay` from
     // TaskDetailSheet), so the list showed stale dates until full remount/refresh.
     // While dragging (or awaiting `moveBetweenSections` in `onDragEnd`), skip sync so
@@ -492,7 +493,7 @@ export function ListDetailWebDnd({
         return;
       }
 
-      /** Keep true until mutation + local fixes finish so `sections` useEffect cannot
+      /** Keep true until mutation + local fixes finish so `sections` sync cannot
        * clobber optimistic `onDragOver` state with a stale Convex snapshot. */
       try {
         const { active, over } = event;
