@@ -274,6 +274,19 @@ export default function ListDetailScreen() {
   );
 
   useEffect(() => {
+    setSectionLimit(500);
+    setTaskLimit(2500);
+    setCollapsedSectionKeys(() => new Set());
+    setSelectedTaskId(null);
+    setContextMenu(null);
+    setAddTaskSectionId(null);
+    setShowAddSection(false);
+    setNewSectionName("");
+    setShowEditDialog(false);
+    setFilterMenuOpen(false);
+  }, [listId]);
+
+  useEffect(() => {
     if (!isWeb || !contextMenu) return;
     const dismiss = () => setContextMenu(null);
     const onKey = (e: KeyboardEvent) => {
@@ -484,7 +497,12 @@ export default function ListDetailScreen() {
     });
   }, []);
 
-  const listTitle = paginatedList?.list.name ?? "List";
+  const listQueryMatchesRoute =
+    paginatedList != null && paginatedList.list._id === listId;
+
+  const listTitle = listQueryMatchesRoute
+    ? paginatedList.list.name
+    : "List";
 
   if (!listId) {
     return (
@@ -515,7 +533,11 @@ export default function ListDetailScreen() {
     );
   }
 
-  if (paginatedList === undefined) {
+  if (
+    paginatedList === undefined ||
+    paginatedList === null ||
+    !listQueryMatchesRoute
+  ) {
     return (
       <View style={styles.loading}>
         <Stack.Screen options={{ title: "List" }} />
