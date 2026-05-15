@@ -26,7 +26,7 @@ export function TimerDisplay() {
         style={styles.stopButton}
         onPress={() => timer.stop()}
       >
-        <Ionicons name="stop" size={16} color={Colors.error} />
+        <Ionicons name="stop" size={16} color={Colors.primaryDark} />
       </TouchableOpacity>
     </View>
   );
@@ -36,7 +36,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.error,
+    backgroundColor: Colors.primaryDark,
     paddingVertical: 8,
     paddingHorizontal: 16,
     gap: 8,
@@ -45,7 +45,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.primary,
   },
   time: {
     color: Colors.white,
