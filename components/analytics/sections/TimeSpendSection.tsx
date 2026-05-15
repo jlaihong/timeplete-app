@@ -1,10 +1,10 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { Colors } from "../../../constants/colors";
 import {
   formatSecondsAsHM,
   getDaysInRange,
-  getWeekdayName,
+  getDayOfWeekLetter,
   parseYYYYMMDD,
 } from "../../../lib/dates";
 import { SectionCard } from "../SectionCard";
@@ -19,14 +19,14 @@ import { TimeSpendTimelineChart } from "../TimeSpendTimelineChart";
 /* ──────────────────────────────────────────────────────────────────── *
  * Time Spend — productivity-one's third column.
  *
- * Daily / Weekly / Monthly: one horizontal 00:00–24:00 track per calendar
- * day; sessions are positioned from real start/end (clipped to each day
- * when a window crosses midnight). Overlaps stack into lanes.
+ * Daily / Weekly / Monthly: one shared 24h wall-clock chart — a single
+ * vertical time axis (00:00→24:00) and one narrow column per calendar day
+ * with blocks positioned from actual clipped window times. Monthly scrolls
+ * horizontally when columns would be too narrow.
  *
- * Yearly: stacked bars per month (hours axis — unchanged from prior
- * Timeplete behaviour).
+ * Yearly: stacked bars per month (different scale — aggregate by design).
  *
- * Summary legend below the chart: per-trackable totals in the window.
+ * Summary legend: per-trackable totals in the window.
  * ──────────────────────────────────────────────────────────────────── */
 
 interface BarSegment {
@@ -72,14 +72,14 @@ function makeYearMonthBuckets(year: number): {
   }));
 }
 
-function dayLabelForTimeline(day: string, tab: string): string {
-  const d = parseYYYYMMDD(day);
+function dayCaptionForTimeline(day: string, tab: string): string {
   if (tab === "WEEKLY") {
-    return getWeekdayName(day);
+    return getDayOfWeekLetter(day);
   }
   if (tab === "MONTHLY") {
-    return String(d.getDate());
+    return String(parseInt(day.slice(6, 8), 10));
   }
+  const d = parseYYYYMMDD(day);
   return d.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -96,6 +96,11 @@ export function TimeSpendSection() {
     if (isYearly) return [];
     return getDaysInRange(windowStart, windowEnd);
   }, [isYearly, windowStart, windowEnd]);
+
+  const dayColumnCaption = useCallback(
+    (d: string) => dayCaptionForTimeline(d, selectedTab),
+    [selectedTab],
+  );
 
   const yearlyBuckets = useMemo<BarBucket[]>(() => {
     if (!isYearly) return [];
@@ -160,11 +165,6 @@ export function TimeSpendSection() {
 
   const showYearlyScroll = isYearly && yearlyBuckets.length > 14;
 
-  const dayLabelFn = useMemo(
-    () => (d: string) => dayLabelForTimeline(d, selectedTab),
-    [selectedTab],
-  );
-
   return (
     <SectionCard title="Time Spend">
       {dataset.isLoading ? (
@@ -218,8 +218,7 @@ export function TimeSpendSection() {
             resolveTrackableId={dataset.resolveTrackableId}
             trackables={dataset.trackables}
             fallbackColour={FALLBACK_COLOUR}
-            dayLabel={dayLabelFn}
-            rowGap={selectedTab === "DAILY" ? 20 : 36}
+            dayLabel={dayColumnCaption}
           />
           {legend.length > 0 && <SummaryLegend legend={legend} />}
         </>
