@@ -33,6 +33,11 @@ function flushDialogFeedback(update: () => void) {
   update();
 }
 
+/** Convex optimistic updates run synchronously; yield so cleared title / backdrop can paint first. */
+function deferTaskUpsert(run: () => void) {
+  setTimeout(run, 0);
+}
+
 interface AddTaskSheetProps {
   day?: string;
   listId?: Id<"lists">;
@@ -153,12 +158,13 @@ export function AddTaskSheet({
         profileReady && profile ? profile._id : undefined,
     };
 
-    void upsertTask(payload).catch((err) => {
-      console.error("[AddTaskSheet] Failed to create task:", err);
-      showToast("Could not create task");
+    deferTaskUpsert(() => {
+      void upsertTask(payload).catch((err) => {
+        console.error("[AddTaskSheet] Failed to create task:", err);
+        showToast("Could not create task");
+      });
+      queueMicrotask(() => titleInputRef.current?.focus());
     });
-
-    queueMicrotask(() => titleInputRef.current?.focus());
   };
 
   return (
