@@ -322,6 +322,8 @@ export function ListDetailWebDnd({
   const isDraggingRef = useRef(false);
   /** Block `sections` resync until Convex matches this order (mutation returns before query does). */
   const pendingReorderFingerprintRef = useRef<string | null>(null);
+  /** Task count when `pendingReorderFingerprintRef` was captured — bypass the gate on external inserts/deletes. */
+  const pendingReorderTaskCountRef = useRef(0);
   const pendingReorderDeadlineMsRef = useRef(0);
 
   useEffect(() => {
@@ -334,16 +336,23 @@ export function ListDetailWebDnd({
 
     const incoming = groupsFromDetailSections(sections);
     const incomingFp = fingerprintTaskOrder(incoming);
+    const incomingTaskCount = incoming.reduce((n, g) => n + g.tasks.length, 0);
     const pending = pendingReorderFingerprintRef.current;
     const deadline = pendingReorderDeadlineMsRef.current;
     const now = Date.now();
     const deadlineExpired = pending !== null && deadline > 0 && now > deadline;
 
-    if (pending !== null && !deadlineExpired && incomingFp !== pending) {
+    if (
+      pending !== null &&
+      !deadlineExpired &&
+      incomingFp !== pending &&
+      incomingTaskCount === pendingReorderTaskCountRef.current
+    ) {
       return;
     }
     if (pending !== null) {
       pendingReorderFingerprintRef.current = null;
+      pendingReorderTaskCountRef.current = 0;
       pendingReorderDeadlineMsRef.current = 0;
     }
 
@@ -550,6 +559,10 @@ export function ListDetailWebDnd({
 
         pendingReorderFingerprintRef.current =
           fingerprintTaskOrder(modeledGroups);
+        pendingReorderTaskCountRef.current = modeledGroups.reduce(
+          (n, g) => n + g.tasks.length,
+          0,
+        );
         pendingReorderDeadlineMsRef.current = Date.now() + 8000;
 
         const toSectionId = toSectionKey as Id<"listSections">;
@@ -562,6 +575,7 @@ export function ListDetailWebDnd({
           });
         } catch (err) {
           pendingReorderFingerprintRef.current = null;
+          pendingReorderTaskCountRef.current = 0;
           pendingReorderDeadlineMsRef.current = 0;
           setLocalGroups(serverGroups);
           // eslint-disable-next-line no-console
@@ -584,6 +598,7 @@ export function ListDetailWebDnd({
     setActiveDrag(null);
     isDraggingRef.current = false;
     pendingReorderFingerprintRef.current = null;
+    pendingReorderTaskCountRef.current = 0;
     pendingReorderDeadlineMsRef.current = 0;
     setLocalGroups(serverGroups);
   }, [serverGroups]);
