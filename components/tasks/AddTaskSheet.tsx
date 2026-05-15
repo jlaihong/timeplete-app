@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TextInput } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -15,7 +15,6 @@ import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticU
 import { AutoDismissToast } from "../ui/AutoDismissToast";
 import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
 import {
-  addTaskContextKey,
   initialAssignmentStateFromAddTaskContext,
   resolveEffectiveListIdForTaskCreate,
 } from "../../lib/addTaskDefaults";
@@ -69,16 +68,6 @@ export function AddTaskSheet({
 
   /** Once the user touches either picker, contextual defaults stop auto-tracking. */
   const assignmentTouchedRef = useRef(false);
-  const contextKey = useMemo(
-    () =>
-      addTaskContextKey({
-        contextualListId,
-        contextualSectionId: sectionId,
-        defaultTrackableId,
-        lockListToContext,
-      }),
-    [contextualListId, sectionId, defaultTrackableId, lockListToContext],
-  );
 
   useEffect(() => {
     if (assignmentTouchedRef.current) return;
@@ -90,13 +79,7 @@ export function AddTaskSheet({
     });
     setTrackableId(next.trackableId);
     setListId(next.listId);
-  }, [
-    contextKey,
-    contextualListId,
-    sectionId,
-    defaultTrackableId,
-    lockListToContext,
-  ]);
+  }, [contextualListId, sectionId, defaultTrackableId, lockListToContext]);
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
     (localStore, args) => {

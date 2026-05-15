@@ -13,19 +13,6 @@ export type AddTaskContextIds = {
 };
 
 /**
- * Stable key for React effects: when this changes without user-edited overrides,
- * list/trackable selections re-derive from route context (list page, inbox, etc.).
- */
-export function addTaskContextKey(parts: AddTaskContextIds): string {
-  return [
-    parts.contextualListId ?? "",
-    parts.contextualSectionId ?? "",
-    parts.defaultTrackableId ?? "",
-    parts.lockListToContext ? "1" : "0",
-  ].join("|");
-}
-
-/**
  * Initial `(listId, trackableId)` picker state — goal selection clears explicit list choice
  * so the UX matches productivity-one mutual exclusion on open.
  */
