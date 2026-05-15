@@ -52,14 +52,56 @@ function isTaskCompletedForListViewRow(t: { dateCompleted?: string }): boolean {
   return typeof d === "string" && d.trim().length > 0;
 }
 
-function compareTasksForListView(
-  a: { dateCompleted?: string; sectionOrderIndex: number },
-  b: { dateCompleted?: string; sectionOrderIndex: number },
-): number {
-  const aDone = isTaskCompletedForListViewRow(a);
-  const bDone = isTaskCompletedForListViewRow(b);
-  if (aDone !== bDone) return Number(aDone) - Number(bDone);
-  return a.sectionOrderIndex - b.sectionOrderIndex;
+/**
+ * Stable insert matching `Array.prototype.sort` on `taskDayOrderIndex`
+ * (`[...value, row].sort((a,b) => (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0))`).
+ */
+function insertSortedByTaskDayOrderIndex<T extends { taskDayOrderIndex?: number }>(
+  value: readonly T[],
+  row: T,
+): T[] {
+  const td = row.taskDayOrderIndex ?? 0;
+  const idx = value.findIndex((t) => (t.taskDayOrderIndex ?? 0) > td);
+  if (idx === -1) return [...value, row];
+  return [...value.slice(0, idx), row, ...value.slice(idx)];
+}
+
+/** List sections are already grouped server-side; merge a new row without re-sorting the full section. */
+function insertRowIntoListViewSectionTasks<
+  Task extends {
+    dateCompleted?: string | null | undefined;
+    sectionOrderIndex?: number;
+  },
+>(
+  tasks: Task[],
+  row: Task,
+  taskLimit: number,
+): Task[] {
+  const rowDone = isTaskCompletedForListViewRow(row);
+  const incomplete: Task[] = [];
+  const complete: Task[] = [];
+  for (const t of tasks) {
+    if (isTaskCompletedForListViewRow(t)) complete.push(t);
+    else incomplete.push(t);
+  }
+  const secKey = (t: Task) => t.sectionOrderIndex ?? 0;
+  const insertAt = (arr: Task[]) => {
+    const k = secKey(row);
+    const j = arr.findIndex((t) => secKey(t) > k);
+    return j === -1 ? arr.length : j;
+  };
+  if (rowDone) {
+    const j = insertAt(complete);
+    const mergedComplete = [...complete.slice(0, j), row, ...complete.slice(j)];
+    return [...incomplete.slice(0, taskLimit), ...mergedComplete];
+  }
+  const j = insertAt(incomplete);
+  const mergedIncomplete = [
+    ...incomplete.slice(0, j),
+    row,
+    ...incomplete.slice(j),
+  ];
+  return [...mergedIncomplete.slice(0, taskLimit), ...complete];
 }
 
 function dayInRanges(
@@ -180,10 +222,7 @@ function insertSortedHomeShape(
   value: HomeTaskRow[],
   row: HomeTaskRow,
 ): HomeTaskRow[] {
-  const td = row.taskDayOrderIndex ?? 0;
-  const idx = value.findIndex((t) => (t.taskDayOrderIndex ?? 0) > td);
-  if (idx === -1) return [...value, row];
-  return [...value.slice(0, idx), row, ...value.slice(idx)];
+  return insertSortedByTaskDayOrderIndex(value, row);
 }
 
 function syntheticInsertRow(args: UpsertTaskOptimisticArgs, id: Id<"tasks">) {
@@ -432,9 +471,7 @@ function applyOptimisticCreates(
     }
 
     const row = syntheticInsertRow(args, optimisticId);
-    next = [...next, row].sort(
-      (a, b) => (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0),
-    );
+    next = insertSortedByTaskDayOrderIndex(next as CriteriaTaskRow[], row);
     localStore.setQuery(
       api.tasks.searchWithCriteria,
       q.args,
@@ -464,9 +501,7 @@ function applyOptimisticCreates(
       continue;
     }
     const row = syntheticInsertRow(args, optimisticId);
-    next = [...next, row].sort(
-      (a, b) => (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0),
-    );
+    next = insertSortedByTaskDayOrderIndex(next as SearchTaskRow[], row);
     localStore.setQuery(
       api.tasks.search,
       q.args,
@@ -501,12 +536,12 @@ function applyOptimisticCreates(
       }
 
       const row = syntheticInsertRow(args, optimisticId);
-      const asRows = [...tasks, row as (typeof tasks)[number]];
-      const sorted = [...asRows].sort(compareTasksForListView);
-      const incomplete = sorted.filter((t) => !isTaskCompletedForListViewRow(t));
-      const complete = sorted.filter((t) => isTaskCompletedForListViewRow(t));
       const taskLim = q.args.taskLimit ?? 2500;
-      const pageTasks = [...incomplete.slice(0, taskLim), ...complete];
+      const pageTasks = insertRowIntoListViewSectionTasks(
+        tasks as unknown as (typeof tasks)[number][],
+        row as (typeof tasks)[number],
+        taskLim,
+      );
 
       pageTouched = true;
       return {
