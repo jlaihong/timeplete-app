@@ -14,6 +14,7 @@ import {
   Platform,
   Modal,
   Pressable,
+  ActivityIndicator,
 } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useQuery, useMutation } from "convex/react";
@@ -507,7 +508,7 @@ export default function ListDetailScreen() {
   if (!listId) {
     return (
       <View style={styles.loading}>
-        <Text>Missing list id.</Text>
+        <Text style={styles.loadingMessage}>Missing list id.</Text>
       </View>
     );
   }
@@ -516,7 +517,8 @@ export default function ListDetailScreen() {
     return (
       <View style={styles.loading}>
         <Stack.Screen options={{ title: "List" }} />
-        <Text>Loading list...</Text>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingMessage}>Loading list…</Text>
       </View>
     );
   }
@@ -525,7 +527,9 @@ export default function ListDetailScreen() {
     return (
       <View style={styles.loading}>
         <Stack.Screen options={{ title: "List" }} />
-        <Text>You need to sign in to view this list.</Text>
+        <Text style={styles.loadingMessage}>
+          You need to sign in to view this list.
+        </Text>
       </View>
     );
   }
@@ -534,7 +538,8 @@ export default function ListDetailScreen() {
     return (
       <View style={styles.loading}>
         <Stack.Screen options={{ title: "List" }} />
-        <Text>Loading list...</Text>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingMessage}>Loading list…</Text>
       </View>
     );
   }
@@ -935,7 +940,19 @@ export default function ListDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: Colors.background,
+    padding: 24,
+    gap: 12,
+  },
+  loadingMessage: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    textAlign: "center",
+  },
   toolbarOuter: {
     alignItems: "center",
     paddingHorizontal: 12,
