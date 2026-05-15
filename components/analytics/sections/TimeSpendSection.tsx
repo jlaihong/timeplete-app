@@ -4,7 +4,7 @@ import { Colors } from "../../../constants/colors";
 import {
   formatSecondsAsHM,
   getDaysInRange,
-  getWeekdayName,
+  getDayOfWeekLetter,
   parseYYYYMMDD,
 } from "../../../lib/dates";
 import { SectionCard } from "../SectionCard";
@@ -15,16 +15,20 @@ import {
 } from "../useAnalyticsDataset";
 import { useAnalyticsState } from "../AnalyticsState";
 import { TimeSpendTimelineChart } from "../TimeSpendTimelineChart";
+import { LineChart, type LineSeries } from "../widgets/LineChart";
+import { totalSecondsOnDay } from "../timeSpendTimelineUtils";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * Time Spend — productivity-one's third column.
  *
- * Daily / Weekly / Monthly: one horizontal 00:00–24:00 track per calendar
- * day; sessions are positioned from real start/end (clipped to each day
- * when a window crosses midnight). Overlaps stack into lanes.
+ * Daily: vertical 00:00–24:00 strip; sessions clipped to the day when a
+ * window crosses midnight (same as productivity-one day view).
  *
- * Yearly: stacked bars per month (hours axis — unchanged from prior
- * Timeplete behaviour).
+ * Weekly / Monthly: one SVG line chart for the whole period — hours per
+ * calendar day and shared X axis — matching Trackable Progression
+ * (`LineChart` + weekday letters / sparse day labels).
+ *
+ * Yearly: stacked bars per month.
  *
  * Summary legend below the chart: per-trackable totals in the window.
  * ──────────────────────────────────────────────────────────────────── */
@@ -72,17 +76,21 @@ function makeYearMonthBuckets(year: number): {
   }));
 }
 
-function dayLabelForTimeline(day: string, tab: string): string {
+function dayLabelForDailyTimeline(day: string): string {
   const d = parseYYYYMMDD(day);
-  if (tab === "WEEKLY") {
-    return getWeekdayName(day);
-  }
-  if (tab === "MONTHLY") {
-    return String(d.getDate());
-  }
   return d.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
+  });
+}
+
+/** Sparse X labels — same stepping idea as `AnalyticsLineChartWidget.sparseDayLabels`. */
+function sparseCalendarDayLabels(days: string[]): string[] {
+  if (days.length === 0) return [];
+  const step = Math.max(1, Math.floor(days.length / 5));
+  return days.map((d, i) => {
+    const label = d.slice(6, 8);
+    return i === 0 || i === days.length - 1 || i % step === 0 ? label : "";
   });
 }
 
@@ -160,10 +168,37 @@ export function TimeSpendSection() {
 
   const showYearlyScroll = isYearly && yearlyBuckets.length > 14;
 
-  const dayLabelFn = useMemo(
-    () => (d: string) => dayLabelForTimeline(d, selectedTab),
-    [selectedTab],
-  );
+  const timeSpendLineSeries = useMemo<{ series: LineSeries[]; xLabels: string[] } | null>(() => {
+    if (isYearly || selectedTab === "DAILY") return null;
+    const days = timelineDays;
+    const hours = days.map((d) =>
+      totalSecondsOnDay(
+        dataset.timeWindows,
+        d,
+        dataset.resolveTrackableId,
+        dataset.trackables,
+        FALLBACK_COLOUR,
+      ) / 3600,
+    );
+    const series: LineSeries[] = [
+      {
+        colour: Colors.primary,
+        data: hours.map((y, x) => ({ x, y })),
+      },
+    ];
+    const xLabels =
+      selectedTab === "WEEKLY"
+        ? days.map((d) => getDayOfWeekLetter(d))
+        : sparseCalendarDayLabels(days);
+    return { series, xLabels };
+  }, [
+    isYearly,
+    selectedTab,
+    timelineDays,
+    dataset.timeWindows,
+    dataset.resolveTrackableId,
+    dataset.trackables,
+  ]);
 
   return (
     <SectionCard title="Time Spend">
@@ -207,7 +242,7 @@ export function TimeSpendSection() {
         )
       ) : dataset.totalSeconds === 0 ? (
         <Text style={styles.empty}>No time recorded in this period.</Text>
-      ) : (
+      ) : selectedTab === "DAILY" ? (
         <>
           <Text style={styles.totalLabel}>
             Total: {formatSecondsAsHM(dataset.totalSeconds)}
@@ -218,12 +253,27 @@ export function TimeSpendSection() {
             resolveTrackableId={dataset.resolveTrackableId}
             trackables={dataset.trackables}
             fallbackColour={FALLBACK_COLOUR}
-            dayLabel={dayLabelFn}
-            rowGap={selectedTab === "DAILY" ? 20 : 36}
+            dayLabel={dayLabelForDailyTimeline}
+            rowGap={20}
           />
           {legend.length > 0 && <SummaryLegend legend={legend} />}
         </>
-      )}
+      ) : timeSpendLineSeries ? (
+        <>
+          <Text style={styles.totalLabel}>
+            Total: {formatSecondsAsHM(dataset.totalSeconds)}
+          </Text>
+          <LineChart
+            series={timeSpendLineSeries.series}
+            height={140}
+            xLabels={timeSpendLineSeries.xLabels}
+            leftAxisLabel="Hours"
+            formatLeftValue={(n) => n.toFixed(1)}
+            yScale="from-zero"
+          />
+          {legend.length > 0 && <SummaryLegend legend={legend} />}
+        </>
+      ) : null}
     </SectionCard>
   );
 }

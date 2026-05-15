@@ -76,3 +76,25 @@ export function buildBlocksForDay(
   );
   return out;
 }
+
+/** Total seconds attributed to `dayYYYYMMDD` after clipping windows to local midnight boundaries. */
+export function totalSecondsOnDay(
+  windows: TimeWindowLite[],
+  dayYYYYMMDD: string,
+  resolveTrackableId: (tw: TimeWindowLite) => string | null,
+  trackables: Record<string, TrackableLite | undefined>,
+  fallbackColour: string,
+): number {
+  let total = 0;
+  for (const w of windows) {
+    const b = clipTimeWindowToDay(
+      w,
+      dayYYYYMMDD,
+      resolveTrackableId,
+      trackables,
+      fallbackColour,
+    );
+    if (b) total += b.endSec - b.startSec;
+  }
+  return total;
+}
