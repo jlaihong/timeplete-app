@@ -177,6 +177,37 @@ export default function ListDetailScreen() {
       : "skip",
   );
 
+  const paginatedData = useMemo(() => {
+    const v = paginatedList;
+    if (
+      v === undefined ||
+      v === null ||
+      v instanceof Error ||
+      typeof v !== "object" ||
+      !("list" in v) ||
+      !("sections" in v)
+    ) {
+      return null;
+    }
+    return v;
+  }, [paginatedList]);
+
+  const paginatedError =
+    paginatedList instanceof Error ? paginatedList : null;
+
+  const allLists = useQuery(api.lists.search, canQueryLists ? {} : "skip");
+  const fullList = allLists?.find((l) => l._id === listId);
+
+  const listQueryMatchesRoute =
+    paginatedData != null && paginatedData.list._id === listId;
+
+  const listTitle = useMemo(() => {
+    const fromSidebar = fullList?.name?.trim();
+    if (fromSidebar) return fromSidebar;
+    if (listQueryMatchesRoute && paginatedData) return paginatedData.list.name;
+    return "List";
+  }, [fullList?.name, listQueryMatchesRoute, paginatedData]);
+
   /**
    * When a section exceeds `lists.getPaginated`'s incomplete slice (`taskLimit`),
    * `tasks.length < totalTasks` and `canDragReorder` disables DnD. Adding an
@@ -185,10 +216,11 @@ export default function ListDetailScreen() {
    * "drag suddenly breaks" until the slice is enlarged.
    */
   useEffect(() => {
-    if (!paginatedList) return;
+    if (!paginatedData) return;
+    if (paginatedData.list._id !== listId) return;
     setTaskLimit((prev) => {
       let need = prev;
-      for (const s of paginatedList.sections) {
+      for (const s of paginatedData.sections) {
         const deficit = s.totalTasks - s.tasks.length;
         if (deficit > 0) {
           need = Math.max(need, prev + deficit);
@@ -196,10 +228,7 @@ export default function ListDetailScreen() {
       }
       return need;
     });
-  }, [paginatedList]);
-
-  const allLists = useQuery(api.lists.search, canQueryLists ? {} : "skip");
-  const fullList = allLists?.find((l) => l._id === listId);
+  }, [paginatedData, listId]);
   const tags = useQuery(api.tags.search, canQueryLists ? {} : "skip");
   const trackables = useQuery(api.trackables.search, canQueryLists ? {} : "skip");
   const listMembers = useQuery(
@@ -344,14 +373,14 @@ export default function ListDetailScreen() {
   }, [trackables]);
 
   const allTasksInPage = useMemo((): ListPageTask[] => {
-    if (!paginatedList) return [];
-    return paginatedList.sections.flatMap((s) => s.tasks as ListPageTask[]);
-  }, [paginatedList]);
+    if (!paginatedData) return [];
+    return paginatedData.sections.flatMap((s) => s.tasks as ListPageTask[]);
+  }, [paginatedData]);
 
   const filteredSections: ListSection[] = useMemo(() => {
-    if (!paginatedList) return [];
+    if (!paginatedData) return [];
     const hasUser = filterUserIds.length > 0;
-    return paginatedList.sections.map((block) => {
+    return paginatedData.sections.map((block) => {
       const blockTasks = block.tasks as ListPageTask[];
       let forUserFilter = blockTasks;
       if (hasUser) {
@@ -384,29 +413,30 @@ export default function ListDetailScreen() {
         data: collapsed ? [] : items,
       };
     });
-  }, [paginatedList, showCompleted, filterUserIds, collapsedSectionKeys]);
+  }, [paginatedData, showCompleted, filterUserIds, collapsedSectionKeys]);
 
   const defaultSectionId = useMemo((): Id<"listSections"> | undefined => {
-    if (!paginatedList?.sections.length) return undefined;
-    const def = paginatedList.sections.find((s) => s.section.isDefaultSection);
-    return (def ?? paginatedList.sections[0]).section._id;
-  }, [paginatedList]);
+    if (!paginatedData?.sections.length) return undefined;
+    const def = paginatedData.sections.find((s) => s.section.isDefaultSection);
+    return (def ?? paginatedData.sections[0]).section._id;
+  }, [paginatedData]);
 
   const hasMoreSections =
-    !!paginatedList && paginatedList.totalSections > paginatedList.sections.length;
+    !!paginatedData &&
+    paginatedData.totalSections > paginatedData.sections.length;
 
   const hasMoreTasks = useMemo(() => {
-    if (!paginatedList) return false;
-    return paginatedList.sections.some((s) => s.totalTasks > s.tasks.length);
-  }, [paginatedList]);
+    if (!paginatedData) return false;
+    return paginatedData.sections.some((s) => s.totalTasks > s.tasks.length);
+  }, [paginatedData]);
 
   /** Collaborator filter hides rows; indices no longer match section order. Hide-completed does not. */
   const canDragReorder = useMemo(() => {
-    if (!paginatedList || filterUserIds.length > 0) return false;
-    return paginatedList.sections.every(
+    if (!paginatedData || filterUserIds.length > 0) return false;
+    return paginatedData.sections.every(
       (s) => s.tasks.length >= s.totalTasks,
     );
-  }, [paginatedList, filterUserIds]);
+  }, [paginatedData, filterUserIds]);
 
   const webDndSections = useMemo(() => {
     return filteredSections.map((s) => ({
@@ -497,13 +527,6 @@ export default function ListDetailScreen() {
     });
   }, []);
 
-  const listQueryMatchesRoute =
-    paginatedList != null && paginatedList.list._id === listId;
-
-  const listTitle = listQueryMatchesRoute
-    ? paginatedList.list.name
-    : "List";
-
   if (!listId) {
     return (
       <View style={styles.loading}>
@@ -533,21 +556,10 @@ export default function ListDetailScreen() {
     );
   }
 
-  if (
-    paginatedList === undefined ||
-    paginatedList === null ||
-    !listQueryMatchesRoute
-  ) {
-    return (
-      <View style={styles.loading}>
-        <Stack.Screen options={{ title: "List" }} />
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingMessage}>Loading list…</Text>
-      </View>
-    );
-  }
+  const tasksReady = listQueryMatchesRoute;
 
-  const noSections = paginatedList.sections.length === 0;
+  const noSections =
+    tasksReady && paginatedData != null && paginatedData.sections.length === 0;
 
   const listFooter = (
     <View style={styles.listFooter}>
@@ -651,7 +663,18 @@ export default function ListDetailScreen() {
         </Pressable>
       </Modal>
 
-      {isWeb ? (
+      {paginatedError ? (
+        <View style={[styles.sectionList, styles.tasksLoadingPanel]}>
+          <Text style={styles.loadingMessage} accessibilityRole="alert">
+            {paginatedError.message || "Could not load this list."}
+          </Text>
+        </View>
+      ) : !tasksReady ? (
+        <View style={[styles.sectionList, styles.tasksLoadingPanel]}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingMessage}>Loading tasks…</Text>
+        </View>
+      ) : isWeb ? (
         <View style={styles.sectionList}>
           <ListDetailWebDnd
             sections={webDndSections}
@@ -893,20 +916,22 @@ export default function ListDetailScreen() {
       />
       )}
 
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => {
-          if (defaultSectionId) setAddTaskSectionId(defaultSectionId);
-        }}
-        accessibilityRole="button"
-        accessibilityLabel="Add task"
-      >
-        <Ionicons name="add" size={24} color={Colors.white} />
-      </TouchableOpacity>
+      {tasksReady ? (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => {
+            if (defaultSectionId) setAddTaskSectionId(defaultSectionId);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Add task"
+        >
+          <Ionicons name="add" size={24} color={Colors.white} />
+        </TouchableOpacity>
+      ) : null}
 
       <ListDialog
         visible={showEditDialog}
-        list={fullList ?? paginatedList.list}
+        list={fullList ?? paginatedData?.list ?? null}
         onClose={() => setShowEditDialog(false)}
       />
 
@@ -960,6 +985,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.textSecondary,
     textAlign: "center",
+  },
+  tasksLoadingPanel: {
+    flexGrow: 1,
+    minHeight: 280,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    gap: 14,
   },
   toolbarOuter: {
     alignItems: "center",
