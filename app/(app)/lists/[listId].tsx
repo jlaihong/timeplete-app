@@ -35,6 +35,7 @@ import { todayYYYYMMDD, formatSecondsAsHM } from "../../../lib/dates";
 import { normalizeListMembersQuery } from "../../../lib/listMembersQuery";
 import type { Id, Doc } from "../../../convex/_generated/dataModel";
 import { useAuth } from "../../../hooks/useAuth";
+import { useTaskUpsertMutation } from "../../../hooks/useTaskUpsertMutation";
 import { Card } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
 import { Button } from "../../../components/ui/Button";
@@ -46,7 +47,6 @@ import {
 } from "../../../lib/taskFilters";
 import { applySetTimeSpentOptimisticUpdate } from "../../../lib/setTimeSpentOptimisticUpdate";
 import { calendarGridIANAZoneForManualEvents } from "../../../lib/calendarGridTimeZone";
-import { applyTaskUpsertOptimisticUpdate } from "../../../lib/taskUpsertOptimisticUpdate";
 import { applyTaskRemoveOptimisticUpdate } from "../../../lib/taskRemoveOptimisticUpdate";
 import { useRegisterEscapeClose } from "../../../hooks/useRegisterEscapeClose";
 
@@ -222,11 +222,7 @@ export default function ListDetailScreen() {
     canQueryLists && listId ? { listId } : "skip",
   );
 
-  const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
-    (localStore, args) => {
-      applyTaskUpsertOptimisticUpdate(localStore, args);
-    }
-  );
+  const upsertTask = useTaskUpsertMutation();
   const removeTask = useMutation(api.tasks.remove).withOptimisticUpdate(
     (localStore, args) => {
       applyTaskRemoveOptimisticUpdate(localStore, args.id);

@@ -50,6 +50,7 @@ import {
 } from "./RecurrenceSection";
 import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
+import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { formatSecondsAsHM, formatDisplayDate, todayYYYYMMDD } from "../../lib/dates";
 import {
@@ -62,7 +63,6 @@ import {
 } from "../trackables/TrackingHistoryTable";
 import { Id } from "../../convex/_generated/dataModel";
 import { DialogOverlay } from "../ui/DialogScaffold";
-import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
 
 type Tab = "details" | "time" | "comments";
 type RecurringEditScope = "THIS_INSTANCE" | "THIS_AND_FUTURE" | "ALL_INSTANCES";
@@ -136,11 +136,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
       ? recurringRules?.find((r) => r._id === task.recurringTaskId) ?? null
       : null;
 
-  const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
-    (localStore, args) => {
-      applyTaskUpsertOptimisticUpdate(localStore, args);
-    }
-  );
+  const upsertTask = useTaskUpsertMutation();
   const upsertComment = useMutation(api.taskComments.upsert);
   const removeComment = useMutation(api.taskComments.remove);
   // Recurring-series mutations — `handleSave` routes to these based on

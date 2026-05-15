@@ -42,6 +42,7 @@ import {
 } from "../../lib/dates";
 import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
+import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { EmptyState } from "../ui/EmptyState";
 import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import {
@@ -59,7 +60,6 @@ import {
 } from "../../lib/taskFilters";
 import { applySetTimeSpentOptimisticUpdate } from "../../lib/setTimeSpentOptimisticUpdate";
 import { calendarGridIANAZoneForManualEvents } from "../../lib/calendarGridTimeZone";
-import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
 import { applyTaskRemoveOptimisticUpdate } from "../../lib/taskRemoveOptimisticUpdate";
 
 const isWeb = Platform.OS === "web";
@@ -429,11 +429,7 @@ export function DesktopTaskList({
     recurringRules?.map((r) => r._id).join(","),
     generateInstances,
   ]);
-  const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
-    (localStore, args) => {
-      applyTaskUpsertOptimisticUpdate(localStore, args);
-    }
-  );
+  const upsertTask = useTaskUpsertMutation();
   const removeTask = useMutation(api.tasks.remove).withOptimisticUpdate(
     (localStore, args) => {
       applyTaskRemoveOptimisticUpdate(localStore, args.id);

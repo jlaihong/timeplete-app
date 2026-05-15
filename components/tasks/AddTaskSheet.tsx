@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, TextInput } from "react-native";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
@@ -11,7 +11,7 @@ import { ListPicker } from "./ListPicker";
 import { todayYYYYMMDD } from "../../lib/dates";
 import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
-import { applyTaskUpsertOptimisticUpdate } from "../../lib/taskUpsertOptimisticUpdate";
+import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { AutoDismissToast } from "../ui/AutoDismissToast";
 import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
 import {
@@ -75,11 +75,7 @@ export function AddTaskSheet({
     setListId(next.listId);
   }, [contextualListId, defaultTrackableId]);
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
-  const upsertTask = useMutation(api.tasks.upsert).withOptimisticUpdate(
-    (localStore, args) => {
-      applyTaskUpsertOptimisticUpdate(localStore, args);
-    },
-  );
+  const upsertTask = useTaskUpsertMutation();
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastKey, setToastKey] = useState(0);
@@ -189,12 +185,7 @@ export function AddTaskSheet({
           </View>
         </ScrollView>
       </Card>
-      <AutoDismissToast
-        key={toastKey}
-        message={toastMessage}
-        onDismiss={clearToast}
-        durationMs={1100}
-      />
+      <AutoDismissToast key={toastKey} message={toastMessage} onDismiss={clearToast} />
     </View>
   );
 }
