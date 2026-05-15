@@ -49,6 +49,12 @@ export const Colors = {
    */
   sidenav: "#161D1E",
   sidenavItemHover: "#1A2122",
+  /**
+   * Sidebar row selected state on web should match `@react-navigation/drawer`
+   * `DrawerItem`: `PlatformPressable` hover overlay at opacity 0.08 over the sidenav
+   * using the inactive label tint (`textSecondary`). Composite of sidenav + 8% #BAC9CD.
+   */
+  sidenavItemSelectedHoverMatch: "#232B2C",
   /** Selected row — slightly elevated vs panel */
   sidenavItemActive: "#242B2D",
 

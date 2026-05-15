@@ -79,7 +79,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       <DrawerItem
         label="Home"
         focused={sel.home}
-        activeBackgroundColor={Colors.sidenavItemHover}
+        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
         inactiveTintColor={Colors.textSecondary}
         activeTintColor={Colors.textSecondary}
         style={drawerItemStyle}
@@ -92,7 +92,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         <DrawerItem
           label="Inbox"
           focused={sel.inbox}
-          activeBackgroundColor={Colors.sidenavItemHover}
+          activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
           inactiveTintColor={Colors.textSecondary}
           activeTintColor={Colors.textSecondary}
           style={drawerItemStyle}
@@ -105,7 +105,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       <DrawerItem
         label="Trackables"
         focused={sel.goals}
-        activeBackgroundColor={Colors.sidenavItemHover}
+        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
         inactiveTintColor={Colors.textSecondary}
         activeTintColor={Colors.textSecondary}
         style={drawerItemStyle}
@@ -117,7 +117,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       <DrawerItem
         label="Analytics"
         focused={sel.analytics}
-        activeBackgroundColor={Colors.sidenavItemHover}
+        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
         inactiveTintColor={Colors.textSecondary}
         activeTintColor={Colors.textSecondary}
         style={drawerItemStyle}
@@ -131,7 +131,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         <DrawerItem
           label="Reviews"
           focused={sel.reviews}
-          activeBackgroundColor={Colors.sidenavItemHover}
+          activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
           inactiveTintColor={Colors.textSecondary}
           activeTintColor={Colors.textSecondary}
           style={drawerItemStyle}
@@ -145,7 +145,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       <DrawerItem
         label="Tags"
         focused={sel.tags}
-        activeBackgroundColor={Colors.sidenavItemHover}
+        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
         inactiveTintColor={Colors.textSecondary}
         activeTintColor={Colors.textSecondary}
         style={drawerItemStyle}
@@ -169,7 +169,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
               key={list._id}
               label={list.name}
               focused={sel.activeListId === list._id}
-              activeBackgroundColor={Colors.sidenavItemHover}
+              activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
               inactiveTintColor={Colors.textSecondary}
               activeTintColor={Colors.textSecondary}
               style={drawerItemStyle}
@@ -184,7 +184,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       <DrawerItem
         label="All Lists"
         focused={sel.allLists}
-        activeBackgroundColor={Colors.sidenavItemHover}
+        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
         inactiveTintColor={Colors.textSecondary}
         activeTintColor={Colors.textSecondary}
         style={drawerItemStyle}
@@ -199,7 +199,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       <DrawerItem
         label="Shared with Me"
         focused={sel.shared}
-        activeBackgroundColor={Colors.sidenavItemHover}
+        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
         inactiveTintColor={Colors.textSecondary}
         activeTintColor={Colors.textSecondary}
         style={drawerItemStyle}
