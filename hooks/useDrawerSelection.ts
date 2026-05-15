@@ -1,4 +1,4 @@
-import { useSegments } from "expo-router";
+import { usePathname } from "expo-router";
 import { useQuery } from "convex/react";
 import { useMemo } from "react";
 import { api } from "../convex/_generated/api";
@@ -29,11 +29,21 @@ const empty: DrawerSelection = {
   activeListId: null,
 };
 
+function normalizePathname(pathname: string): string {
+  const trimmed = pathname.replace(/\/+$/, "");
+  if (!trimmed) return "/";
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
 /**
- * Maps the current expo-router segments to which drawer row should appear selected.
+ * Maps the current route to which drawer row should appear selected.
+ *
+ * Uses `usePathname()` (resolved dynamic segments) instead of `useSegments()`:
+ * Expo Router's segments array keeps template parts like `[listId]`, so comparing
+ * to real list ids never matched and list/inbox rows never showed as focused.
  */
 export function useDrawerSelection(): DrawerSelection {
-  const segments = useSegments();
+  const pathname = usePathname();
   const { profileReady } = useAuth();
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const inboxId = useMemo(() => {
@@ -44,35 +54,41 @@ export function useDrawerSelection(): DrawerSelection {
       ._id;
   }, [lists]);
 
-  const s = segments as string[];
-  if (s[0] !== "(app)") return empty;
+  return useMemo(() => {
+    const path = normalizePathname(pathname);
 
-  const g1 = s[1];
-  const g2 = s[2];
-
-  if (g1 === "(tabs)") {
-    const tab = g2;
-    if (tab === undefined || tab === "index") return { ...empty, home: true };
-    if (tab === "goals") return { ...empty, goals: true };
-    if (tab === "analytics") return { ...empty, analytics: true };
-    if (tab === "reviews") return { ...empty, reviews: true };
-    return empty;
-  }
-
-  if (g1 === "tags") return { ...empty, tags: true };
-
-  if (g1 === "inbox") return { ...empty, inbox: true };
-
-  if (g1 === "lists") {
-    if (g2) {
-      // Productivity-one: Inbox is `/lists/:inboxId`, not a separate route.
-      if (inboxId && g2 === inboxId) return { ...empty, inbox: true };
-      return { ...empty, activeListId: g2 };
+    if (path === "/") {
+      return { ...empty, home: true };
     }
-    return { ...empty, allLists: true };
-  }
 
-  if (g1 === "shared") return { ...empty, shared: true };
+    if (path === "/goals") return { ...empty, goals: true };
+    if (path === "/analytics") return { ...empty, analytics: true };
+    if (path === "/reviews") return { ...empty, reviews: true };
 
-  return empty;
+    if (path === "/tags" || path.startsWith("/tags/")) {
+      return { ...empty, tags: true };
+    }
+
+    if (path === "/shared" || path.startsWith("/shared/")) {
+      return { ...empty, shared: true };
+    }
+
+    if (path === "/inbox" || path.startsWith("/inbox/")) {
+      return { ...empty, inbox: true };
+    }
+
+    const listsMatch = path.match(/^\/lists(?:\/([^/]+))?$/);
+    if (listsMatch) {
+      const id = listsMatch[1];
+      if (!id) {
+        return { ...empty, allLists: true };
+      }
+      if (inboxId && id === inboxId) {
+        return { ...empty, inbox: true };
+      }
+      return { ...empty, activeListId: id };
+    }
+
+    return empty;
+  }, [pathname, inboxId]);
 }
