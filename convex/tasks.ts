@@ -397,9 +397,21 @@ export const upsert = mutation({
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
     tagIds: v.optional(v.array(v.id("tags"))),
     assignedToUserId: v.optional(v.id("users")),
+    /**
+     * Optional echo of `user._id` from the client — not persisted.
+     * Lets optimistic stubs use the real viewer id (`createdBy` / assignee filters)
+     * until the mutation ack returns.
+     */
+    clientViewerUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    if (
+      args.clientViewerUserId !== undefined &&
+      args.clientViewerUserId !== user._id
+    ) {
+      throw new Error("clientViewerUserId mismatch");
+    }
 
     if (args.id) {
       const existing = await ctx.db.get(args.id);

@@ -134,7 +134,12 @@ export const getProfile = query({
   handler: async (ctx) => {
     const user = await getCurrentUserOrNull(ctx);
     if (!user) return null;
-    return { name: user.name, email: user.email, isApproved: user.isApproved };
+    return {
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      isApproved: user.isApproved,
+    };
   },
 });
 
