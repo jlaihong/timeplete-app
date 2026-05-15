@@ -44,7 +44,7 @@ export function AddTaskSheet({
   onClose,
 }: AddTaskSheetProps) {
   useRegisterEscapeClose(onClose);
-  const { profileReady } = useAuth();
+  const { profileReady, profile } = useAuth();
   const titleInputRef = useRef<TextInput>(null);
   const [name, setName] = useState("");
   const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(() =>
@@ -96,9 +96,13 @@ export function AddTaskSheet({
   const hideListPicker =
     hasGoalSelected || (!!contextualListId && lockListToContext);
 
+  /** List-detail add dialog: trackable is display-only (productivity-one parity). */
+  const lockTrackableAssignment = lockListToContext;
+
   // Mutual exclusion handlers — verbatim from P1's
   // `onGoalSelectionChange` / `onListSelectionChange`.
   const handleTrackableChange = (id: Id<"trackables"> | null) => {
+    if (lockTrackableAssignment) return;
     assignmentTouchedRef.current = true;
     setTrackableId(id);
     if (id) setListId(null);
@@ -136,6 +140,8 @@ export function AddTaskSheet({
       sectionId,
       parentId,
       trackableId: trackableId ?? undefined,
+      clientViewerUserId:
+        profileReady && profile ? profile._id : undefined,
     }).catch((err) => {
       console.error("[AddTaskSheet] Failed to create task:", err);
       showToast("Could not create task");
@@ -165,6 +171,7 @@ export function AddTaskSheet({
           <TrackablePicker
             value={trackableId}
             onChange={handleTrackableChange}
+            editable={!lockTrackableAssignment}
           />
 
           {/* List picker hidden when a trackable is selected, or list context locks the roster. */}
@@ -186,6 +193,7 @@ export function AddTaskSheet({
         key={toastKey}
         message={toastMessage}
         onDismiss={clearToast}
+        durationMs={1100}
       />
     </View>
   );

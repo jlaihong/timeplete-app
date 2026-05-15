@@ -22,6 +22,11 @@ interface TrackablePickerProps {
   onChange: (id: Id<"trackables"> | null) => void;
   label?: string;
   /**
+   * When false, list-detail / locked goal UX (productivity-one): show the
+   * swatch + label with no menu.
+   */
+  editable?: boolean;
+  /**
    * When false, render the field inline (full-width row). When true, render
    * a compact dropdown trigger that opens an overlay menu. Default: true.
    */
@@ -37,6 +42,7 @@ export function TrackablePicker({
   value,
   onChange,
   label = "Trackable",
+  editable = true,
   compact = true,
 }: TrackablePickerProps) {
   const { profileReady } = useAuth();
@@ -49,11 +55,37 @@ export function TrackablePicker({
 
   const selected = trackables?.find((t) => t._id === value);
 
+  const readonlyBody = (
+    <View
+      style={[styles.trigger, styles.triggerReadonly]}
+      accessibilityRole="text"
+      accessibilityLabel={
+        selected ? `${label}: ${selected.name}` : `${label}: None`
+      }
+    >
+      <View style={styles.triggerInner}>
+        {selected ? (
+          <>
+            <View
+              style={[styles.colourDot, { backgroundColor: selected.colour }]}
+            />
+            <Text style={styles.triggerText} numberOfLines={1}>
+              {selected.name}
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.triggerPlaceholder}>None</Text>
+        )}
+      </View>
+    </View>
+  );
+
   const renderTrigger = () => (
     <TouchableOpacity
       style={styles.trigger}
       onPress={() => setOpen((v) => !v)}
       accessibilityLabel={`${label} picker`}
+      accessibilityRole="button"
     >
       <View style={styles.triggerInner}>
         {selected ? (
@@ -72,6 +104,15 @@ export function TrackablePicker({
       <Ionicons name="chevron-down" size={16} color={Colors.textSecondary} />
     </TouchableOpacity>
   );
+
+  if (!editable) {
+    return (
+      <View style={styles.container}>
+        {label ? <Text style={styles.label}>{label}</Text> : null}
+        {readonlyBody}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -166,6 +207,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.outline,
     backgroundColor: Colors.surfaceContainer,
     gap: 8,
+  },
+  triggerReadonly: {
+    justifyContent: "flex-start",
+    opacity: 0.92,
   },
   triggerInner: {
     flex: 1,

@@ -43,6 +43,8 @@ export type UpsertTaskOptimisticArgs = {
   trackableId?: Id<"trackables"> | null;
   tagIds?: Id<"tags">[];
   assignedToUserId?: Id<"users">;
+  /** Echo of the signed-in user — optimistic stubs only (`tasks.upsert` ignores it server-side). */
+  clientViewerUserId?: Id<"users">;
 };
 
 function isTaskCompletedForListViewRow(t: { dateCompleted?: string }): boolean {
@@ -186,6 +188,9 @@ function insertSortedHomeShape(
 
 function syntheticInsertRow(args: UpsertTaskOptimisticArgs, id: Id<"tasks">) {
   const now = Date.now();
+  const viewer =
+    args.clientViewerUserId ??
+    ("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzg" as Id<"users">);
   const row = {
     _id: id,
     _creationTime: now,
@@ -211,8 +216,8 @@ function syntheticInsertRow(args: UpsertTaskOptimisticArgs, id: Id<"tasks">) {
     isRecurringInstance: false,
     isException: undefined,
     originalTaskDay: undefined,
-    userId: "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzg" as Id<"users">,
-    createdBy: "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzg" as Id<"users">,
+    userId: viewer,
+    createdBy: viewer,
     assignedToUserId: args.assignedToUserId,
     legacyId: undefined,
     rootTaskId: args.parentId ? undefined : id,
