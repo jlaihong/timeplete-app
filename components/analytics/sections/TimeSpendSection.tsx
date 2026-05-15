@@ -15,8 +15,10 @@ import {
 } from "../useAnalyticsDataset";
 import { useAnalyticsState } from "../AnalyticsState";
 import { TimeSpendTimelineChart } from "../TimeSpendTimelineChart";
-import { LineChart, type LineSeries } from "../widgets/LineChart";
-import { totalSecondsOnDay } from "../timeSpendTimelineUtils";
+import {
+  clippedSpendSegmentsForDay,
+} from "../timeSpendTimelineUtils";
+import { TimeSpendBucketBarChart } from "../TimeSpendBucketBarChart";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * Time Spend — productivity-one's third column.
@@ -24,9 +26,8 @@ import { totalSecondsOnDay } from "../timeSpendTimelineUtils";
  * Daily: vertical 00:00–24:00 strip; sessions clipped to the day when a
  * window crosses midnight (same as productivity-one day view).
  *
- * Weekly / Monthly: one SVG line chart for the whole period — hours per
- * calendar day and shared X axis — matching Trackable Progression
- * (`LineChart` + weekday letters / sparse day labels).
+ * Weekly / Monthly: one plot with **a stacked bar per day** — time scale
+ * on the **left axis** — matching productivity-one (not line charts).
  *
  * Yearly: stacked bars per month.
  *
@@ -168,29 +169,24 @@ export function TimeSpendSection() {
 
   const showYearlyScroll = isYearly && yearlyBuckets.length > 14;
 
-  const timeSpendLineSeries = useMemo<{ series: LineSeries[]; xLabels: string[] } | null>(() => {
+  const timeSpendBarBuckets = useMemo(() => {
     if (isYearly || selectedTab === "DAILY") return null;
     const days = timelineDays;
-    const hours = days.map((d) =>
-      totalSecondsOnDay(
+    const xLabels =
+      selectedTab === "WEEKLY"
+        ? days.map((d) => getDayOfWeekLetter(d))
+        : sparseCalendarDayLabels(days);
+    return days.map((d, idx) => ({
+      id: d,
+      xLabel: xLabels[idx] ?? "",
+      segments: clippedSpendSegmentsForDay(
         dataset.timeWindows,
         d,
         dataset.resolveTrackableId,
         dataset.trackables,
         FALLBACK_COLOUR,
-      ) / 3600,
-    );
-    const series: LineSeries[] = [
-      {
-        colour: Colors.primary,
-        data: hours.map((y, x) => ({ x, y })),
-      },
-    ];
-    const xLabels =
-      selectedTab === "WEEKLY"
-        ? days.map((d) => getDayOfWeekLetter(d))
-        : sparseCalendarDayLabels(days);
-    return { series, xLabels };
+      ),
+    }));
   }, [
     isYearly,
     selectedTab,
@@ -258,18 +254,15 @@ export function TimeSpendSection() {
           />
           {legend.length > 0 && <SummaryLegend legend={legend} />}
         </>
-      ) : timeSpendLineSeries ? (
+      ) : timeSpendBarBuckets ? (
         <>
           <Text style={styles.totalLabel}>
             Total: {formatSecondsAsHM(dataset.totalSeconds)}
           </Text>
-          <LineChart
-            series={timeSpendLineSeries.series}
-            height={140}
-            xLabels={timeSpendLineSeries.xLabels}
+          <TimeSpendBucketBarChart
+            buckets={timeSpendBarBuckets}
+            height={172}
             leftAxisLabel="Hours"
-            formatLeftValue={(n) => n.toFixed(1)}
-            yScale="from-zero"
           />
           {legend.length > 0 && <SummaryLegend legend={legend} />}
         </>

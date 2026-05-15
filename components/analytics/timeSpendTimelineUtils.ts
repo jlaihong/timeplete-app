@@ -77,15 +77,27 @@ export function buildBlocksForDay(
   return out;
 }
 
-/** Total seconds attributed to `dayYYYYMMDD` after clipping windows to local midnight boundaries. */
-export function totalSecondsOnDay(
+export interface ClippedSpendSegment {
+  /** Stable key for React — `tid` string or `'__none__'` */
+  reactKey: string;
+  colour: string;
+  seconds: number;
+}
+
+/**
+ * Seconds per attributed trackable for one calendar day — wall-clock clipped
+ * to midnight (same attribution rule as timeline blocks).
+ * Segments are sorted **descending** by seconds so the largest slice sits at
+ * the bottom of stacked bars (`BarColumn`-style stacking).
+ */
+export function clippedSpendSegmentsForDay(
   windows: TimeWindowLite[],
   dayYYYYMMDD: string,
   resolveTrackableId: (tw: TimeWindowLite) => string | null,
   trackables: Record<string, TrackableLite | undefined>,
   fallbackColour: string,
-): number {
-  let total = 0;
+): ClippedSpendSegment[] {
+  const totals = new Map<string | null, number>();
   for (const w of windows) {
     const b = clipTimeWindowToDay(
       w,
@@ -94,7 +106,20 @@ export function totalSecondsOnDay(
       trackables,
       fallbackColour,
     );
-    if (b) total += b.endSec - b.startSec;
+    if (!b) continue;
+    const slab = b.endSec - b.startSec;
+    const tid = resolveTrackableId(w);
+    totals.set(tid, (totals.get(tid) ?? 0) + slab);
   }
-  return total;
+
+  const out: ClippedSpendSegment[] = [];
+  for (const [tid, seconds] of Array.from(totals.entries())) {
+    if (seconds <= 0) continue;
+    const trackable = tid ? trackables[tid] : undefined;
+    const colour = trackable?.colour ?? fallbackColour;
+    const reactKey = tid ?? "__none__";
+    out.push({ reactKey, colour, seconds });
+  }
+  out.sort((a, b) => b.seconds - a.seconds);
+  return out;
 }
