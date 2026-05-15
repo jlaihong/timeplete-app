@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TextInput, Platform } from "react-native";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -18,6 +18,20 @@ import {
   initialAssignmentStateFromAddTaskContext,
   resolveEffectiveListIdForTaskCreate,
 } from "../../lib/addTaskDefaults";
+
+/** Web: force the title clear + toast to hit the DOM before heavy optimistic work runs. */
+function flushDialogFeedback(update: () => void) {
+  if (Platform.OS === "web") {
+    try {
+      const { flushSync } = require("react-dom") as typeof import("react-dom");
+      flushSync(update);
+      return;
+    } catch {
+      /* non-web bundle without react-dom */
+    }
+  }
+  update();
+}
 
 interface AddTaskSheetProps {
   day?: string;
@@ -123,13 +137,14 @@ export function AddTaskSheet({
       inboxListId,
     });
 
-    setName("");
-    showToast("Task added");
-    // Keep the title field focused after Enter so rapid multi-add UX works;
-    // submit still blurs on some platforms without an explicit refocus.
-    queueMicrotask(() => titleInputRef.current?.focus());
+    flushDialogFeedback(() => {
+      setName("");
+      showToast("Task added");
+    });
 
-    void upsertTask({
+    // Deferred to the next macrotask so the dialog can paint before the optimistic
+    // pass (iteration over all cached queries); avoids a “frozen” click on large caches.
+    const payload = {
       name: title,
       taskDay: day ?? todayYYYYMMDD(),
       listId: effectiveListId,
@@ -138,10 +153,14 @@ export function AddTaskSheet({
       trackableId: trackableId ?? undefined,
       clientViewerUserId:
         profileReady && profile ? profile._id : undefined,
-    }).catch((err) => {
-      console.error("[AddTaskSheet] Failed to create task:", err);
-      showToast("Could not create task");
-    });
+    };
+    setTimeout(() => {
+      titleInputRef.current?.focus();
+      void upsertTask(payload).catch((err) => {
+        console.error("[AddTaskSheet] Failed to create task:", err);
+        showToast("Could not create task");
+      });
+    }, 0);
   };
 
   return (
