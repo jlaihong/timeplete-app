@@ -55,22 +55,6 @@ type ListPageTask = Doc<"tasks"> & { tagIds?: Id<"tags">[] };
 
 const isWeb = Platform.OS === "web";
 
-function toTaskRowTask(task: ListPageTask): TaskRowTask {
-  return {
-    _id: task._id,
-    name: task.name,
-    dateCompleted: task.dateCompleted,
-    taskDay: task.taskDay,
-    timeSpentInSecondsUnallocated: task.timeSpentInSecondsUnallocated,
-    trackableId: task.trackableId,
-    listId: task.listId,
-    tagIds: task.tagIds as string[] | undefined,
-    assignedToUserName: (task as { assignedToUserName?: string })
-      .assignedToUserName,
-    isRecurringInstance: task.isRecurringInstance,
-  };
-}
-
 function buildMeta(
   task: ListPageTask,
   tagMap: Map<string, { name: string; colour: string }>,
@@ -417,7 +401,8 @@ export default function ListDetailScreen() {
       isDefault: s.isDefault,
       headerCompletedCount: s.headerCompletedCount,
       headerTotalCount: s.headerTotalCount,
-      tasks: s.data.map(toTaskRowTask),
+      /** `TaskRowDesktop` consumes a subset of `Doc<"tasks">` — avoid per-row object churn. */
+      tasks: s.data as unknown as TaskRowTask[],
     }));
   }, [filteredSections]);
 

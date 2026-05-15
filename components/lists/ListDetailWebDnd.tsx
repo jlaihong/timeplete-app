@@ -258,7 +258,8 @@ function groupsFromDetailSections(
     isDefault: s.isDefault,
     headerCompletedCount: s.headerCompletedCount,
     headerTotalCount: s.headerTotalCount,
-    tasks: s.tasks.map((t) => ({ ...t })),
+    /** Shallow-share row objects from props; drag paths clone via `cloneLocalGroups`. */
+    tasks: s.tasks,
   }));
 }
 

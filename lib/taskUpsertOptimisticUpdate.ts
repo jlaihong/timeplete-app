@@ -112,6 +112,42 @@ function dayInRanges(
   return ranges.some((r) => day >= r.startDay && day <= r.endDay);
 }
 
+/** Mirrors `tasks.search` in `convex/tasks.ts` (scope + optional day/completed gates). */
+function syntheticCreateBelongsInTasksSearchCache(
+  upsertArgs: UpsertTaskOptimisticArgs,
+  queryArgs: {
+    startDay?: string;
+    endDay?: string;
+    listId?: Id<"lists">;
+    trackableId?: Id<"trackables">;
+    includeCompleted?: boolean;
+  },
+): boolean {
+  if (queryArgs.listId !== undefined) {
+    if ((upsertArgs.listId ?? undefined) !== queryArgs.listId) return false;
+  } else if (queryArgs.trackableId !== undefined) {
+    if ((upsertArgs.trackableId ?? undefined) !== queryArgs.trackableId) {
+      return false;
+    }
+  }
+
+  if (queryArgs.startDay || queryArgs.endDay) {
+    const td = upsertArgs.taskDay;
+    if (!td) return false;
+    if (queryArgs.startDay && td < queryArgs.startDay) return false;
+    if (queryArgs.endDay && td > queryArgs.endDay) return false;
+  }
+
+  if (!queryArgs.includeCompleted) {
+    const raw = upsertArgs.dateCompleted;
+    const incomplete =
+      raw === undefined || raw === null || raw === "";
+    if (!incomplete) return false;
+  }
+
+  return true;
+}
+
 function resemblesPendingUpsertInsert(
   t: TaskWorkRow,
   args: UpsertTaskOptimisticArgs,
@@ -491,6 +527,16 @@ function applyOptimisticCreates(
         optimisticId,
       )
     ) {
+      if (next.length !== value.length) {
+        localStore.setQuery(
+          api.tasks.search,
+          q.args,
+          next as FunctionReturnType<typeof api.tasks.search>,
+        );
+      }
+      continue;
+    }
+    if (!syntheticCreateBelongsInTasksSearchCache(args, q.args)) {
       if (next.length !== value.length) {
         localStore.setQuery(
           api.tasks.search,
