@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { Colors } from "../../../constants/colors";
 import {
@@ -15,23 +15,18 @@ import {
 } from "../useAnalyticsDataset";
 import { useAnalyticsState } from "../AnalyticsState";
 import { TimeSpendTimelineChart } from "../TimeSpendTimelineChart";
-import {
-  clippedSpendSegmentsForDay,
-} from "../timeSpendTimelineUtils";
-import { TimeSpendBucketBarChart } from "../TimeSpendBucketBarChart";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * Time Spend — productivity-one's third column.
  *
- * Daily: vertical 00:00–24:00 strip; sessions clipped to the day when a
- * window crosses midnight (same as productivity-one day view).
+ * Daily / Weekly / Monthly: one shared 24h wall-clock chart — a single
+ * vertical time axis (00:00→24:00) and one narrow column per calendar day
+ * with blocks positioned from actual clipped window times. Monthly scrolls
+ * horizontally when columns would be too narrow.
  *
- * Weekly / Monthly: one plot with **a stacked bar per day** — time scale
- * on the **left axis** — matching productivity-one (not line charts).
+ * Yearly: stacked bars per month (different scale — aggregate by design).
  *
- * Yearly: stacked bars per month.
- *
- * Summary legend below the chart: per-trackable totals in the window.
+ * Summary legend: per-trackable totals in the window.
  * ──────────────────────────────────────────────────────────────────── */
 
 interface BarSegment {
@@ -77,21 +72,17 @@ function makeYearMonthBuckets(year: number): {
   }));
 }
 
-function dayLabelForDailyTimeline(day: string): string {
+function dayCaptionForTimeline(day: string, tab: string): string {
+  if (tab === "WEEKLY") {
+    return getDayOfWeekLetter(day);
+  }
+  if (tab === "MONTHLY") {
+    return String(parseInt(day.slice(6, 8), 10));
+  }
   const d = parseYYYYMMDD(day);
   return d.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
-  });
-}
-
-/** Sparse X labels — same stepping idea as `AnalyticsLineChartWidget.sparseDayLabels`. */
-function sparseCalendarDayLabels(days: string[]): string[] {
-  if (days.length === 0) return [];
-  const step = Math.max(1, Math.floor(days.length / 5));
-  return days.map((d, i) => {
-    const label = d.slice(6, 8);
-    return i === 0 || i === days.length - 1 || i % step === 0 ? label : "";
   });
 }
 
@@ -105,6 +96,11 @@ export function TimeSpendSection() {
     if (isYearly) return [];
     return getDaysInRange(windowStart, windowEnd);
   }, [isYearly, windowStart, windowEnd]);
+
+  const dayColumnCaption = useCallback(
+    (d: string) => dayCaptionForTimeline(d, selectedTab),
+    [selectedTab],
+  );
 
   const yearlyBuckets = useMemo<BarBucket[]>(() => {
     if (!isYearly) return [];
@@ -169,33 +165,6 @@ export function TimeSpendSection() {
 
   const showYearlyScroll = isYearly && yearlyBuckets.length > 14;
 
-  const timeSpendBarBuckets = useMemo(() => {
-    if (isYearly || selectedTab === "DAILY") return null;
-    const days = timelineDays;
-    const xLabels =
-      selectedTab === "WEEKLY"
-        ? days.map((d) => getDayOfWeekLetter(d))
-        : sparseCalendarDayLabels(days);
-    return days.map((d, idx) => ({
-      id: d,
-      xLabel: xLabels[idx] ?? "",
-      segments: clippedSpendSegmentsForDay(
-        dataset.timeWindows,
-        d,
-        dataset.resolveTrackableId,
-        dataset.trackables,
-        FALLBACK_COLOUR,
-      ),
-    }));
-  }, [
-    isYearly,
-    selectedTab,
-    timelineDays,
-    dataset.timeWindows,
-    dataset.resolveTrackableId,
-    dataset.trackables,
-  ]);
-
   return (
     <SectionCard title="Time Spend">
       {dataset.isLoading ? (
@@ -238,7 +207,7 @@ export function TimeSpendSection() {
         )
       ) : dataset.totalSeconds === 0 ? (
         <Text style={styles.empty}>No time recorded in this period.</Text>
-      ) : selectedTab === "DAILY" ? (
+      ) : (
         <>
           <Text style={styles.totalLabel}>
             Total: {formatSecondsAsHM(dataset.totalSeconds)}
@@ -249,24 +218,11 @@ export function TimeSpendSection() {
             resolveTrackableId={dataset.resolveTrackableId}
             trackables={dataset.trackables}
             fallbackColour={FALLBACK_COLOUR}
-            dayLabel={dayLabelForDailyTimeline}
-            rowGap={20}
+            dayLabel={dayColumnCaption}
           />
           {legend.length > 0 && <SummaryLegend legend={legend} />}
         </>
-      ) : timeSpendBarBuckets ? (
-        <>
-          <Text style={styles.totalLabel}>
-            Total: {formatSecondsAsHM(dataset.totalSeconds)}
-          </Text>
-          <TimeSpendBucketBarChart
-            buckets={timeSpendBarBuckets}
-            height={172}
-            leftAxisLabel="Hours"
-          />
-          {legend.length > 0 && <SummaryLegend legend={legend} />}
-        </>
-      ) : null}
+      )}
     </SectionCard>
   );
 }

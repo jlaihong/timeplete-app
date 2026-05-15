@@ -1,10 +1,11 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   useWindowDimensions,
   Platform,
+  ScrollView,
 } from "react-native";
 import { Colors } from "../../constants/colors";
 import type { TimeWindowLite } from "./useAnalyticsDataset";
@@ -16,17 +17,29 @@ import {
 } from "./timeSpendTimelineUtils";
 
 /**
- * Vertical wall-clock strip: top = 00:00, bottom = 24:00 — calendar / day-planner
- * parity (not a compact dashboard chart).
+ * Vertical wall-clock strip shared across calendar days — productivity-one
+ * analytics parity: top = 00:00, bottom = 24:00; sessions positioned from
+ * clipped window bounds inside each calendar-day column. One shared time
+ * axis on the left; overlaps stack per column like the single-day view.
  *
- * One label + horizontal guide per hour (00:00 … 24:00).
+ * Monthly uses horizontal scroll when packed columns would shrink below
+ * MIN_COLUMN_WIDTH_DP.
  */
+
 const HOUR_BOUNDARIES = Array.from({ length: 25 }, (_, i) => i);
 
 const AXIS_W_NARROW = 46;
 const AXIS_W_WIDE = 54;
-const LABEL_COL_NARROW = 48;
-const LABEL_COL_WIDE = 64;
+const MIN_COLUMN_WIDTH_DP = 42;
+const COLUMN_GAP = 4;
+
+const AXIS_UNDER_TRACK_RESERVE =
+  Platform.select<number>({
+    ios: 40,
+    android: 42,
+    default: 40,
+    web: 40,
+  }) ?? 40;
 
 function formatHourBoundary(h: number): string {
   if (h <= 0) return "00:00";
@@ -40,10 +53,9 @@ function axisTickTranslateY(h: number): number {
   return -6;
 }
 
-/** Pixels per hour — tall strip so morning/afternoon/evening read at a glance. */
-function trackHeightForWidth(windowWidth: number): number {
+function trackHeightForWidth(chartWidthDp: number): number {
   const pxPerHour =
-    windowWidth < 380 ? 32 : windowWidth < 720 ? 36 : 42;
+    chartWidthDp < 380 ? 32 : chartWidthDp < 720 ? 36 : 42;
   return pxPerHour * 24;
 }
 
@@ -63,8 +75,6 @@ export interface TimeSpendTimelineChartProps {
   trackables: Record<string, TrackableLite | undefined>;
   fallbackColour: string;
   dayLabel: (dayYYYYMMDD: string) => string;
-  /** Extra gap between days (weekly / monthly). */
-  rowGap?: number;
 }
 
 export function TimeSpendTimelineChart({
@@ -74,79 +84,104 @@ export function TimeSpendTimelineChart({
   trackables,
   fallbackColour,
   dayLabel,
-  rowGap = 24,
 }: TimeSpendTimelineChartProps) {
-  const { width } = useWindowDimensions();
-  const labelColW = width < 400 ? LABEL_COL_NARROW : LABEL_COL_WIDE;
-  const axisW = width < 400 ? AXIS_W_NARROW : AXIS_W_WIDE;
-  const trackHeight = trackHeightForWidth(width);
-  const compactAxis = width < 400;
+  const { width: winW } = useWindowDimensions();
+  const [layoutW, setLayoutW] = useState<number | null>(null);
 
-  const rows = useMemo(() => {
+  const onWrapLayout = useCallback(
+    (e: { nativeEvent: { layout: { width: number } } }) => {
+      setLayoutW(e.nativeEvent.layout.width);
+    },
+    [],
+  );
+
+  const dayColumnsData = useMemo(() => {
     return days.map((day) => {
-      const blocks = buildBlocksForDay(
-        timeWindows,
-        day,
-        resolveTrackableId,
-        trackables,
-        fallbackColour,
+      const blocks = sortBlocksForOverlapDraw(
+        buildBlocksForDay(
+          timeWindows,
+          day,
+          resolveTrackableId,
+          trackables,
+          fallbackColour,
+        ),
       );
-      return { day, blocks: sortBlocksForOverlapDraw(blocks) };
+      return { day, blocks };
     });
   }, [days, timeWindows, resolveTrackableId, trackables, fallbackColour]);
 
-  return (
-    <View style={styles.wrap}>
-      {rows.map(({ day, blocks }, rowIdx) => (
+  if (!days.length) {
+    return null;
+  }
+
+  const chartOuterW =
+    typeof layoutW === "number" && layoutW > 0 ? layoutW : winW;
+  const axisW = chartOuterW < 400 ? AXIS_W_NARROW : AXIS_W_WIDE;
+  const axisPadRight = 8;
+  const axisStripW = axisW + axisPadRight;
+
+  const trackHeight = trackHeightForWidth(chartOuterW);
+  const compactAxis = chartOuterW < 400;
+
+  const nCols = Math.max(days.length, 1);
+  const trackAreaAvail = Math.max(0, chartOuterW - axisStripW);
+
+  const equalCols = nCols >= 1 ? trackAreaAvail / nCols : 0;
+  const needsHorizontalScroll =
+    nCols >= 2 &&
+    nCols * MIN_COLUMN_WIDTH_DP + (nCols - 1) * COLUMN_GAP >
+      trackAreaAvail + 1e-3;
+
+  const columnWidthDp = needsHorizontalScroll
+    ? MIN_COLUMN_WIDTH_DP
+    : equalCols || trackAreaAvail;
+
+  const scrollContentMinW =
+    nCols <= 1
+      ? trackAreaAvail
+      : needsHorizontalScroll
+        ? nCols * columnWidthDp + (nCols - 1) * COLUMN_GAP
+        : trackAreaAvail;
+
+  const ColumnsRow = (
+    <View
+      style={{
+        flexDirection: "row",
+        flexShrink: needsHorizontalScroll ? 0 : 1,
+        flexGrow: needsHorizontalScroll ? 0 : 1,
+        gap: COLUMN_GAP,
+        minWidth:
+          needsHorizontalScroll && scrollContentMinW > 0
+            ? scrollContentMinW
+            : undefined,
+      }}
+    >
+      {dayColumnsData.map(({ day, blocks }) => (
         <View
           key={day}
           style={[
-            styles.dayRow,
-            rowIdx < rows.length - 1 && {
-              marginBottom: rowGap,
-              paddingBottom: 6,
-              borderBottomWidth: StyleSheet.hairlineWidth,
-              borderBottomColor: "rgba(186, 201, 205, 0.2)",
-            },
+            styles.dayTrackColumnOuter,
+            needsHorizontalScroll
+              ? { width: columnWidthDp, flexShrink: 0 }
+              : { flex: 1, flexBasis: 0, minWidth: 0 },
           ]}
         >
-          <View style={[styles.dayLabelCol, { width: labelColW }]}>
-            <Text style={styles.dayLabel} numberOfLines={2}>
-              {dayLabel(day)}
-            </Text>
-          </View>
           <View
             style={[
-              styles.timelineBlock,
+              styles.timelineInner,
               Platform.OS === "web"
                 ? ({ userSelect: "none" } as object)
                 : null,
             ]}
           >
             <View
-              style={[styles.axisCol, { width: axisW, height: trackHeight }]}
+              style={[styles.trackColumn, { height: trackHeight }]}
+              accessibilityLabel={`Timeline ${day}`}
             >
-              {HOUR_BOUNDARIES.map((h) => (
-                <Text
-                  key={h}
-                  style={[
-                    styles.axisTick,
-                    compactAxis && styles.axisTickCompact,
-                    {
-                      top: `${(h / 24) * 100}%`,
-                      transform: [{ translateY: axisTickTranslateY(h) }],
-                    },
-                  ]}
-                >
-                  {formatHourBoundary(h)}
-                </Text>
-              ))}
-            </View>
-            <View style={[styles.trackColumn, { height: trackHeight }]}>
               <View style={styles.grid} pointerEvents="none">
                 {HOUR_BOUNDARIES.map((h) => (
                   <View
-                    key={h}
+                    key={`g-${day}-${h}`}
                     style={[
                       styles.hourLine,
                       {
@@ -170,7 +205,7 @@ export function TimeSpendTimelineChart({
                 );
                 return (
                   <View
-                    key={b.windowId}
+                    key={`${day}-${b.windowId}`}
                     style={[
                       styles.block,
                       {
@@ -185,8 +220,54 @@ export function TimeSpendTimelineChart({
               })}
             </View>
           </View>
+          <Text style={styles.columnFooterLabel} numberOfLines={2}>
+            {dayLabel(day)}
+          </Text>
         </View>
       ))}
+    </View>
+  );
+
+  return (
+    <View style={styles.wrap} onLayout={onWrapLayout}>
+      <View style={styles.chartRow}>
+        <View style={{ width: axisStripW, flexShrink: 0 }}>
+          <View
+            style={[styles.axisCol, { width: axisStripW, height: trackHeight }]}
+          >
+            {HOUR_BOUNDARIES.map((h) => (
+              <Text
+                key={h}
+                style={[
+                  styles.axisTick,
+                  compactAxis && styles.axisTickCompact,
+                  {
+                    top: `${(h / 24) * 100}%`,
+                    transform: [{ translateY: axisTickTranslateY(h) }],
+                  },
+                ]}
+              >
+                {formatHourBoundary(h)}
+              </Text>
+            ))}
+          </View>
+          <View style={{ height: AXIS_UNDER_TRACK_RESERVE }} />
+        </View>
+
+        {needsHorizontalScroll ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator
+            nestedScrollEnabled
+            style={styles.colsScrollShell}
+            contentContainerStyle={styles.colsScrollInner}
+          >
+            {ColumnsRow}
+          </ScrollView>
+        ) : (
+          <View style={styles.flexColsShell}>{ColumnsRow}</View>
+        )}
+      </View>
     </View>
   );
 }
@@ -194,33 +275,40 @@ export function TimeSpendTimelineChart({
 const styles = StyleSheet.create({
   wrap: {
     marginBottom: 8,
+    width: "100%",
+    alignSelf: "stretch",
   },
-  dayRow: {
+  chartRow: {
     flexDirection: "row",
     alignItems: "flex-start",
+    width: "100%",
   },
-  dayLabelCol: {
-    paddingRight: 12,
-    paddingTop: 8,
-  },
-  dayLabel: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: Colors.textSecondary,
-    textAlign: "right",
-    letterSpacing: 0.1,
-    lineHeight: 18,
-  },
-  timelineBlock: {
+  flexColsShell: {
     flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+  },
+  colsScrollShell: {
+    flex: 1,
+    minWidth: 0,
+  },
+  colsScrollInner: {
+    flexGrow: 1,
+  },
+  dayTrackColumnOuter: {
+    flexDirection: "column",
+    alignItems: "stretch",
+  },
+  timelineInner: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "flex-start",
-    minWidth: 0,
   },
   axisCol: {
     position: "relative",
     paddingRight: 8,
     flexShrink: 0,
+    alignSelf: "flex-start",
   },
   axisTick: {
     position: "absolute",
@@ -235,8 +323,7 @@ const styles = StyleSheet.create({
     lineHeight: 12,
   },
   trackColumn: {
-    flex: 1,
-    minWidth: 0,
+    width: "100%",
     position: "relative",
   },
   grid: {
@@ -256,5 +343,15 @@ const styles = StyleSheet.create({
     width: "97%",
     borderRadius: 3,
     opacity: 0.84,
+  },
+  columnFooterLabel: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: Colors.textTertiary,
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 16,
+    minHeight: 18,
+    paddingHorizontal: 2,
   },
 });
