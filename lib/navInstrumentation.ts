@@ -41,7 +41,13 @@ type NavTraceEvent = {
 const recent: NavTraceEvent[] = [];
 const MAX = 60;
 
-let sessionStart: number | null = null;
+let clickSequence = 0;
+
+function nextSeq(): number {
+  clickSequence += 1;
+  return clickSequence;
+}
+
 let lastClickT: number | null = null;
 let longTaskObserver: PerformanceObserver | null = null;
 
@@ -61,16 +67,42 @@ function push(ev: NavTraceEvent) {
   );
 }
 
-/** Call synchronously from sidebar press (before router). */
-export function traceSidebarClick(href: string) {
-  if (!isNavTraceEnabled()) return;
+/**
+ * Start of sidebar handler (before router). Returns monotonic seq; use for
+ * `logRouterInvoked` / `traceSidebarClickFlushComplete`.
+ */
+export function traceSidebarClick(href: string): number {
+  if (!isNavTraceEnabled()) return 0;
+  const seq = nextSeq();
   const t = performance.now();
   lastClickT = t;
-  sessionStart = t;
+  console.time(`[nav-trace] sidebar seq=${seq} click→router→flush`);
+  console.log(
+    `[nav-trace] CLICK_START seq=${seq} href=${href} t=${t.toFixed(2)}`,
+  );
   push({ phase: "sidebar_click", t, hrefOrPath: href });
+  return seq;
 }
 
-/** Immediately after router.navigate / replace. */
+export function logRouterInvoked(seq: number, method: string) {
+  if (!isNavTraceEnabled() || seq === 0) return;
+  console.log(
+    `[nav-trace] ROUTER_CALLED seq=${seq} ${method} t=${performance.now().toFixed(2)}`,
+  );
+}
+
+/** After `flushExpoRouterNavigationQueue` in the same task as the click. */
+export function traceSidebarClickFlushComplete(seq: number) {
+  if (!isNavTraceEnabled() || seq === 0) return;
+  if (typeof window !== "undefined" && window.location) {
+    console.log(
+      `[nav-trace] URL_AFTER_FLUSH seq=${seq} path=${window.location.pathname}${window.location.search} t=${performance.now().toFixed(2)}`,
+    );
+  }
+  console.timeEnd(`[nav-trace] sidebar seq=${seq} click→router→flush`);
+}
+
+/** Immediately after router.navigate / replace (enqueue only if not flushed). */
 export function traceRouterDispatched(
   method: "navigate" | "replace",
   href: string,
@@ -123,7 +155,7 @@ export function traceScreenMount(screenId: string) {
   });
 }
 
-/** Optional: log Long Task API entries (Chromium) — attributes main-thread blocking to the GPU-bound navigation window. */
+/** Optional: log Long Task API entries (Chromium). */
 export function installLongTaskLogger() {
   if (!isNavTraceEnabled()) return () => {};
   if (typeof PerformanceObserver === "undefined")

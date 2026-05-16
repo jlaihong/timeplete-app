@@ -11,7 +11,7 @@ import {
   DrawerItem,
   type DrawerContentComponentProps,
 } from "@react-navigation/drawer";
-import { router, Redirect, useRouter, useSegments, type Href } from "expo-router";
+import { router, Redirect, useRouter, useSegments, useNavigationContainerRef, type Href } from "expo-router";
 import { authClient } from "../../lib/auth-client";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
@@ -24,9 +24,12 @@ import {
 } from "../../components/layout/DesktopAppChrome";
 import { NavPathTrace } from "../../components/debug/NavPathTrace";
 import { NavTreeProfiler } from "../../components/debug/NavTreeProfiler";
+import { flushExpoRouterNavigationQueue } from "../../lib/flushExpoRouterNavigationQueue";
 import {
+  logRouterInvoked,
   traceRouterDispatched,
   traceSidebarClick,
+  traceSidebarClickFlushComplete,
 } from "../../lib/navInstrumentation";
 
 const drawerItemStyle = { borderRadius: 8 };
@@ -75,6 +78,7 @@ const PREFETCH_DRAWER_HREFS: Href[] = [
 function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { navigation } = props;
   useRegisterDrawerNavigationForDesktopChrome(navigation);
+  const navigationContainerRef = useNavigationContainerRef();
   const { profileReady } = useAuth();
   const isDesktop = useIsDesktop();
   const sel = useDrawerSelection();
@@ -105,9 +109,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
 
   const go = useCallback(
     (href: Href) => {
-      if (typeof href === "string") {
-        traceSidebarClick(href);
-      }
+      const traceSeq = typeof href === "string" ? traceSidebarClick(href) : 0;
       const s = segments as readonly string[];
       const onListDetail =
         s[0] === "(app)" &&
@@ -135,16 +137,28 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
 
       if (useReplace || useReplaceCrossGroup) {
         expoRouter.replace(href);
-        if (typeof href === "string") traceRouterDispatched("replace", href);
+        if (typeof href === "string") {
+          logRouterInvoked(traceSeq, "replace");
+          traceRouterDispatched("replace", href);
+        }
       } else {
         expoRouter.navigate(href);
-        if (typeof href === "string") traceRouterDispatched("navigate", href);
+        if (typeof href === "string") {
+          logRouterInvoked(traceSeq, "navigate");
+          traceRouterDispatched("navigate", href);
+        }
       }
+
+      flushExpoRouterNavigationQueue(navigationContainerRef);
+      if (traceSeq !== 0) {
+        traceSidebarClickFlushComplete(traceSeq);
+      }
+
       if (!isDesktop) {
         navigation.closeDrawer();
       }
     },
-    [expoRouter, isDesktop, navigation, segments],
+    [expoRouter, isDesktop, navigation, navigationContainerRef, segments],
   );
 
   return (
@@ -302,6 +316,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
           await authClient.signOut();
           navigation.closeDrawer();
           router.replace("/");
+          flushExpoRouterNavigationQueue(navigationContainerRef);
         }}
       />
     </DrawerContentScrollView>
