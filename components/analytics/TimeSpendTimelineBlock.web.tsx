@@ -15,9 +15,9 @@ const TOOLTIP_OFFSET_X = 12;
 const TOOLTIP_OFFSET_Y = 14;
 
 /**
- * RN Web `View` does not forward DOM attrs reliably; native `title` tooltips
- * also appear after a long browser delay. Render real DOM + a fixed-position
- * portal tooltip so copy shows immediately on hover (within one frame).
+ * RN Web `View` does not forward DOM attrs reliably. Use a real `div` hit area
+ * plus a portal tooltip. Do not set HTML `title` — browsers show a second,
+ * delayed native tooltip that duplicates our styled bubble.
  */
 export function TimeSpendTimelineBlock({
   accessibilityLabel,
@@ -71,13 +71,10 @@ export function TimeSpendTimelineBlock({
     setTipOpen(false);
   }, []);
 
-  const titleAttr = `${displayTitle}\n${segmentTimeRangeLabel}`;
-
   const hitArea = (
     <div
       data-analytics-time-spend-block="1"
       className="analytics-time-spend-block-hit"
-      title={titleAttr}
       aria-label={accessibilityLabel}
       role="presentation"
       style={{

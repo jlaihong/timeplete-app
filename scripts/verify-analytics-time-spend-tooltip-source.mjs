@@ -32,7 +32,7 @@ for (const needle of [
   "data-analytics-time-spend-tooltip",
   'createPortal(',
   "document.body",
-  'title={titleAttr}',
+  "aria-label={accessibilityLabel}",
   'pointerEvents: "auto"',
 ]) {
   if (!webSrc.includes(needle)) {
