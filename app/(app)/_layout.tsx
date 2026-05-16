@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import { Drawer } from "expo-router/drawer";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,6 +22,12 @@ import {
   DesktopAppTopBar,
   useRegisterDrawerNavigationForDesktopChrome,
 } from "../../components/layout/DesktopAppChrome";
+import { NavPathTrace } from "../../components/debug/NavPathTrace";
+import { NavTreeProfiler } from "../../components/debug/NavTreeProfiler";
+import {
+  traceRouterDispatched,
+  traceSidebarClick,
+} from "../../lib/navInstrumentation";
 
 const drawerItemStyle = { borderRadius: 8 };
 
@@ -83,47 +89,63 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
     }
   }, [profileReady]);
 
-  const inboxList =
-    lists
-      ?.filter((l) => l.isInbox && !l.archived)
+  const inboxList = useMemo(() => {
+    if (!lists) return null;
+    const inbox = lists
+      .filter((l) => l.isInbox && !l.archived)
       .slice()
-      .sort((a, b) => a.orderIndex - b.orderIndex)[0] ?? null;
+      .sort((a, b) => a.orderIndex - b.orderIndex);
+    return inbox[0] ?? null;
+  }, [lists]);
 
-  const go = (href: Href) => {
-    const s = segments as readonly string[];
-    const onListDetail =
-      s[0] === "(app)" &&
-      s[1] === "lists" &&
-      typeof s[2] === "string";
+  const sidebarLists = useMemo(() => {
+    if (!lists) return null;
+    return lists.filter((l) => !l.archived && !l.isInbox);
+  }, [lists]);
 
-    let useReplace = false;
-    if (typeof href === "string") {
-      const prefix = "/(app)/lists/";
-      if (onListDetail && href.startsWith(prefix)) {
-        const idPart = href.slice(prefix.length);
-        if (idPart.length > 0 && !idPart.includes("/")) {
-          useReplace = true;
+  const go = useCallback(
+    (href: Href) => {
+      if (typeof href === "string") {
+        traceSidebarClick(href);
+      }
+      const s = segments as readonly string[];
+      const onListDetail =
+        s[0] === "(app)" &&
+        s[1] === "lists" &&
+        typeof s[2] === "string";
+
+      let useReplace = false;
+      if (typeof href === "string") {
+        const prefix = "/(app)/lists/";
+        if (onListDetail && href.startsWith(prefix)) {
+          const idPart = href.slice(prefix.length);
+          if (idPart.length > 0 && !idPart.includes("/")) {
+            useReplace = true;
+          }
         }
       }
-    }
 
-    let useReplaceCrossGroup = false;
-    if (!useReplace && typeof href === "string") {
-      const here = navDrawerGroupFromSegments(s);
-      const there = navDrawerGroupFromHrefString(href);
-      useReplaceCrossGroup =
-        here != null && there != null && here !== there;
-    }
+      let useReplaceCrossGroup = false;
+      if (!useReplace && typeof href === "string") {
+        const here = navDrawerGroupFromSegments(s);
+        const there = navDrawerGroupFromHrefString(href);
+        useReplaceCrossGroup =
+          here != null && there != null && here !== there;
+      }
 
-    if (useReplace || useReplaceCrossGroup) {
-      expoRouter.replace(href);
-    } else {
-      expoRouter.navigate(href);
-    }
-    if (!isDesktop) {
-      navigation.closeDrawer();
-    }
-  };
+      if (useReplace || useReplaceCrossGroup) {
+        expoRouter.replace(href);
+        if (typeof href === "string") traceRouterDispatched("replace", href);
+      } else {
+        expoRouter.navigate(href);
+        if (typeof href === "string") traceRouterDispatched("navigate", href);
+      }
+      if (!isDesktop) {
+        navigation.closeDrawer();
+      }
+    },
+    [expoRouter, isDesktop, navigation, segments],
+  );
 
   return (
     <DrawerContentScrollView {...props} style={styles.drawer}>
@@ -215,13 +237,9 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       <View style={styles.divider} />
 
       <Text style={styles.sectionTitle}>My Lists</Text>
-      {lists &&
-        lists
-          .filter(
-            (l: { archived?: boolean; isInbox?: boolean }) =>
-              !l.archived && !l.isInbox,
-          )
-          .map((list: { _id: string; name: string; colour: string }) => (
+      {sidebarLists &&
+        sidebarLists.map(
+          (list: { _id: string; name: string; colour: string }) => (
             <DrawerItem
               key={list._id}
               label={list.name}
@@ -237,7 +255,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
               )}
               onPress={() => go(`/(app)/lists/${list._id}`)}
             />
-          ))}
+          ),
+        )}
       <DrawerItem
         label="All Lists"
         focused={sel.allLists}
@@ -327,36 +346,39 @@ export default function AppLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavPathTrace />
       <TimerDisplay />
       <DesktopAppChromeProvider>
         <View style={{ flex: 1 }}>
           {isDesktop ? <DesktopAppTopBar /> : null}
           <View style={{ flex: 1, minHeight: 0 }}>
-            <Drawer
-              drawerContent={(p) => <CustomDrawerContent {...p} />}
-              defaultStatus={isDesktop ? "open" : "closed"}
-              screenOptions={{
-                headerShown: false,
-                drawerType: isDesktop ? "permanent" : "slide",
-                swipeEnabled: !isDesktop,
-                overlayColor: "transparent",
-                drawerStyle: {
-                  backgroundColor: Colors.sidenav,
-                  width: 250,
-                  borderRightWidth: 0,
-                },
-              }}
-            >
-              <Drawer.Screen name="(tabs)" />
-              <Drawer.Screen name="inbox" options={{ title: "Inbox" }} />
-              <Drawer.Screen name="tags" options={{ title: "Tags" }} />
-              <Drawer.Screen name="lists" options={{ title: "Lists" }} />
-              <Drawer.Screen name="shared" options={{ title: "Shared" }} />
-              <Drawer.Screen
-                name="edit-trackable"
-                options={{ title: "Edit Goal" }}
-              />
-            </Drawer>
+            <NavTreeProfiler id="(app)/Drawer">
+              <Drawer
+                drawerContent={CustomDrawerContent}
+                defaultStatus={isDesktop ? "open" : "closed"}
+                screenOptions={{
+                  headerShown: false,
+                  drawerType: isDesktop ? "permanent" : "slide",
+                  swipeEnabled: !isDesktop,
+                  overlayColor: "transparent",
+                  drawerStyle: {
+                    backgroundColor: Colors.sidenav,
+                    width: 250,
+                    borderRightWidth: 0,
+                  },
+                }}
+              >
+                <Drawer.Screen name="(tabs)" />
+                <Drawer.Screen name="inbox" options={{ title: "Inbox" }} />
+                <Drawer.Screen name="tags" options={{ title: "Tags" }} />
+                <Drawer.Screen name="lists" options={{ title: "Lists" }} />
+                <Drawer.Screen name="shared" options={{ title: "Shared" }} />
+                <Drawer.Screen
+                  name="edit-trackable"
+                  options={{ title: "Edit Goal" }}
+                />
+              </Drawer>
+            </NavTreeProfiler>
           </View>
         </View>
       </DesktopAppChromeProvider>
