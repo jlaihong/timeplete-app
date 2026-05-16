@@ -25,6 +25,36 @@ import {
 
 const drawerItemStyle = { borderRadius: 8 };
 
+/**
+ * Expo Router maps imperative calls to React Navigation actions in `getNavigateAction`:
+ * - `router.push` on a non-stack navigator becomes `NAVIGATE`, which skips the `expo-tab`
+ *   branch and therefore does **not** become `JUMP_TO` for tab changes.
+ * - `router.navigate` on tabs becomes `JUMP_TO` — instant tab switches (matches SPA routers
+ *   that update the active outlet immediately).
+ * - `router.replace` on the drawer becomes `JUMP_TO` — avoids stacking duplicate drawer
+ *   branches when moving between tabs, lists, tags, etc.
+ */
+type NavDrawerGroup = "tabs" | "lists" | "tags" | "shared";
+
+function navDrawerGroupFromSegments(
+  segments: readonly string[],
+): NavDrawerGroup | null {
+  const top = segments[1];
+  if (top === "(tabs)") return "tabs";
+  if (top === "lists") return "lists";
+  if (top === "tags") return "tags";
+  if (top === "shared") return "shared";
+  return null;
+}
+
+function navDrawerGroupFromHrefString(href: string): NavDrawerGroup | null {
+  if (href.includes("/(tabs)")) return "tabs";
+  if (href.includes("/lists")) return "lists";
+  if (href.includes("/tags")) return "tags";
+  if (href.includes("/shared")) return "shared";
+  return null;
+}
+
 function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { navigation } = props;
   useRegisterDrawerNavigationForDesktopChrome(navigation);
@@ -58,10 +88,18 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       }
     }
 
-    if (useReplace) {
+    let useReplaceCrossGroup = false;
+    if (!useReplace && typeof href === "string") {
+      const here = navDrawerGroupFromSegments(s);
+      const there = navDrawerGroupFromHrefString(href);
+      useReplaceCrossGroup =
+        here != null && there != null && here !== there;
+    }
+
+    if (useReplace || useReplaceCrossGroup) {
       expoRouter.replace(href);
     } else {
-      expoRouter.push(href);
+      expoRouter.navigate(href);
     }
     if (!isDesktop) {
       navigation.closeDrawer();
