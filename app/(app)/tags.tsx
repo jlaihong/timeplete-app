@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -34,9 +34,13 @@ export default function TagsScreen() {
     colour: string;
   } | null>(null);
 
-  const filteredTags = tags
-    ?.filter((t) => (showArchived ? t.archived : !t.archived))
-    .sort((a, b) => a.orderIndex - b.orderIndex);
+  const filteredTags = useMemo(
+    () =>
+      tags
+        ?.filter((t) => (showArchived ? t.archived : !t.archived))
+        .sort((a, b) => a.orderIndex - b.orderIndex),
+    [tags, showArchived],
+  );
 
   const handleSaveTag = async () => {
     if (!editing || !editing.name.trim()) return;

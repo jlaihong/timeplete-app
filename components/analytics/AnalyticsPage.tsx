@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   useWindowDimensions,
+  ActivityIndicator,
 } from "react-native";
 import { Colors } from "../../constants/colors";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
@@ -34,7 +35,28 @@ import { ReviewSection } from "./sections/ReviewSection";
  * widgets are intentionally read-only (header `open_in_new` only;
  * the body never opens a quick-log dialog). All quick-log mutations
  * happen on the home page.
+ *
+ * The four Convex-heavy sections mount one frame after the shell so the
+ * tab transition can commit and paint (header + tab bar + date nav)
+ * before ~4× `useQuery` trees initialize — mirrors “route first, data
+ * second” SPAs and avoids blocking the main thread on navigation.
  * ──────────────────────────────────────────────────────────────────── */
+
+function AnalyticsHeavyBodyGate({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  if (!ready) {
+    return (
+      <View style={styles.bodyPending} accessibilityLabel="Loading analytics">
+        <ActivityIndicator color={Colors.primary} />
+      </View>
+    );
+  }
+  return children;
+}
 
 export function AnalyticsPage({ title }: { title?: string }) {
   return (
@@ -47,7 +69,9 @@ export function AnalyticsPage({ title }: { title?: string }) {
         ) : null}
         <AnalyticsTabs />
         <AnalyticsDateNavigator />
-        <AnalyticsBody />
+        <AnalyticsHeavyBodyGate>
+          <AnalyticsBody />
+        </AnalyticsHeavyBodyGate>
       </View>
     </AnalyticsStateProvider>
   );
@@ -91,6 +115,12 @@ function AnalyticsBody() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+  bodyPending: {
+    flex: 1,
+    minHeight: 120,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerBar: {
     paddingHorizontal: 16,
     paddingVertical: 12,

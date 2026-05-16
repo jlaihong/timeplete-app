@@ -1,8 +1,9 @@
-import React from "react";
-import { View, StyleSheet, useWindowDimensions } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, StyleSheet, useWindowDimensions, ActivityIndicator } from "react-native";
 import { Colors } from "../../../constants/colors";
 import { TrackableList } from "../../../components/shared/TrackableList";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
+import { traceScreenMount } from "../../../lib/navInstrumentation";
 
 const PAGE_PADDING = 24;
 
@@ -15,6 +16,16 @@ const PAGE_PADDING = 24;
 export default function GoalsScreen() {
   const isDesktop = useIsDesktop();
   const { width } = useWindowDimensions();
+  const [heavyReady, setHeavyReady] = useState(false);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setHeavyReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  useEffect(() => {
+    if (heavyReady) traceScreenMount("(tabs)/goals TrackableList");
+  }, [heavyReady]);
 
   const contentMaxWidth =
     isDesktop && width >= 900
@@ -24,11 +35,20 @@ export default function GoalsScreen() {
   return (
     <View style={styles.container}>
       <View style={[styles.shell, { maxWidth: contentMaxWidth }]}>
-        <TrackableList
-          variant="trackables-page"
-          title="Trackables"
-          showArchivedToggle={false}
-        />
+        {!heavyReady ? (
+          <View
+            style={styles.pending}
+            accessibilityLabel="Loading trackables"
+          >
+            <ActivityIndicator color={Colors.primary} />
+          </View>
+        ) : (
+          <TrackableList
+            variant="trackables-page"
+            title="Trackables"
+            showArchivedToggle={false}
+          />
+        )}
       </View>
     </View>
   );
@@ -45,5 +65,11 @@ const styles = StyleSheet.create({
     width: "100%",
     padding: PAGE_PADDING,
     minHeight: 0,
+  },
+  pending: {
+    flex: 1,
+    minHeight: 200,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
