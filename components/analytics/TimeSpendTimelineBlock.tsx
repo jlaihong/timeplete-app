@@ -3,8 +3,8 @@ import { View, type StyleProp, type ViewStyle } from "react-native";
 
 export type TimeSpendTimelineBlockProps = {
   accessibilityLabel: string;
-  /** Web-only native tooltip; ignored on native platforms. */
-  hoverTip: string;
+  displayTitle: string;
+  segmentTimeRangeLabel: string;
   style: StyleProp<ViewStyle>;
 };
 

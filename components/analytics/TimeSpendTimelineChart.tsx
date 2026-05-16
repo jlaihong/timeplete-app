@@ -15,6 +15,7 @@ import {
   SECONDS_PER_DAY,
   type TimelineBlock,
 } from "./timeSpendTimelineUtils";
+/* Metro / Expo resolve `./TimeSpendTimelineBlock` to `TimeSpendTimelineBlock.web.tsx` on web. */
 import { TimeSpendTimelineBlock } from "./TimeSpendTimelineBlock";
 
 /**
@@ -215,12 +216,12 @@ export function TimeSpendTimelineChart({
                   (span / SECONDS_PER_DAY) * 100,
                   minHeightPct,
                 );
-                const hoverTip = `${b.displayTitle} · ${b.segmentTimeRangeLabel}`;
                 return (
                   <TimeSpendTimelineBlock
                     key={`${day}-${b.windowId}`}
                     accessibilityLabel={`${b.displayTitle}, ${b.segmentTimeRangeLabel}`}
-                    hoverTip={hoverTip}
+                    displayTitle={b.displayTitle}
+                    segmentTimeRangeLabel={b.segmentTimeRangeLabel}
                     style={[
                       styles.block,
                       {
