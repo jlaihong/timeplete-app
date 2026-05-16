@@ -15,6 +15,7 @@ import {
   SECONDS_PER_DAY,
   type TimelineBlock,
 } from "./timeSpendTimelineUtils";
+import { TimeSpendTimelineBlock } from "./TimeSpendTimelineBlock";
 
 /**
  * Vertical wall-clock strip shared across calendar days — productivity-one
@@ -214,14 +215,12 @@ export function TimeSpendTimelineChart({
                   (span / SECONDS_PER_DAY) * 100,
                   minHeightPct,
                 );
-                const hoverTip = `${b.displayTitle}\n${b.segmentTimeRangeLabel}`;
+                const hoverTip = `${b.displayTitle} · ${b.segmentTimeRangeLabel}`;
                 return (
-                  <View
+                  <TimeSpendTimelineBlock
                     key={`${day}-${b.windowId}`}
                     accessibilityLabel={`${b.displayTitle}, ${b.segmentTimeRangeLabel}`}
-                    // Native browser tooltip on web (parity with ColourSwatchPicker).
-                    // @ts-expect-error — `title` is web-only.
-                    title={Platform.OS === "web" ? hoverTip : undefined}
+                    hoverTip={hoverTip}
                     style={[
                       styles.block,
                       {
