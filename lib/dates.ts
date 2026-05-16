@@ -88,6 +88,21 @@ export function timeWindowBoundsMs(w: {
   return { startMs, endMs };
 }
 
+const HM_TIME: Intl.DateTimeFormatOptions = {
+  hour: "numeric",
+  minute: "2-digit",
+};
+
+/** Local wall-clock range for tooltips (same style as calendar time labels). */
+export function formatLocalTimeRangeHm(startMs: number, endMs: number): string {
+  const start = new Date(startMs);
+  const end = new Date(endMs);
+  if (endMs <= startMs) {
+    return start.toLocaleTimeString(undefined, HM_TIME);
+  }
+  return `${start.toLocaleTimeString(undefined, HM_TIME)} – ${end.toLocaleTimeString(undefined, HM_TIME)}`;
+}
+
 /**
  * One wedge label per logged row (matches Productivity-One: each time window is its own segment).
  */

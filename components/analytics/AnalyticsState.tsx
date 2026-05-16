@@ -4,6 +4,7 @@ import React, {
   useMemo,
   useState,
   useCallback,
+  useRef,
 } from "react";
 import {
   todayYYYYMMDD,
@@ -15,6 +16,7 @@ import {
   startOfYear,
   endOfYear,
 } from "../../lib/dates";
+import { UnsavedReviewChangesDialog } from "./UnsavedReviewChangesDialog";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * Single, unified state for the Analytics page.
@@ -44,6 +46,14 @@ export const ANALYTICS_TABS: { id: AnalyticsTab; label: string }[] = [
   { id: "YEARLY", label: "Yearly" },
 ];
 
+/** Registered by `ReviewSection` so tab/date navigators warn before losing drafts. */
+export type AnalyticsReviewGuard = {
+  isDirty: () => boolean;
+  save: () => Promise<void>;
+  /** Optional hook before navigating away without saving (e.g. closing Reflect). */
+  onDiscard?: () => void;
+};
+
 interface AnalyticsState {
   selectedTab: AnalyticsTab;
   selectedDate: string;
@@ -55,6 +65,7 @@ interface AnalyticsState {
   goPrev: () => void;
   goNext: () => void;
   goToday: () => void;
+  registerAnalyticsReviewGuard: (guard: AnalyticsReviewGuard | null) => void;
 }
 
 const AnalyticsStateContext = createContext<AnalyticsState | null>(null);
@@ -100,6 +111,12 @@ export function AnalyticsStateProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const reviewGuardRef = useRef<AnalyticsReviewGuard | null>(null);
+  const pendingProceedRef = useRef<(() => void) | null>(null);
+
+  const [reviewUnsavedOpen, setReviewUnsavedOpen] = useState(false);
+  const [reviewNavSaving, setReviewNavSaving] = useState(false);
+
   const [selectedTab, setSelectedTab] = useState<AnalyticsTab>("DAILY");
   const [selectedDate, setSelectedDate] = useState<string>(() =>
     todayYYYYMMDD()
@@ -115,55 +132,117 @@ export function AnalyticsStateProvider({
     [selectedTab, selectedDate]
   );
 
-  const setTab = useCallback((tab: AnalyticsTab) => {
-    setSelectedTab(tab);
-    // Don't reset selectedDate — productivity-one preserves the user's
-    // anchor date across tab switches, only the *window derivation*
-    // changes. This keeps "I was looking at March 3 daily" → switching
-    // to Monthly still shows March.
+  const registerAnalyticsReviewGuard = useCallback(
+    (guard: AnalyticsReviewGuard | null) => {
+      reviewGuardRef.current = guard;
+    },
+    []
+  );
+
+  const dismissReviewUnsaved = useCallback(() => {
+    pendingProceedRef.current = null;
+    setReviewUnsavedOpen(false);
+    setReviewNavSaving(false);
   }, []);
+
+  const confirmOrProceed = useCallback((proceed: () => void) => {
+    const g = reviewGuardRef.current;
+    if (!g?.isDirty()) {
+      proceed();
+      return;
+    }
+    pendingProceedRef.current = proceed;
+    setReviewUnsavedOpen(true);
+  }, []);
+
+  const handleReviewDiscardNavigate = useCallback(() => {
+    const run = pendingProceedRef.current;
+    pendingProceedRef.current = null;
+    setReviewUnsavedOpen(false);
+    reviewGuardRef.current?.onDiscard?.();
+    run?.();
+  }, []);
+
+  const handleReviewSaveNavigate = useCallback(async () => {
+    const g = reviewGuardRef.current;
+    const run = pendingProceedRef.current;
+    if (!g || !run) return;
+    setReviewNavSaving(true);
+    try {
+      await g.save();
+      pendingProceedRef.current = null;
+      setReviewUnsavedOpen(false);
+      run();
+    } catch {
+      // Leave dialog open; Review surfaces the error via alert/toast elsewhere.
+    } finally {
+      setReviewNavSaving(false);
+    }
+  }, []);
+
+  const setTab = useCallback((tab: AnalyticsTab) => {
+    confirmOrProceed(() => {
+      setSelectedTab(tab);
+      // Don't reset selectedDate — productivity-one preserves the user's
+      // anchor date across tab switches, only the *window derivation*
+      // changes.
+    });
+  }, [confirmOrProceed]);
+
+  const setSelectedDateGuarded = useCallback(
+    (date: string) => {
+      confirmOrProceed(() => setSelectedDate(date));
+    },
+    [confirmOrProceed]
+  );
 
   const goPrev = useCallback(() => {
-    setSelectedDate((current) => {
-      switch (selectedTab) {
-        case "DAILY":
-          return addDays(current, -1);
-        case "WEEKLY":
-          return addDays(current, -7);
-        case "MONTHLY": {
-          const start = startOfMonth(current);
-          return addDays(start, -1); // last day of previous month
+    confirmOrProceed(() => {
+      setSelectedDate((current) => {
+        switch (selectedTab) {
+          case "DAILY":
+            return addDays(current, -1);
+          case "WEEKLY":
+            return addDays(current, -7);
+          case "MONTHLY": {
+            const start = startOfMonth(current);
+            return addDays(start, -1);
+          }
+          case "YEARLY": {
+            const start = startOfYear(current);
+            return addDays(start, -1);
+          }
         }
-        case "YEARLY": {
-          const start = startOfYear(current);
-          return addDays(start, -1); // last day of previous year
-        }
-      }
+      });
     });
-  }, [selectedTab]);
+  }, [confirmOrProceed, selectedTab]);
 
   const goNext = useCallback(() => {
-    setSelectedDate((current) => {
-      switch (selectedTab) {
-        case "DAILY":
-          return addDays(current, 1);
-        case "WEEKLY":
-          return addDays(current, 7);
-        case "MONTHLY": {
-          const end = endOfMonth(current);
-          return addDays(end, 1); // first day of next month
+    confirmOrProceed(() => {
+      setSelectedDate((current) => {
+        switch (selectedTab) {
+          case "DAILY":
+            return addDays(current, 1);
+          case "WEEKLY":
+            return addDays(current, 7);
+          case "MONTHLY": {
+            const end = endOfMonth(current);
+            return addDays(end, 1);
+          }
+          case "YEARLY": {
+            const end = endOfYear(current);
+            return addDays(end, 1);
+          }
         }
-        case "YEARLY": {
-          const end = endOfYear(current);
-          return addDays(end, 1); // first day of next year
-        }
-      }
+      });
     });
-  }, [selectedTab]);
+  }, [confirmOrProceed, selectedTab]);
 
   const goToday = useCallback(() => {
-    setSelectedDate(todayYYYYMMDD());
-  }, []);
+    confirmOrProceed(() => {
+      setSelectedDate(todayYYYYMMDD());
+    });
+  }, [confirmOrProceed]);
 
   const value = useMemo<AnalyticsState>(
     () => ({
@@ -173,10 +252,11 @@ export function AnalyticsStateProvider({
       windowEnd,
       canonicalReviewDate,
       setTab,
-      setSelectedDate,
+      setSelectedDate: setSelectedDateGuarded,
       goPrev,
       goNext,
       goToday,
+      registerAnalyticsReviewGuard,
     }),
     [
       selectedTab,
@@ -185,15 +265,25 @@ export function AnalyticsStateProvider({
       windowEnd,
       canonicalReviewDate,
       setTab,
+      setSelectedDateGuarded,
       goPrev,
       goNext,
       goToday,
+      registerAnalyticsReviewGuard,
     ]
   );
 
   return (
     <AnalyticsStateContext.Provider value={value}>
       {children}
+      <UnsavedReviewChangesDialog
+        visible={reviewUnsavedOpen}
+        mode="navigation"
+        onDismiss={dismissReviewUnsaved}
+        onDiscard={handleReviewDiscardNavigate}
+        onSave={handleReviewSaveNavigate}
+        saveLoading={reviewNavSaving}
+      />
     </AnalyticsStateContext.Provider>
   );
 }

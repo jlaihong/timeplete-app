@@ -15,6 +15,8 @@ import {
   SECONDS_PER_DAY,
   type TimelineBlock,
 } from "./timeSpendTimelineUtils";
+/* Metro / Expo resolve `./TimeSpendTimelineBlock` to `TimeSpendTimelineBlock.web.tsx` on web. */
+import { TimeSpendTimelineBlock } from "./TimeSpendTimelineBlock";
 
 /**
  * Vertical wall-clock strip shared across calendar days — productivity-one
@@ -73,6 +75,8 @@ export interface TimeSpendTimelineChartProps {
   timeWindows: TimeWindowLite[];
   resolveTrackableId: (w: TimeWindowLite) => string | null;
   trackables: Record<string, TrackableLite | undefined>;
+  /** Same ladder as calendar `displayTitle` / `timeWindowCalendarDisplayTitle`. */
+  getCalendarDisplayTitle: (w: TimeWindowLite) => string;
   fallbackColour: string;
   dayLabel: (dayYYYYMMDD: string) => string;
 }
@@ -82,6 +86,7 @@ export function TimeSpendTimelineChart({
   timeWindows,
   resolveTrackableId,
   trackables,
+  getCalendarDisplayTitle,
   fallbackColour,
   dayLabel,
 }: TimeSpendTimelineChartProps) {
@@ -104,11 +109,19 @@ export function TimeSpendTimelineChart({
           resolveTrackableId,
           trackables,
           fallbackColour,
+          getCalendarDisplayTitle,
         ),
       );
       return { day, blocks };
     });
-  }, [days, timeWindows, resolveTrackableId, trackables, fallbackColour]);
+  }, [
+    days,
+    timeWindows,
+    resolveTrackableId,
+    trackables,
+    fallbackColour,
+    getCalendarDisplayTitle,
+  ]);
 
   if (!days.length) {
     return null;
@@ -204,8 +217,11 @@ export function TimeSpendTimelineChart({
                   minHeightPct,
                 );
                 return (
-                  <View
+                  <TimeSpendTimelineBlock
                     key={`${day}-${b.windowId}`}
+                    accessibilityLabel={`${b.displayTitle}, ${b.segmentTimeRangeLabel}`}
+                    displayTitle={b.displayTitle}
+                    segmentTimeRangeLabel={b.segmentTimeRangeLabel}
                     style={[
                       styles.block,
                       {

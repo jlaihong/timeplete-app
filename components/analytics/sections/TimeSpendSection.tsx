@@ -7,6 +7,7 @@ import {
   getDayOfWeekLetter,
   parseYYYYMMDD,
 } from "../../../lib/dates";
+import { timeWindowCalendarDisplayTitle } from "../../../lib/editDialogAttributedHistory";
 import { SectionCard } from "../SectionCard";
 import {
   useAnalyticsDataset,
@@ -100,6 +101,17 @@ export function TimeSpendSection() {
   const dayColumnCaption = useCallback(
     (d: string) => dayCaptionForTimeline(d, selectedTab),
     [selectedTab],
+  );
+
+  const getCalendarDisplayTitle = useCallback(
+    (w: TimeWindowLite) =>
+      timeWindowCalendarDisplayTitle(
+        w,
+        dataset.tasks,
+        dataset.lists,
+        dataset.trackables,
+      ),
+    [dataset.tasks, dataset.lists, dataset.trackables],
   );
 
   const yearlyBuckets = useMemo<BarBucket[]>(() => {
@@ -217,6 +229,7 @@ export function TimeSpendSection() {
             timeWindows={dataset.timeWindows}
             resolveTrackableId={dataset.resolveTrackableId}
             trackables={dataset.trackables}
+            getCalendarDisplayTitle={getCalendarDisplayTitle}
             fallbackColour={FALLBACK_COLOUR}
             dayLabel={dayColumnCaption}
           />

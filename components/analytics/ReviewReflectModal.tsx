@@ -31,8 +31,11 @@ import {
   type ReviewFrequency,
 } from "../../lib/reviewParity";
 import { useAuth } from "../../hooks/useAuth";
+import { UnsavedReviewChangesDialog } from "./UnsavedReviewChangesDialog";
 
 type ParentTab = Exclude<ReviewFrequency, "DAILY">;
+
+type ReflectDraft = { dirty: boolean; save: () => Promise<void> } | null;
 
 export function ReviewReflectModal({
   visible,
@@ -41,6 +44,7 @@ export function ReviewReflectModal({
   parentTab,
   canonicalReviewDate,
   currentFrequency,
+  onDraftStateChange,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -48,6 +52,8 @@ export function ReviewReflectModal({
   parentTab: ParentTab;
   canonicalReviewDate: string;
   currentFrequency: ReviewFrequency;
+  /** Parent may register drafts for analytics tab/date guards. */
+  onDraftStateChange?: (draft: ReflectDraft) => void;
 }) {
   const { profileReady } = useAuth();
   const meta = useMemo(
@@ -69,11 +75,11 @@ export function ReviewReflectModal({
     api.reviews.searchQuestions,
     visible && profileReady && meta
       ? { frequency: meta.childFrequency }
-      : "skip",
+      : "skip"
   );
   const currentQuestionsRaw = useQuery(
     api.reviews.searchQuestions,
-    visible && profileReady ? { frequency: currentFrequency } : "skip",
+    visible && profileReady ? { frequency: currentFrequency } : "skip"
   );
   const currentAnswers = useQuery(
     api.reviews.searchAnswers,
@@ -82,7 +88,7 @@ export function ReviewReflectModal({
           frequency: currentFrequency,
           dayUnderReview: canonicalReviewDate,
         }
-      : "skip",
+      : "skip"
   );
 
   const bulkUpsert = useMutation(api.reviews.bulkUpsertAnswers);
@@ -127,6 +133,7 @@ export function ReviewReflectModal({
   const [answerTexts, setAnswerTexts] = useState<Record<string, string>>({});
   const [initialTexts, setInitialTexts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [unsavedDismissOpen, setUnsavedDismissOpen] = useState(false);
 
   useEffect(() => {
     if (!visible || !currentAnswers) return;
@@ -136,6 +143,7 @@ export function ReviewReflectModal({
     }
     setAnswerTexts({ ...next });
     setInitialTexts({ ...next });
+    setUnsavedDismissOpen(false);
   }, [visible, currentAnswers, canonicalReviewDate, currentFrequency]);
 
   const isDirty = useMemo(() => {
@@ -147,6 +155,58 @@ export function ReviewReflectModal({
     }
     return false;
   }, [answerTexts, initialTexts]);
+
+  const performSaveToServer = useCallback(async () => {
+    const toSave = displayCurrentQs.map((q) => ({
+      reviewQuestionId: q._id,
+      answerText: answerTexts[q._id] ?? "",
+      frequency: currentFrequency,
+      dayUnderReview: canonicalReviewDate,
+    }));
+    if (toSave.length > 0) {
+      await bulkUpsert({ answers: toSave });
+    }
+    setInitialTexts({ ...answerTexts });
+  }, [
+    displayCurrentQs,
+    answerTexts,
+    currentFrequency,
+    canonicalReviewDate,
+    bulkUpsert,
+  ]);
+
+  const finalizeSave = useCallback(
+    async (closeModal: boolean) => {
+      setSaving(true);
+      try {
+        await performSaveToServer();
+        onSaved?.();
+        if (closeModal) onClose();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Save failed";
+        if (Platform.OS === "web") {
+          // eslint-disable-next-line no-alert
+          window.alert(msg);
+        } else Alert.alert("Save failed", msg);
+        throw e;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [performSaveToServer, onSaved, onClose]
+  );
+
+  useEffect(() => {
+    if (!onDraftStateChange) return;
+    if (!visible) {
+      onDraftStateChange(null);
+      return;
+    }
+    onDraftStateChange({
+      dirty: isDirty,
+      save: () => finalizeSave(true),
+    });
+  }, [visible, isDirty, onDraftStateChange, finalizeSave]);
 
   const getAnswerForQuestion = useCallback(
     (date: string, questionId: string): string => {
@@ -167,51 +227,18 @@ export function ReviewReflectModal({
     [orderedDates, childAnswersByDate]
   );
 
-  const requestClose = () => {
+  const requestCloseMain = () => {
+    setUnsavedDismissOpen(false);
     if (!isDirty) {
       onClose();
       return;
     }
-    if (Platform.OS === "web") {
-      // eslint-disable-next-line no-alert
-      if (
-        window.confirm(
-          "You have unsaved changes. Discard them?"
-        )
-      ) {
-        onClose();
-      }
-    } else {
-      Alert.alert("Unsaved changes", "Discard your edits?", [
-        { text: "Keep editing", style: "cancel" },
-        { text: "Discard", style: "destructive", onPress: onClose },
-      ]);
-    }
+    setUnsavedDismissOpen(true);
   };
 
-  const save = async () => {
-    if (saving) return;
-    const toSave = displayCurrentQs.map((q) => ({
-      reviewQuestionId: q._id,
-      answerText: answerTexts[q._id] ?? "",
-      frequency: currentFrequency,
-      dayUnderReview: canonicalReviewDate,
-    }));
-    setSaving(true);
-    try {
-      if (toSave.length > 0) {
-        await bulkUpsert({ answers: toSave });
-      }
-      setInitialTexts({ ...answerTexts });
-      onSaved?.();
-      onClose();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Save failed";
-      if (Platform.OS === "web") window.alert(msg);
-      else Alert.alert("Save failed", msg);
-    } finally {
-      setSaving(false);
-    }
+  const confirmDiscardDismiss = () => {
+    setUnsavedDismissOpen(false);
+    onClose();
   };
 
   if (!visible) return null;
@@ -221,102 +248,117 @@ export function ReviewReflectModal({
   const currentHeading = `${meta.currentLabel} Review`;
 
   return (
-    <DialogOverlay onBackdropPress={requestClose} zIndex={2500}>
-      <DialogCard
-        desktopWidth={1200}
-        style={[
-          styles.reflectCard,
-          Platform.OS === "web"
-            ? ({ width: "90vw", maxWidth: 1200 } as object)
-            : null,
-        ]}
-      >
-        <DialogHeader title={title} onClose={requestClose} />
-        <View
+    <>
+      <DialogOverlay onBackdropPress={requestCloseMain} zIndex={2500}>
+        <DialogCard
+          desktopWidth={1200}
           style={[
-            styles.reflectContent,
-            Platform.OS === "web" && styles.reflectContentWeb,
+            styles.reflectCard,
+            Platform.OS === "web"
+              ? ({ width: "90vw", maxWidth: 1200 } as object)
+              : null,
           ]}
         >
-          <View style={styles.reflectColumns}>
-            <ScrollView
-              style={[styles.reflectColumn, styles.reflectChildColumn]}
-              contentContainerStyle={styles.columnPad}
-            >
-              <Text style={styles.columnHeading}>{childHeading}</Text>
-              {datesWithAnswers.map((date) => {
-                const answers = childAnswersByDate.get(date);
-                if (!answers || answers.length === 0) return null;
-                return (
-                  <View key={date} style={styles.dateGroup}>
-                    <Text style={styles.dateHeading}>
-                      {dateLabels.get(date) ?? date}
-                    </Text>
-                    {childQuestions.map((q) => {
-                      const answer = getAnswerForQuestion(date, q._id);
-                      if (!answer) return null;
-                      return (
-                        <View key={q._id} style={styles.qaPair}>
-                          <Text style={styles.questionLabel}>
-                            {q.questionText}
-                          </Text>
-                          <Text style={styles.answerText}>{answer}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              })}
-              {datesWithAnswers.length === 0 ? (
-                <Text style={styles.emptyState}>
-                  No {meta.childLabel.toLowerCase()} reviews found for this
-                  period.
-                </Text>
-              ) : null}
-            </ScrollView>
+          <DialogHeader title={title} onClose={requestCloseMain} />
+          <View
+            style={[
+              styles.reflectContent,
+              Platform.OS === "web" && styles.reflectContentWeb,
+            ]}
+          >
+            <View style={styles.reflectColumns}>
+              <ScrollView
+                style={[styles.reflectColumn, styles.reflectChildColumn]}
+                contentContainerStyle={styles.columnPad}
+              >
+                <Text style={styles.columnHeading}>{childHeading}</Text>
+                {datesWithAnswers.map((date) => {
+                  const answersForDate = childAnswersByDate.get(date);
+                  if (!answersForDate || answersForDate.length === 0) return null;
+                  return (
+                    <View key={date} style={styles.dateGroup}>
+                      <Text style={styles.dateHeading}>
+                        {dateLabels.get(date) ?? date}
+                      </Text>
+                      {childQuestions.map((q) => {
+                        const answer = getAnswerForQuestion(date, q._id);
+                        if (!answer) return null;
+                        return (
+                          <View key={q._id} style={styles.qaPair}>
+                            <Text style={styles.questionLabel}>
+                              {q.questionText}
+                            </Text>
+                            <Text style={styles.answerText}>{answer}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  );
+                })}
+                {datesWithAnswers.length === 0 ? (
+                  <Text style={styles.emptyState}>
+                    No {meta.childLabel.toLowerCase()} reviews found for this
+                    period.
+                  </Text>
+                ) : null}
+              </ScrollView>
 
-            <ScrollView
-              style={styles.reflectColumn}
-              contentContainerStyle={styles.columnPad}
-            >
-              <Text style={styles.columnHeading}>{currentHeading}</Text>
-              {displayCurrentQs.length === 0 ? (
-                <Text style={styles.emptyState}>
-                  No questions configured for{" "}
-                  {meta.currentLabel.toLowerCase()} reviews.
-                </Text>
-              ) : (
-                displayCurrentQs.map((q) => (
-                  <View key={q._id} style={styles.currentField}>
-                    <Text style={styles.currentLabel}>{q.questionText}</Text>
-                    <TextInput
-                      style={styles.currentTextarea}
-                      value={answerTexts[q._id] ?? ""}
-                      onChangeText={(t) =>
-                        setAnswerTexts((prev) => ({ ...prev, [q._id]: t }))
-                      }
-                      placeholder="Your answer..."
-                      placeholderTextColor={Colors.textTertiary}
-                      multiline
-                      textAlignVertical="top"
-                    />
-                  </View>
-                ))
-              )}
-            </ScrollView>
+              <ScrollView
+                style={styles.reflectColumn}
+                contentContainerStyle={styles.columnPad}
+              >
+                <Text style={styles.columnHeading}>{currentHeading}</Text>
+                {displayCurrentQs.length === 0 ? (
+                  <Text style={styles.emptyState}>
+                    No questions configured for{" "}
+                    {meta.currentLabel.toLowerCase()} reviews.
+                  </Text>
+                ) : (
+                  displayCurrentQs.map((q) => (
+                    <View key={q._id} style={styles.currentField}>
+                      <Text style={styles.currentLabel}>{q.questionText}</Text>
+                      <TextInput
+                        style={styles.currentTextarea}
+                        value={answerTexts[q._id] ?? ""}
+                        onChangeText={(t) =>
+                          setAnswerTexts((prev) => ({ ...prev, [q._id]: t }))
+                        }
+                        placeholder="Your answer..."
+                        placeholderTextColor={Colors.textTertiary}
+                        multiline
+                        textAlignVertical="top"
+                      />
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+            </View>
           </View>
-        </View>
 
-        <DialogFooter>
-          <Button title="Cancel" variant="ghost" onPress={requestClose} />
-          <Button
-            title={saving ? "Saving..." : "Save"}
-            onPress={save}
-            disabled={saving}
-          />
-        </DialogFooter>
-      </DialogCard>
-    </DialogOverlay>
+          <DialogFooter>
+            <Button
+              title="Cancel"
+              variant="ghost"
+              onPress={requestCloseMain}
+            />
+            <Button
+              title="Save"
+              loading={saving}
+              disabled={saving}
+              onPress={() => void finalizeSave(true)}
+            />
+          </DialogFooter>
+        </DialogCard>
+      </DialogOverlay>
+
+      <UnsavedReviewChangesDialog
+        visible={unsavedDismissOpen}
+        mode="discard"
+        zIndex={3600}
+        onDismiss={() => setUnsavedDismissOpen(false)}
+        onDiscard={confirmDiscardDismiss}
+      />
+    </>
   );
 }
 
