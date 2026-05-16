@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Drawer } from "expo-router/drawer";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
@@ -55,6 +55,17 @@ function navDrawerGroupFromHrefString(href: string): NavDrawerGroup | null {
   return null;
 }
 
+const PREFETCH_DRAWER_HREFS: Href[] = [
+  "/(app)/(tabs)",
+  "/(app)/(tabs)/goals",
+  "/(app)/(tabs)/analytics",
+  "/(app)/(tabs)/calendar",
+  "/(app)/(tabs)/reviews",
+  "/(app)/tags",
+  "/(app)/lists",
+  "/(app)/shared",
+];
+
 function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { navigation } = props;
   useRegisterDrawerNavigationForDesktopChrome(navigation);
@@ -64,6 +75,14 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
   const expoRouter = useRouter();
   const segments = useSegments();
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
+
+  useEffect(() => {
+    if (!profileReady) return;
+    for (const href of PREFETCH_DRAWER_HREFS) {
+      router.prefetch(href);
+    }
+  }, [profileReady]);
+
   const inboxList =
     lists
       ?.filter((l) => l.isInbox && !l.archived)
