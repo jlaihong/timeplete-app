@@ -26,6 +26,11 @@ import { NavPathTrace } from "../../components/debug/NavPathTrace";
 import { NavTreeProfiler } from "../../components/debug/NavTreeProfiler";
 import { flushExpoRouterNavigationQueue } from "../../lib/flushExpoRouterNavigationQueue";
 import {
+  expoHrefToBrowserPath,
+  pushBrowserHistorySync,
+  replaceBrowserHistorySync,
+} from "../../lib/syncBrowserHistory";
+import {
   logRouterInvoked,
   traceRouterDispatched,
   traceSidebarClick,
@@ -133,6 +138,21 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         const there = navDrawerGroupFromHrefString(href);
         useReplaceCrossGroup =
           here != null && there != null && here !== there;
+      }
+
+      // Update the browser URL synchronously *before* dispatching the
+      // router action. React Navigation's `useLinking` only updates
+      // `window.history` from a microtask that runs after React has
+      // re-rendered the destination screen, so on a heavy desktop layout
+      // the URL bar visibly trails the click by hundreds of ms. Pushing
+      // the URL ourselves here lands it in the same task as the event.
+      if (typeof href === "string") {
+        const browserPath = expoHrefToBrowserPath(href);
+        if (useReplace || useReplaceCrossGroup) {
+          replaceBrowserHistorySync(browserPath);
+        } else {
+          pushBrowserHistorySync(browserPath);
+        }
       }
 
       if (useReplace || useReplaceCrossGroup) {
@@ -315,6 +335,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         onPress={async () => {
           await authClient.signOut();
           navigation.closeDrawer();
+          replaceBrowserHistorySync("/");
           router.replace("/");
           flushExpoRouterNavigationQueue(navigationContainerRef);
         }}
