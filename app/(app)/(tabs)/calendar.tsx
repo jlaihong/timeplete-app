@@ -8,6 +8,7 @@ import {
 } from "../../../components/shared/CalendarView";
 import { EventDialog } from "../../../components/calendar/EventDialog";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
+import { HomeDndProvider } from "../../../components/dnd/HomeDndProvider";
 
 /**
  * Single dialog state — there is one EventDialog instance reused for
@@ -28,37 +29,41 @@ export default function CalendarScreen() {
   const [dialog, setDialog] = useState<DialogState>(null);
 
   return (
-    <View style={styles.container}>
-      <CalendarView
-        title={isDesktop ? "Calendar" : undefined}
-        onAddEvent={(day, prefill) => {
-          setDialog({ mode: "create", day, prefill: prefill ?? null });
-        }}
-        onEditEvent={(event) => {
-          setDialog({
-            mode: "edit",
-            day: event.startDayYYYYMMDD,
-            event,
-          });
-        }}
-      />
-
-      {dialog && (
-        <EventDialog
-          day={dialog.day}
-          existingEvent={dialog.mode === "edit" ? dialog.event : undefined}
-          defaultStartTimeHHMM={
-            dialog.mode === "create" ? dialog.prefill?.startTimeHHMM : undefined
-          }
-          defaultDurationMinutes={
-            dialog.mode === "create"
-              ? dialog.prefill?.durationMinutes
-              : undefined
-          }
-          onClose={() => setDialog(null)}
+    <HomeDndProvider>
+      <View style={styles.container}>
+        <CalendarView
+          title={isDesktop ? "Calendar" : undefined}
+          onAddEvent={(day, prefill) => {
+            setDialog({ mode: "create", day, prefill: prefill ?? null });
+          }}
+          onEditEvent={(event) => {
+            setDialog({
+              mode: "edit",
+              day: event.startDayYYYYMMDD,
+              event,
+            });
+          }}
         />
-      )}
-    </View>
+
+        {dialog && (
+          <EventDialog
+            day={dialog.day}
+            existingEvent={dialog.mode === "edit" ? dialog.event : undefined}
+            defaultStartTimeHHMM={
+              dialog.mode === "create"
+                ? dialog.prefill?.startTimeHHMM
+                : undefined
+            }
+            defaultDurationMinutes={
+              dialog.mode === "create"
+                ? dialog.prefill?.durationMinutes
+                : undefined
+            }
+            onClose={() => setDialog(null)}
+          />
+        )}
+      </View>
+    </HomeDndProvider>
   );
 }
 
