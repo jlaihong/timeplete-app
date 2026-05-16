@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Drawer } from "expo-router/drawer";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Ionicons } from "@expo/vector-icons";
@@ -38,6 +38,95 @@ import {
 } from "../../lib/navInstrumentation";
 
 const drawerItemStyle = { borderRadius: 8 };
+
+/**
+ * `DrawerItem` from `@react-navigation/drawer` does shallow prop compare in its
+ * memo wrapper. Wrapping with our own React.memo plus stable callbacks/icon
+ * factories means only items whose `focused` state actually changes re-render
+ * on a sidebar click. Without this the entire drawer (10+ items + N user
+ * lists) re-renders on every navigation — the profiler caught a 47-72ms
+ * Drawer phase=update which dominated the longtask blocking the main thread
+ * between click and first paint.
+ */
+type NavDrawerItemProps = {
+  label: string;
+  focused: boolean;
+  iconName: keyof typeof Ionicons.glyphMap;
+  iconColor?: string;
+  labelStyle?: { color?: string };
+  onPress: () => void;
+};
+
+const NavDrawerItem = React.memo(function NavDrawerItem({
+  label,
+  focused,
+  iconName,
+  iconColor,
+  labelStyle,
+  onPress,
+}: NavDrawerItemProps) {
+  const icon = useCallback(
+    ({ size, color }: { size: number; color: string }) => (
+      <Ionicons
+        name={iconName}
+        size={size}
+        color={iconColor ?? color}
+      />
+    ),
+    [iconName, iconColor],
+  );
+  return (
+    <DrawerItem
+      label={label}
+      focused={focused}
+      activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
+      inactiveTintColor={Colors.textSecondary}
+      activeTintColor={Colors.textSecondary}
+      style={drawerItemStyle}
+      labelStyle={labelStyle}
+      icon={icon}
+      onPress={onPress}
+    />
+  );
+});
+
+type ListDrawerItemProps = {
+  label: string;
+  colour: string;
+  focused: boolean;
+  onPress: () => void;
+};
+
+/**
+ * Per-list rows in the "My Lists" section. Same memoization rationale as
+ * {@link NavDrawerItem}, plus the icon is a plain coloured dot (not an Ionic
+ * glyph) so it has its own stable factory keyed on the list colour.
+ */
+const ListDrawerItem = React.memo(function ListDrawerItem({
+  label,
+  colour,
+  focused,
+  onPress,
+}: ListDrawerItemProps) {
+  const icon = useCallback(
+    () => (
+      <View style={[styles.listDot, { backgroundColor: colour }]} />
+    ),
+    [colour],
+  );
+  return (
+    <DrawerItem
+      label={label}
+      focused={focused}
+      activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
+      inactiveTintColor={Colors.textSecondary}
+      activeTintColor={Colors.textSecondary}
+      style={drawerItemStyle}
+      icon={icon}
+      onPress={onPress}
+    />
+  );
+});
 
 /**
  * Expo Router maps imperative calls to React Navigation actions in `getNavigateAction`:
@@ -80,6 +169,88 @@ const PREFETCH_DRAWER_HREFS: Href[] = [
   "/(app)/shared",
 ];
 
+type DrawerGoEnv = {
+  segments: readonly string[];
+  isDesktop: boolean;
+  navigation: DrawerContentComponentProps["navigation"];
+  expoRouter: ReturnType<typeof useRouter>;
+  navigationContainerRef: ReturnType<typeof useNavigationContainerRef>;
+};
+
+/**
+ * `go()` reads `segments`, `isDesktop`, `navigation`, etc. — all of which
+ * change across the lifetime of the drawer. If we listed them as deps the
+ * callback identity would change on every nav and bust the per-item memos
+ * (see {@link NavDrawerItem}). So we store the latest values in a ref the
+ * outer component updates each render, and let `go` look them up through
+ * the ref. Net effect: per-item `onPress` callbacks stay stable forever,
+ * but `go` always sees fresh state.
+ */
+function buildStableGo(envRef: { current: DrawerGoEnv }): (href: Href) => void {
+  return (href: Href) => {
+    const { segments, isDesktop, navigation, expoRouter, navigationContainerRef } =
+      envRef.current;
+    const traceSeq = typeof href === "string" ? traceSidebarClick(href) : 0;
+    const s = segments;
+    const onListDetail =
+      s[0] === "(app)" && s[1] === "lists" && typeof s[2] === "string";
+
+    let useReplace = false;
+    if (typeof href === "string") {
+      const prefix = "/(app)/lists/";
+      if (onListDetail && href.startsWith(prefix)) {
+        const idPart = href.slice(prefix.length);
+        if (idPart.length > 0 && !idPart.includes("/")) {
+          useReplace = true;
+        }
+      }
+    }
+
+    let useReplaceCrossGroup = false;
+    if (!useReplace && typeof href === "string") {
+      const here = navDrawerGroupFromSegments(s);
+      const there = navDrawerGroupFromHrefString(href);
+      useReplaceCrossGroup =
+        here != null && there != null && here !== there;
+    }
+
+    // See note in the original implementation: pushing browser history
+    // synchronously here lands the URL bar update in the same task as
+    // the click, ahead of React Navigation's deferred microtask.
+    if (typeof href === "string") {
+      const browserPath = expoHrefToBrowserPath(href);
+      if (useReplace || useReplaceCrossGroup) {
+        replaceBrowserHistorySync(browserPath);
+      } else {
+        pushBrowserHistorySync(browserPath);
+      }
+    }
+
+    if (useReplace || useReplaceCrossGroup) {
+      expoRouter.replace(href);
+      if (typeof href === "string") {
+        logRouterInvoked(traceSeq, "replace");
+        traceRouterDispatched("replace", href);
+      }
+    } else {
+      expoRouter.navigate(href);
+      if (typeof href === "string") {
+        logRouterInvoked(traceSeq, "navigate");
+        traceRouterDispatched("navigate", href);
+      }
+    }
+
+    flushExpoRouterNavigationQueue(navigationContainerRef);
+    if (traceSeq !== 0) {
+      traceSidebarClickFlushComplete(traceSeq);
+    }
+
+    if (!isDesktop) {
+      navigation.closeDrawer();
+    }
+  };
+}
+
 function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { navigation } = props;
   useRegisterDrawerNavigationForDesktopChrome(navigation);
@@ -112,73 +283,65 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
     return lists.filter((l) => !l.archived && !l.isInbox);
   }, [lists]);
 
-  const go = useCallback(
-    (href: Href) => {
-      const traceSeq = typeof href === "string" ? traceSidebarClick(href) : 0;
-      const s = segments as readonly string[];
-      const onListDetail =
-        s[0] === "(app)" &&
-        s[1] === "lists" &&
-        typeof s[2] === "string";
+  const envRef = useRef<DrawerGoEnv>({
+    segments,
+    isDesktop,
+    navigation,
+    expoRouter,
+    navigationContainerRef,
+  });
+  envRef.current = {
+    segments,
+    isDesktop,
+    navigation,
+    expoRouter,
+    navigationContainerRef,
+  };
+  // `go` is stable for the lifetime of the component — `useCallback` with
+  // an empty dep array is intentional; everything mutable goes through
+  // `envRef`. This is what unlocks the per-item `useCallback`s below to
+  // also stay stable, so memoized `NavDrawerItem`s don't re-render on
+  // every navigation.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const go = useCallback(buildStableGo(envRef), []);
 
-      let useReplace = false;
-      if (typeof href === "string") {
-        const prefix = "/(app)/lists/";
-        if (onListDetail && href.startsWith(prefix)) {
-          const idPart = href.slice(prefix.length);
-          if (idPart.length > 0 && !idPart.includes("/")) {
-            useReplace = true;
-          }
-        }
-      }
+  const onHome = useCallback(() => go("/(app)/(tabs)"), [go]);
+  const onTrackables = useCallback(() => go("/(app)/(tabs)/goals"), [go]);
+  const onAnalytics = useCallback(() => go("/(app)/(tabs)/analytics"), [go]);
+  const onReviews = useCallback(() => go("/(app)/(tabs)/reviews"), [go]);
+  const onTags = useCallback(() => go("/(app)/tags"), [go]);
+  const onAllLists = useCallback(() => go("/(app)/lists"), [go]);
+  const onShared = useCallback(() => go("/(app)/shared"), [go]);
+  const inboxId = inboxList?._id ?? null;
+  const onInbox = useCallback(() => {
+    if (inboxId) go(`/(app)/lists/${inboxId}`);
+  }, [go, inboxId]);
 
-      let useReplaceCrossGroup = false;
-      if (!useReplace && typeof href === "string") {
-        const here = navDrawerGroupFromSegments(s);
-        const there = navDrawerGroupFromHrefString(href);
-        useReplaceCrossGroup =
-          here != null && there != null && here !== there;
-      }
+  const onSignOut = useCallback(async () => {
+    await authClient.signOut();
+    navigation.closeDrawer();
+    replaceBrowserHistorySync("/");
+    router.replace("/");
+    flushExpoRouterNavigationQueue(navigationContainerRef);
+  }, [navigation, navigationContainerRef]);
 
-      // Update the browser URL synchronously *before* dispatching the
-      // router action. React Navigation's `useLinking` only updates
-      // `window.history` from a microtask that runs after React has
-      // re-rendered the destination screen, so on a heavy desktop layout
-      // the URL bar visibly trails the click by hundreds of ms. Pushing
-      // the URL ourselves here lands it in the same task as the event.
-      if (typeof href === "string") {
-        const browserPath = expoHrefToBrowserPath(href);
-        if (useReplace || useReplaceCrossGroup) {
-          replaceBrowserHistorySync(browserPath);
-        } else {
-          pushBrowserHistorySync(browserPath);
-        }
+  // Stable per-list onPress map: looked up by list id. The map itself is
+  // recreated when the list set changes, but the *individual* callbacks
+  // stay stable across renders within that set so `ListDrawerItem`s can
+  // skip re-rendering when only the focused id changed.
+  const listOnPressMap = useMemo(() => {
+    const map = new Map<string, () => void>();
+    if (sidebarLists) {
+      for (const list of sidebarLists) {
+        map.set(list._id, () => go(`/(app)/lists/${list._id}`));
       }
+    }
+    return map;
+  }, [sidebarLists, go]);
 
-      if (useReplace || useReplaceCrossGroup) {
-        expoRouter.replace(href);
-        if (typeof href === "string") {
-          logRouterInvoked(traceSeq, "replace");
-          traceRouterDispatched("replace", href);
-        }
-      } else {
-        expoRouter.navigate(href);
-        if (typeof href === "string") {
-          logRouterInvoked(traceSeq, "navigate");
-          traceRouterDispatched("navigate", href);
-        }
-      }
-
-      flushExpoRouterNavigationQueue(navigationContainerRef);
-      if (traceSeq !== 0) {
-        traceSidebarClickFlushComplete(traceSeq);
-      }
-
-      if (!isDesktop) {
-        navigation.closeDrawer();
-      }
-    },
-    [expoRouter, isDesktop, navigation, navigationContainerRef, segments],
+  const signOutLabelStyle = useMemo(
+    () => ({ color: Colors.error }),
+    [],
   );
 
   return (
@@ -189,83 +352,47 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
         </View>
       )}
 
-      <DrawerItem
+      <NavDrawerItem
         label="Home"
         focused={sel.home}
-        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.textSecondary}
-        style={drawerItemStyle}
-        icon={({ size, color }) => (
-          <Ionicons name="home-outline" size={size} color={color} />
-        )}
-        onPress={() => go("/(app)/(tabs)")}
+        iconName="home-outline"
+        onPress={onHome}
       />
       {inboxList ? (
-        <DrawerItem
+        <NavDrawerItem
           label="Inbox"
           focused={sel.inbox}
-          activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
-          inactiveTintColor={Colors.textSecondary}
-          activeTintColor={Colors.textSecondary}
-          style={drawerItemStyle}
-          icon={({ size, color }) => (
-            <Ionicons name="file-tray-outline" size={size} color={color} />
-          )}
-          onPress={() => go(`/(app)/lists/${inboxList._id}`)}
+          iconName="file-tray-outline"
+          onPress={onInbox}
         />
       ) : null}
-      <DrawerItem
+      <NavDrawerItem
         label="Trackables"
         focused={sel.goals}
-        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.textSecondary}
-        style={drawerItemStyle}
-        icon={({ size, color }) => (
-          <Ionicons name="analytics-outline" size={size} color={color} />
-        )}
-        onPress={() => go("/(app)/(tabs)/goals")}
+        iconName="analytics-outline"
+        onPress={onTrackables}
       />
-      <DrawerItem
+      <NavDrawerItem
         label="Analytics"
         focused={sel.analytics}
-        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.textSecondary}
-        style={drawerItemStyle}
-        icon={({ size, color }) => (
-          <Ionicons name="bar-chart-outline" size={size} color={color} />
-        )}
-        onPress={() => go("/(app)/(tabs)/analytics")}
+        iconName="bar-chart-outline"
+        onPress={onAnalytics}
       />
 
       {!isDesktop && (
-        <DrawerItem
+        <NavDrawerItem
           label="Reviews"
           focused={sel.reviews}
-          activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
-          inactiveTintColor={Colors.textSecondary}
-          activeTintColor={Colors.textSecondary}
-          style={drawerItemStyle}
-          icon={({ size, color }) => (
-            <Ionicons name="journal-outline" size={size} color={color} />
-          )}
-          onPress={() => go("/(app)/(tabs)/reviews")}
+          iconName="journal-outline"
+          onPress={onReviews}
         />
       )}
 
-      <DrawerItem
+      <NavDrawerItem
         label="Tags"
         focused={sel.tags}
-        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.textSecondary}
-        style={drawerItemStyle}
-        icon={({ size, color }) => (
-          <Ionicons name="pricetag-outline" size={size} color={color} />
-        )}
-        onPress={() => go("/(app)/tags")}
+        iconName="pricetag-outline"
+        onPress={onTags}
       />
 
       <View style={styles.divider} />
@@ -274,71 +401,40 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       {sidebarLists &&
         sidebarLists.map(
           (list: { _id: string; name: string; colour: string }) => (
-            <DrawerItem
+            <ListDrawerItem
               key={list._id}
               label={list.name}
+              colour={list.colour}
               focused={sel.activeListId === list._id}
-              activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
-              inactiveTintColor={Colors.textSecondary}
-              activeTintColor={Colors.textSecondary}
-              style={drawerItemStyle}
-              icon={() => (
-                <View
-                  style={[styles.listDot, { backgroundColor: list.colour }]}
-                />
-              )}
-              onPress={() => go(`/(app)/lists/${list._id}`)}
+              onPress={listOnPressMap.get(list._id)!}
             />
           ),
         )}
-      <DrawerItem
+      <NavDrawerItem
         label="All Lists"
         focused={sel.allLists}
-        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.textSecondary}
-        style={drawerItemStyle}
-        icon={({ size, color }) => (
-          <Ionicons name="list-outline" size={size} color={color} />
-        )}
-        onPress={() => go("/(app)/lists")}
+        iconName="list-outline"
+        onPress={onAllLists}
       />
 
       <View style={styles.divider} />
 
-      <DrawerItem
+      <NavDrawerItem
         label="Shared with Me"
         focused={sel.shared}
-        activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
-        inactiveTintColor={Colors.textSecondary}
-        activeTintColor={Colors.textSecondary}
-        style={drawerItemStyle}
-        icon={({ size, color }) => (
-          <Ionicons name="people-outline" size={size} color={color} />
-        )}
-        onPress={() => go("/(app)/shared")}
+        iconName="people-outline"
+        onPress={onShared}
       />
 
       <View style={styles.divider} />
 
-      <DrawerItem
+      <NavDrawerItem
         label="Sign Out"
-        labelStyle={{ color: Colors.error }}
-        style={drawerItemStyle}
-        icon={({ size }) => (
-          <Ionicons
-            name="log-out-outline"
-            size={size}
-            color={Colors.error}
-          />
-        )}
-        onPress={async () => {
-          await authClient.signOut();
-          navigation.closeDrawer();
-          replaceBrowserHistorySync("/");
-          router.replace("/");
-          flushExpoRouterNavigationQueue(navigationContainerRef);
-        }}
+        focused={false}
+        iconName="log-out-outline"
+        iconColor={Colors.error}
+        labelStyle={signOutLabelStyle}
+        onPress={onSignOut}
       />
     </DrawerContentScrollView>
   );
