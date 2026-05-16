@@ -1,4 +1,8 @@
-import { timeWindowBoundsMs, tryParseYYYYMMDD } from "../../lib/dates";
+import {
+  formatLocalTimeRangeHm,
+  timeWindowBoundsMs,
+  tryParseYYYYMMDD,
+} from "../../lib/dates";
 import type { TimeWindowLite } from "./useAnalyticsDataset";
 import type { TrackableLite } from "./useAnalyticsDataset";
 
@@ -10,6 +14,10 @@ export interface TimelineBlock {
   endSec: number;
   colour: string;
   trackableId: string | null;
+  /** Same naming rules as the calendar (`timeWindowCalendarDisplayTitle`). */
+  displayTitle: string;
+  /** Clipped segment on this chart column (wall clock). */
+  segmentTimeRangeLabel: string;
 }
 
 export function clipTimeWindowToDay(
@@ -18,6 +26,7 @@ export function clipTimeWindowToDay(
   resolveTrackableId: (tw: TimeWindowLite) => string | null,
   trackables: Record<string, TrackableLite | undefined>,
   fallbackColour: string,
+  getDisplayTitle: (tw: TimeWindowLite) => string,
 ): TimelineBlock | null {
   const bounds = timeWindowBoundsMs(w);
   const dayDate = tryParseYYYYMMDD(dayYYYYMMDD);
@@ -47,6 +56,8 @@ export function clipTimeWindowToDay(
     endSec: (segEnd - dayStart) / 1000,
     colour: trackable?.colour ?? fallbackColour,
     trackableId: tid,
+    displayTitle: getDisplayTitle(w),
+    segmentTimeRangeLabel: formatLocalTimeRangeHm(segStart, segEnd),
   };
 }
 
@@ -56,6 +67,7 @@ export function buildBlocksForDay(
   resolveTrackableId: (tw: TimeWindowLite) => string | null,
   trackables: Record<string, TrackableLite | undefined>,
   fallbackColour: string,
+  getDisplayTitle: (tw: TimeWindowLite) => string,
 ): TimelineBlock[] {
   const out: TimelineBlock[] = [];
   for (const w of windows) {
@@ -65,6 +77,7 @@ export function buildBlocksForDay(
       resolveTrackableId,
       trackables,
       fallbackColour,
+      getDisplayTitle,
     );
     if (b) out.push(b);
   }

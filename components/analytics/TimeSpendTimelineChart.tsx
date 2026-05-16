@@ -73,6 +73,8 @@ export interface TimeSpendTimelineChartProps {
   timeWindows: TimeWindowLite[];
   resolveTrackableId: (w: TimeWindowLite) => string | null;
   trackables: Record<string, TrackableLite | undefined>;
+  /** Same ladder as calendar `displayTitle` / `timeWindowCalendarDisplayTitle`. */
+  getCalendarDisplayTitle: (w: TimeWindowLite) => string;
   fallbackColour: string;
   dayLabel: (dayYYYYMMDD: string) => string;
 }
@@ -82,6 +84,7 @@ export function TimeSpendTimelineChart({
   timeWindows,
   resolveTrackableId,
   trackables,
+  getCalendarDisplayTitle,
   fallbackColour,
   dayLabel,
 }: TimeSpendTimelineChartProps) {
@@ -104,11 +107,19 @@ export function TimeSpendTimelineChart({
           resolveTrackableId,
           trackables,
           fallbackColour,
+          getCalendarDisplayTitle,
         ),
       );
       return { day, blocks };
     });
-  }, [days, timeWindows, resolveTrackableId, trackables, fallbackColour]);
+  }, [
+    days,
+    timeWindows,
+    resolveTrackableId,
+    trackables,
+    fallbackColour,
+    getCalendarDisplayTitle,
+  ]);
 
   if (!days.length) {
     return null;
@@ -203,9 +214,14 @@ export function TimeSpendTimelineChart({
                   (span / SECONDS_PER_DAY) * 100,
                   minHeightPct,
                 );
+                const hoverTip = `${b.displayTitle}\n${b.segmentTimeRangeLabel}`;
                 return (
                   <View
                     key={`${day}-${b.windowId}`}
+                    accessibilityLabel={`${b.displayTitle}, ${b.segmentTimeRangeLabel}`}
+                    // Native browser tooltip on web (parity with ColourSwatchPicker).
+                    // @ts-expect-error — `title` is web-only.
+                    title={Platform.OS === "web" ? hoverTip : undefined}
                     style={[
                       styles.block,
                       {

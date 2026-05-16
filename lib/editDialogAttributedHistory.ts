@@ -101,11 +101,52 @@ function windowAttributedToTrackableClient(
   );
 }
 
+/** Rows maps only need fields used by the calendar title ladder. */
+type CalendarTitleTaskRow = {
+  name?: string;
+  listId?: string | null | undefined;
+};
+type CalendarTitleListRow = { name: string };
+type CalendarTitleTrackableRow = { name: string };
+
+/** Minimal fields for title ladder (analytics payloads use plain string ids). */
+export type CalendarDisplayTitleWindowInput = {
+  activityType: "TASK" | "EVENT" | "TRACKABLE";
+  trackableId?: string | null;
+  taskId?: string | null;
+  listId?: string | null;
+  title?: string | null;
+};
+
+/**
+ * Calendar / analytics display title — matches `enrichTimeWindowsWithDisplayFields`
+ * (`convex/_helpers/timeWindowDisplayEnrichment.ts`).
+ */
+export function timeWindowCalendarDisplayTitle(
+  w: CalendarDisplayTitleWindowInput,
+  tasks: Record<
+    string,
+    ({ _id: string } & CalendarTitleTaskRow) | undefined
+  >,
+  lists: Record<string, ({ _id: string } & CalendarTitleListRow) | undefined>,
+  trackables: Record<
+    string,
+    ({ _id: string } & CalendarTitleTrackableRow) | undefined
+  >,
+): string {
+  return displayTitleForEditHistoryWindow(
+    w as TW,
+    mapById(tasks) as Map<string, CalendarTitleTaskRow>,
+    mapById(lists) as Map<string, CalendarTitleListRow>,
+    mapById(trackables) as Map<string, CalendarTitleTrackableRow>,
+  );
+}
+
 function displayTitleForEditHistoryWindow(
   w: TW,
-  tasksById: Map<string, TaskSubset>,
-  listsById: Map<string, ListSubset>,
-  trackablesById: Map<string, TrackableSubset>,
+  tasksById: Map<string, CalendarTitleTaskRow>,
+  listsById: Map<string, CalendarTitleListRow>,
+  trackablesById: Map<string, CalendarTitleTrackableRow>,
 ): string {
   let derivedTitle: string | undefined;
   const directListDoc = w.listId ? listsById.get(String(w.listId)) : undefined;
@@ -232,9 +273,9 @@ export function mergeTrackerDetailsHistory(opts: {
 
       const derivedLabel = displayTitleForEditHistoryWindow(
         twSansCaption,
-        tasksById,
-        listsById,
-        trackablesById,
+        tasksById as Map<string, CalendarTitleTaskRow>,
+        listsById as Map<string, CalendarTitleListRow>,
+        trackablesById as Map<string, CalendarTitleTrackableRow>,
       );
 
       const commentsUnified = titleTrim ?? commentsTrim ?? derivedLabel;
