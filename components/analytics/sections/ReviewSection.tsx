@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -19,12 +25,15 @@ import { ReviewQuestionsSettingsModal } from "../../reviews/ReviewQuestionsSetti
 import { displayReviewQuestions } from "../../../lib/reviewParity";
 import { useAuth } from "../../../hooks/useAuth";
 
+type ReflectDraftRef = { dirty: boolean; save: () => Promise<void> } | null;
+
 /* productivity-one `review-component` in analytics column — header row:
  * "Review" + Reflect link + spacer + settings icon; questions from
  * `displayQuestions`; settings opens `ReviewQuestionsSettingsComponent`. */
 
 export function ReviewSection() {
-  const { selectedTab, canonicalReviewDate } = useAnalyticsState();
+  const { selectedTab, canonicalReviewDate, registerAnalyticsReviewGuard } =
+    useAnalyticsState();
   const { profileReady } = useAuth();
   const frequency = selectedTab;
 
@@ -32,9 +41,11 @@ export function ReviewSection() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const reflectDraftRef = useRef<ReflectDraftRef>(null);
+
   const questions = useQuery(
     api.reviews.searchQuestions,
-    profileReady ? { frequency } : "skip",
+    profileReady ? { frequency } : "skip"
   );
   const existingAnswers = useQuery(
     api.reviews.searchAnswers,
@@ -43,7 +54,7 @@ export function ReviewSection() {
           frequency,
           dayUnderReview: canonicalReviewDate,
         }
-      : "skip",
+      : "skip"
   );
   const bulkUpsert = useMutation(api.reviews.bulkUpsertAnswers);
 
@@ -58,23 +69,46 @@ export function ReviewSection() {
     if (existingAnswers) {
       const map: Record<string, string> = {};
       for (const a of existingAnswers) {
-        map[a.reviewQuestionId] = a.answerText;
+        map[a.reviewQuestionId] = a.answerText ?? "";
       }
       setAnswers(map);
     }
   }, [existingAnswers, canonicalReviewDate, frequency]);
 
-  const handleSave = async () => {
-    if (saving) return;
+  const persistedByQuestion = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (existingAnswers) {
+      for (const a of existingAnswers) {
+        map[a.reviewQuestionId] = a.answerText ?? "";
+      }
+    }
+    return map;
+  }, [existingAnswers]);
+
+  const sectionDirty = useMemo(() => {
+    for (const q of displayQs) {
+      const cur = answers[q._id] ?? "";
+      const base = persistedByQuestion[q._id] ?? "";
+      if (cur !== base) return true;
+    }
+    return false;
+  }, [answers, displayQs, persistedByQuestion]);
+
+  const persistAnswers = useCallback(async () => {
     const toSave = displayQs.map((q) => ({
       reviewQuestionId: q._id,
       answerText: answers[q._id] ?? "",
       frequency,
       dayUnderReview: canonicalReviewDate,
     }));
+    await bulkUpsert({ answers: toSave });
+  }, [displayQs, answers, frequency, canonicalReviewDate, bulkUpsert]);
+
+  const saveSection = useCallback(async () => {
+    if (saving) return;
     setSaving(true);
     try {
-      await bulkUpsert({ answers: toSave });
+      await persistAnswers();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Save failed";
       if (Platform.OS === "web") {
@@ -83,10 +117,33 @@ export function ReviewSection() {
       } else {
         Alert.alert("Save failed", msg);
       }
+      throw e;
     } finally {
       setSaving(false);
     }
-  };
+  }, [saving, persistAnswers]);
+
+  const handleReflectDraftChange = useCallback((draft: ReflectDraftRef) => {
+    reflectDraftRef.current = draft;
+  }, []);
+
+  useEffect(() => {
+    registerAnalyticsReviewGuard({
+      isDirty: () =>
+        sectionDirty || (reflectDraftRef.current?.dirty ?? false),
+      save: async () => {
+        if (sectionDirty) await persistAnswers();
+        const draft = reflectDraftRef.current;
+        if (draft?.dirty) await draft.save();
+      },
+      onDiscard: () => setReflectOpen(false),
+    });
+    return () => registerAnalyticsReviewGuard(null);
+  }, [
+    registerAnalyticsReviewGuard,
+    sectionDirty,
+    persistAnswers,
+  ]);
 
   const showReflect = selectedTab !== "DAILY";
 
@@ -140,8 +197,9 @@ export function ReviewSection() {
 
             <View style={{ marginTop: 8 }}>
               <Button
-                title={saving ? "Saving..." : "Save"}
-                onPress={handleSave}
+                title="Save"
+                loading={saving}
+                onPress={() => void saveSection()}
                 disabled={saving}
                 variant="primary"
               />
@@ -163,6 +221,7 @@ export function ReviewSection() {
           parentTab={selectedTab}
           canonicalReviewDate={canonicalReviewDate}
           currentFrequency={frequency}
+          onDraftStateChange={handleReflectDraftChange}
         />
       ) : null}
     </>
