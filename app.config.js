@@ -6,13 +6,10 @@
  * When `.env.local` lists a stale pair (Convex moved to another port), we
  * usually probe localhost for an OPEN pair before Metro bundles.
  *
- * Metro sometimes evaluates config in a sandbox where **loopback TCP probes
- * silently fail**. In that case we still pick a deterministic order:
- * `.convex/.../config.json` → **3210/3211** (shared agent-flow local Convex) →
- * env literals → legacy **3212/3213**.
- *
- * Without that blind fallback Metro would embed unreachable ports from `.env.local`
- * and Better Auth/login shows only `"Failed to fetch"`.
+ * **Do not probe arbitrary “agent-flow” ports (e.g. 3210/3211)** here: any
+ * unrelated TCP listener on those ports would win the probe and Metro would
+ * embed the wrong Convex URLs → Better Auth login shows only `"Failed to fetch"`.
+ * Alternate ports belong in `.convex/.../config.json` or `EXPO_PUBLIC_*` only.
  */
 const fs = require("fs");
 const path = require("path");
@@ -196,7 +193,6 @@ function pickResolvedLoopbackConvexUrls(mergedCloud, mergedSite) {
 
   pushProbe(filePair);
   pushProbe(envPair);
-  pushProbe([3210, 3211]);
   pushProbe([3212, 3213]);
 
   for (const pair of probeOrder) {
@@ -224,7 +220,6 @@ function pickResolvedLoopbackConvexUrls(mergedCloud, mergedSite) {
   }
 
   pushBlind(filePair);
-  pushBlind([3210, 3211]);
   pushBlind(envPair);
   pushBlind([3212, 3213]);
 

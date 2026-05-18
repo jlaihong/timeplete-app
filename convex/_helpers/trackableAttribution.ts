@@ -201,6 +201,59 @@ export function getCompletedTaskCount(
 }
 
 /**
+ * Anchor day used by per-day / per-week / per-month averages.
+ *
+ * We use the FIRST DAY this trackable saw any activity (timer window,
+ * manual tracker entry with a real value, or a `trackableDays` row with
+ * `numCompleted > 0`) instead of `trackable.startDayYYYYMMDD`.
+ *
+ * Why: `startDayYYYYMMDD` is a *user-set* milestone. Time windows can
+ * legitimately exist *before* it because productivity-one back-fills
+ * historical task time onto a Trackable that was created later (union
+ * attribution: `tw.taskId → task.list → listTrackableLinks`). When that
+ * happens, dividing by `(today - startDay)` over-weights the average
+ * because the numerator includes hours the denominator excludes.
+ *
+ * If there's been no activity at all we fall back to
+ * `fallbackStartDay` so the formula still produces a finite, non-zero
+ * denominator for brand-new trackables.
+ *
+ * All inputs MUST be in compact `YYYYMMDD` form (use
+ * `toCompactYYYYMMDD` first if you have dashed dates).
+ */
+export function firstActivityDayYYYYMMDD(opts: {
+  attributedWindows: Array<{ startDayYYYYMMDD: string }>;
+  trackerEntries: Array<{
+    dayYYYYMMDD: string;
+    countValue?: number;
+    durationSeconds?: number;
+  }>;
+  trackableDays: Array<{ dayYYYYMMDD: string; numCompleted: number }>;
+  fallbackStartDay: string;
+}): string {
+  let earliest: string | null = null;
+  for (const w of opts.attributedWindows) {
+    const d = w.startDayYYYYMMDD;
+    if (!d) continue;
+    if (earliest === null || d < earliest) earliest = d;
+  }
+  for (const e of opts.trackerEntries) {
+    const d = e.dayYYYYMMDD;
+    if (!d) continue;
+    // Only count entries that actually contribute to a total.
+    if ((e.countValue ?? 0) <= 0 && (e.durationSeconds ?? 0) <= 0) continue;
+    if (earliest === null || d < earliest) earliest = d;
+  }
+  for (const td of opts.trackableDays) {
+    const d = td.dayYYYYMMDD;
+    if (!d) continue;
+    if (td.numCompleted <= 0) continue;
+    if (earliest === null || d < earliest) earliest = d;
+  }
+  return earliest ?? opts.fallbackStartDay;
+}
+
+/**
  * Sum-helper — completed task count for a single trackable across a
  * date range (inclusive). Pass `null` for either bound to treat that
  * end as "no limit".

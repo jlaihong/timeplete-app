@@ -5,6 +5,7 @@ import {
   buildCompletedTaskCountsByTrackableDay,
   buildListIdToTrackableId,
   buildTaskInfoMap,
+  firstActivityDayYYYYMMDD,
   getCompletedTaskCount,
   sumCompletedTaskCounts,
   timeWindowAttributedToTrackable,
@@ -604,22 +605,35 @@ export const getGoalDetails = query({
               .reduce((s, e) => s + (e.countValue ?? 0), 0)
           : 0;
 
-      // Daily averages — windowed from the trackable's start to today,
-      // clamped to at least 1 day so we never divide by zero.
+      // Daily averages — anchored to the FIRST day the trackable saw
+      // any activity (not `trackable.startDayYYYYMMDD`). See
+      // `firstActivityDayYYYYMMDD` for the full rationale; in short,
+      // back-filled time windows can pre-date `startDayYYYYMMDD` and
+      // would otherwise distort the per-day average. Falls back to
+      // `startDay` when there's no activity yet so a brand-new
+      // trackable still has a sensible (small) denominator.
       let dailyTimeAverageSeconds = 0;
       let dailyCountAverage = 0;
-      if (todayValid && isYYYYMMDDCompact(startDay) && todayArg! >= startDay) {
-        const elapsedDays = Math.max(
-          1,
-          diffDaysYYYYMMDD(startDay, todayArg!) + 1
-        );
-        dailyTimeAverageSeconds = totalSeconds / elapsedDays;
-        // Use entry-count for trackers, day-count otherwise.
-        const totalCountForAvg =
-          trackable.trackableType === "TRACKER"
-            ? totalEntryCount
-            : totalDayCount;
-        dailyCountAverage = totalCountForAvg / elapsedDays;
+      if (todayValid && isYYYYMMDDCompact(startDay)) {
+        const anchorDay = firstActivityDayYYYYMMDD({
+          attributedWindows,
+          trackerEntries,
+          trackableDays,
+          fallbackStartDay: startDay,
+        });
+        if (isYYYYMMDDCompact(anchorDay) && todayArg! >= anchorDay) {
+          const elapsedDays = Math.max(
+            1,
+            diffDaysYYYYMMDD(anchorDay, todayArg!) + 1
+          );
+          dailyTimeAverageSeconds = totalSeconds / elapsedDays;
+          // Use entry-count for trackers, day-count otherwise.
+          const totalCountForAvg =
+            trackable.trackableType === "TRACKER"
+              ? totalEntryCount
+              : totalDayCount;
+          dailyCountAverage = totalCountForAvg / elapsedDays;
+        }
       }
 
       // `totalCount` is the user-facing "lifetime count":
@@ -984,15 +998,22 @@ export const getTrackableAnalyticsSeries = query({
           trackerSeconds: beforeEntrySeconds,
         };
 
-        // Lifetime averages (per week / month / year). Computed from the
-        // trackable's start day to today so they're stable regardless of
-        // the analytics window the user is viewing — same numbers shown
-        // on whatever tab/date.
+        // Lifetime averages (per week / month / year). Anchored to
+        // the trackable's FIRST activity day (not its `startDayYYYYMMDD`)
+        // — same reason as `getGoalDetails`, see
+        // `firstActivityDayYYYYMMDD`. Falls back to `startDayYYYYMMDD`
+        // when no activity has been logged yet.
         const today = todayYYYYMMDD();
         const startDay = toCompactYYYYMMDD(trackable.startDayYYYYMMDD);
+        const anchorDay = firstActivityDayYYYYMMDD({
+          attributedWindows,
+          trackerEntries: tEntries,
+          trackableDays: tDays,
+          fallbackStartDay: startDay,
+        });
         const elapsedDays = Math.max(
           1,
-          diffDaysYYYYMMDD(startDay, today) + 1
+          diffDaysYYYYMMDD(anchorDay, today) + 1
         );
         const lifetimeEntrySeconds = tEntries.reduce(
           (s, e) => s + (e.durationSeconds ?? 0),

@@ -1,0 +1,24 @@
+# Per-project environment variables, loaded by direnv when you `cd` into this directory.
+#
+# Setup once:
+#   sudo apt install direnv
+#   echo 'eval "$(direnv hook bash)"' >> ~/.bashrc && source ~/.bashrc
+#
+# Per checkout:
+#   cp .envrc.example .envrc
+#   # fill in the secrets below
+#   direnv allow .
+#
+# `.envrc` is gitignored. Never commit it.
+
+# AWS profile used by scripts/deploy-web.sh (S3 + CloudFront).
+export AWS_PROFILE="timeplete-prod-deployment"
+
+# Convex production deploy key.
+# Generate from https://dashboard.convex.dev → project → Settings → Deploy Keys → Production.
+# Required for `npx convex deploy` and `npx tsx scripts/migration/load.ts --prod`.
+export CONVEX_DEPLOY_KEY="prod:aware-anaconda-159|REPLACE_ME"
+
+# Live Supabase prod database password, used by scripts/migration/refresh-from-supabase.sh.
+# This is the password for the `postgres.qvurczbirerwyrjklbgu` pooler user.
+export SUPABASE_DB_PASSWORD="REPLACE_ME"

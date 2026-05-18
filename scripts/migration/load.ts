@@ -20,6 +20,7 @@
  */
 import { ConvexHttpClient } from "convex/browser";
 import { readFileSync, existsSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { internal } from "../../convex/_generated/api";
@@ -65,6 +66,110 @@ function loadLocalDeploymentConfig(): { url: string; adminKey: string } {
     url: `http://127.0.0.1:${config.ports.cloud}`,
     adminKey: config.adminKey,
   };
+}
+
+/**
+ * Resolve which Convex deployment we should push into.
+ *
+ * Default = local (anonymous `npx convex dev` backend), preserving the
+ * original behaviour for routine migration iteration.
+ *
+ * `--prod` switches to a hosted deployment. The deployment URL is derived
+ * from `CONVEX_DEPLOY_KEY`'s `prod:<deployment-name>|...` prefix, so we
+ * cannot accidentally point at the wrong cloud project. The deploy key
+ * itself doubles as the admin auth used by `setAdminAuth`. An explicit
+ * confirmation prompt protects against fat-fingering the flag against a
+ * production deployment that already has real users.
+ */
+async function resolveDeploymentTarget(): Promise<{
+  url: string;
+  adminKey: string;
+  label: string;
+  isCloud: boolean;
+}> {
+  const wantsProd = process.argv.includes("--prod");
+  if (!wantsProd) {
+    const local = loadLocalDeploymentConfig();
+    return { ...local, label: `local (${local.url})`, isCloud: false };
+  }
+
+  const key = process.env.CONVEX_DEPLOY_KEY?.trim();
+  if (!key) {
+    throw new Error(
+      "--prod requires CONVEX_DEPLOY_KEY in the environment (use direnv or `export CONVEX_DEPLOY_KEY=prod:<name>|<token>`).",
+    );
+  }
+  const m = key.match(/^(prod|dev|preview):([\w-]+)\|/);
+  if (!m) {
+    throw new Error(
+      "CONVEX_DEPLOY_KEY shape unrecognized; expected `prod:<name>|<token>`.",
+    );
+  }
+  const [, kind, name] = m;
+  if (kind !== "prod") {
+    throw new Error(
+      `Refusing to run --prod against a ${kind} deploy key. Generate a production deploy key in the Convex dashboard.`,
+    );
+  }
+  const explicitUrl = process.env.CONVEX_URL?.trim();
+  const url = explicitUrl ?? `https://${name}.convex.cloud`;
+  return {
+    url,
+    adminKey: key,
+    label: `CLOUD prod (${name})`,
+    isCloud: true,
+  };
+}
+
+async function confirmCloudWrite(target: {
+  url: string;
+  label: string;
+}): Promise<void> {
+  if (process.env.MIGRATION_CONFIRM === "yes") return;
+
+  const totals: Record<string, number> = {};
+  for (const file of [
+    "users.jsonl",
+    "tasks.jsonl",
+    "lists.jsonl",
+    "trackables.jsonl",
+    "timeWindows.jsonl",
+    "reviewQuestions.jsonl",
+    "reviewAnswers.jsonl",
+  ]) {
+    const path = join(IN_DIR, file);
+    if (!existsSync(path)) continue;
+    const txt = readFileSync(path, "utf8").trim();
+    totals[file] = txt ? txt.split("\n").length : 0;
+  }
+  const summary = Object.entries(totals)
+    .map(([k, v]) => `      ${k}: ${v}`)
+    .join("\n");
+
+  console.log("");
+  console.log("================================================================");
+  console.log(`  ABOUT TO WRITE TO ${target.label}`);
+  console.log(`  ${target.url}`);
+  console.log("");
+  console.log("  Sample row counts from migration-out/:");
+  console.log(summary);
+  console.log("");
+  console.log("  Importers are idempotent (key = legacyId), so re-running is safe.");
+  console.log("  To skip this prompt next time:  MIGRATION_CONFIRM=yes ...");
+  console.log("================================================================");
+  console.log("");
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const answer: string = await new Promise((resolve) =>
+    rl.question("Type `yes` to proceed, anything else to abort: ", (a) => {
+      rl.close();
+      resolve(a.trim().toLowerCase());
+    }),
+  );
+  if (answer !== "yes") {
+    console.log("Aborted.");
+    process.exit(1);
+  }
 }
 
 function readJsonl<T>(file: string): T[] {
@@ -197,13 +302,18 @@ async function loadUsers(
 }
 
 async function main() {
-  const { url, adminKey } = loadLocalDeploymentConfig();
-  console.log(`Connecting to local Convex at ${url}`);
-  const client = new ConvexHttpClient(url);
+  const target = await resolveDeploymentTarget();
+  console.log(`Connecting to ${target.label}`);
+  if (target.isCloud) {
+    await confirmCloudWrite(target);
+  }
+  const client = new ConvexHttpClient(target.url);
   // setAdminAuth is technically @internal but is the only way to call
-  // internalMutations from a Node script against a local deployment.
+  // internalMutations from a Node script. The admin key is either the
+  // local deployment's from `.convex/local/default/config.json` or the
+  // production deploy key from `CONVEX_DEPLOY_KEY` (when --prod is used).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (client as any).setAdminAuth(adminKey);
+  (client as any).setAdminAuth(target.adminKey);
 
   // ---- Users (must be first; everything else FK-references users) ----
   const userRows = readJsonl<UserRow>("users.jsonl");
