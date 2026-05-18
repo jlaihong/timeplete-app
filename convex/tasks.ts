@@ -12,6 +12,16 @@ import {
   resolveSnapshotTrackableIdForTask,
 } from "./_helpers/trackableAttribution";
 import { wallClockInTimeZone } from "./_helpers/wallClockTimeZone";
+import {
+  onTimeWindowDeleted,
+  onTimeWindowInserted,
+  onTimeWindowPatched,
+} from "./_helpers/taskTimeSpent";
+import {
+  onAttributedWindowDeleted,
+  onAttributedWindowInserted,
+  onAttributedWindowPatched,
+} from "./_helpers/trackableLifetime";
 
 /**
  * productivity-backend `upsert_task` sets `section_id` from `list_id` when the
@@ -174,21 +184,106 @@ export const search = query({
       tasks = tasks.filter((t) => !t.dateCompleted);
     }
 
-    const taskTagsAll = await ctx.db
-      .query("taskTags")
-      .withIndex("by_task")
-      .collect();
-    const tagMap = new Map<string, string[]>();
-    for (const tt of taskTagsAll) {
-      if (!tagMap.has(tt.taskId)) tagMap.set(tt.taskId, []);
-      tagMap.get(tt.taskId)!.push(tt.tagId);
+    // Tag enrichment reads from the denormalized `tasks.tagIds` field
+    // (see schema). The previous implementation scanned the entire
+    // `taskTags` table on every list-view subscription, which was the
+    // single largest contributor to read bandwidth for the lists screen.
+    //
+    // Legacy rows where the field has not been backfilled yet fall back
+    // to a per-row `by_task` lookup so the view stays correct during the
+    // migration window. After `_admin/backfillTaskTagIds:runAll` completes
+    // the fallback path is dead code.
+    const legacyRows = tasks.filter((t) => t.tagIds === undefined);
+    const legacyMap = new Map<string, Id<"tags">[]>();
+    if (legacyRows.length > 0) {
+      await Promise.all(
+        legacyRows.map(async (t) => {
+          const tts = await ctx.db
+            .query("taskTags")
+            .withIndex("by_task", (q) => q.eq("taskId", t._id))
+            .collect();
+          if (tts.length > 0) {
+            legacyMap.set(t._id, tts.map((tt) => tt.tagId));
+          }
+        }),
+      );
     }
 
     return tasks
       .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex)
       .map((t) => ({
         ...t,
-        tagIds: tagMap.get(t._id) ?? [],
+        tagIds: t.tagIds ?? legacyMap.get(t._id) ?? [],
+      }));
+  },
+});
+
+/**
+ * Single-task subscription used by `TaskDetailSheet`.
+ *
+ * Replaces `api.tasks.search({ includeCompleted: true }).find(t._id === id)`
+ * inside the detail sheet — that subscription was pulling every task the
+ * user has ever created (incl. completed history) and re-firing on every
+ * mutation. This query reads exactly two rows (the task + its tag rows)
+ * and ignores changes to unrelated tasks, dramatically reducing both
+ * payload size and reactive churn.
+ *
+ * Ownership is enforced server-side: returns `null` if the row belongs
+ * to another user, mirroring the visibility rule in `tasks.search`.
+ */
+export const getById = query({
+  args: { id: v.id("tasks") },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return null;
+
+    const task = await ctx.db.get(args.id);
+    if (!task || task.userId !== user._id) return null;
+
+    const tts = await ctx.db
+      .query("taskTags")
+      .withIndex("by_task", (q) => q.eq("taskId", task._id))
+      .collect();
+
+    return {
+      ...task,
+      tagIds: tts.map((tt) => tt.tagId),
+    };
+  },
+});
+
+/**
+ * Returns the set of sibling task ids generated from the same recurring
+ * rule. The detail sheet only needs to know *whether any future instance
+ * exists*, which previously required iterating the full task list. We
+ * scope to `by_recurring`, then project to `_id` + `taskDay` so the
+ * payload stays tiny even for long series.
+ *
+ * Returns an empty array when `recurringTaskId` is null/undefined so the
+ * caller can use the query unconditionally without `"skip"` plumbing.
+ */
+export const getRecurringSiblings = query({
+  args: {
+    recurringTaskId: v.union(v.id("recurringTasks"), v.null()),
+  },
+  handler: async (ctx, args) => {
+    if (!args.recurringTaskId) return [];
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
+
+    const siblings = await ctx.db
+      .query("tasks")
+      .withIndex("by_recurring", (q) =>
+        q.eq("recurringTaskId", args.recurringTaskId ?? undefined),
+      )
+      .collect();
+
+    return siblings
+      .filter((t) => t.userId === user._id)
+      .map((t) => ({
+        _id: t._id,
+        taskDay: t.taskDay,
+        dateCompleted: t.dateCompleted,
       }));
   },
 });
@@ -200,41 +295,40 @@ async function enrichHomeTasksPayload(
   ctx: QueryCtx,
   tasks: Doc<"tasks">[],
 ) {
-  const tagMap = new Map<string, string[]>();
-  const timeSpentMap = new Map<string, number>();
-  await Promise.all(
-    tasks.map(async (t) => {
-      const tts = await ctx.db
-        .query("taskTags")
-        .withIndex("by_task", (q) => q.eq("taskId", t._id))
-        .collect();
-      if (tts.length > 0) {
-        tagMap.set(
-          t._id,
-          tts.map((tt) => tt.tagId),
-        );
-      }
-
-      const windows = await ctx.db
-        .query("timeWindows")
-        .withIndex("by_task", (q) => q.eq("taskId", t._id))
-        .collect();
-      const totalFromWindows = windows
-        .filter((w) => w.activityType === "TASK" && w.budgetType === "ACTUAL")
-        .reduce((s, w) => s + (w.durationSeconds ?? 0), 0);
-      timeSpentMap.set(t._id, totalFromWindows);
-    }),
-  );
+  // Tags come from the denormalized `tasks.tagIds` field; legacy rows
+  // missing the field fall back to a per-row `by_task` scan.
+  //
+  // The per-task `timeWindows` re-aggregation that previously lived
+  // here has been removed (fix #4): `task.timeSpentInSecondsUnallocated`
+  // is now authoritative, maintained on every TASK ACTUAL window write
+  // by `_helpers/taskTimeSpent`. The previous implementation issued one
+  // `by_task` scan per home task on every query invocation, which was
+  // the second-largest source of home-page read bandwidth.
+  const legacyTagRows = tasks.filter((t) => t.tagIds === undefined);
+  const legacyTagMap = new Map<string, Id<"tags">[]>();
+  if (legacyTagRows.length > 0) {
+    await Promise.all(
+      legacyTagRows.map(async (t) => {
+        const tts = await ctx.db
+          .query("taskTags")
+          .withIndex("by_task", (q) => q.eq("taskId", t._id))
+          .collect();
+        if (tts.length > 0) {
+          legacyTagMap.set(
+            t._id,
+            tts.map((tt) => tt.tagId),
+          );
+        }
+      }),
+    );
+  }
 
   return tasks
     .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex)
     .map((t) => ({
       ...t,
-      timeSpentInSecondsUnallocated:
-        timeSpentMap.get(t._id) ??
-        t.timeSpentInSecondsUnallocated ??
-        0,
-      tagIds: tagMap.get(t._id) ?? [],
+      timeSpentInSecondsUnallocated: t.timeSpentInSecondsUnallocated ?? 0,
+      tagIds: t.tagIds ?? legacyTagMap.get(t._id) ?? [],
     }));
 }
 
@@ -280,40 +374,60 @@ export const getHomeTasks = query({
       )
       .collect();
 
-    // 2. Overdue tasks: taskDay < today, incomplete, not a recurring instance.
-    //    Index range scan limits us to past tasks for this user only;
-    //    the in-memory filter narrows further to incomplete + non-recurring.
-    const pastTasks = await ctx.db
+    // 2. Overdue tasks: incomplete, scheduled before today, not a
+    //    recurring instance.
+    //
+    //    Uses the `by_user_completed_day` index pinned to
+    //    `dateCompleted=undefined`, so the scan visits *only open*
+    //    tasks for this user — the previous implementation pulled
+    //    every past task ever created (incl. years of completed
+    //    history) and filtered in memory, which scaled linearly with
+    //    lifetime completed-task volume.
+    const overdueTasks = await ctx.db
       .query("tasks")
-      .withIndex("by_user_day", (q) =>
-        q.eq("userId", user._id).lt("taskDay", today)
+      .withIndex("by_user_completed_day", (q) =>
+        q
+          .eq("userId", user._id)
+          .eq("dateCompleted", undefined)
+          .lt("taskDay", today),
       )
       .collect();
-
-    const overdueTasks = pastTasks.filter(
-      (t) =>
-        t.taskDay !== undefined &&
-        !t.dateCompleted &&
-        !t.isRecurringInstance
+    const filteredOverdue = overdueTasks.filter(
+      (t) => t.taskDay !== undefined && !t.isRecurringInstance,
     );
 
     // 3. Tasks completed inside [today, rangeEnd] but originally scheduled
     //    before today – we want them to render in their completion-day
-    //    bucket (matching productivity-one's grouping). Pull from past
-    //    incomplete-task-set's complement: scan past tasks, keep ones whose
-    //    dateCompleted falls in window.
-    const completedInWindow = pastTasks.filter(
+    //    bucket (matching productivity-one's grouping).
+    //
+    //    Uses the same index prefixed on `dateCompleted` so the scan
+    //    walks only tasks whose completion timestamp falls in the
+    //    visible window. This replaces an in-memory filter of every
+    //    past task; the saving compounds as the user accumulates
+    //    history.
+    const completedInWindowRaw = await ctx.db
+      .query("tasks")
+      .withIndex("by_user_completed_day", (q) =>
+        q
+          .eq("userId", user._id)
+          .gte("dateCompleted", today)
+          .lte("dateCompleted", rangeEnd),
+      )
+      .collect();
+    // Preserve the previous shape: only include tasks that were originally
+    // scheduled before `today` (i.e. `taskDay !== undefined && taskDay < today`).
+    // Tasks completed today that were also scheduled in-window are already
+    // covered by `rangeTasks`.
+    const completedInWindow = completedInWindowRaw.filter(
       (t) =>
         t.taskDay !== undefined &&
-        t.dateCompleted !== undefined &&
-        t.dateCompleted >= today &&
-        t.dateCompleted <= rangeEnd
+        (t.taskDay as string) < today,
     );
 
-    // De-dupe by id – overdueTasks and rangeTasks should be disjoint, but
-    // completedInWindow can overlap with neither (different selectors).
+    // De-dupe by id – overdue, rangeTasks, and completedInWindow can
+    // overlap once tasks shift between groups during the merge.
     const byId = new Map<string, (typeof rangeTasks)[number]>();
-    for (const t of overdueTasks) byId.set(t._id, t);
+    for (const t of filteredOverdue) byId.set(t._id, t);
     for (const t of rangeTasks) byId.set(t._id, t);
     for (const t of completedInWindow) byId.set(t._id, t);
     const tasks = Array.from(byId.values());
@@ -437,6 +551,10 @@ export const upsert = mutation({
         patch.trackableId = args.trackableId ?? undefined;
       }
       if (args.assignedToUserId !== undefined) patch.assignedToUserId = args.assignedToUserId;
+      // Keep denormalized `tagIds` on the task row in sync with the patch.
+      // Readers like `tasks.search` / `lists.getPaginated` use this field
+      // to avoid scanning the entire `taskTags` table.
+      if (args.tagIds !== undefined) patch.tagIds = args.tagIds;
 
       await ctx.db.patch(args.id, patch as any);
 
@@ -478,6 +596,10 @@ export const upsert = mutation({
       userId: user._id,
       createdBy: user._id,
       assignedToUserId: args.assignedToUserId,
+      // Denormalized tag list — keeps list/home readers off the full
+      // `taskTags` table scan. `taskTags` rows below are the secondary
+      // index used by tag-centric queries (e.g. tag detail screens).
+      tagIds: args.tagIds ?? undefined,
     });
 
     await ctx.db.patch(taskId, { rootTaskId: args.parentId ? undefined : taskId });
@@ -777,10 +899,6 @@ export const setTimeSpent = mutation({
     const task = await ctx.db.get(args.taskId);
     if (!task) throw new Error("Task not found");
 
-    await ctx.db.patch(args.taskId, {
-      timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated,
-    });
-
     /**
      * Reconcile task windows to match the newly requested total.
      *
@@ -789,6 +907,12 @@ export const setTimeSpent = mutation({
      * - Increase: add a **new** ACTUAL slice ending at `Date.now()` with
      *   duration = delta (wall-clock via `inferIANAZoneForManualTaskSlice`; the
      *   client aligns optimistic patches with its grid TZ without mutation args).
+     *
+     * Note: we no longer patch `task.timeSpentInSecondsUnallocated` up
+     * front — instead the per-window helpers (`onTimeWindowPatched` /
+     * `onTimeWindowDeleted` / `onTimeWindowInserted`) keep the field
+     * in step with every individual window mutation below. Otherwise we
+     * would double-count: a pre-emptive patch plus per-window deltas.
      */
     const allWindows = await ctx.db
       .query("timeWindows")
@@ -804,7 +928,17 @@ export const setTimeSpent = mutation({
     );
 
     const desiredTotal = Math.max(0, args.timeSpentInSecondsUnallocated);
-    if (desiredTotal === currentTotal) return;
+    if (desiredTotal === currentTotal) {
+      // No window churn, but the task cache may still be stale (legacy
+      // rows pre-bookkeeping). Snap it to the canonical value so the
+      // home + list readers can trust the field on the next fetch.
+      if ((task.timeSpentInSecondsUnallocated ?? 0) !== desiredTotal) {
+        await ctx.db.patch(args.taskId, {
+          timeSpentInSecondsUnallocated: desiredTotal,
+        });
+      }
+      return;
+    }
 
     if (desiredTotal < currentTotal) {
       let toTrim = currentTotal - desiredTotal;
@@ -817,11 +951,53 @@ export const setTimeSpent = mutation({
         const dur = Math.max(0, w.durationSeconds ?? 0);
         if (dur <= toTrim) {
           await ctx.db.delete(w._id);
+          await onTimeWindowDeleted(ctx, {
+            taskId: w.taskId,
+            activityType: w.activityType,
+            budgetType: w.budgetType,
+            durationSeconds: dur,
+          });
+          await onAttributedWindowDeleted(ctx, {
+            trackableId: w.trackableId,
+            budgetType: w.budgetType,
+            durationSeconds: dur,
+          });
           toTrim -= dur;
         } else {
+          const nextDur = dur - toTrim;
           await ctx.db.patch(w._id, {
-            durationSeconds: dur - toTrim,
+            durationSeconds: nextDur,
           });
+          await onTimeWindowPatched(
+            ctx,
+            {
+              taskId: w.taskId,
+              activityType: w.activityType,
+              budgetType: w.budgetType,
+              durationSeconds: dur,
+            },
+            {
+              taskId: w.taskId,
+              activityType: w.activityType,
+              budgetType: w.budgetType,
+              durationSeconds: nextDur,
+            },
+          );
+          await onAttributedWindowPatched(
+            ctx,
+            {
+              trackableId: w.trackableId,
+              budgetType: w.budgetType,
+              durationSeconds: dur,
+              startDayYYYYMMDD: w.startDayYYYYMMDD,
+            },
+            {
+              trackableId: w.trackableId,
+              budgetType: w.budgetType,
+              durationSeconds: nextDur,
+              startDayYYYYMMDD: w.startDayYYYYMMDD,
+            },
+          );
           toTrim = 0;
         }
       }
@@ -874,6 +1050,19 @@ export const setTimeSpent = mutation({
       isRecurringInstance: false,
       source: "manual" as const,
     });
+    await onTimeWindowInserted(ctx, {
+      taskId: args.taskId,
+      activityType: "TASK" as const,
+      budgetType: "ACTUAL" as const,
+      durationSeconds: deltaSec,
+    });
+    if (snapshotTrackableId) {
+      await onAttributedWindowInserted(ctx, {
+        trackableId: snapshotTrackableId,
+        durationSeconds: deltaSec,
+        startDayYYYYMMDD: day,
+      });
+    }
   },
 });
 

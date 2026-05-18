@@ -77,14 +77,26 @@ export function useTimer() {
   const [localElapsed, setLocalElapsed] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  /**
+   * Elapsed seconds are derived from the row's `startTime` epoch on the client.
+   * The server intentionally no longer returns `elapsedSeconds` because reading
+   * `Date.now()` inside a Convex query is non-deterministic and bypasses the
+   * result cache — see `convex/timers.ts` for the rationale. The display owns
+   * the second-by-second tick locally.
+   */
   useEffect(() => {
-    if (timerData) {
-      setLocalElapsed(timerData.elapsedSeconds);
+    if (timerData?.startTime) {
+      const tick = () => {
+        const elapsed = Math.max(
+          0,
+          Math.floor((Date.now() - timerData.startTime) / 1000),
+        );
+        setLocalElapsed(elapsed);
+      };
+      tick();
 
       if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(() => {
-        setLocalElapsed((prev) => prev + 1);
-      }, 1000);
+      intervalRef.current = setInterval(tick, 1000);
     } else {
       setLocalElapsed(0);
       if (intervalRef.current) {

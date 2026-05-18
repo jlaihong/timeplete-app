@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { generateOccurrences } from "./_helpers/recurrence";
+import { onAttributedWindowInserted } from "./_helpers/trackableLifetime";
 
 const recurrenceFrequency = v.union(
   v.literal("DAILY"),
@@ -318,6 +319,15 @@ export const generateInstances = mutation({
           isRecurringInstance: true,
           source: "calendar",
         });
+        // Mirror trackable lifetime totals so `getGoalDetails` can serve
+        // all-time numbers off the row (fix #1).
+        if (rule.trackableId && rule.budgetType === "ACTUAL") {
+          await onAttributedWindowInserted(ctx, {
+            trackableId: rule.trackableId,
+            durationSeconds: rule.durationSeconds,
+            startDayYYYYMMDD: date,
+          });
+        }
         created++;
       }
     }

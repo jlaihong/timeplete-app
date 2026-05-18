@@ -175,12 +175,17 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     profileReady && showCalendar ? {} : "skip",
   );
 
+  // Lifetime average denominators inside the query require a client-supplied
+  // `today` so the handler stays deterministic and cacheable.
+  const todayCompact = useMemo(() => todayYYYYMMDD(), []);
+
   const analyticsSeries = useQuery(
     api.trackables.getTrackableAnalyticsSeries,
     profileReady && type === "TIME_TRACK" && calendarBounds
       ? {
           windowStart: calendarBounds.start,
           windowEnd: calendarBounds.end,
+          today: todayCompact,
         }
       : "skip",
   );

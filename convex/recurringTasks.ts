@@ -22,6 +22,8 @@ import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { generateOccurrences } from "./_helpers/recurrence";
+import { onTimeWindowInserted } from "./_helpers/taskTimeSpent";
+import { onAttributedWindowInserted } from "./_helpers/trackableLifetime";
 
 const recurrenceFrequency = v.union(
   v.literal("DAILY"),
@@ -470,6 +472,11 @@ export const generateInstances = mutation({
           taskDayOrderIndex: 0,
           userId: user._id,
           createdBy: user._id,
+          // Denormalized tag list mirrored from the rule so the home + list
+          // readers can skip the full `taskTags` scan. The matching
+          // `taskTags` rows below are still inserted as a secondary index.
+          tagIds:
+            rule.tagIds && rule.tagIds.length > 0 ? rule.tagIds : undefined,
         });
         // `rootTaskId` matches the task's own id for top-level tasks
         // (mirrors `tasks.upsert` initialization).
@@ -518,6 +525,25 @@ export const generateInstances = mutation({
               isRecurringInstance: false,
               source: "calendar",
             });
+            // Keep the denormalized task total in sync with the
+            // ACTUAL window we just inserted, otherwise the home/list
+            // readers (post-fix-#4) would render this freshly-generated
+            // instance as "0 time spent" even though it carries a
+            // scheduled block.
+            await onTimeWindowInserted(ctx, {
+              taskId,
+              activityType: "TASK" as const,
+              budgetType: "ACTUAL" as const,
+              durationSeconds: dur,
+            });
+            // Trackable totals for `getGoalDetails` (fix #1).
+            if (rule.trackableId) {
+              await onAttributedWindowInserted(ctx, {
+                trackableId: rule.trackableId,
+                durationSeconds: dur,
+                startDayYYYYMMDD: date,
+              });
+            }
           }
         }
       }

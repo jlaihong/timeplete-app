@@ -7,6 +7,7 @@ import { SectionCard } from "../SectionCard";
 import { useAnalyticsState } from "../AnalyticsState";
 import { AnalyticsTrackableWidgetFactory } from "../widgets/AnalyticsTrackableWidgetFactory";
 import { useAuth } from "../../../hooks/useAuth";
+import { todayYYYYMMDD } from "../../../lib/dates";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * Trackable Progression — analytics-page section.
@@ -41,12 +42,20 @@ export function TrackableProgressionSection() {
   const { selectedTab, windowStart, windowEnd } = useAnalyticsState();
   const { profileReady } = useAuth();
 
+  // `today` is supplied by the client so the lifetime-average denominator
+  // inside the query is deterministic (no `new Date()` in handlers — see
+  // `convex/trackables.ts`). Computed at render time; falls back to
+  // `windowEnd` on the server if absent. Cache key churn is bounded because
+  // `useAnalyticsState` already re-renders these sections daily.
+  const today = React.useMemo(() => todayYYYYMMDD(), []);
+
   const series = useQuery(
     api.trackables.getTrackableAnalyticsSeries,
     profileReady
       ? {
           windowStart,
           windowEnd,
+          today,
         }
       : "skip",
   );

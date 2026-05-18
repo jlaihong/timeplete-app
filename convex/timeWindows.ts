@@ -10,6 +10,16 @@ import {
 } from "./_helpers/trackableAttribution";
 import { enrichTimeWindowsWithDisplayFields } from "./_helpers/timeWindowDisplayEnrichment";
 import { wallClockGridToEpochMs } from "./_helpers/wallClockTimeZone";
+import {
+  onTimeWindowDeleted,
+  onTimeWindowInserted,
+  onTimeWindowPatched,
+} from "./_helpers/taskTimeSpent";
+import {
+  onAttributedWindowDeleted,
+  onAttributedWindowInserted,
+  onAttributedWindowPatched,
+} from "./_helpers/trackableLifetime";
 
 function minutesFromHHMM(hhmm: string): number {
   const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
@@ -286,10 +296,45 @@ export const upsert = mutation({
         timeZone: args.timeZone,
         source: args.source ?? existing.source,
       });
+      // Keep `task.timeSpentInSecondsUnallocated` in lock-step so the
+      // home/list readers can serve totals from the row directly
+      // without re-aggregating windows on every fetch (fix #4).
+      await onTimeWindowPatched(
+        ctx,
+        {
+          taskId: existing.taskId,
+          activityType: existing.activityType,
+          budgetType: existing.budgetType,
+          durationSeconds: existing.durationSeconds,
+        },
+        {
+          taskId: args.taskId,
+          activityType: args.activityType,
+          budgetType: args.budgetType,
+          durationSeconds: args.durationSeconds,
+        },
+      );
+      // And keep the trackable lifetime totals aligned so
+      // `getGoalDetails` can serve all-time numbers off the row (fix #1).
+      await onAttributedWindowPatched(
+        ctx,
+        {
+          trackableId: existing.trackableId,
+          budgetType: existing.budgetType,
+          durationSeconds: existing.durationSeconds,
+          startDayYYYYMMDD: existing.startDayYYYYMMDD,
+        },
+        {
+          trackableId: resolvedTrackableId,
+          budgetType: args.budgetType,
+          durationSeconds: args.durationSeconds,
+          startDayYYYYMMDD: args.startDayYYYYMMDD,
+        },
+      );
       return args.id;
     }
 
-    return await ctx.db.insert("timeWindows", {
+    const insertedId = await ctx.db.insert("timeWindows", {
       startTimeHHMM: args.startTimeHHMM,
       startDayYYYYMMDD: args.startDayYYYYMMDD,
       startTimeEpochMs,
@@ -308,6 +353,20 @@ export const upsert = mutation({
       isRecurringInstance: args.isRecurringInstance ?? false,
       source: args.source,
     });
+    await onTimeWindowInserted(ctx, {
+      taskId: args.taskId,
+      activityType: args.activityType,
+      budgetType: args.budgetType,
+      durationSeconds: args.durationSeconds,
+    });
+    if (resolvedTrackableId && args.budgetType === "ACTUAL") {
+      await onAttributedWindowInserted(ctx, {
+        trackableId: resolvedTrackableId,
+        durationSeconds: args.durationSeconds,
+        startDayYYYYMMDD: args.startDayYYYYMMDD,
+      });
+    }
+    return insertedId;
   },
 });
 
@@ -318,5 +377,16 @@ export const remove = mutation({
     const tw = await ctx.db.get(args.id);
     if (!tw) throw new Error("Time window not found");
     await ctx.db.delete(args.id);
+    await onTimeWindowDeleted(ctx, {
+      taskId: tw.taskId,
+      activityType: tw.activityType,
+      budgetType: tw.budgetType,
+      durationSeconds: tw.durationSeconds,
+    });
+    await onAttributedWindowDeleted(ctx, {
+      trackableId: tw.trackableId,
+      budgetType: tw.budgetType,
+      durationSeconds: tw.durationSeconds,
+    });
   },
 });

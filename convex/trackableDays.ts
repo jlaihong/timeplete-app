@@ -1,6 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
+import { onTrackableDayDelta } from "./_helpers/trackableLifetime";
 
 export const search = query({
   args: {
@@ -58,15 +59,28 @@ export const upsert = mutation({
         numCompleted: args.numCompleted,
         comments: args.comments ?? existing.comments,
       });
+      // Keep the denormalized lifetime day count in step with the
+      // numCompleted delta (fix #1).
+      await onTrackableDayDelta(ctx, {
+        trackableId: args.trackableId,
+        deltaNumCompleted: args.numCompleted - existing.numCompleted,
+        dayYYYYMMDD: args.dayYYYYMMDD,
+      });
       return existing._id;
     }
 
-    return await ctx.db.insert("trackableDays", {
+    const insertedId = await ctx.db.insert("trackableDays", {
       trackableId: args.trackableId,
       userId: user._id,
       dayYYYYMMDD: args.dayYYYYMMDD,
       numCompleted: args.numCompleted,
       comments: args.comments ?? "",
     });
+    await onTrackableDayDelta(ctx, {
+      trackableId: args.trackableId,
+      deltaNumCompleted: args.numCompleted,
+      dayYYYYMMDD: args.dayYYYYMMDD,
+    });
+    return insertedId;
   },
 });

@@ -93,6 +93,23 @@ export const remove = mutation({
       .query("taskTags")
       .withIndex("by_tag", (q) => q.eq("tagId", args.id))
       .collect();
+
+    // Clean up denormalized `tasks.tagIds` references in lock-step with
+    // the secondary `taskTags` rows, otherwise readers like
+    // `tasks.search` / `lists.getPaginated` would keep returning a
+    // dangling tag id whose definition has been deleted.
+    const touchedTaskIds = new Set(taskTags.map((tt) => tt.taskId));
+    for (const taskId of touchedTaskIds) {
+      const task = await ctx.db.get(taskId);
+      if (!task) continue;
+      if (!task.tagIds || task.tagIds.length === 0) continue;
+      const filtered = task.tagIds.filter((id) => id !== args.id);
+      if (filtered.length === task.tagIds.length) continue;
+      await ctx.db.patch(taskId, {
+        tagIds: filtered.length === 0 ? undefined : filtered,
+      });
+    }
+
     for (const tt of taskTags) {
       await ctx.db.delete(tt._id);
     }

@@ -82,6 +82,18 @@ export default defineSchema({
     userId: v.id("users"),
     createdBy: v.id("users"),
     assignedToUserId: v.optional(v.id("users")),
+    /**
+     * Denormalized copy of `taskTags.tagId` rows for this task. Maintained
+     * by `tasks.upsert` and the recurring writers. Lets readers like
+     * `tasks.search` and `lists.getPaginated` enrich rows without scanning
+     * the entire `taskTags` table (previously the single largest source of
+     * read bandwidth for list views).
+     *
+     * `taskTags` rows are still maintained for tag-lookup queries; treat
+     * them as a secondary index, not the source of truth. When the field
+     * is `undefined` on legacy rows the readers fall back to `taskTags`.
+     */
+    tagIds: v.optional(v.array(v.id("tags"))),
     legacyId: v.optional(v.string()),
   })
     .index("by_user_day", ["userId", "taskDay"])
@@ -91,6 +103,15 @@ export default defineSchema({
     .index("by_root", ["rootTaskId"])
     .index("by_trackable", ["trackableId"])
     .index("by_user", ["userId"])
+    // Drives the home page's overdue + recently-completed reads without
+    // scanning the user's entire task history.
+    //   - Overdue:           `eq(userId).eq(dateCompleted, undefined).lt(taskDay, today)`
+    //     → walks only OPEN tasks whose scheduled day is in the past.
+    //   - Completed-in-window: `eq(userId).gte(dateCompleted, today).lte(dateCompleted, rangeEnd)`
+    //     → walks only tasks completed inside the visible window.
+    // Both used to share a `by_user_day` scan that pulled every task
+    // ever scheduled before `today` — quadratic with completed history.
+    .index("by_user_completed_day", ["userId", "dateCompleted", "taskDay"])
     .index("by_legacy", ["legacyId"]),
 
   taskTags: defineTable({
@@ -280,6 +301,37 @@ export default defineSchema({
     trackCount: v.boolean(),
     autoCountFromCalendar: v.boolean(),
     isRatingTracker: v.boolean(),
+    /**
+     * Denormalized lifetime totals maintained by every writer that
+     * mutates an attributed `timeWindows` row, a `trackableDays` row, or
+     * a `trackerEntries` row. Lets `getGoalDetails` /
+     * `getTrackableAnalyticsSeries` serve all-time numbers without
+     * re-aggregating the user's full activity history on every reactive
+     * fire — previously the single largest contributor to home-page
+     * `Reads` bandwidth.
+     *
+     * Backfill: `_admin/backfillTrackableLifetime:runAll`. Until that
+     * runs the readers fall back to the legacy aggregation path so the
+     * UI stays correct.
+     */
+    /** Σ attributed window seconds + (for TRACKER) entry seconds. */
+    lifetimeTotalSeconds: v.optional(v.number()),
+    /** Count of attributed ACTUAL windows. */
+    lifetimeCalendarCount: v.optional(v.number()),
+    /** Σ trackableDays.numCompleted (does NOT include task-completion counts). */
+    lifetimeStoredDayCount: v.optional(v.number()),
+    /** Σ trackerEntries.countValue (TRACKER only). */
+    lifetimeTrackerEntryCount: v.optional(v.number()),
+    /** Σ trackerEntries.durationSeconds (TRACKER only). */
+    lifetimeTrackerEntrySeconds: v.optional(v.number()),
+    /** Count of trackerEntries rows (separate from countValue sum). */
+    lifetimeTrackerEntryRowCount: v.optional(v.number()),
+    /**
+     * Earliest day with any attributed activity (window / day / entry).
+     * Drives the lifetime "per day" averages in `getGoalDetails`. When
+     * undefined the reader falls back to `startDayYYYYMMDD`.
+     */
+    firstActivityDayYYYYMMDD: v.optional(v.string()),
     legacyId: v.optional(v.string()),
   })
     .index("by_user", ["userId"])

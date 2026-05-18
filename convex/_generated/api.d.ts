@@ -8,6 +8,9 @@
  * @module
  */
 
+import type * as _admin_backfillTaskTagIds from "../_admin/backfillTaskTagIds.js";
+import type * as _admin_backfillTaskTimeSpent from "../_admin/backfillTaskTimeSpent.js";
+import type * as _admin_backfillTrackableLifetime from "../_admin/backfillTrackableLifetime.js";
 import type * as _admin_cleanup from "../_admin/cleanup.js";
 import type * as _admin_cognitoBridge from "../_admin/cognitoBridge.js";
 import type * as _admin_import from "../_admin/import.js";
@@ -18,8 +21,10 @@ import type * as _helpers_eventColors from "../_helpers/eventColors.js";
 import type * as _helpers_ordering from "../_helpers/ordering.js";
 import type * as _helpers_permissions from "../_helpers/permissions.js";
 import type * as _helpers_recurrence from "../_helpers/recurrence.js";
+import type * as _helpers_taskTimeSpent from "../_helpers/taskTimeSpent.js";
 import type * as _helpers_timeWindowDisplayEnrichment from "../_helpers/timeWindowDisplayEnrichment.js";
 import type * as _helpers_trackableAttribution from "../_helpers/trackableAttribution.js";
+import type * as _helpers_trackableLifetime from "../_helpers/trackableLifetime.js";
 import type * as _helpers_wallClockTimeZone from "../_helpers/wallClockTimeZone.js";
 import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
@@ -47,6 +52,9 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "_admin/backfillTaskTagIds": typeof _admin_backfillTaskTagIds;
+  "_admin/backfillTaskTimeSpent": typeof _admin_backfillTaskTimeSpent;
+  "_admin/backfillTrackableLifetime": typeof _admin_backfillTrackableLifetime;
   "_admin/cleanup": typeof _admin_cleanup;
   "_admin/cognitoBridge": typeof _admin_cognitoBridge;
   "_admin/import": typeof _admin_import;
@@ -57,8 +65,10 @@ declare const fullApi: ApiFromModules<{
   "_helpers/ordering": typeof _helpers_ordering;
   "_helpers/permissions": typeof _helpers_permissions;
   "_helpers/recurrence": typeof _helpers_recurrence;
+  "_helpers/taskTimeSpent": typeof _helpers_taskTimeSpent;
   "_helpers/timeWindowDisplayEnrichment": typeof _helpers_timeWindowDisplayEnrichment;
   "_helpers/trackableAttribution": typeof _helpers_trackableAttribution;
+  "_helpers/trackableLifetime": typeof _helpers_trackableLifetime;
   "_helpers/wallClockTimeZone": typeof _helpers_wallClockTimeZone;
   analytics: typeof analytics;
   auth: typeof auth;

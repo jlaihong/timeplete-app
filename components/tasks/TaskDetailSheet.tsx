@@ -103,11 +103,15 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { profileReady } = useAuth();
 
-  const tasks = useQuery(
-    api.tasks.search,
-    profileReady ? { includeCompleted: true } : "skip",
+  // Single-row subscription instead of `api.tasks.search({ includeCompleted: true })`.
+  // The previous implementation pulled the user's entire task history (incl.
+  // completed rows) just to look up one task by id — by far the largest
+  // contributor to `Reads` bandwidth on the home → detail-sheet path. See
+  // `convex/tasks.ts::getById`.
+  const task = useQuery(
+    api.tasks.getById,
+    profileReady ? { id: taskId } : "skip",
   );
-  const task = tasks?.find((t) => t._id === taskId);
   const taskTimeWindows = useQuery(
     api.timeWindows.search,
     profileReady
@@ -270,16 +274,27 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     );
   }, [task, hasNonRecurrenceChanges, recurrenceDirty]);
 
+  // Sibling subscription scoped to the rule (small payload, indexed scan).
+  // Returns `[]` when `recurringTaskId` is missing so we can subscribe
+  // unconditionally without an extra `"skip"` branch.
+  const recurringSiblings = useQuery(
+    api.tasks.getRecurringSiblings,
+    profileReady
+      ? { recurringTaskId: task?.recurringTaskId ?? null }
+      : "skip",
+  );
+
   const hasFutureInstances = useMemo(() => {
-    if (!task?.recurringTaskId || !task.taskDay || !tasks) return false;
-    return tasks.some(
+    if (!task?.recurringTaskId || !task.taskDay || !recurringSiblings) {
+      return false;
+    }
+    return recurringSiblings.some(
       (t) =>
-        t.recurringTaskId === task.recurringTaskId &&
         t._id !== task._id &&
         !!t.taskDay &&
-        t.taskDay > task.taskDay!
+        t.taskDay > task.taskDay!,
     );
-  }, [task, tasks]);
+  }, [task, recurringSiblings]);
 
   if (!task || !form) return null;
 

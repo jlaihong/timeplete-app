@@ -7,6 +7,8 @@ import {
 } from "./_helpers/trackableAttribution";
 import { resolveActiveTimerCalendarDisplay } from "./_helpers/activeTimerCalendarDisplay";
 import { wallClockInTimeZone } from "./_helpers/wallClockTimeZone";
+import { onTimeWindowInserted } from "./_helpers/taskTimeSpent";
+import { onAttributedWindowInserted } from "./_helpers/trackableLifetime";
 
 export const get = query({
   args: {},
@@ -21,15 +23,14 @@ export const get = query({
 
     if (!timer) return null;
 
-    const elapsed = Math.max(
-      0,
-      Math.floor((Date.now() - timer.startTime) / 1000),
-    );
+    // `elapsedSeconds` is intentionally NOT computed here — calling Date.now()
+    // inside a query handler is non-deterministic and forces re-execution as
+    // wall-clock advances, busting the Convex result cache. The client owns
+    // the ticking display (see `hooks/useTimer.ts`), seeded from `startTime`.
     const { displayTitle, displayColor, secondaryColor } =
       await resolveActiveTimerCalendarDisplay(ctx, user._id, timer);
     return {
       ...timer,
-      elapsedSeconds: elapsed,
       displayTitle,
       displayColor,
       secondaryColor,
@@ -205,6 +206,25 @@ async function finalizeTimer(ctx: any, timer: any): Promise<number> {
       source: "timer" as const,
     });
 
+    // Keep `task.timeSpentInSecondsUnallocated` aligned with the row
+    // we just inserted so the home/list views can serve the total
+    // straight off the task document (no per-task `timeWindows` scan).
+    await onTimeWindowInserted(ctx, {
+      taskId: timer.taskId ?? undefined,
+      activityType: timer.taskId ? ("TASK" as const) : ("TRACKABLE" as const),
+      budgetType: "ACTUAL" as const,
+      durationSeconds: elapsed,
+    });
+    // Mirror the lifetime totals on the trackable so `getGoalDetails`
+    // can serve all-time numbers off the row (fix #1).
+    if (snapshotTrackableId) {
+      await onAttributedWindowInserted(ctx, {
+        trackableId: snapshotTrackableId,
+        durationSeconds: elapsed,
+        startDayYYYYMMDD: day,
+      });
+    }
+
     const inserted = await ctx.db.get(twId);
     console.log(
       JSON.stringify({
@@ -213,16 +233,6 @@ async function finalizeTimer(ctx: any, timer: any): Promise<number> {
         row: inserted,
       }),
     );
-
-    if (timer.taskId) {
-      const task = await ctx.db.get(timer.taskId);
-      if (task) {
-        await ctx.db.patch(timer.taskId, {
-          timeSpentInSecondsUnallocated:
-            (task.timeSpentInSecondsUnallocated ?? 0) + elapsed,
-        });
-      }
-    }
   }
 
   await ctx.db.delete(timer._id);

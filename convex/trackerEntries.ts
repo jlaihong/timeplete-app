@@ -1,6 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
+import { onTrackerEntryDelta } from "./_helpers/trackableLifetime";
 
 export const search = query({
   args: {
@@ -62,26 +63,61 @@ export const upsert = mutation({
     const trackable = await ctx.db.get(args.trackableId);
     if (!trackable) throw new Error("Trackable not found");
 
+    const nextCountValue = trackable.trackCount ? args.countValue : undefined;
+    const nextDurationSeconds = trackable.trackTime
+      ? args.durationSeconds
+      : undefined;
+
     if (args.id) {
+      const existing = await ctx.db.get(args.id);
+      if (!existing) throw new Error("Entry not found");
       await ctx.db.patch(args.id, {
         dayYYYYMMDD: args.dayYYYYMMDD,
-        countValue: trackable.trackCount ? args.countValue : undefined,
-        durationSeconds: trackable.trackTime ? args.durationSeconds : undefined,
+        countValue: nextCountValue,
+        durationSeconds: nextDurationSeconds,
         startTimeHHMM: args.startTimeHHMM,
         comments: args.comments,
       });
+      // Adjust the denormalized trackable totals by the diff (fix #1).
+      // Row count is unchanged on a patch, but the day may shift earlier
+      // so we still pass it through for the `firstActivityDayYYYYMMDD`
+      // pull-down.
+      const dCount =
+        (nextCountValue ?? 0) - (existing.countValue ?? 0);
+      const dSeconds =
+        (nextDurationSeconds ?? 0) - (existing.durationSeconds ?? 0);
+      if (dCount !== 0 || dSeconds !== 0) {
+        await onTrackerEntryDelta(ctx, {
+          trackableId: existing.trackableId,
+          deltaCountValue: dCount,
+          deltaDurationSeconds: dSeconds,
+          // Patch — row already exists, so the counter doesn't move.
+          // The helper still re-evaluates `firstActivityDayYYYYMMDD`
+          // when the day moved earlier.
+          deltaRowCount: 0,
+          dayYYYYMMDD: args.dayYYYYMMDD,
+        });
+      }
       return args.id;
     }
 
-    return await ctx.db.insert("trackerEntries", {
+    const insertedId = await ctx.db.insert("trackerEntries", {
       trackableId: args.trackableId,
       userId: user._id,
       dayYYYYMMDD: args.dayYYYYMMDD,
-      countValue: trackable.trackCount ? args.countValue : undefined,
-      durationSeconds: trackable.trackTime ? args.durationSeconds : undefined,
+      countValue: nextCountValue,
+      durationSeconds: nextDurationSeconds,
       startTimeHHMM: args.startTimeHHMM,
       comments: args.comments,
     });
+    await onTrackerEntryDelta(ctx, {
+      trackableId: args.trackableId,
+      deltaCountValue: nextCountValue ?? 0,
+      deltaDurationSeconds: nextDurationSeconds ?? 0,
+      deltaRowCount: 1,
+      dayYYYYMMDD: args.dayYYYYMMDD,
+    });
+    return insertedId;
   },
 });
 
@@ -92,5 +128,12 @@ export const remove = mutation({
     const entry = await ctx.db.get(args.id);
     if (!entry) throw new Error("Entry not found");
     await ctx.db.delete(args.id);
+    await onTrackerEntryDelta(ctx, {
+      trackableId: entry.trackableId,
+      deltaCountValue: -(entry.countValue ?? 0),
+      deltaDurationSeconds: -(entry.durationSeconds ?? 0),
+      deltaRowCount: -1,
+      dayYYYYMMDD: entry.dayYYYYMMDD,
+    });
   },
 });

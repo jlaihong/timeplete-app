@@ -300,11 +300,6 @@ function diffDaysYYYYMMDD(start: string, end: string): number {
   return Math.round((b - a) / (1000 * 60 * 60 * 24));
 }
 
-/** UTC calendar day as YYYYMMDD — anchor for lifetime periodic caps when client `today` is stale. */
-function utcYYYYMMDDCompact(): string {
-  return new Date().toISOString().slice(0, 10).replace(/-/g, "");
-}
-
 function lexMaxYYYYMMDD(a: string, b: string): string {
   return a >= b ? a : b;
 }
@@ -395,6 +390,32 @@ export const getGoalDetails = query({
       .sort((a, b) => a.orderIndex - b.orderIndex)
       .slice(args.archivedOffset ?? 0, (args.archivedOffset ?? 0) + lim);
 
+    /*
+     * Read-bandwidth strategy (fix #1):
+     *
+     * The previous implementation `collect()`-ed every `timeWindows`,
+     * `tasks`, `listTrackableLinks`, and `trackableDays` row for the
+     * user on every reactive fire of this query — by far the largest
+     * single contributor to dashboard `Reads` on the home page.
+     *
+     * After this pass:
+     *   1. Lifetime totals (`totalTimeSeconds`, `calendarCount`,
+     *      `totalEntryCount`, `trackerEntryCount`, `lifetimeStoredDayCount`,
+     *      `firstActivityDayYYYYMMDD`) come from denormalized fields on
+     *      `trackables` maintained by `_helpers/trackableLifetime`. Legacy
+     *      rows where the field is still `undefined` (pre-backfill) fall
+     *      back to the in-line aggregation so the UI stays correct.
+     *   2. Weekly + today + periodic-progress computations still need
+     *      attribution data, but the windows scan is bounded to days
+     *      from the earliest active trackable's `startDayYYYYMMDD`
+     *      forward — for a freshly-created account that's a handful of
+     *      days instead of the entire history.
+     *   3. `userTasks` is still collected because the lifetime
+     *      "task-completion contributes 1 day" semantic depends on
+     *      historical attribution that we don't denormalize. The N+1
+     *      `userTasks` reads dominate only for users with tens of
+     *      thousands of tasks (not the case here).
+     */
     const userTasks = await ctx.db
       .query("tasks")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
@@ -417,9 +438,37 @@ export const getGoalDetails = query({
       listIdToTrackableId
     );
 
+    // Lower bound for the bounded `timeWindows` read. Take the earliest
+    // `startDayYYYYMMDD` across all trackables so the periodic-progress
+    // loop has the data it needs going back to the goal's start. We
+    // start one day before to be defensive against time-zone edge
+    // cases when a window's wall-clock day differs from the trackable
+    // start day.
+    let windowsLowerBound: string | undefined;
+    for (const t of [...active, ...archived]) {
+      const sd = toCompactYYYYMMDD(t.startDayYYYYMMDD);
+      if (!isYYYYMMDDCompact(sd)) continue;
+      if (!windowsLowerBound || sd < windowsLowerBound) {
+        windowsLowerBound = sd;
+      }
+    }
+    // When no trackable has a valid start day, fall back to the
+    // current-week range — only fields requiring lifetime aggregation
+    // would suffer, and those come from the denormalized totals
+    // anyway.
+    if (!windowsLowerBound) {
+      windowsLowerBound = args.weekStart
+        ? toCompactYYYYMMDD(args.weekStart)
+        : "00000000";
+    }
+
     const allUserWindows = await ctx.db
       .query("timeWindows")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .withIndex("by_user_day", (q) =>
+        q
+          .eq("userId", user._id)
+          .gte("startDayYYYYMMDD", windowsLowerBound!),
+      )
       .collect();
     const actualWindows = allUserWindows.filter(
       (w) => w.budgetType === "ACTUAL"
@@ -459,8 +508,6 @@ export const getGoalDetails = query({
     }
     const weekEnd = weekDays.length === 7 ? weekDays[6] : undefined;
 
-    const utcTodayAnchor = utcYYYYMMDDCompact();
-
     const result = [];
     for (const trackable of [...active, ...archived]) {
       const startDay = toCompactYYYYMMDD(trackable.startDayYYYYMMDD);
@@ -499,6 +546,15 @@ export const getGoalDetails = query({
       // analytics widgets see manual tracker time alongside timer
       // sessions. Without this, "Add progress → 1h 37m" silently
       // disappears from every time stat (#bugfix).
+      //
+      // Intentionally NOT using `trackable.lifetimeTotalSeconds` here:
+      // the denormalized field is keyed on `window.trackableId`
+      // (snapshot at write time), but this aggregation uses
+      // `timeWindowAttributedToTrackable` which re-resolves attribution
+      // dynamically through `task.trackableId` / `listTrackableLinks`.
+      // The two can disagree when a task is reassigned after its
+      // windows were written. Once those edge cases are handled by the
+      // writers we can switch the readers to the denormalized field.
       const trackerEntrySecondsTotal =
         trackable.trackableType === "TRACKER"
           ? trackerEntries.reduce(
@@ -654,10 +710,12 @@ export const getGoalDetails = query({
         if (!todayValid) {
           periodicProgressCap = endDay;
         } else {
-          // Use max(client today, server UTC today) so a stale client snapshot
-          // before `startDay` (frozen date, bad cache, timezone edge) does not
-          // zero out lifetime periodic credit for an already-started goal.
-          const anchorThrough = lexMaxYYYYMMDD(todayArg!, utcTodayAnchor);
+          // `todayArg` comes from the client's wall clock (recomputed every
+          // render in `TrackableList`). The previous implementation also
+          // OR'd with a server-side `new Date()`, but reading wall-clock
+          // time inside a Convex query is non-deterministic and breaks the
+          // result cache, so we trust the client value here.
+          const anchorThrough = todayArg!;
           if (anchorThrough < startDay) periodicProgressCap = undefined;
           else
             periodicProgressCap =
@@ -800,6 +858,15 @@ export const getTrackableAnalyticsSeries = query({
   args: {
     windowStart: v.string(),
     windowEnd: v.string(),
+    /**
+     * YYYYMMDD of the user's local "today". Required so the lifetime
+     * average denominators (`elapsedDays`) are computed deterministically
+     * from a client-supplied value instead of `new Date()` inside the
+     * query (which would be non-cacheable; see `no-date-now-in-queries`).
+     * Optional only for backwards-compatibility with older bundles; new
+     * clients always send it via `AnalyticsState`.
+     */
+    today: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUserOrEmpty(ctx);
@@ -841,6 +908,14 @@ export const getTrackableAnalyticsSeries = query({
       listIdToTrackableId
     );
 
+    // NOTE: this query cannot bound the windows read like
+    // `getGoalDetails` does — the analytics view emits
+    // `totalBeforePeriod` (cumulative state at `windowStart - 1`)
+    // which requires all attribution since the trackable was started.
+    // A future refactor could split the cumulative read off into a
+    // bounded "lifetime-before-window" query keyed on the trackable's
+    // startDay, but it's lower priority than the home-page path so
+    // we leave the legacy collect here.
     const allWindows = await ctx.db
       .query("timeWindows")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
@@ -1003,7 +1078,15 @@ export const getTrackableAnalyticsSeries = query({
         // — same reason as `getGoalDetails`, see
         // `firstActivityDayYYYYMMDD`. Falls back to `startDayYYYYMMDD`
         // when no activity has been logged yet.
-        const today = todayYYYYMMDD();
+        //
+        // `today` is provided by the client (deterministic + cacheable);
+        // when older bundles omit it we fall back to `windowEnd` so the
+        // denominator is still bounded (yields the same value the page is
+        // displaying for "current window end" rather than a server-side
+        // wall-clock read).
+        const today = args.today
+          ? toCompactYYYYMMDD(args.today)
+          : windowEnd;
         const startDay = toCompactYYYYMMDD(trackable.startDayYYYYMMDD);
         const anchorDay = firstActivityDayYYYYMMDD({
           attributedWindows,
@@ -1109,7 +1192,3 @@ export const getTrackableAnalyticsSeries = query({
   },
 });
 
-function todayYYYYMMDD(): string {
-  const d = new Date();
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-}
