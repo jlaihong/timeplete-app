@@ -8,9 +8,12 @@
  * @module
  */
 
+import type * as _admin_backfillAttributedTaskDayCount from "../_admin/backfillAttributedTaskDayCount.js";
 import type * as _admin_backfillTaskTagIds from "../_admin/backfillTaskTagIds.js";
 import type * as _admin_backfillTaskTimeSpent from "../_admin/backfillTaskTimeSpent.js";
+import type * as _admin_backfillTrackableDayAttributedTaskCount from "../_admin/backfillTrackableDayAttributedTaskCount.js";
 import type * as _admin_backfillTrackableLifetime from "../_admin/backfillTrackableLifetime.js";
+import type * as _admin_backfillWindowTrackableSnapshot from "../_admin/backfillWindowTrackableSnapshot.js";
 import type * as _admin_cleanup from "../_admin/cleanup.js";
 import type * as _admin_cognitoBridge from "../_admin/cognitoBridge.js";
 import type * as _admin_import from "../_admin/import.js";
@@ -52,9 +55,12 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "_admin/backfillAttributedTaskDayCount": typeof _admin_backfillAttributedTaskDayCount;
   "_admin/backfillTaskTagIds": typeof _admin_backfillTaskTagIds;
   "_admin/backfillTaskTimeSpent": typeof _admin_backfillTaskTimeSpent;
+  "_admin/backfillTrackableDayAttributedTaskCount": typeof _admin_backfillTrackableDayAttributedTaskCount;
   "_admin/backfillTrackableLifetime": typeof _admin_backfillTrackableLifetime;
+  "_admin/backfillWindowTrackableSnapshot": typeof _admin_backfillWindowTrackableSnapshot;
   "_admin/cleanup": typeof _admin_cleanup;
   "_admin/cognitoBridge": typeof _admin_cognitoBridge;
   "_admin/import": typeof _admin_import;

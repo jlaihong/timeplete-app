@@ -21,6 +21,7 @@ import {
   onAttributedWindowDeleted,
   onAttributedWindowInserted,
   onAttributedWindowPatched,
+  onTaskCompletionAttribution,
 } from "./_helpers/trackableLifetime";
 
 /**
@@ -531,6 +532,16 @@ export const upsert = mutation({
       const existing = await ctx.db.get(args.id);
       if (!existing) throw new Error("Task not found");
 
+      // Snapshot the fields the attributed-task-day hook cares about so
+      // we can compare to the post-patch state once everything has been
+      // applied.
+      const beforeAttribution = {
+        userId: existing.userId,
+        dateCompleted: existing.dateCompleted,
+        trackableId: existing.trackableId,
+        listId: existing.listId,
+      };
+
       const patch: Record<string, unknown> = {};
       if (args.name !== undefined) patch.name = args.name;
       if (args.dateCompleted !== undefined) {
@@ -569,6 +580,33 @@ export const upsert = mutation({
         for (const tagId of args.tagIds) {
           await ctx.db.insert("taskTags", { taskId: args.id!, tagId });
         }
+      }
+
+      // Keep `trackable.lifetimeAttributedTaskDayCount` in sync if the
+      // task's completion state or attribution-defining fields changed.
+      // Helper is a no-op when neither before nor after counts.
+      const completionChanged = args.dateCompleted !== undefined;
+      const trackableChanged = args.trackableId !== undefined;
+      const listChanged = args.listId !== undefined;
+      if (completionChanged || trackableChanged || listChanged) {
+        const afterAttribution = {
+          userId: existing.userId,
+          dateCompleted:
+            args.dateCompleted !== undefined
+              ? (args.dateCompleted ?? undefined)
+              : existing.dateCompleted,
+          trackableId:
+            args.trackableId !== undefined
+              ? (args.trackableId ?? undefined)
+              : existing.trackableId,
+          listId:
+            args.listId !== undefined ? args.listId : existing.listId,
+        };
+        await onTaskCompletionAttribution(
+          ctx,
+          beforeAttribution,
+          afterAttribution,
+        );
       }
 
       return args.id;
@@ -610,6 +648,15 @@ export const upsert = mutation({
       }
     }
 
+    if (args.dateCompleted) {
+      await onTaskCompletionAttribution(ctx, null, {
+        userId: user._id,
+        dateCompleted: args.dateCompleted,
+        trackableId: args.trackableId ?? undefined,
+        listId: args.listId,
+      });
+    }
+
     return taskId;
   },
 });
@@ -637,6 +684,18 @@ export const remove = mutation({
           .withIndex("by_task", (q) => q.eq("taskId", child._id))
           .collect();
         for (const w of childWindows) await ctx.db.delete(w._id);
+        if (child.dateCompleted) {
+          await onTaskCompletionAttribution(
+            ctx,
+            {
+              userId: child.userId,
+              dateCompleted: child.dateCompleted,
+              trackableId: child.trackableId,
+              listId: child.listId,
+            },
+            null,
+          );
+        }
         await ctx.db.delete(child._id);
       }
     }
@@ -658,6 +717,19 @@ export const remove = mutation({
       .withIndex("by_task", (q) => q.eq("taskId", args.id))
       .collect();
     for (const w of windows) await ctx.db.delete(w._id);
+
+    if (task.dateCompleted) {
+      await onTaskCompletionAttribution(
+        ctx,
+        {
+          userId: task.userId,
+          dateCompleted: task.dateCompleted,
+          trackableId: task.trackableId,
+          listId: task.listId,
+        },
+        null,
+      );
+    }
 
     await ctx.db.delete(args.id);
   },

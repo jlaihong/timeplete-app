@@ -327,6 +327,18 @@ export default defineSchema({
     /** Count of trackerEntries rows (separate from countValue sum). */
     lifetimeTrackerEntryRowCount: v.optional(v.number()),
     /**
+     * Σ "completed task contributes 1 day" attributions across all of the
+     * user's tasks. Mirrors `buildCompletedTaskCountsByTrackableDay`
+     * but maintained at write time so `getGoalDetails` can serve the
+     * lifetime sum without scanning every task. Day-bucketed reads are
+     * still served by a bounded `tasks.by_user_completed_day` scan.
+     *
+     * Maintained by `_helpers/trackableLifetime.onTaskCompletionAttribution`
+     * called from `tasks.upsert` whenever a task's completion state
+     * or trackable/list attribution changes.
+     */
+    lifetimeAttributedTaskDayCount: v.optional(v.number()),
+    /**
      * Earliest day with any attributed activity (window / day / entry).
      * Drives the lifetime "per day" averages in `getGoalDetails`. When
      * undefined the reader falls back to `startDayYYYYMMDD`.
@@ -344,6 +356,21 @@ export default defineSchema({
     userId: v.id("users"),
     dayYYYYMMDD: v.string(),
     numCompleted: v.number(),
+    /**
+     * Σ completed tasks whose attribution resolves to this trackable on
+     * this `dayYYYYMMDD`. Maintained by `onTaskCompletionAttribution`
+     * in `_helpers/trackableLifetime` whenever a task's completion
+     * state or trackable/list attribution changes.
+     *
+     * Lets `getGoalDetails` / `getTrackableAnalyticsSeries` compute
+     * per-day counts (`weeklyDayCompletion`, `todayDayCount`,
+     * `periodicOverallProgress` for `DAYS_A_WEEK`) from this small
+     * table directly, without scanning every completed task in the
+     * user's history — previously the largest remaining contributor
+     * to home-page read bandwidth after the lifetime denormalization
+     * pass.
+     */
+    attributedTaskCount: v.optional(v.number()),
     comments: v.string(),
     legacyId: v.optional(v.string()),
   })

@@ -30,20 +30,22 @@
  *   trackable.lifetimeTrackerEntryRowCount
  *     === count of trackerEntries rows
  *
+ *   trackable.lifetimeAttributedTaskDayCount
+ *     === count of completed tasks whose attribution
+ *         (`task.trackableId` else `task.listId → listTrackableLinks`)
+ *         resolves to this trackable. Maintained by
+ *         `onTaskCompletionAttribution` from `tasks.upsert` whenever a
+ *         task's `dateCompleted`, `trackableId`, or `listId` changes
+ *         (or the resolved-via-list attribution changes shape).
+ *
  *   trackable.firstActivityDayYYYYMMDD
  *     === min day across all attributed windows / days / entries; falls
  *         back to `startDayYYYYMMDD` when no activity recorded.
- *
- * The "task-completion → trackableDay" attribution path (a task with
- * `trackableId === X` being marked complete counts as a day for X) is
- * NOT folded into these denormalized totals — it lives in `tasks.ts`
- * and would require touching every task writer to maintain. Readers
- * recompute the task-completion contribution on demand (and it's bounded
- * by date range), so they can be safely added to the denormalized
- * baseline.
  */
 import type { MutationCtx } from "../_generated/server";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
+import { buildListIdToTrackableId } from "./trackableAttribution";
+import { isYYYYMMDDCompact, toCompactYYYYMMDD } from "./compactYYYYMMDD";
 
 type LifetimePatch = {
   totalSeconds?: number;
@@ -52,6 +54,7 @@ type LifetimePatch = {
   trackerEntryCount?: number;
   trackerEntrySeconds?: number;
   trackerEntryRowCount?: number;
+  attributedTaskDayCount?: number;
 };
 
 async function applyDelta(
@@ -97,6 +100,12 @@ async function applyDelta(
     patch.lifetimeTrackerEntryRowCount = Math.max(
       0,
       (t.lifetimeTrackerEntryRowCount ?? 0) + delta.trackerEntryRowCount,
+    );
+  }
+  if (delta.attributedTaskDayCount !== undefined) {
+    patch.lifetimeAttributedTaskDayCount = Math.max(
+      0,
+      (t.lifetimeAttributedTaskDayCount ?? 0) + delta.attributedTaskDayCount,
     );
   }
   if (activityDay) {
@@ -221,6 +230,172 @@ export async function onTrackableDayDelta(
     { storedDayCount: args.deltaNumCompleted },
     args.dayYYYYMMDD,
   );
+}
+
+/**
+ * Adjusts `trackableDays.attributedTaskCount` for a single
+ * `(trackableId, dayYYYYMMDD)` pair, creating the row on demand and
+ * deleting it when both the manual count and the attributed count drop
+ * to zero. `delta` must be ±1 (signed).
+ */
+async function bumpTrackableDayAttributedTaskCount(
+  ctx: MutationCtx,
+  trackableId: Id<"trackables">,
+  userId: Id<"users">,
+  dayYYYYMMDD: string,
+  delta: 1 | -1,
+): Promise<void> {
+  const existing = await ctx.db
+    .query("trackableDays")
+    .withIndex("by_trackable_day", (q) =>
+      q.eq("trackableId", trackableId).eq("dayYYYYMMDD", dayYYYYMMDD),
+    )
+    .unique();
+
+  if (!existing) {
+    // Only create a row on increment; decrementing into a non-existent
+    // row is a no-op (the count is already implicitly zero).
+    if (delta > 0) {
+      await ctx.db.insert("trackableDays", {
+        trackableId,
+        userId,
+        dayYYYYMMDD,
+        numCompleted: 0,
+        attributedTaskCount: 1,
+        comments: "",
+      });
+    }
+    return;
+  }
+
+  const next = Math.max(0, (existing.attributedTaskCount ?? 0) + delta);
+
+  // Garbage-collect when the row has nothing left to say. We only
+  // delete rows we wouldn't have created in the manual-entry path
+  // (numCompleted === 0 and comments is empty); otherwise we'd lose
+  // the user's manual annotation.
+  if (
+    next === 0 &&
+    existing.numCompleted === 0 &&
+    (existing.comments ?? "") === ""
+  ) {
+    await ctx.db.delete(existing._id);
+    return;
+  }
+
+  if (next === (existing.attributedTaskCount ?? 0)) return;
+  await ctx.db.patch(existing._id, { attributedTaskCount: next });
+}
+
+/**
+ * Resolves the attributed trackable for a task using
+ * `resolveSnapshotTrackableIdForTask`. Loads `listTrackableLinks` lazily
+ * via a cache that the caller can reuse across multiple calls in the
+ * same mutation. Returns `undefined` when the task is unattributable.
+ */
+async function resolveTaskAttribution(
+  ctx: MutationCtx,
+  task: Pick<Doc<"tasks">, "userId" | "trackableId" | "listId"> | null,
+  linkCache: { byUser: Map<string, Map<string, Id<"trackables">>> },
+): Promise<Id<"trackables"> | undefined> {
+  if (!task) return undefined;
+  if (task.trackableId) return task.trackableId;
+  if (!task.listId) return undefined;
+
+  let linkMap = linkCache.byUser.get(task.userId);
+  if (!linkMap) {
+    const links = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_user", (q) => q.eq("userId", task.userId))
+      .collect();
+    linkMap = buildListIdToTrackableId(links);
+    linkCache.byUser.set(task.userId, linkMap);
+  }
+  return linkMap.get(task.listId) ?? undefined;
+}
+
+/**
+ * Call from `tasks.upsert` (and any other writer that mutates a task's
+ * `dateCompleted`, `trackableId`, or `listId` fields) to keep
+ * `trackables.lifetimeAttributedTaskDayCount` in sync with the
+ * "completed task counts as 1 day for its attributed trackable" rule
+ * that `getGoalDetails` and `getTrackableAnalyticsSeries` apply.
+ *
+ * Pass `null` for `before` on insert and `null` for `after` on delete.
+ * Idempotent — if neither side resolves to a trackable nothing happens.
+ */
+export async function onTaskCompletionAttribution(
+  ctx: MutationCtx,
+  before: Pick<
+    Doc<"tasks">,
+    "userId" | "dateCompleted" | "trackableId" | "listId"
+  > | null,
+  after: Pick<
+    Doc<"tasks">,
+    "userId" | "dateCompleted" | "trackableId" | "listId"
+  > | null,
+): Promise<void> {
+  const linkCache = {
+    byUser: new Map<string, Map<string, Id<"trackables">>>(),
+  };
+
+  const wasCounted = before != null && !!before.dateCompleted;
+  const isCounted = after != null && !!after.dateCompleted;
+
+  const beforeTrackable = wasCounted
+    ? await resolveTaskAttribution(ctx, before, linkCache)
+    : undefined;
+  const afterTrackable = isCounted
+    ? await resolveTaskAttribution(ctx, after, linkCache)
+    : undefined;
+
+  // No net change to attribution → nothing to do, even if the task's
+  // `dateCompleted` value itself flipped between two equally-attributed
+  // states (the per-day counters track the resolved trackable, not the
+  // raw task fields).
+  if (
+    beforeTrackable === afterTrackable &&
+    before?.dateCompleted === after?.dateCompleted
+  ) {
+    return;
+  }
+
+  if (beforeTrackable) {
+    await applyDelta(ctx, beforeTrackable, { attributedTaskDayCount: -1 });
+    const beforeDay = before?.dateCompleted
+      ? toCompactYYYYMMDD(before.dateCompleted)
+      : "";
+    if (isYYYYMMDDCompact(beforeDay)) {
+      await bumpTrackableDayAttributedTaskCount(
+        ctx,
+        beforeTrackable,
+        before!.userId,
+        beforeDay,
+        -1,
+      );
+    }
+  }
+  if (afterTrackable) {
+    const afterDay = after?.dateCompleted
+      ? toCompactYYYYMMDD(after.dateCompleted)
+      : "";
+    const validDay = isYYYYMMDDCompact(afterDay) ? afterDay : undefined;
+    await applyDelta(
+      ctx,
+      afterTrackable,
+      { attributedTaskDayCount: 1 },
+      validDay,
+    );
+    if (validDay) {
+      await bumpTrackableDayAttributedTaskCount(
+        ctx,
+        afterTrackable,
+        after!.userId,
+        validDay,
+        1,
+      );
+    }
+  }
 }
 
 /**

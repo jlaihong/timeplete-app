@@ -23,7 +23,10 @@ import { Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { generateOccurrences } from "./_helpers/recurrence";
 import { onTimeWindowInserted } from "./_helpers/taskTimeSpent";
-import { onAttributedWindowInserted } from "./_helpers/trackableLifetime";
+import {
+  onAttributedWindowInserted,
+  onTaskCompletionAttribution,
+} from "./_helpers/trackableLifetime";
 
 const recurrenceFrequency = v.union(
   v.literal("DAILY"),
@@ -333,6 +336,19 @@ export const deleteInstance = mutation({
       .collect();
     for (const w of windows) await ctx.db.delete(w._id);
 
+    if (task.dateCompleted) {
+      await onTaskCompletionAttribution(
+        ctx,
+        {
+          userId: task.userId,
+          dateCompleted: task.dateCompleted,
+          trackableId: task.trackableId,
+          listId: task.listId,
+        },
+        null,
+      );
+    }
+
     await ctx.db.delete(args.taskId);
   },
 });
@@ -375,6 +391,18 @@ export const remove = mutation({
           .withIndex("by_task", (q) => q.eq("taskId", t._id))
           .collect();
         for (const w of windows) await ctx.db.delete(w._id);
+        if (t.dateCompleted) {
+          await onTaskCompletionAttribution(
+            ctx,
+            {
+              userId: t.userId,
+              dateCompleted: t.dateCompleted,
+              trackableId: t.trackableId,
+              listId: t.listId,
+            },
+            null,
+          );
+        }
         await ctx.db.delete(t._id);
       } else {
         await ctx.db.patch(t._id, { recurringTaskId: undefined });
