@@ -56,6 +56,15 @@ export const search = query({
     const user = await requireApprovedUserOrEmpty(ctx);
     if (!user) return [];
 
+    // Prefer the most-selective index for the supplied args:
+    //   • `taskId` / `trackableId` → narrow per-entity index (typically a few
+    //     dozen rows).
+    //   • Day bounds w/o entity filter → `by_user_day` so CalendarView's
+    //     "one day at a time" subscription doesn't scan the entire history
+    //     just to filter it out in JS. This was an ~800 KB read per call
+    //     before being bounded — see convex-bandwidth-fixes branch notes.
+    //   • Fall back to `by_user` only when there are no useful bounds at
+    //     all (kept for parity with rare callers).
     let windows;
     if (args.taskId) {
       windows = await ctx.db
@@ -69,6 +78,23 @@ export const search = query({
           q.eq("trackableId", args.trackableId!)
         )
         .collect();
+    } else if (args.startDay || args.endDay) {
+      windows = await ctx.db
+        .query("timeWindows")
+        .withIndex("by_user_day", (q) => {
+          const start = q.eq("userId", user._id);
+          if (args.startDay && args.endDay) {
+            return start
+              .gte("startDayYYYYMMDD", args.startDay)
+              .lte("startDayYYYYMMDD", args.endDay);
+          }
+          if (args.startDay) {
+            return start.gte("startDayYYYYMMDD", args.startDay);
+          }
+          // args.endDay is the only bound supplied here.
+          return start.lte("startDayYYYYMMDD", args.endDay!);
+        })
+        .collect();
     } else {
       windows = await ctx.db
         .query("timeWindows")
@@ -77,6 +103,10 @@ export const search = query({
     }
 
     const filtered = windows.filter((w) => {
+      // Day bounds may have been applied via `by_user_day` already; the
+      // `by_task`/`by_trackable` branches still need post-filtering. Keep
+      // the unconditional re-check so the result set is correct for every
+      // branch (the no-op cost on bounded windows is negligible).
       if (args.startDay && w.startDayYYYYMMDD < args.startDay) return false;
       if (args.endDay && w.startDayYYYYMMDD > args.endDay) return false;
       if (args.budgetType && w.budgetType !== args.budgetType) return false;
