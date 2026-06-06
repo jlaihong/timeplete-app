@@ -21,7 +21,6 @@ import {
   addDays,
   formatDisplayDate,
   isToday,
-  isPast,
   formatSecondsAsHM,
 } from "../../lib/dates";
 import { useTimer } from "../../hooks/useTimer";
@@ -43,12 +42,21 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const isDesktop = useIsDesktop();
   const { profileReady } = useAuth();
   const today = todayYYYYMMDD();
-  const [visibleDays, setVisibleDays] = useState(7);
+  /**
+   * Mobile mirrors desktop's window model (see `DesktopTaskList`): the server
+   * returns Overdue + scheduled-in-window + completed-in-window. Initial window
+   * is just today; Load More extends it by `LOAD_MORE_DAYS` future days. The
+   * client never holds days that weren't requested (no rendering 2 months of
+   * past recurring instances).
+   */
+  const [visibleDays, setVisibleDays] = useState(1);
   const visibleEndDay = addDays(today, visibleDays - 1);
 
   const tasks = useQuery(
-    api.tasks.search,
-    profileReady ? { includeCompleted: true } : "skip",
+    api.tasks.getHomeTasks,
+    profileReady
+      ? { todayYYYYMMDD: today, rangeEndYYYYMMDD: visibleEndDay }
+      : "skip",
   );
   const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
@@ -95,45 +103,48 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
     return m;
   }, [trackables]);
 
-  const { groupedTasks, hasMoreFuture } = useMemo(() => {
-    if (!tasks) return { groupedTasks: [], hasMoreFuture: false };
+  /**
+   * Server-scoped grouping (parity with `DesktopTaskList`'s `serverGroups`):
+   *   - Overdue   = any incomplete task with `taskDay < today` (server already
+   *                  filtered out recurring instances)
+   *   - Day       = scheduled in [today, visibleEndDay], OR completed in that
+   *                  window (bucketed by completion date for completed rows)
+   *   - Unscheduled = `taskDay` is falsy
+   *
+   * The server query (`api.tasks.getHomeTasks`) is the source of truth — we
+   * don't need a client-side `futureTasksBeyondRange` check because anything
+   * outside the requested window never reaches the client.
+   */
+  const groupedTasks = useMemo(() => {
+    if (!tasks) return [];
     const groups = new Map<string, typeof tasks>();
     const overdueKey = "overdue";
-    let futureTasksBeyondRange = false;
+    const unscheduledKey = "unscheduled";
 
     for (const task of tasks) {
       const day = task.taskDay;
+      if (task.dateCompleted) {
+        const bucket = task.dateCompleted;
+        if (!groups.has(bucket)) groups.set(bucket, []);
+        groups.get(bucket)!.push(task);
+        continue;
+      }
       if (!day) {
-        const key = "unscheduled";
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key)!.push(task);
+        if (!groups.has(unscheduledKey)) groups.set(unscheduledKey, []);
+        groups.get(unscheduledKey)!.push(task);
         continue;
       }
-
-      if (day > visibleEndDay && !task.dateCompleted) {
-        futureTasksBeyondRange = true;
-        continue;
-      }
-
-      if (
-        !task.dateCompleted &&
-        isPast(day) &&
-        !isToday(day) &&
-        !task.isRecurringInstance
-      ) {
+      if (day < today) {
         if (!groups.has(overdueKey)) groups.set(overdueKey, []);
         groups.get(overdueKey)!.push(task);
-      } else if (task.dateCompleted) {
-        const completionDay = task.dateCompleted;
-        if (completionDay >= today && completionDay <= visibleEndDay) {
-          if (!groups.has(completionDay)) groups.set(completionDay, []);
-          groups.get(completionDay)!.push(task);
-        }
       } else {
         if (!groups.has(day)) groups.set(day, []);
         groups.get(day)!.push(task);
       }
     }
+
+    // Always render Today, even when empty, so users have an obvious target.
+    if (!groups.has(today)) groups.set(today, []);
 
     const entries = Array.from(groups.entries()).sort(([a], [b]) => {
       if (a === "overdue") return -1;
@@ -143,38 +154,33 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       return a.localeCompare(b);
     });
 
-    return {
-      groupedTasks: entries.map(([day, dayTasks]) => {
-        const allTasks = dayTasks.sort((a, b) => {
-          if (!a.dateCompleted && b.dateCompleted) return -1;
-          if (a.dateCompleted && !b.dateCompleted) return 1;
-          return (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0);
-        });
-        const completedCount = allTasks.filter(
-          (t) => !!t.dateCompleted
-        ).length;
-        const visibleTasks = showCompleted
-          ? allTasks
-          : allTasks.filter((t) => !t.dateCompleted);
+    return entries.map(([day, dayTasks]) => {
+      const allTasks = dayTasks.sort((a, b) => {
+        if (!a.dateCompleted && b.dateCompleted) return -1;
+        if (a.dateCompleted && !b.dateCompleted) return 1;
+        return (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0);
+      });
+      const completedCount = allTasks.filter((t) => !!t.dateCompleted).length;
+      const visibleTasks = showCompleted
+        ? allTasks
+        : allTasks.filter((t) => !t.dateCompleted);
 
-        return {
-          day,
-          label:
-            day === "overdue"
-              ? "Overdue"
-              : day === "unscheduled"
-                ? "Unscheduled"
-                : isToday(day)
-                  ? "Today"
-                  : formatDisplayDate(day),
-          tasks: visibleTasks,
-          completedCount,
-          totalCount: allTasks.length,
-        };
-      }),
-      hasMoreFuture: futureTasksBeyondRange,
-    };
-  }, [tasks, showCompleted, visibleEndDay, today]);
+      return {
+        day,
+        label:
+          day === "overdue"
+            ? "Overdue"
+            : day === "unscheduled"
+              ? "Unscheduled"
+              : isToday(day)
+                ? "Today"
+                : formatDisplayDate(day),
+        tasks: visibleTasks,
+        completedCount,
+        totalCount: allTasks.length,
+      };
+    });
+  }, [tasks, showCompleted, today]);
 
   const toggleComplete = useCallback(
     async (taskId: Id<"tasks">, taskName: string, isCompleted: boolean) => {
@@ -724,14 +730,12 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
             );
           })}
 
-          {hasMoreFuture && (
-            <TouchableOpacity
-              style={styles.loadMore}
-              onPress={handleLoadMore}
-            >
-              <Text style={styles.loadMoreText}>Load More</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.loadMore}
+            onPress={handleLoadMore}
+          >
+            <Text style={styles.loadMoreText}>Load More</Text>
+          </TouchableOpacity>
         </ScrollView>
       )}
 

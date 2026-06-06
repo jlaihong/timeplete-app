@@ -559,6 +559,32 @@ function packOverlappingEvents(
 }
 
 /* ────────────────────────────────────────────────────────────────────────
+ *  CalendarDndMonitor — web-only wrapper around `useDndMonitor`.
+ *
+ *  `useDndMonitor` throws "must be used within a children of <DndContext>"
+ *  when no provider exists above. On native we passthrough `HomeDndProvider`
+ *  (dnd-kit is DOM-only), so we mount this child only on web — that way the
+ *  hook is conditionally CALLED via mount/unmount, not conditionally LISTED
+ *  inside CalendarView's body (which would break rules-of-hooks).
+ * ──────────────────────────────────────────────────────────────────────── */
+interface CalendarDndMonitorProps {
+  onDragStart: (e: DragStartEvent) => void;
+  onDragMove: (e: DragMoveEvent) => void;
+  onDragEnd: (e: DragEndEvent) => void;
+  onDragCancel: () => void;
+}
+
+function CalendarDndMonitor(props: CalendarDndMonitorProps) {
+  useDndMonitor({
+    onDragStart: props.onDragStart,
+    onDragMove: props.onDragMove,
+    onDragEnd: props.onDragEnd,
+    onDragCancel: props.onDragCancel,
+  });
+  return null;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
  *  HourSlot — fixed-height droppable backdrop row.
  *
  *  Renders the hour boundary line plus a lighter mid-hour (30 min) guide,
@@ -700,6 +726,7 @@ function CalendarEventBlock({
    */
   const eventBlockRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
+    if (!isWeb) return;
     const node = eventBlockRef.current;
     if (!node || tw.isLive) return;
     node.setAttribute("data-calendar-event-id", String(tw._id));
@@ -1584,12 +1611,13 @@ export function CalendarView({
     setDropPreview(null);
   }, [detachPointerTracker]);
 
-  useDndMonitor({
-    onDragStart: onDndDragStart,
-    onDragMove: onDndDragMove,
-    onDragEnd: onDndDragEnd,
-    onDragCancel: onDndDragCancel,
-  });
+  /**
+   * `useDndMonitor` throws if there's no `DndContext` above. On native we
+   * short-circuit `HomeDndProvider` to a passthrough (dnd-kit is DOM-only),
+   * so the hook would crash. It's invoked instead from `<CalendarDndMonitor>`
+   * below, which is only mounted on web — keeping rules-of-hooks clean (the
+   * hook is conditionally CALLED, not conditionally listed in this function).
+   */
 
   /* ─── In-calendar event drag/resize commit ───────────────────────── */
   /**
@@ -1986,6 +2014,14 @@ export function CalendarView({
 
   return (
     <View style={styles.container}>
+      {isWeb && (
+        <CalendarDndMonitor
+          onDragStart={onDndDragStart}
+          onDragMove={onDndDragMove}
+          onDragEnd={onDndDragEnd}
+          onDragCancel={onDndDragCancel}
+        />
+      )}
       {title && (
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{title}</Text>
@@ -2054,7 +2090,7 @@ export function CalendarView({
             // `data-calendar-grid="1"` so the document-level
             // `contextmenu` listener can identify empty calendar space.
             ref={(node: any) => {
-              const el = (node as HTMLElement | null) ?? null;
+              const el = isWeb ? ((node as HTMLElement | null) ?? null) : null;
               gridColumnRef.current = el;
               if (el) el.setAttribute("data-calendar-grid", "1");
             }}
@@ -2358,6 +2394,7 @@ function CalendarContextMenu({
       // Marker so the document-level pointerdown listener knows clicks
       // within the menu shouldn't dismiss it before the item's onPress.
       ref={(node: any) => {
+        if (!isWeb) return;
         const el = (node as HTMLElement | null) ?? null;
         if (el) el.setAttribute("data-calendar-context-menu", "1");
       }}

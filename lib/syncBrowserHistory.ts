@@ -38,6 +38,20 @@
 const PATCH_INSTALLED = Symbol.for("timeplete.syncHistoryPatchInstalled");
 
 /**
+ * True only when running in a real browser (DOM `window.history.pushState`
+ * is callable). On React Native `window` is defined (it's the global object)
+ * but `window.history` is undefined — a `typeof window === "undefined"` guard
+ * alone is therefore insufficient and lets these functions crash on native.
+ */
+function isBrowserHistoryAvailable(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.history !== "undefined" &&
+    typeof window.history.pushState === "function"
+  );
+}
+
+/**
  * How long a queued "expected RN push" stays armed. React Navigation drains
  * its `series` queue on the next microtask, so the real wait is sub-ms; this
  * timeout exists only so a swallowed dispatch (e.g. ref unmount, error in a
@@ -77,7 +91,7 @@ function prunePendingDedupes(): void {
 }
 
 function installHistoryPatch(): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowserHistoryAvailable()) return;
   const flagged = window as unknown as Record<symbol, boolean>;
   if (flagged[PATCH_INSTALLED]) return;
 
@@ -133,7 +147,7 @@ function installHistoryPatch(): void {
  * click handler. No-ops on native / SSR.
  */
 export function pushBrowserHistorySync(url: string): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowserHistoryAvailable()) return;
   installHistoryPatch();
 
   const target = normalize(url);
@@ -155,7 +169,7 @@ export function pushBrowserHistorySync(url: string): void {
  * via the drawer).
  */
 export function replaceBrowserHistorySync(url: string): void {
-  if (typeof window === "undefined") return;
+  if (!isBrowserHistoryAvailable()) return;
   installHistoryPatch();
 
   const target = normalize(url);

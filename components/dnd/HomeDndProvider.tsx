@@ -11,6 +11,7 @@
  * cursor across containers — across the whole viewport, in fact).
  */
 import React, { useCallback, useState } from "react";
+import { Platform } from "react-native";
 import {
   DndContext,
   DragOverlay,
@@ -42,7 +43,20 @@ interface Props {
   children: React.ReactNode;
 }
 
-export function HomeDndProvider({ children }: Props) {
+/**
+ * dnd-kit is a DOM-only library: `<DndContext>` / `<DragOverlay>` render
+ * `<div>`s and crash on RN ("View config getter callback for component `div`..."").
+ * On native we passthrough — native drag-and-drop, if/when added, would use
+ * `react-native-gesture-handler` and live in a sibling provider.
+ *
+ * Split into two components (instead of `if (!isWeb) return children`) so
+ * the hooks below aren't conditionally called.
+ */
+function HomeDndProviderNative({ children }: Props) {
+  return <>{children}</>;
+}
+
+function HomeDndProviderWeb({ children }: Props) {
   // 5px PointerSensor matches the previous DesktopTaskList behaviour.
   // Keep distance non-zero so a click (no movement) still opens the task
   // detail without accidentally activating drag.
@@ -142,3 +156,6 @@ export function HomeDndProvider({ children }: Props) {
     </DndContext>
   );
 }
+
+export const HomeDndProvider =
+  Platform.OS === "web" ? HomeDndProviderWeb : HomeDndProviderNative;

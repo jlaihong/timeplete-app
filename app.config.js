@@ -241,12 +241,19 @@ module.exports = () => {
   const appJson = require("./app.json");
   const envLocal = parseEnvLocal();
 
+  // Precedence: explicit shell `process.env` first, then `.env.local`. Expo's CLI
+  // already loads `.env.local` into `process.env` BUT skips vars the shell already
+  // set — so this order lets one-off overrides (e.g. EXPO_PUBLIC_CONVEX_URL=...
+  // npx expo start) actually win, which `deploy-web.sh` and on-device testing
+  // both need. Reading `envLocal` directly is still kept as a defensive fallback
+  // for sandboxed environments where Expo's loader doesn't run (Cursor web
+  // preview / agents bundling without gitignored env files).
   const mergedCloud =
-    (envLocal.EXPO_PUBLIC_CONVEX_URL || process.env.EXPO_PUBLIC_CONVEX_URL || "").trim();
+    (process.env.EXPO_PUBLIC_CONVEX_URL || envLocal.EXPO_PUBLIC_CONVEX_URL || "").trim();
 
   const mergedSite = (
-    envLocal.EXPO_PUBLIC_CONVEX_SITE_URL ||
     process.env.EXPO_PUBLIC_CONVEX_SITE_URL ||
+    envLocal.EXPO_PUBLIC_CONVEX_SITE_URL ||
     ""
   ).trim();
 
