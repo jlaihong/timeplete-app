@@ -9,6 +9,11 @@ import {
   Platform,
   Switch,
 } from "react-native";
+import {
+  NestableScrollContainer,
+  NestableDraggableFlatList,
+  type RenderItemParams,
+} from "react-native-draggable-flatlist";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -212,6 +217,60 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
     setVisibleDays((d) => d + LOAD_MORE_DAYS);
   }, []);
 
+  /**
+   * Flattened row model for the native single-list drag implementation.
+   *
+   * Why flatten?
+   *   Earlier we used one `NestableDraggableFlatList` per day. That made cross-
+   *   day drags impossible — each list only "owned" its own rows. To allow
+   *   dragging a task from one day's section into another, we collapse every
+   *   group into one flat data array containing `header`, `task` and
+   *   `empty-placeholder` rows, render it as a single draggable list, and
+   *   reconstruct the destination day on drop by walking back to the nearest
+   *   preceding header row.
+   */
+  type FlatRow =
+    | {
+        kind: "header";
+        day: string;
+        label: string;
+        completedCount: number;
+        totalCount: number;
+        isCollapsed: boolean;
+      }
+    | {
+        kind: "task";
+        task: NonNullable<typeof tasks>[number];
+        day: string;
+        indexInDay: number;
+      }
+    | { kind: "empty-placeholder"; day: string };
+
+  const flatRows = useMemo<FlatRow[]>(() => {
+    const out: FlatRow[] = [];
+    for (const group of groupedTasks) {
+      const isCollapsed = collapsedGroups.has(group.day);
+      out.push({
+        kind: "header",
+        day: group.day,
+        label: group.label,
+        completedCount: group.completedCount,
+        totalCount: group.totalCount,
+        isCollapsed,
+      });
+      if (isCollapsed) continue;
+      const isValidDropDay =
+        group.day !== "overdue" && group.day !== "unscheduled";
+      if (group.tasks.length === 0 && isValidDropDay) {
+        out.push({ kind: "empty-placeholder", day: group.day });
+      }
+      group.tasks.forEach((task, i) => {
+        out.push({ kind: "task", task, day: group.day, indexInDay: i });
+      });
+    }
+    return out;
+  }, [groupedTasks, collapsedGroups]);
+
   const toggleGroupExpansion = useCallback((day: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -381,6 +440,336 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
     []
   );
 
+  /**
+   * Renders one task card. Shared between the web `.map()` path and the
+   * native `NestableDraggableFlatList` path. On native, `onLongPressDrag` is
+   * the drag-activation callback supplied by the draggable flatlist; binding
+   * it to the row's `onLongPress` is what makes long-press start a drag.
+   */
+  const renderTaskCard = useCallback(
+    (
+      task: NonNullable<typeof tasks>[number],
+      taskIndex: number,
+      group: { day: string; tasks: typeof tasks },
+      opts: {
+        isValidDropDay: boolean;
+        onLongPressDrag?: () => void;
+        isActive?: boolean;
+      },
+    ) => {
+      const { isValidDropDay, onLongPressDrag, isActive } = opts;
+      const isTimerActive =
+        timer.isRunning && timer.taskId === task._id;
+      const timeSpent = task.timeSpentInSecondsUnallocated ?? 0;
+      const totalTime = isTimerActive
+        ? timeSpent + timer.elapsed
+        : timeSpent;
+      const isDragTarget =
+        dragOverTarget?.day === group.day &&
+        dragOverTarget?.index === taskIndex;
+      const isCompleted = !!task.dateCompleted;
+      const trackable = task.trackableId
+        ? trackableMap.get(task.trackableId)
+        : null;
+      const list = task.listId ? listMap.get(task.listId) : null;
+      const taskTags = (task.tagIds ?? [])
+        .map((id: string) => tagMap.get(id))
+        .filter(Boolean);
+
+      return (
+        <View
+          key={task._id}
+          ref={
+            isWeb && isValidDropDay
+              ? (node: any) =>
+                  setDragAttrs(node, task._id, group.day, taskIndex)
+              : undefined
+          }
+          style={isActive ? styles.taskCardDragging : undefined}
+        >
+          {isDragTarget && <View style={styles.dropPlaceholder} />}
+          <Card
+            style={[
+              styles.taskCard,
+              isTimerActive && styles.taskCardTicking,
+              isCompleted && styles.taskCardCompleted,
+            ]}
+            padded={false}
+          >
+            <TouchableOpacity
+              style={styles.taskRow}
+              onPress={() => onSelectTask?.(task._id)}
+              onLongPress={onLongPressDrag}
+              delayLongPress={300}
+              activeOpacity={0.7}
+            >
+              {/* Col 1: Complete toggle */}
+              <TouchableOpacity
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  toggleComplete(task._id, task.name, isCompleted);
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons
+                  name={
+                    isCompleted ? "checkmark-circle" : "ellipse-outline"
+                  }
+                  size={24}
+                  color={isCompleted ? Colors.success : Colors.textTertiary}
+                />
+              </TouchableOpacity>
+
+              {/* Col 2: Name */}
+              <Text
+                style={[
+                  styles.taskName,
+                  isCompleted && styles.completedTask,
+                ]}
+                numberOfLines={1}
+              >
+                {task.name}
+              </Text>
+
+              {/* Col 3: Timer + Duration */}
+              <View style={styles.timeCol}>
+                {!isCompleted && (
+                  <TouchableOpacity
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      handleToggleTimer(task._id);
+                    }}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Ionicons
+                      name={isTimerActive ? "pause" : "play-outline"}
+                      size={20}
+                      color={
+                        isTimerActive
+                          ? Colors.success
+                          : Colors.textSecondary
+                      }
+                    />
+                  </TouchableOpacity>
+                )}
+                <Text
+                  style={[
+                    styles.duration,
+                    isTimerActive && styles.durationActive,
+                  ]}
+                >
+                  {isTimerActive
+                    ? formatElapsed(totalTime)
+                    : formatSecondsAsHM(totalTime)}
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Tags row — below the main grid */}
+            {(trackable || list || taskTags.length > 0) && (
+              <View style={styles.tagsRow}>
+                {trackable && (
+                  <View style={styles.tagChip}>
+                    <Ionicons
+                      name="analytics"
+                      size={13}
+                      color={trackable.colour || Colors.text}
+                    />
+                    <Text
+                      style={[
+                        styles.tagName,
+                        { color: trackable.colour || Colors.text },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {trackable.name}
+                    </Text>
+                  </View>
+                )}
+                {!trackable && list && (
+                  <View style={styles.tagChip}>
+                    <Ionicons
+                      name="list"
+                      size={13}
+                      color={list.colour || Colors.text}
+                    />
+                    <Text
+                      style={[
+                        styles.tagName,
+                        { color: list.colour || Colors.text },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {list.name}
+                    </Text>
+                  </View>
+                )}
+                {taskTags.map((tag: any, i: number) => (
+                  <View key={i} style={styles.tagChip}>
+                    <Ionicons
+                      name="pricetag"
+                      size={12}
+                      color={tag.colour || Colors.text}
+                    />
+                    <Text
+                      style={[
+                        styles.tagName,
+                        { color: tag.colour || Colors.text },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {tag.name}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </Card>
+        </View>
+      );
+    },
+    [
+      timer,
+      dragOverTarget,
+      tagMap,
+      listMap,
+      trackableMap,
+      onSelectTask,
+      toggleComplete,
+      handleToggleTimer,
+      setDragAttrs,
+    ],
+  );
+
+  /**
+   * Native cross-day drag-end handler.
+   *
+   * Given the post-drop `data` array, we:
+   *   1. Locate the moved task at `to`. (Headers/placeholders can't be dragged
+   *      because we don't wire `drag` for them in `renderItem`.)
+   *   2. Walk backwards from `to - 1` to find the most recent `header` row —
+   *      that's the destination day.
+   *   3. Count `task` rows between the header and `to` to derive
+   *      `newOrderIndex` within the destination day.
+   *   4. Compare the moved row's original `day` (set when we built `flatRows`)
+   *      with the destination day. Same day -> `moveOnDay`; cross-day ->
+   *      `moveBetweenDays`. Drops onto `overdue`/`unscheduled` are no-ops
+   *      (re-render snaps the row back to its origin).
+   */
+  const handleNativeDragEnd = useCallback(
+    (params: { data: FlatRow[]; from: number; to: number }) => {
+      const { data, from, to } = params;
+      if (from === to) return;
+      const moved = data[to];
+      if (!moved || moved.kind !== "task") return;
+
+      const sourceDay = moved.day;
+      let targetDay: string | null = null;
+      let indexInTargetDay = 0;
+      for (let i = to - 1; i >= 0; i--) {
+        const row = data[i];
+        if (!row) continue;
+        if (row.kind === "header") {
+          targetDay = row.day;
+          break;
+        }
+        if (row.kind === "task") indexInTargetDay++;
+      }
+      if (!targetDay) return;
+      if (targetDay === "overdue" || targetDay === "unscheduled") return;
+
+      const taskId = moved.task._id as Id<"tasks">;
+      if (sourceDay === targetDay) {
+        void moveOnDay({
+          taskId,
+          day: targetDay,
+          newOrderIndex: indexInTargetDay,
+        });
+      } else {
+        void moveBetweenDays({
+          taskId,
+          fromDay: sourceDay,
+          toDay: targetDay,
+          newOrderIndex: indexInTargetDay,
+        });
+      }
+    },
+    [moveOnDay, moveBetweenDays],
+  );
+
+  /**
+   * `renderItem` for the native single-list path. Headers and empty-day
+   * placeholders are NOT draggable (we omit `onLongPressDrag`); task rows
+   * wire `drag` to enable long-press activation.
+   */
+  const renderFlatRow = useCallback(
+    ({ item, drag, isActive }: RenderItemParams<FlatRow>) => {
+      if (item.kind === "header") {
+        return (
+          <View style={styles.flatHeaderRow}>
+            <TouchableOpacity
+              style={styles.groupHeader}
+              onPress={() => toggleGroupExpansion(item.day)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={Colors.textTertiary}
+                style={[
+                  styles.expandArrow,
+                  !item.isCollapsed && styles.expandArrowOpen,
+                ]}
+              />
+              <Text
+                style={[
+                  styles.groupLabel,
+                  item.day === "overdue" && styles.overdueLabel,
+                ]}
+              >
+                {item.label}
+                <Text style={styles.taskCount}>
+                  {" "}
+                  {item.completedCount}/{item.totalCount}
+                </Text>
+              </Text>
+              {item.day !== "overdue" && onAddTask && (
+                <SectionHeadingAddButton
+                  onPress={() =>
+                    onAddTask(
+                      item.day === "unscheduled" ? undefined : item.day,
+                    )
+                  }
+                  accessibilityLabel={`Add task to ${item.label}`}
+                />
+              )}
+            </TouchableOpacity>
+            <View style={styles.divider} />
+          </View>
+        );
+      }
+      if (item.kind === "empty-placeholder") {
+        return (
+          <View style={styles.emptyDropZone}>
+            <Text style={styles.emptyDropZoneText}>Drop a task here</Text>
+          </View>
+        );
+      }
+      return renderTaskCard(
+        item.task,
+        item.indexInDay,
+        { day: item.day, tasks: [] as any },
+        {
+          isValidDropDay:
+            item.day !== "overdue" && item.day !== "unscheduled",
+          onLongPressDrag: drag,
+          isActive,
+        },
+      );
+    },
+    [renderTaskCard, toggleGroupExpansion, onAddTask],
+  );
+
   if (!tasks) {
     return (
       <View style={styles.loading}>
@@ -388,6 +777,15 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       </View>
     );
   }
+
+  /**
+   * On native, the outer scroll surface must be `NestableScrollContainer` so
+   * the per-group `NestableDraggableFlatList`s can auto-scroll the page while
+   * dragging. On web, keep the plain `ScrollView` because the HTML5 drag API
+   * + dnd-kit do their own auto-scrolling (and `react-native-draggable-flatlist`
+   * is RN-only — its `Nestable*` components are no-ops/broken on web).
+   */
+  const OuterScroll = (isWeb ? ScrollView : NestableScrollContainer) as any;
 
   return (
     <View style={styles.container}>
@@ -428,7 +826,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
           }
         />
       ) : (
-        <ScrollView
+        <OuterScroll
           ref={scrollRef}
           contentContainerStyle={styles.listContent}
           refreshControl={
@@ -444,7 +842,41 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
             ) : undefined
           }
         >
-          {groupedTasks.map((group) => {
+          {/**
+           * NATIVE: render a single `NestableDraggableFlatList` over the
+           * fully-flattened row list so a long-press drag can cross day
+           * boundaries. Drop handling is in `handleNativeDragEnd`.
+           */}
+          {!isWeb && (
+            <NestableDraggableFlatList
+              data={flatRows}
+              keyExtractor={(row: FlatRow) =>
+                row.kind === "header"
+                  ? `h:${row.day}`
+                  : row.kind === "empty-placeholder"
+                    ? `e:${row.day}`
+                    : `t:${row.task._id}`
+              }
+              activationDistance={5}
+              // Autoscroll the outer `NestableScrollContainer` when the
+              // dragged cell hovers within `autoscrollThreshold` pixels of
+              // the viewport edge.
+              //
+              // NOTE ON UNITS: our patched `useNestedAutoScroll` uses
+              // `scrollTo({ animated: false })`, so `autoscrollSpeed` is
+              // literally "pixels moved per frame at the very edge". At
+              // ~60fps a value of 12 moves ~720px/sec (a comfortable page-
+              // scroll rate on a ~800px-tall viewport). The lib's default
+              // is 100 which was calibrated for `animated: true` (where
+              // each scroll interpolated smoothly over ~250ms) — with our
+              // patch 100 works out to ~6000px/sec, which is way too fast.
+              autoscrollSpeed={12}
+              autoscrollThreshold={80}
+              onDragEnd={handleNativeDragEnd}
+              renderItem={renderFlatRow}
+            />
+          )}
+          {isWeb && groupedTasks.map((group) => {
             const isValidDropDay =
               group.day !== "overdue" && group.day !== "unscheduled";
             const isCollapsed = collapsedGroups.has(group.day);
@@ -512,218 +944,66 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                     {group.tasks.length === 0 && isValidDropDay && (
                       <View style={styles.emptyDropZone}>
                         <Text style={styles.emptyDropZoneText}>
-                          Drag & drop tasks here
+                          {isWeb
+                            ? "Drag & drop tasks here"
+                            : "No tasks — long-press a task elsewhere to drag it here once cross-day reorder is supported"}
                         </Text>
                       </View>
                     )}
 
-                    {group.tasks.map((task, taskIndex) => {
-                      const isTimerActive =
-                        timer.isRunning && timer.taskId === task._id;
-                      const timeSpent =
-                        task.timeSpentInSecondsUnallocated ?? 0;
-                      const totalTime = isTimerActive
-                        ? timeSpent + timer.elapsed
-                        : timeSpent;
-                      const isDragTarget =
-                        dragOverTarget?.day === group.day &&
-                        dragOverTarget?.index === taskIndex;
-                      const isCompleted = !!task.dateCompleted;
-                      const trackable = task.trackableId
-                        ? trackableMap.get(task.trackableId)
-                        : null;
-                      const list = task.listId
-                        ? listMap.get(task.listId)
-                        : null;
-                      const taskTags = (task.tagIds ?? [])
-                        .map((id: string) => tagMap.get(id))
-                        .filter(Boolean);
-
-                      return (
-                        <View
-                          key={task._id}
-                          ref={
-                            isWeb && isValidDropDay
-                              ? (node: any) =>
-                                  setDragAttrs(
-                                    node,
-                                    task._id,
-                                    group.day,
-                                    taskIndex
-                                  )
-                              : undefined
-                          }
-                        >
-                          {isDragTarget && (
-                            <View style={styles.dropPlaceholder} />
-                          )}
-                          <Card
-                            style={[
-                              styles.taskCard,
-                              isTimerActive && styles.taskCardTicking,
-                              isCompleted && styles.taskCardCompleted,
-                            ]}
-                            padded={false}
-                          >
-                            <TouchableOpacity
-                              style={styles.taskRow}
-                              onPress={() => onSelectTask?.(task._id)}
-                              activeOpacity={0.7}
-                            >
-                              {/* Col 1: Complete toggle */}
-                              <TouchableOpacity
-                                onPress={(e) => {
-                                  e.stopPropagation?.();
-                                  toggleComplete(
-                                    task._id,
-                                    task.name,
-                                    isCompleted
-                                  );
-                                }}
-                                hitSlop={{
-                                  top: 8,
-                                  bottom: 8,
-                                  left: 8,
-                                  right: 8,
-                                }}
-                              >
-                                <Ionicons
-                                  name={
-                                    isCompleted
-                                      ? "checkmark-circle"
-                                      : "ellipse-outline"
-                                  }
-                                  size={24}
-                                  color={
-                                    isCompleted
-                                      ? Colors.success
-                                      : Colors.textTertiary
-                                  }
-                                />
-                              </TouchableOpacity>
-
-                              {/* Col 2: Name */}
-                              <Text
-                                style={[
-                                  styles.taskName,
-                                  isCompleted && styles.completedTask,
-                                ]}
-                                numberOfLines={1}
-                              >
-                                {task.name}
-                              </Text>
-
-                              {/* Col 3: Timer + Duration */}
-                              <View style={styles.timeCol}>
-                                {!isCompleted && (
-                                  <TouchableOpacity
-                                    onPress={(e) => {
-                                      e.stopPropagation?.();
-                                      handleToggleTimer(task._id);
-                                    }}
-                                    hitSlop={{
-                                      top: 6,
-                                      bottom: 6,
-                                      left: 6,
-                                      right: 6,
-                                    }}
-                                  >
-                                    <Ionicons
-                                      name={
-                                        isTimerActive
-                                          ? "pause"
-                                          : "play-outline"
-                                      }
-                                      size={20}
-                                      color={
-                                        isTimerActive
-                                          ? Colors.success
-                                          : Colors.textSecondary
-                                      }
-                                    />
-                                  </TouchableOpacity>
-                                )}
-                                <Text
-                                  style={[
-                                    styles.duration,
-                                    isTimerActive && styles.durationActive,
-                                  ]}
-                                >
-                                  {isTimerActive
-                                    ? formatElapsed(totalTime)
-                                    : formatSecondsAsHM(totalTime)}
-                                </Text>
-                              </View>
-                            </TouchableOpacity>
-
-                            {/* Tags row — below the main grid */}
-                            {(trackable || list || taskTags.length > 0) && (
-                              <View style={styles.tagsRow}>
-                                {trackable && (
-                                  <View style={styles.tagChip}>
-                                    <Ionicons
-                                      name="analytics"
-                                      size={13}
-                                      color={trackable.colour || Colors.text}
-                                    />
-                                    <Text
-                                      style={[
-                                        styles.tagName,
-                                        {
-                                          color:
-                                            trackable.colour || Colors.text,
-                                        },
-                                      ]}
-                                      numberOfLines={1}
-                                    >
-                                      {trackable.name}
-                                    </Text>
-                                  </View>
-                                )}
-                                {!trackable && list && (
-                                  <View style={styles.tagChip}>
-                                    <Ionicons
-                                      name="list"
-                                      size={13}
-                                      color={list.colour || Colors.text}
-                                    />
-                                    <Text
-                                      style={[
-                                        styles.tagName,
-                                        {
-                                          color: list.colour || Colors.text,
-                                        },
-                                      ]}
-                                      numberOfLines={1}
-                                    >
-                                      {list.name}
-                                    </Text>
-                                  </View>
-                                )}
-                                {taskTags.map((tag: any, i: number) => (
-                                  <View key={i} style={styles.tagChip}>
-                                    <Ionicons
-                                      name="pricetag"
-                                      size={12}
-                                      color={tag.colour || Colors.text}
-                                    />
-                                    <Text
-                                      style={[
-                                        styles.tagName,
-                                        { color: tag.colour || Colors.text },
-                                      ]}
-                                      numberOfLines={1}
-                                    >
-                                      {tag.name}
-                                    </Text>
-                                  </View>
-                                ))}
-                              </View>
-                            )}
-                          </Card>
-                        </View>
-                      );
-                    })}
+                    {/**
+                     * Native long-press drag (within a single day) via
+                     * `react-native-draggable-flatlist`. Cross-day moves stay
+                     * web-only for now (no native drop-target detection).
+                     * Web keeps its own HTML5 drag path (set up in the
+                     * `useEffect` above) by falling through to the `.map`.
+                     */}
+                    {!isWeb && isValidDropDay && group.tasks.length > 0 ? (
+                      <NestableDraggableFlatList
+                        data={group.tasks}
+                        keyExtractor={(t: any) => t._id}
+                        activationDistance={5}
+                        // Disable autoscroll: with multiple sibling
+                        // draggable sub-lists inside one
+                        // `NestableScrollContainer` the offset math drifts
+                        // and the page would snap towards top.
+                        // IMPORTANT: only set `autoscrollSpeed={0}` — do NOT
+                        // also set `autoscrollThreshold={0}` because the
+                        // library divides `distFromEdge / autoscrollThreshold`
+                        // (NaN with threshold=0), then passes that NaN into
+                        // `scrollTo({y})` which RN coerces to 0 → the page
+                        // does still scroll to the top.
+                        autoscrollSpeed={0}
+                        onDragEnd={({ from, to }: { from: number; to: number }) => {
+                          if (from === to) return;
+                          const moved = group.tasks[from];
+                          if (!moved) return;
+                          void moveOnDay({
+                            taskId: moved._id as Id<"tasks">,
+                            day: group.day,
+                            newOrderIndex: to,
+                          });
+                        }}
+                        renderItem={({
+                          item,
+                          drag,
+                          isActive,
+                          getIndex,
+                        }: RenderItemParams<NonNullable<typeof tasks>[number]>) =>
+                          renderTaskCard(item, getIndex() ?? 0, group, {
+                            isValidDropDay,
+                            onLongPressDrag: drag,
+                            isActive,
+                          })
+                        }
+                      />
+                    ) : (
+                      group.tasks.map((task, taskIndex) =>
+                        renderTaskCard(task, taskIndex, group, {
+                          isValidDropDay,
+                        }),
+                      )
+                    )}
                   </>
                 )}
               </View>
@@ -736,7 +1016,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
           >
             <Text style={styles.loadMoreText}>Load More</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </OuterScroll>
       )}
 
       {!isDesktop && onAddTask && (
@@ -786,6 +1066,10 @@ const styles = StyleSheet.create({
   filterLabel: { fontSize: 14, color: Colors.textSecondary },
   listContent: { padding: 16, paddingBottom: 80 },
   group: { marginBottom: 20 },
+  // Top spacing for headers when rendered as rows inside the flat
+  // `NestableDraggableFlatList` (native cross-day drag path). Mirrors the
+  // `marginBottom: 20` that `group` used to add between sections.
+  flatHeaderRow: { marginTop: 20 },
 
   groupHeader: {
     flexDirection: "row",
@@ -840,6 +1124,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   taskCardCompleted: { opacity: 0.5 },
+  /** Visual cue while the native long-press drag is active. */
+  taskCardDragging: {
+    opacity: 0.85,
+    transform: [{ scale: 1.02 }],
+  },
 
   taskRow: {
     flexDirection: "row",

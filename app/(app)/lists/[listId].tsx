@@ -9,7 +9,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SectionList,
   TouchableOpacity,
   Platform,
   Modal,
@@ -19,6 +18,11 @@ import {
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useQuery, useMutation } from "convex/react";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
+import {
+  NestableScrollContainer,
+  NestableDraggableFlatList,
+  type RenderItemParams,
+} from "react-native-draggable-flatlist";
 import { api } from "../../../convex/_generated/api";
 import { Colors } from "../../../constants/colors";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -586,6 +590,151 @@ export default function ListDetailScreen() {
     </View>
   );
 
+  /**
+   * One task row. Shared between the native `NestableDraggableFlatList`
+   * path (long-press drag to reorder within a section) and the
+   * non-draggable fallback `.map()` path used when drag is disabled
+   * (e.g. truncated-by-pagination state, collaborator filter active).
+   * `onLongPressDrag` is the drag-activation callback supplied by the
+   * draggable flatlist; binding it to the row's `onLongPress` is what
+   * makes a long-press start a drag on the device.
+   */
+  const renderListTaskRow = (
+    task: ListPageTask,
+    opts: { onLongPressDrag?: () => void; isActive?: boolean } = {},
+  ) => {
+    const { onLongPressDrag, isActive } = opts;
+    const isTicking = timer.isRunning && timer.taskId === task._id;
+
+    const isCompleted = !!task.dateCompleted;
+    const timeSpent = task.timeSpentInSecondsUnallocated ?? 0;
+    const totalTime = isTicking ? timeSpent + timer.elapsed : timeSpent;
+    const trackable = task.trackableId
+      ? trackableMap.get(task.trackableId)
+      : null;
+    const list = task.listId ? listMap.get(task.listId) : null;
+    const taskTags = (task.tagIds ?? [])
+      .map((tid: Id<"tags">) => tagMap.get(tid))
+      .filter(Boolean) as { name: string; colour: string }[];
+
+    return (
+      <View style={isActive ? styles.taskCardDragging : undefined}>
+        <Card style={styles.taskCard} padded={false}>
+          <TouchableOpacity
+            style={styles.taskRow}
+            onPress={() => setSelectedTaskId(task._id)}
+            onLongPress={onLongPressDrag}
+            delayLongPress={300}
+            activeOpacity={0.7}
+          >
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation?.();
+                void toggleComplete(task._id, task.name, isCompleted);
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons
+                name={isCompleted ? "checkmark-circle" : "ellipse-outline"}
+                size={24}
+                color={isCompleted ? Colors.success : Colors.textTertiary}
+              />
+            </TouchableOpacity>
+            <Text
+              style={[styles.taskName, isCompleted && styles.completedTask]}
+              numberOfLines={1}
+            >
+              {task.name}
+            </Text>
+            <View style={styles.timeCol}>
+              {!isCompleted && (
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    handleToggleTimer(task._id);
+                  }}
+                >
+                  <Ionicons
+                    name={isTicking ? "pause" : "play-outline"}
+                    size={20}
+                    color={isTicking ? Colors.success : Colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              )}
+              <Text
+                style={[styles.duration, isTicking && styles.durationActive]}
+              >
+                {formatSecondsAsHM(totalTime)}
+              </Text>
+            </View>
+          </TouchableOpacity>
+          {(trackable ||
+            (!task.trackableId &&
+              list &&
+              !list.isGoalList &&
+              !list.isInbox) ||
+            taskTags.length > 0) && (
+            <View style={styles.tagsRow}>
+              {trackable && (
+                <View style={styles.tagChip}>
+                  <Ionicons
+                    name="analytics"
+                    size={13}
+                    color={trackable.colour || Colors.text}
+                  />
+                  <Text
+                    style={[
+                      styles.tagName,
+                      { color: trackable.colour || Colors.text },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {trackable.name}
+                  </Text>
+                </View>
+              )}
+              {!trackable && list && !list.isGoalList && !list.isInbox && (
+                <View style={styles.tagChip}>
+                  <Ionicons
+                    name="list"
+                    size={13}
+                    color={list.colour || Colors.text}
+                  />
+                  <Text
+                    style={[
+                      styles.tagName,
+                      { color: list.colour || Colors.text },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {list.name}
+                  </Text>
+                </View>
+              )}
+              {taskTags.map(
+                (tag: { name: string; colour: string }, i: number) => (
+                  <View key={i} style={styles.tagChip}>
+                    <Ionicons
+                      name="pricetag"
+                      size={12}
+                      color={tag.colour}
+                    />
+                    <Text
+                      style={[styles.tagName, { color: tag.colour }]}
+                      numberOfLines={1}
+                    >
+                      {tag.name}
+                    </Text>
+                  </View>
+                ),
+              )}
+            </View>
+          )}
+        </Card>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <Stack.Screen
@@ -718,202 +867,122 @@ export default function ListDetailScreen() {
           />
         </View>
       ) : (
-      <SectionList
-        style={styles.sectionList}
-        sections={filteredSections}
-        keyExtractor={(item) => item._id}
-        removeClippedSubviews={false}
-        ListEmptyComponent={
-          noSections
-            ? () => (
-                <View style={styles.emptyListWrap}>
-                  <EmptyState
-                    fillScreen={false}
-                    title="No sections found"
-                    message=""
-                  />
-                </View>
-              )
-            : undefined
-        }
-        renderSectionHeader={({ section }) => {
-          const collapsed = collapsedSectionKeys.has(section.sectionKey);
-          const countSuffix = listSectionCountSuffix(
-            section.headerCompletedCount,
-            section.headerTotalCount,
-          );
-          return (
-            <View style={styles.sectionHeaderRow}>
-              <TouchableOpacity
-                style={styles.sectionHeaderMain}
-                onPress={() => toggleSectionCollapsed(section.sectionKey)}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityState={{ expanded: !collapsed }}
-                accessibilityLabel={`${section.title}, ${collapsed ? "collapsed" : "expanded"}`}
-              >
-                <MaterialIcons
-                  name="arrow-forward-ios"
-                  size={18}
-                  color={Colors.textTertiary}
-                  style={[
-                    styles.sectionExpandArrow,
-                    !collapsed && styles.sectionExpandArrowOpen,
-                  ]}
-                />
-                <Text style={styles.sectionTitle} numberOfLines={1}>
-                  {section.title}
-                  <Text style={styles.sectionCountInline}>{countSuffix}</Text>
-                </Text>
-              </TouchableOpacity>
-              <SectionHeadingAddButton
-                onPress={() => setAddTaskSectionId(section.sectionId)}
-                accessibilityLabel={`Add task to ${section.title}`}
-                hitSlop={10}
+        /**
+         * Native list view. Uses `NestableScrollContainer` so the per-section
+         * `NestableDraggableFlatList`s can auto-scroll the outer page while
+         * dragging, and so multiple draggable lists can coexist on one screen
+         * without warnings about "VirtualizedLists in plain ScrollViews".
+         * Cross-section drag is intentionally out of scope here — within-
+         * section reorder only (matches the legacy productivity-one
+         * touch-delay behaviour).
+         */
+        <NestableScrollContainer
+          style={styles.sectionList}
+          contentContainerStyle={[
+            styles.listContent,
+            noSections && styles.listContentEmpty,
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
+          {noSections && (
+            <View style={styles.emptyListWrap}>
+              <EmptyState
+                fillScreen={false}
+                title="No sections found"
+                message=""
               />
             </View>
-          );
-        }}
-        renderItem={({ item: task }) => {
-          const meta = buildMeta(task, tagMap, listMap, trackableMap);
-          const isTicking = timer.isRunning && timer.taskId === task._id;
+          )}
 
-          const isCompleted = !!task.dateCompleted;
-          const timeSpent = task.timeSpentInSecondsUnallocated ?? 0;
-          const totalTime = isTicking ? timeSpent + timer.elapsed : timeSpent;
-          const trackable = task.trackableId
-            ? trackableMap.get(task.trackableId)
-            : null;
-          const list = task.listId ? listMap.get(task.listId) : null;
-          const taskTags = (task.tagIds ?? [])
-            .map((tid: Id<"tags">) => tagMap.get(tid))
-            .filter(Boolean) as { name: string; colour: string }[];
-
-          return (
-            <Card style={styles.taskCard} padded={false}>
-              <TouchableOpacity
-                style={styles.taskRow}
-                onPress={() => setSelectedTaskId(task._id)}
-                activeOpacity={0.7}
-              >
-                <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation?.();
-                    void toggleComplete(task._id, task.name, isCompleted);
-                  }}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons
-                    name={isCompleted ? "checkmark-circle" : "ellipse-outline"}
-                    size={24}
-                    color={isCompleted ? Colors.success : Colors.textTertiary}
-                  />
-                </TouchableOpacity>
-                <Text
-                  style={[styles.taskName, isCompleted && styles.completedTask]}
-                  numberOfLines={1}
-                >
-                  {task.name}
-                </Text>
-                <View style={styles.timeCol}>
-                  {!isCompleted && (
-                    <TouchableOpacity
-                      onPress={(e) => {
-                        e.stopPropagation?.();
-                        handleToggleTimer(task._id);
-                      }}
-                    >
-                      <Ionicons
-                        name={isTicking ? "pause" : "play-outline"}
-                        size={20}
-                        color={
-                          isTicking ? Colors.success : Colors.textSecondary
-                        }
-                      />
-                    </TouchableOpacity>
-                  )}
-                  <Text
-                    style={[
-                      styles.duration,
-                      isTicking && styles.durationActive,
-                    ]}
+          {filteredSections.map((section) => {
+            const collapsed = collapsedSectionKeys.has(section.sectionKey);
+            const countSuffix = listSectionCountSuffix(
+              section.headerCompletedCount,
+              section.headerTotalCount,
+            );
+            return (
+              <View key={section.sectionKey}>
+                <View style={styles.sectionHeaderRow}>
+                  <TouchableOpacity
+                    style={styles.sectionHeaderMain}
+                    onPress={() => toggleSectionCollapsed(section.sectionKey)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: !collapsed }}
+                    accessibilityLabel={`${section.title}, ${collapsed ? "collapsed" : "expanded"}`}
                   >
-                    {formatSecondsAsHM(totalTime)}
-                  </Text>
+                    <MaterialIcons
+                      name="arrow-forward-ios"
+                      size={18}
+                      color={Colors.textTertiary}
+                      style={[
+                        styles.sectionExpandArrow,
+                        !collapsed && styles.sectionExpandArrowOpen,
+                      ]}
+                    />
+                    <Text style={styles.sectionTitle} numberOfLines={1}>
+                      {section.title}
+                      <Text style={styles.sectionCountInline}>
+                        {countSuffix}
+                      </Text>
+                    </Text>
+                  </TouchableOpacity>
+                  <SectionHeadingAddButton
+                    onPress={() => setAddTaskSectionId(section.sectionId)}
+                    accessibilityLabel={`Add task to ${section.title}`}
+                    hitSlop={10}
+                  />
                 </View>
-              </TouchableOpacity>
-              {(trackable ||
-                (!task.trackableId &&
-                  list &&
-                  !list.isGoalList &&
-                  !list.isInbox) ||
-                taskTags.length > 0) && (
-                <View style={styles.tagsRow}>
-                  {trackable && (
-                    <View style={styles.tagChip}>
-                      <Ionicons
-                        name="analytics"
-                        size={13}
-                        color={trackable.colour || Colors.text}
-                      />
-                      <Text
-                        style={[
-                          styles.tagName,
-                          { color: trackable.colour || Colors.text },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {trackable.name}
-                      </Text>
-                    </View>
-                  )}
-                  {!trackable && list && !list.isGoalList && !list.isInbox && (
-                    <View style={styles.tagChip}>
-                      <Ionicons
-                        name="list"
-                        size={13}
-                        color={list.colour || Colors.text}
-                      />
-                      <Text
-                        style={[
-                          styles.tagName,
-                          { color: list.colour || Colors.text },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {list.name}
-                      </Text>
-                    </View>
-                  )}
-                  {taskTags.map(
-                    (tag: { name: string; colour: string }, i: number) => (
-                    <View key={i} style={styles.tagChip}>
-                      <Ionicons
-                        name="pricetag"
-                        size={12}
-                        color={tag.colour}
-                      />
-                      <Text
-                        style={[styles.tagName, { color: tag.colour }]}
-                        numberOfLines={1}
-                      >
-                        {tag.name}
-                      </Text>
-                    </View>
+
+                {!collapsed &&
+                  (canDragReorder && section.data.length > 0 ? (
+                    <NestableDraggableFlatList
+                      data={section.data}
+                      keyExtractor={(t: any) => t._id}
+                      activationDistance={5}
+                      // Disable autoscroll. See TaskList.tsx for the
+                      // divide-by-zero rationale — keep `autoscrollSpeed={0}`
+                      // alone and leave `autoscrollThreshold` at its default
+                      // so the internal math doesn't produce a NaN.
+                      autoscrollSpeed={0}
+                      onDragEnd={({
+                        from,
+                        to,
+                      }: {
+                        from: number;
+                        to: number;
+                      }) => {
+                        if (from === to) return;
+                        const moved = section.data[from];
+                        if (!moved) return;
+                        void moveBetweenSections({
+                          taskId: moved._id as Id<"tasks">,
+                          toSectionId: section.sectionId,
+                          newOrderIndex: to,
+                        });
+                      }}
+                      renderItem={({
+                        item,
+                        drag,
+                        isActive,
+                      }: RenderItemParams<ListPageTask>) =>
+                        renderListTaskRow(item, {
+                          onLongPressDrag: drag,
+                          isActive,
+                        })
+                      }
+                    />
+                  ) : (
+                    section.data.map((task) => (
+                      <View key={task._id}>{renderListTaskRow(task)}</View>
+                    ))
                   ))}
-                </View>
-              )}
-            </Card>
-          );
-        }}
-        ListFooterComponent={() => listFooter}
-        contentContainerStyle={[
-          styles.listContent,
-          noSections && styles.listContentEmpty,
-        ]}
-        stickySectionHeadersEnabled={false}
-        keyboardShouldPersistTaps="handled"
-      />
+              </View>
+            );
+          })}
+
+          {listFooter}
+        </NestableScrollContainer>
       )}
 
       {tasksReady ? (
@@ -1112,6 +1181,11 @@ const styles = StyleSheet.create({
   },
   taskCardWrap: { marginBottom: 8 },
   taskCard: { marginBottom: 6 },
+  /** Visual cue while a native long-press drag is active. */
+  taskCardDragging: {
+    opacity: 0.85,
+    transform: [{ scale: 1.02 }],
+  },
   taskRow: {
     flexDirection: "row",
     alignItems: "center",

@@ -1,0 +1,152 @@
+diff --git a/node_modules/react-native-draggable-flatlist/src/components/DraggableFlatList.tsx b/node_modules/react-native-draggable-flatlist/src/components/DraggableFlatList.tsx
+index 7c88afc..3d01d84 100644
+--- a/node_modules/react-native-draggable-flatlist/src/components/DraggableFlatList.tsx
++++ b/node_modules/react-native-draggable-flatlist/src/components/DraggableFlatList.tsx
+@@ -273,6 +273,28 @@ function DraggableFlatListInner<T>(props: DraggableFlatListProps<T>) {
+   const gestureDisabled = useSharedValue(false);
+ 
+   const panGesture = Gesture.Pan()
++    // PATCH (timeplete): Use manual activation so the pan gesture only claims
++    // the touch AFTER a drag has been started via `drag()` (long-press).
++    //
++    // Without this, the pan auto-activates as soon as the user moves >5px
++    // vertically (per `activeOffsetY`), even when no drag is in progress —
++    // which means the gesture is stolen from the outer
++    // `NestableScrollContainer` and the page becomes un-scrollable. With
++    // manual activation, we explicitly `manager.fail()` when there's no
++    // active drag, letting the gesture bubble up to the parent ScrollView.
++    .manualActivation(true)
++    .onTouchesMove((_event, manager) => {
++      "worklet";
++      if (gestureDisabled.value) {
++        manager.fail();
++        return;
++      }
++      if (activeIndexAnim.value !== -1) {
++        manager.activate();
++      } else {
++        manager.fail();
++      }
++    })
+     .onBegin((evt) => {
+       gestureDisabled.value = disabled.value;
+       if (gestureDisabled.value) return;
+diff --git a/node_modules/react-native-draggable-flatlist/src/components/NestableDraggableFlatList.tsx b/node_modules/react-native-draggable-flatlist/src/components/NestableDraggableFlatList.tsx
+index 1559352..1ee818b 100644
+--- a/node_modules/react-native-draggable-flatlist/src/components/NestableDraggableFlatList.tsx
++++ b/node_modules/react-native-draggable-flatlist/src/components/NestableDraggableFlatList.tsx
+@@ -45,6 +45,15 @@ function NestableDraggableFlatListInner<T>(
+   useNestedAutoScroll({
+     ...animVals,
+     hoverOffset,
++    // PATCH: forward the user-facing props that the upstream lib forgot to
++    // pass through. Without this, `<NestableDraggableFlatList
++    // autoscrollSpeed={0}>` is silently ignored because the outer hook only
++    // reads from `params` (defaulting to speed=100/threshold=30) — see the
++    // destructure in `useNestedAutoScroll`. Setting `autoscrollSpeed=0` here
++    // disables nested-list-driven page scrolling, which was the source of
++    // the "drag a task → page snaps toward top" bug.
++    autoscrollSpeed: props.autoscrollSpeed,
++    autoscrollThreshold: props.autoscrollThreshold,
+   });
+ 
+   const onListContainerLayout = useStableCallback(async ({ containerRef }) => {
+diff --git a/node_modules/react-native-draggable-flatlist/src/hooks/useNestedAutoScroll.tsx b/node_modules/react-native-draggable-flatlist/src/hooks/useNestedAutoScroll.tsx
+index ee098ec..ca97f58 100644
+--- a/node_modules/react-native-draggable-flatlist/src/hooks/useNestedAutoScroll.tsx
++++ b/node_modules/react-native-draggable-flatlist/src/hooks/useNestedAutoScroll.tsx
+@@ -75,6 +75,13 @@ export function useNestedAutoScroll(params: {
+   });
+ 
+   const scrollTarget = useSharedValue(0);
++  // PATCH: latch dragStartTimestamp on the drag begin, so we can suppress
++  // autoscroll for the first few frames while the chain of derived values
++  // (hoverOffset, containerSize, activeCellSize, ...) stabilises. Without
++  // this, the very first frames after drag start read stale zeros and can
++  // spuriously report "at edge", triggering an unwanted scroll toward the
++  // top of the page regardless of where the dragged cell actually is.
++  const dragStartTimestamp = useSharedValue(0);
+ 
+   useAnimatedReaction(
+     () => {
+@@ -83,30 +90,52 @@ export function useNestedAutoScroll(params: {
+     (cur, prev) => {
+       if (cur && !prev) {
+         scrollTarget.value = outerScrollOffset.value;
++        dragStartTimestamp.value = Date.now();
++      } else if (!cur && prev) {
++        dragStartTimestamp.value = 0;
+       }
+     },
+     [activeCellSize]
+   );
+ 
+   function scrollToInternal(y: number) {
+-    scrollableRef.current?.scrollTo({ y, animated: true });
++    // `animated: false` is deliberate — see the JSDoc on the call site.
++    scrollableRef.current?.scrollTo({ y, animated: false });
+   }
+ 
+   useDerivedValue(() => {
++    // PATCH: explicit opt-out for callers that want zero autoscroll.
++    // Avoids divide-by-zero (threshold=0) and any NaN-target scrollTo calls
++    // that can manifest as a slow drift toward y=0 on Android.
++    if (autoscrollSpeed === 0 || autoscrollThreshold === 0) {
++      return;
++    }
++    // PATCH: settling grace period — for the first 200ms of a drag, do not
++    // autoscroll. This avoids the "start dragging anywhere → page scrolls
++    // to top" glitch caused by the derived-value chain not yet reporting a
++    // stable hover position.
++    if (
++      dragStartTimestamp.value === 0 ||
++      Date.now() - dragStartTimestamp.value < 200
++    ) {
++      return;
++    }
++    // PATCH: refuse to autoscroll before the container has been measured.
++    // With containerSize === 0 the bottom-edge computation degenerates and
++    // always reports "at bottom".
++    if (containerSize.value <= 0 || activeCellSize.value <= 0) {
++      return;
++    }
+     const isAtEdge = isAtTopEdge.value || isAtBottomEdge.value;
+     const topDisabled = isAtTopEdge.value && isScrolledUp.value;
+     const bottomDisabled = isAtBottomEdge.value && isScrolledDown.value;
+     const isEdgeDisabled = topDisabled || bottomDisabled;
+ 
+-    const scrollTargetDiff = Math.abs(scrollTarget.value - outerScrollOffset.value);
+-    const scrollInProgress = scrollTargetDiff > SCROLL_POSITION_TOLERANCE;
+-
+     const shouldScroll =
+       isAtEdge &&
+       !isEdgeDisabled &&
+       isDraggingCell.value &&
+-      isTouchActiveNative.value &&
+-      !scrollInProgress;
++      isTouchActiveNative.value;
+ 
+     const distFromEdge = isAtTopEdge.value
+       ? distToTopEdge.value
+@@ -118,8 +147,19 @@ export function useNestedAutoScroll(params: {
+       : outerScrollOffset.value + offset;
+     if (shouldScroll) {
+       scrollTarget.value = targetOffset;
+-      // Reanimated scrollTo is crashing on android. use 'regular' scrollTo until figured out.
+-      // scrollTo(scrollViewRef, 0, scrollTarget.value, true)
++      // PATCH: run scrollTo on the JS thread with `animated: false`.
++      //
++      // Original code used `animated: true`, which starts a new smooth-
++      // scroll animation every frame. Those overlap and fight each other
++      // → visible jitter at the edges.
++      //
++      // Reanimated's worklet `scrollTo` would be the ideal fix (UI thread,
++      // per-frame) but it requires an `useAnimatedRef`, and threading that
++      // through `Animated.createAnimatedComponent(ScrollView)` from
++      // gesture-handler produced ref-proxy errors and a hard crash at
++      // bottom-edge autoscroll. So we stay on JS-thread scrollTo but use
++      // `animated: false` — each frame just snaps a tiny distance, and at
++      // 60fps that reads as smooth motion without any animation stacking.
+       runOnJS(scrollToInternal)(targetOffset);
+     }
+   }, [autoscrollSpeed, autoscrollThreshold, isDraggingCell]);
