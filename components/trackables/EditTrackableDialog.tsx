@@ -33,6 +33,7 @@ import {
 import { EditTrackableHistoryTab } from "./EditTrackableHistoryTab";
 import { EditTrackableProgressTab } from "./EditTrackableProgressTab";
 import { useAuth } from "../../hooks/useAuth";
+import { useIsDesktop } from "../../hooks/useIsDesktop";
 
 interface EditTrackableDialogProps {
   trackableId: Id<"trackables">;
@@ -74,6 +75,7 @@ export function EditTrackableDialog({
 }: EditTrackableDialogProps) {
   const { profileReady } = useAuth();
   const { height: windowHeight } = useWindowDimensions();
+  const isDesktop = useIsDesktop();
   const trackables = useQuery(
     api.trackables.search,
     profileReady ? {} : "skip",
@@ -174,9 +176,15 @@ export function EditTrackableDialog({
           overflow: "hidden",
         } as ViewStyle)
       : {},
-    {
-      maxHeight: Math.min(windowHeight * 0.9, 840),
-    },
+    // Desktop: cap the card height so long tabs (e.g. Time Tracked) don't
+    //   stretch past the viewport; content-sized within the cap.
+    // Mobile: use a **fixed** height (not maxHeight). Without a concrete
+    //   height, the inner `dialogFill: flex:1` → `dialogBody: flex:1`
+    //   chain collapses to zero on native, so the bottom sheet appears as
+    //   just the header. This matches the pattern used in `TaskDetailSheet`.
+    isDesktop
+      ? { maxHeight: Math.min(windowHeight * 0.9, 840) }
+      : { height: windowHeight * 0.92 },
   ];
 
   const handleSave = async () => {
@@ -562,7 +570,10 @@ export function EditTrackableDialog({
   );
 
   return (
-    <DialogOverlay onBackdropPress={onClose} align="center">
+    <DialogOverlay
+      onBackdropPress={onClose}
+      align={isDesktop ? "center" : "bottom"}
+    >
       <DialogCard desktopWidth={640} style={cardFlexStyle}>
         <View style={styles.dialogFill}>
           <DialogHeader
@@ -616,7 +627,14 @@ export function EditTrackableDialog({
           <View
             style={[
               styles.dialogBody,
-              { maxHeight: Math.min(windowHeight * 0.62, 520) },
+              {
+                // On desktop cap the body height for readability; on mobile
+                // let it flex to fill the remaining bottom-sheet space so
+                // tabs like Progress and Tracking History aren't squeezed.
+                maxHeight: isDesktop
+                  ? Math.min(windowHeight * 0.62, 520)
+                  : undefined,
+              },
             ]}
           >
             {isGoal ? renderGoalTabContents() : renderTrackerTabContents()}

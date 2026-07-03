@@ -2,8 +2,10 @@ import React, { useEffect, useState } from "react";
 import { View, StyleSheet, useWindowDimensions, ActivityIndicator } from "react-native";
 import { Colors } from "../../../constants/colors";
 import { TrackableList } from "../../../components/shared/TrackableList";
+import { EditTrackableDialog } from "../../../components/trackables/EditTrackableDialog";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
 import { traceScreenMount } from "../../../lib/navInstrumentation";
+import { Id } from "../../../convex/_generated/dataModel";
 
 const PAGE_PADDING = 24;
 
@@ -17,6 +19,14 @@ export default function GoalsScreen() {
   const isDesktop = useIsDesktop();
   const { width } = useWindowDimensions();
   const [heavyReady, setHeavyReady] = useState(false);
+  // Own the edit dialog at the page root — same pattern as `DesktopHome`.
+  // Falling back to `router.push('/edit-trackable/[id]')` renders the dialog
+  // as a sibling Drawer.Screen; on desktop's permanent drawer, `router.back()`
+  // from that screen doesn't reliably pop the transition, so X/Cancel appear
+  // dead. Owning the dialog here keeps the close callback a plain
+  // `setState(null)` — identical to the home page flow that already works.
+  const [editingTrackableId, setEditingTrackableId] =
+    useState<Id<"trackables"> | null>(null);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setHeavyReady(true));
@@ -47,9 +57,19 @@ export default function GoalsScreen() {
             variant="trackables-page"
             title="Trackables"
             showArchivedToggle={false}
+            onRequestEditTrackable={(id) =>
+              setEditingTrackableId(id as Id<"trackables">)
+            }
           />
         )}
       </View>
+
+      {editingTrackableId && (
+        <EditTrackableDialog
+          trackableId={editingTrackableId}
+          onClose={() => setEditingTrackableId(null)}
+        />
+      )}
     </View>
   );
 }

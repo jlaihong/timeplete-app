@@ -21,13 +21,30 @@
  * `<input type="date">` so the field visually matches the floating-
  * label `Input` (real OS date picker, keyboard nav, locale-aware
  * formatting; only the chrome is custom).
- * On native: falls back to the standard `Input` accepting `YYYYMMDD`.
+ * On native: falls back to a Material `Input` whose visible text is
+ * masked as `YYYY-MM-DD` (auto-inserted dashes as the user types
+ * digits) so mobile matches what web renders. The canonical value
+ * emitted via `onChange` is still `YYYYMMDD`.
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Platform, View, Text, StyleSheet, Pressable } from "react-native";
 import { Colors } from "../../constants/colors";
 import { Input } from "./Input";
 import { yyyymmddToIsoDate, isoDateToYyyymmdd } from "../../lib/dates";
+
+/**
+ * Native fallback typing mask: takes any string, strips non-digits,
+ * caps at 8 chars, and reintroduces `-` after positions 4 and 6 so
+ * the visible text matches the web `<input type="date">` display
+ * (`YYYY-MM-DD`). Callers still emit / accept canonical `YYYYMMDD`
+ * via `onChange` — the mask lives purely in local input state.
+ */
+function formatIsoDateMask(raw: string): string {
+  const d = raw.replace(/\D/g, "").slice(0, 8);
+  if (d.length <= 4) return d;
+  if (d.length <= 6) return `${d.slice(0, 4)}-${d.slice(4)}`;
+  return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}`;
+}
 
 interface DateFieldProps {
   /** YYYYMMDD (8 chars, no dashes), or "" when unset. */
@@ -46,9 +63,32 @@ export function DateField({
   value,
   onChange,
   label,
-  placeholder = "YYYYMMDD",
+  placeholder = "YYYY-MM-DD",
 }: DateFieldProps) {
   const [focused, setFocused] = useState(false);
+  // Local mirror of the visible text on native. Keeps a partial mask
+  // (`2026-01`) alive while the user is still typing — canonical
+  // `YYYYMMDD` state doesn't accept those. Synced back from `value`
+  // whenever the parent value changes externally (form reset, etc.).
+  const [nativeText, setNativeText] = useState<string>(() =>
+    yyyymmddToIsoDate(value),
+  );
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    // Only overwrite local state when the parent's canonical value
+    // diverges from what our local text represents. Preserves partial
+    // typing (`2026-01`) — those still encode `202601` which is not
+    // `value`, but we don't want to clobber them mid-entry. We only
+    // pull from parent when either (a) parent has a full date and we
+    // don't match it, or (b) parent cleared while we have text.
+    const localDigits = nativeText.replace(/\D/g, "");
+    if (value.length === 8 && localDigits !== value) {
+      setNativeText(yyyymmddToIsoDate(value));
+    } else if (value === "" && nativeText !== "" && localDigits.length === 8) {
+      setNativeText("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
 
   if (Platform.OS === "web") {
     // The browser-native picker uses ISO YYYY-MM-DD; convert at the
@@ -120,9 +160,25 @@ export function DateField({
   return (
     <Input
       label={label}
-      value={value}
-      onChangeText={onChange}
+      value={nativeText}
+      onChangeText={(s) => {
+        const masked = formatIsoDateMask(s);
+        setNativeText(masked);
+        const digits = masked.replace(/\D/g, "");
+        if (digits.length === 8) {
+          onChange(digits);
+        } else if (digits.length === 0) {
+          onChange("");
+        }
+        // Intermediate partial dates don't emit — the canonical value
+        // stays at its last complete state so consumers never see an
+        // incomplete YYYYMMDD (which would fail `length === 8`
+        // validators throughout the app).
+      }}
       placeholder={placeholder}
+      keyboardType="number-pad"
+      inputMode="numeric"
+      maxLength={10}
       autoCapitalize="none"
       containerStyle={{ marginBottom: 0 }}
     />
