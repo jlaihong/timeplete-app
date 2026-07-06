@@ -1,11 +1,18 @@
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "../../constants/colors";
 import { useTimer } from "../../hooks/useTimer";
 
 export function TimerDisplay() {
   const timer = useTimer();
+  // The app renders edge-to-edge on Android/iOS, so this bar — mounted at
+  // the very top of the (app) layout — starts underneath the transparent
+  // status bar. Pad by the top inset so the dot / time / stop button render
+  // below the system icons while the teal background extends behind them.
+  // (insets.top is 0 on web, so this is a no-op there.)
+  const insets = useSafeAreaInsets();
 
   if (!timer.isRunning) return null;
 
@@ -18,9 +25,15 @@ export function TimerDisplay() {
     : `${minutes}:${String(seconds).padStart(2, "0")}`;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: 8 + insets.top }]}>
       <View style={styles.indicator} />
       <Ionicons name="timer" size={18} color={Colors.white} />
+      {/* Task / trackable name so it's clear what is being tracked.
+          Truncates so the elapsed time and stop button never get pushed
+          off-screen by a long name. */}
+      <Text style={styles.title} numberOfLines={1}>
+        {timer.displayTitle ?? ""}
+      </Text>
       <Text style={styles.time}>{display}</Text>
       <TouchableOpacity
         style={styles.stopButton}
@@ -47,12 +60,19 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: Colors.primary,
   },
+  // Name fills the row (and truncates); the time keeps its intrinsic
+  // width so the ticking digits stay put next to the stop button.
+  title: {
+    flex: 1,
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: "600",
+  },
   time: {
     color: Colors.white,
     fontSize: 16,
     fontWeight: "700",
     fontVariant: ["tabular-nums"],
-    flex: 1,
   },
   stopButton: {
     width: 28,

@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Drawer } from "expo-router/drawer";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import {
+  SafeAreaInsetsContext,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
 import { useQuery, useConvexAuth } from "convex/react";
@@ -446,6 +450,28 @@ export default function AppLayout() {
     useConvexAuth();
   const { profile, isApproved } = useAuth();
 
+  // ── Timer bar ↔ safe-area handoff ─────────────────────────────────
+  // The app draws edge-to-edge, so the top safe-area inset (status bar)
+  // is normally consumed by each screen's navigation header. When the
+  // timer bar is visible it sits ABOVE the navigators and pads itself by
+  // the inset (see TimerDisplay), so the headers below must stop adding
+  // it — otherwise every page shows an extra inset-tall blank strip.
+  // React Navigation reads insets from SafeAreaInsetsContext, so we
+  // re-provide it with `top: 0` while the timer is running.
+  //
+  // Subscribes to `timers.get` directly (NOT useTimer) so this layout
+  // re-renders on timer start/stop only — not on every 1-second tick.
+  const insets = useSafeAreaInsets();
+  const timerRow = useQuery(
+    api.timers.get,
+    profile != null ? {} : "skip",
+  );
+  const timerBarVisible = !!timerRow;
+  const insetsBelowTimerBar = useMemo(
+    () => (timerBarVisible ? { ...insets, top: 0 } : insets),
+    [timerBarVisible, insets],
+  );
+
   // Auth guard: without redirects below, screens inside (app) render after
   // sign-out. We intentionally NEVER swap this Drawer subtree for a
   // full-screen spinner while Convex/session bootstrap runs — replacing it
@@ -480,6 +506,7 @@ export default function AppLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <NavPathTrace />
       <TimerDisplay />
+      <SafeAreaInsetsContext.Provider value={insetsBelowTimerBar}>
       <DesktopAppChromeProvider>
         <View style={{ flex: 1 }}>
           {isDesktop ? <DesktopAppTopBar /> : null}
@@ -514,6 +541,7 @@ export default function AppLayout() {
           </View>
         </View>
       </DesktopAppChromeProvider>
+      </SafeAreaInsetsContext.Provider>
       {overlayBlocked && (
         <View
           style={styles.bootstrapOverlay}
