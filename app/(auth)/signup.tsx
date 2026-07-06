@@ -5,9 +5,9 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   TouchableOpacity,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Link, router } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -56,9 +56,10 @@ export default function SignupScreen() {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView
+      <KeyboardAwareScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
+        bottomOffset={80}
       >
         <View style={styles.header}>
           <Text style={styles.logo}>Timeplete</Text>
@@ -104,7 +105,7 @@ export default function SignupScreen() {
             </TouchableOpacity>
           </Link>
         </Card>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </KeyboardAvoidingView>
   );
 }

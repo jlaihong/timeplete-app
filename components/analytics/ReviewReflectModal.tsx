@@ -14,6 +14,7 @@ import {
   Platform,
   Alert,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -303,9 +304,14 @@ export function ReviewReflectModal({
                 ) : null}
               </ScrollView>
 
-              <ScrollView
+              <KeyboardAwareScrollView
                 style={styles.reflectColumn}
                 contentContainerStyle={styles.columnPad}
+                keyboardShouldPersistTaps="handled"
+                bottomOffset={120}
+                // Hide the vertical scrollbar so it doesn't overlap inputs
+                // below (RN draws the indicator inside the viewport).
+                showsVerticalScrollIndicator={false}
               >
                 <Text style={styles.columnHeading}>{currentHeading}</Text>
                 {displayCurrentQs.length === 0 ? (
@@ -331,7 +337,7 @@ export function ReviewReflectModal({
                     </View>
                   ))
                 )}
-              </ScrollView>
+              </KeyboardAwareScrollView>
             </View>
           </View>
 
@@ -340,12 +346,14 @@ export function ReviewReflectModal({
               title="Cancel"
               variant="ghost"
               onPress={requestCloseMain}
+              size="small"
             />
             <Button
               title="Save"
               loading={saving}
               disabled={saving}
               onPress={() => void finalizeSave(true)}
+              size="small"
             />
           </DialogFooter>
         </DialogCard>

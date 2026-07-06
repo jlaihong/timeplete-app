@@ -39,7 +39,11 @@ export interface TaskRowTask {
    * tasks at a glance — same affordance as productivity-one's row.
    */
   isRecurringInstance?: boolean;
-  recurringTaskId?: Id<"tasks">;
+  /**
+   * Parent recurring-rule id (from the `recurringTasks` table). Present
+   * on any row where `isRecurringInstance === true`.
+   */
+  recurringTaskId?: Id<"recurringTasks">;
 }
 
 export interface TaskRowMeta {

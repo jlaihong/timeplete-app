@@ -27,11 +27,14 @@ import {
   formatDisplayDate,
   isToday,
   formatSecondsAsHM,
+  getDaysInRange,
 } from "../../lib/dates";
 import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
+import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
+import { SwipeableTaskRow } from "../tasks/SwipeableTaskRow";
 import { Id } from "../../convex/_generated/dataModel";
 
 const LOAD_MORE_DAYS = 7;
@@ -57,16 +60,57 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const [visibleDays, setVisibleDays] = useState(1);
   const visibleEndDay = addDays(today, visibleDays - 1);
 
-  const tasks = useQuery(
+  const queryTasks = useQuery(
     api.tasks.getHomeTasks,
     profileReady
       ? { todayYYYYMMDD: today, rangeEndYYYYMMDD: visibleEndDay }
       : "skip",
   );
+
+  /**
+   * Load-more retention (parity with `DesktopTaskList`): while the wider
+   * `getHomeTasks` payload is in flight after bumping `visibleDays`,
+   * `useQuery` briefly returns `undefined`. Without retention that made
+   * the whole list unmount and flash "Loading tasks..." — exactly the
+   * "screen refreshes" behaviour reported on mobile. We keep the last
+   * good payload alive so the visible list only *grows* on Load More.
+   */
+  const lastStableTasksRef = useRef<{
+    today: string;
+    rangeEnd: string;
+    tasks: NonNullable<typeof queryTasks>;
+  } | null>(null);
+
+  useEffect(() => {
+    if (queryTasks !== undefined) {
+      lastStableTasksRef.current = {
+        today,
+        rangeEnd: visibleEndDay,
+        tasks: queryTasks,
+      };
+    }
+  }, [queryTasks, today, visibleEndDay]);
+
+  const tasks = useMemo(() => {
+    if (queryTasks !== undefined) return queryTasks;
+    // Hold onto the previously-loaded rows while a wider window is being
+    // fetched. Only reuse if today hasn't rolled over and the new window
+    // is a *forward* expansion (never shrink or shift the anchor).
+    const prev = lastStableTasksRef.current;
+    if (
+      prev &&
+      prev.today === today &&
+      visibleEndDay.localeCompare(prev.rangeEnd) >= 0
+    ) {
+      return prev.tasks;
+    }
+    return undefined;
+  }, [queryTasks, today, visibleEndDay]);
   const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const trackables = useQuery(api.trackables.search, profileReady ? {} : "skip");
   const upsertTask = useTaskUpsertMutation();
+  const deleteTask = useTaskDeleteMutation();
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
   const timer = useTimer();
@@ -148,8 +192,14 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       }
     }
 
-    // Always render Today, even when empty, so users have an obvious target.
-    if (!groups.has(today)) groups.set(today, []);
+    // Always render every day in the visible window, even when empty, so
+    // Load More visibly extends the list forward even when the newly
+    // fetched days have no tasks (parity with `DesktopTaskList`'s
+    // `serverGroups`). Without this, tapping Load More on a week with
+    // no upcoming tasks looks like a no-op.
+    for (const d of getDaysInRange(today, visibleEndDay)) {
+      if (!groups.has(d)) groups.set(d, []);
+    }
 
     const entries = Array.from(groups.entries()).sort(([a], [b]) => {
       if (a === "overdue") return -1;
@@ -185,7 +235,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         totalCount: allTasks.length,
       };
     });
-  }, [tasks, showCompleted, today]);
+  }, [tasks, showCompleted, today, visibleEndDay]);
 
   const toggleComplete = useCallback(
     async (taskId: Id<"tasks">, taskName: string, isCompleted: boolean) => {
@@ -476,26 +526,15 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         .map((id: string) => tagMap.get(id))
         .filter(Boolean);
 
-      return (
-        <View
-          key={task._id}
-          ref={
-            isWeb && isValidDropDay
-              ? (node: any) =>
-                  setDragAttrs(node, task._id, group.day, taskIndex)
-              : undefined
-          }
-          style={isActive ? styles.taskCardDragging : undefined}
+      const cardContent = (
+        <Card
+          style={[
+            styles.taskCard,
+            isTimerActive && styles.taskCardTicking,
+            isCompleted && styles.taskCardCompleted,
+          ]}
+          padded={false}
         >
-          {isDragTarget && <View style={styles.dropPlaceholder} />}
-          <Card
-            style={[
-              styles.taskCard,
-              isTimerActive && styles.taskCardTicking,
-              isCompleted && styles.taskCardCompleted,
-            ]}
-            padded={false}
-          >
             <TouchableOpacity
               style={styles.taskRow}
               onPress={() => onSelectTask?.(task._id)}
@@ -625,6 +664,42 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
               </View>
             )}
           </Card>
+      );
+
+      return (
+        <View
+          key={task._id}
+          ref={
+            isWeb && isValidDropDay
+              ? (node: any) =>
+                  setDragAttrs(node, task._id, group.day, taskIndex)
+              : undefined
+          }
+          style={isActive ? styles.taskCardDragging : undefined}
+        >
+          {isDragTarget && <View style={styles.dropPlaceholder} />}
+          {/* Wrap each row in a horizontal swipeable so users can swipe
+           * LEFT to reveal a red "Delete" action (iOS Mail / Reminders /
+           * Todoist / Google Tasks pattern). The recurring-instance vs
+           * normal-task routing lives inside `useTaskDeleteMutation` so
+           * this matches the desktop context-menu delete path.
+           *
+           * Disabled while the row is actively being dragged so the
+           * `NestableDraggableFlatList` translation isn't fighting the
+           * swipeable's horizontal panel. */}
+          <SwipeableTaskRow
+            enabled={!isActive}
+            onDelete={() =>
+              deleteTask({
+                taskId: task._id,
+                taskName: task.name,
+                isRecurringInstance: task.isRecurringInstance,
+                recurringTaskId: task.recurringTaskId,
+              })
+            }
+          >
+            {cardContent}
+          </SwipeableTaskRow>
         </View>
       );
     },
@@ -638,6 +713,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       toggleComplete,
       handleToggleTimer,
       setDragAttrs,
+      deleteTask,
     ],
   );
 

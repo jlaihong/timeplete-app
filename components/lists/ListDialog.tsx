@@ -5,12 +5,13 @@ import {
   StyleSheet,
   Modal,
   Pressable,
-  ScrollView,
   Switch,
   Alert,
   Platform,
   useWindowDimensions,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
@@ -58,6 +59,13 @@ export function ListDialog({
 }: ListDialogProps) {
   useRegisterEscapeClose(onClose, visibleProp);
   const { height: windowHeight } = useWindowDimensions();
+  // On mobile web the layout viewport doesn't shrink when the soft
+  // keyboard opens — see `useVisualViewportHeight` for details. Feed
+  // the visible height into our size math so the dialog stays fully
+  // reachable while a text field is focused.
+  const vvHeight = useVisualViewportHeight();
+  const effectiveHeight =
+    Platform.OS === "web" && vvHeight != null ? vvHeight : windowHeight;
   /** Must match `padding` in `styles.overlay` (24 × 2 vertically). */
   const overlayVerticalPaddingPx = 48;
   const isEditMode = !!list;
@@ -129,8 +137,11 @@ export function ListDialog({
     (isEditMode && list ? 296 : 220) + overlayVerticalPaddingPx;
   const scrollMaxHeightWeb = Math.max(
     160,
-    Math.round(windowHeight - webBodyChromeReservePx),
+    Math.round(effectiveHeight - webBodyChromeReservePx),
   );
+
+  const overlayHeightStyle =
+    Platform.OS === "web" && vvHeight != null ? { height: vvHeight } : null;
 
   return (
     <Modal
@@ -139,7 +150,7 @@ export function ListDialog({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, overlayHeightStyle]}>
         <Pressable style={styles.backdrop} onPress={onClose} />
         <View style={styles.dialogSurface} pointerEvents="box-none">
           <Card style={styles.dialog}>
@@ -184,14 +195,17 @@ export function ListDialog({
               </View>
             ) : null}
 
-            <ScrollView
+            <KeyboardAwareScrollView
               style={[
                 styles.scroll,
                 Platform.OS === "web" && { maxHeight: scrollMaxHeightWeb },
               ]}
               contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator
+              // Hide the vertical scrollbar so it doesn't overlap inputs
+              // below (RN draws the indicator inside the viewport).
+              showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              bottomOffset={120}
             >
               {isEditMode && list && detailsTab === "sharing" ? (
                 <ListSharePanel listId={list._id} />
@@ -240,7 +254,7 @@ export function ListDialog({
                   </View>
                 </>
               )}
-            </ScrollView>
+            </KeyboardAwareScrollView>
 
             {isEditMode && list && detailsTab === "sharing" ? (
               <View
@@ -248,7 +262,12 @@ export function ListDialog({
               >
                 <View style={styles.spacer} />
                 <View style={styles.primaryActions}>
-                  <Button title="Cancel" variant="outline" onPress={onClose} />
+                  <Button
+                    title="Cancel"
+                    variant="outline"
+                    onPress={onClose}
+                    size="small"
+                  />
                 </View>
               </View>
             ) : (
@@ -259,17 +278,24 @@ export function ListDialog({
                     variant="danger"
                     onPress={handleDelete}
                     style={styles.deleteButton}
+                    size="small"
                   />
                 ) : (
                   <View style={styles.spacer} />
                 )}
                 <View style={styles.primaryActions}>
-                  <Button title="Cancel" variant="outline" onPress={onClose} />
+                  <Button
+                    title="Cancel"
+                    variant="outline"
+                    onPress={onClose}
+                    size="small"
+                  />
                   <Button
                     title={isEditMode ? "Save" : "Create"}
                     onPress={handleSave}
                     loading={saving}
                     disabled={!name.trim()}
+                    size="small"
                   />
                 </View>
               </View>

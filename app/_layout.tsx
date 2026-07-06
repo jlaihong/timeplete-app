@@ -1,9 +1,13 @@
 import React, { StrictMode, useEffect } from "react";
-import { LogBox } from "react-native";
+import { LogBox, Platform } from "react-native";
 import { Slot } from "expo-router";
 import { ConvexReactClient, ConvexProvider } from "convex/react";
 import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
 import { StatusBar } from "expo-status-bar";
+import {
+  KeyboardProvider,
+  KeyboardToolbar,
+} from "react-native-keyboard-controller";
 import { authClient } from "@/lib/auth-client";
 import { getExpoPublicConvexUrl } from "@/lib/convexEnv";
 import { convexPublicUrlForClient } from "@/lib/convexPublicUrl";
@@ -38,7 +42,15 @@ export default function RootLayout() {
     return installWebScrollbarStyles();
   }, []);
 
-  return (
+  // Keyboard controller wraps the whole app to publish keyboard height events
+  // (used by `KeyboardAwareScrollView`) and provides the sticky
+  // `KeyboardToolbar` that renders Previous / Next / Done buttons above the
+  // software keyboard on iOS/Android. On web it's a no-op — the browser
+  // handles focus navigation via Tab, and there's no software keyboard for
+  // desktop, so we skip both components entirely.
+  const useKeyboardHelpers = Platform.OS !== "web";
+
+  const appTree = (
     <StrictMode>
       <ConvexProvider client={convex}>
         <ConvexBetterAuthProvider client={convex} authClient={authClient}>
@@ -47,5 +59,16 @@ export default function RootLayout() {
         </ConvexBetterAuthProvider>
       </ConvexProvider>
     </StrictMode>
+  );
+
+  if (!useKeyboardHelpers) {
+    return appTree;
+  }
+
+  return (
+    <KeyboardProvider>
+      {appTree}
+      <KeyboardToolbar />
+    </KeyboardProvider>
   );
 }

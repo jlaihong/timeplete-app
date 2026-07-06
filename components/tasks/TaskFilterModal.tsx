@@ -89,7 +89,12 @@ export function TaskFilterModal({
               </ScrollView>
             </>
           )}
-          <Button title="Done" onPress={onClose} style={{ marginTop: 12 }} />
+          <Button
+            title="Done"
+            onPress={onClose}
+            style={{ marginTop: 12 }}
+            size="small"
+          />
         </Pressable>
       </Pressable>
     </Modal>

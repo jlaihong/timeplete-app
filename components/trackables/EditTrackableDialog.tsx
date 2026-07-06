@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { Ionicons } from "@expo/vector-icons";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Id } from "../../convex/_generated/dataModel";
@@ -34,6 +35,7 @@ import { EditTrackableHistoryTab } from "./EditTrackableHistoryTab";
 import { EditTrackableProgressTab } from "./EditTrackableProgressTab";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
+import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
 
 interface EditTrackableDialogProps {
   trackableId: Id<"trackables">;
@@ -76,6 +78,14 @@ export function EditTrackableDialog({
   const { profileReady } = useAuth();
   const { height: windowHeight } = useWindowDimensions();
   const isDesktop = useIsDesktop();
+  // On mobile web the *visual* viewport shrinks when the software keyboard
+  // opens; the *layout* viewport does not. Sizing our mobile bottom sheet
+  // against the visible area keeps every input reachable while typing.
+  // Native uses `KeyboardProvider` + `KeyboardAwareScrollView` for the same
+  // effect, so this hook returns `undefined` there and we fall back to
+  // `windowHeight`.
+  const vvHeight = useVisualViewportHeight();
+  const availableHeight = vvHeight ?? windowHeight;
   const trackables = useQuery(
     api.trackables.search,
     profileReady ? {} : "skip",
@@ -182,9 +192,11 @@ export function EditTrackableDialog({
     //   height, the inner `dialogFill: flex:1` → `dialogBody: flex:1`
     //   chain collapses to zero on native, so the bottom sheet appears as
     //   just the header. This matches the pattern used in `TaskDetailSheet`.
+    //   Use `availableHeight` (visual viewport) so the sheet also shrinks
+    //   when the keyboard opens on mobile web.
     isDesktop
-      ? { maxHeight: Math.min(windowHeight * 0.9, 840) }
-      : { height: windowHeight * 0.92 },
+      ? { maxHeight: Math.min(availableHeight * 0.9, 840) }
+      : { height: availableHeight * 0.92 },
   ];
 
   const handleSave = async () => {
@@ -474,20 +486,26 @@ export function EditTrackableDialog({
         );
       case "commitment":
         return (
-          <ScrollView
+          <KeyboardAwareScrollView
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
+            bottomOffset={120}
+            // Hide the vertical scrollbar so it doesn't overlap inputs
+            // below (RN draws the indicator inside the viewport).
+            showsVerticalScrollIndicator={false}
           >
             {renderMyCommitmentBody()}
-          </ScrollView>
+          </KeyboardAwareScrollView>
         );
       case "motivations":
         return (
-          <ScrollView
+          <KeyboardAwareScrollView
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
+            bottomOffset={120}
+            showsVerticalScrollIndicator={false}
           >
             <Text style={styles.subsectionTitle}>
               Why is this important to me?
@@ -496,20 +514,22 @@ export function EditTrackableDialog({
               value={{ reasons: goalReasons }}
               onChange={(v) => setGoalReasons(v.reasons)}
             />
-          </ScrollView>
+          </KeyboardAwareScrollView>
         );
       case "accountability":
         return (
-          <ScrollView
+          <KeyboardAwareScrollView
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
+            bottomOffset={120}
+            showsVerticalScrollIndicator={false}
           >
             <GoalAccountabilityForm
               value={accountability}
               onChange={setAccountability}
             />
-          </ScrollView>
+          </KeyboardAwareScrollView>
         );
       default:
         return null;
@@ -519,13 +539,17 @@ export function EditTrackableDialog({
   const renderTrackerTabContents = () => {
     if (trackerTab === "details") {
       return (
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          bottomOffset={120}
+          // Hide the vertical scrollbar so it doesn't overlap inputs
+          // below (RN draws the indicator inside the viewport).
+          showsVerticalScrollIndicator={false}
         >
           {renderMyCommitmentBody()}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       );
     }
     return (
@@ -540,33 +564,26 @@ export function EditTrackableDialog({
     );
   };
 
+  // Header only carries the non-destructive Archive toggle now — the
+  // destructive Delete has moved to the footer's leading slot for parity
+  // with `ListDialog` / `TaskDetailSheet` (see the confirmation dialog
+  // in `confirmDelete` below for the actual guard rail).
   const headerActions = (
-    <>
-      <Pressable
-        style={styles.headerIconBtn}
-        onPress={handleArchive}
-        accessibilityRole="button"
-        accessibilityLabel={
-          trackable.archived ? "Unarchive trackable" : "Archive trackable"
-        }
-        hitSlop={6}
-      >
-        <Ionicons
-          name="archive-outline"
-          size={22}
-          color={Colors.textSecondary}
-        />
-      </Pressable>
-      <Pressable
-        style={styles.headerIconBtn}
-        onPress={confirmDelete}
-        accessibilityRole="button"
-        accessibilityLabel="Delete trackable"
-        hitSlop={6}
-      >
-        <Ionicons name="trash-outline" size={22} color={Colors.textSecondary} />
-      </Pressable>
-    </>
+    <Pressable
+      style={styles.headerIconBtn}
+      onPress={handleArchive}
+      accessibilityRole="button"
+      accessibilityLabel={
+        trackable.archived ? "Unarchive trackable" : "Archive trackable"
+      }
+      hitSlop={6}
+    >
+      <Ionicons
+        name="archive-outline"
+        size={22}
+        color={Colors.textSecondary}
+      />
+    </Pressable>
   );
 
   return (
@@ -641,9 +658,29 @@ export function EditTrackableDialog({
           </View>
 
           <DialogFooter>
-            <Button title="Cancel" variant="ghost" onPress={onClose} />
+            {/* Destructive action on the leading edge — same layout as
+             * `ListDialog` / `TaskDetailSheet`, with a flex-1 spacer
+             * pushing Cancel/Save to the trailing edge. */}
+            <Button
+              title="Delete"
+              variant="danger"
+              onPress={confirmDelete}
+              size="small"
+            />
+            <View style={styles.footerSpacer} />
+            <Button
+              title="Cancel"
+              variant="ghost"
+              onPress={onClose}
+              size="small"
+            />
             {showSaveFooter ? (
-              <Button title="Save" onPress={handleSave} loading={loading} />
+              <Button
+                title="Save"
+                onPress={handleSave}
+                loading={loading}
+                size="small"
+              />
             ) : null}
           </DialogFooter>
         </View>
@@ -725,6 +762,11 @@ const styles = StyleSheet.create({
     minWidth: 0,
     width: "100%",
   },
+  // Pushes the destructive footer button leftward and pins Cancel/Save to
+  // the right — mirrors the pattern used by `ListDialog` and
+  // `TaskDetailSheet` so every dialog's destructive action lives in
+  // the same visual slot.
+  footerSpacer: { flex: 1 },
   headerIconBtn: {
     width: 40,
     height: 40,

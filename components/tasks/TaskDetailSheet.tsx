@@ -25,7 +25,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TextInput,
   TouchableOpacity,
   useWindowDimensions,
@@ -34,6 +33,7 @@ import {
   Alert,
   type ViewStyle,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -42,6 +42,7 @@ import { Button } from "../ui/Button";
 import { DateField } from "../ui/DateField";
 import { TrackablePicker } from "./TrackablePicker";
 import { ListPicker } from "./ListPicker";
+import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
 import {
   RecurrenceSection,
   type RecurrenceFormValue,
@@ -51,6 +52,7 @@ import {
 import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
+import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { formatSecondsAsHM, formatDisplayDate, todayYYYYMMDD } from "../../lib/dates";
 import {
@@ -101,6 +103,11 @@ interface EditableForm {
 export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const isDesktop = useIsDesktop();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  // On mobile web, shrink with the soft keyboard so Save / bottom fields
+  // stay reachable instead of sliding under the keyboard.
+  const vvHeight = useVisualViewportHeight();
+  const availableHeight =
+    Platform.OS === "web" && vvHeight != null ? vvHeight : windowHeight;
   const { profileReady } = useAuth();
 
   // Single-row subscription instead of `api.tasks.search({ includeCompleted: true })`.
@@ -141,6 +148,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
       : null;
 
   const upsertTask = useTaskUpsertMutation();
+  const deleteTaskMutation = useTaskDeleteMutation();
   const upsertComment = useMutation(api.taskComments.upsert);
   const removeComment = useMutation(api.taskComments.remove);
   // Recurring-series mutations — `handleSave` routes to these based on
@@ -203,6 +211,26 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const handleClose = useCallback(() => {
     onClose();
   }, [onClose]);
+
+  /**
+   * Delete the currently-open task. Mirrors the desktop right-click
+   * context-menu path (`DesktopTaskList.handleDelete`) and the mobile
+   * swipe-to-delete path (`TaskList` → `SwipeableTaskRow`): the shared
+   * hook shows the confirmation dialog, then either routes through
+   * `deleteInstance` (skip-set aware) for recurring rows or the normal
+   * cascade `remove` for everything else. `onDeleted` fires only when
+   * the user actually confirms, so cancelling leaves the sheet open.
+   */
+  const handleDelete = useCallback(() => {
+    if (!task) return;
+    deleteTaskMutation({
+      taskId: task._id,
+      taskName: task.name,
+      isRecurringInstance: task.isRecurringInstance,
+      recurringTaskId: task.recurringTaskId,
+      onDeleted: onClose,
+    });
+  }, [task, deleteTaskMutation, onClose]);
 
   const totalTrackedSeconds = useMemo(() => {
     if (!taskTimeWindows) return 0;
@@ -628,8 +656,12 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     ? Math.min(640, windowWidth * 0.5)
     : windowWidth;
   // Fixed height (not maxHeight) so the dialog never resizes when the
-  // user switches tabs. Tab content scrolls internally instead.
-  const dialogHeight = isDesktop ? windowHeight * 0.85 : windowHeight * 0.9;
+  // user switches tabs. Tab content scrolls internally instead. Uses
+  // `availableHeight` (visualViewport on mobile web) so the sheet shrinks
+  // with the keyboard rather than being clipped underneath it.
+  const dialogHeight = isDesktop
+    ? availableHeight * 0.85
+    : availableHeight * 0.9;
 
   const renderDetailsTab = () => (
     <>
@@ -897,19 +929,28 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
 
       {/* Tab Content — `flex: 1` makes the scroll region absorb all
           remaining vertical space inside the fixed-height dialog,
-          guaranteeing the panel itself never resizes per tab. */}
+          guaranteeing the panel itself never resizes per tab. Details /
+          Comments both host inputs, so we use `KeyboardAwareScrollView`
+          which auto-pads the bottom when the soft keyboard opens on
+          native so the focused (and next) field stay visible. */}
       {activeTab === "time" ? (
         <View style={[styles.contentScroll, styles.timeTabOuter]}>
           {renderTimeTab()}
         </View>
       ) : (
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.contentScroll}
           contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          bottomOffset={120}
+          // Hide the vertical scrollbar so it doesn't paint on top of the
+          // right edge of inputs / textareas below it (RN draws the
+          // indicator inside the viewport, not outside).
+          showsVerticalScrollIndicator={false}
         >
           {activeTab === "details" && renderDetailsTab()}
           {activeTab === "comments" && renderCommentsTab()}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       )}
 
       {/* Footer — only on the Details tab, since it's the only tab
@@ -918,12 +959,28 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
           Save commits the sparse upsert and closes. */}
       {activeTab === "details" && (
         <View style={styles.footer}>
-          <Button title="Cancel" variant="ghost" onPress={handleClose} />
+          {/* Delete lives on the left with a spacer between it and the
+           * primary actions — same layout as `ListDialog`'s footer so
+           * destructive actions are visually separated from Save/Cancel. */}
+          <Button
+            title="Delete"
+            variant="danger"
+            onPress={handleDelete}
+            size="small"
+          />
+          <View style={styles.footerSpacer} />
+          <Button
+            title="Cancel"
+            variant="ghost"
+            onPress={handleClose}
+            size="small"
+          />
           <Button
             title="Save"
             onPress={handleSave}
             disabled={!isDirty}
             loading={saving}
+            size="small"
           />
         </View>
       )}
@@ -1013,6 +1070,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                   setPendingNameChange(null);
                   setShowRecurringScopeModal(false);
                 }}
+                size="small"
               />
             </View>
           </Pressable>
@@ -1047,6 +1105,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                 title="Cancel"
                 variant="ghost"
                 onPress={() => setShowStopRecurringModal(false)}
+                size="small"
               />
               <Button
                 title="Stop recurring"
@@ -1054,6 +1113,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                 onPress={handleConfirmStopRecurring}
                 disabled={!stopAfterDay}
                 loading={saving}
+                size="small"
               />
             </View>
           </Pressable>
@@ -1138,7 +1198,6 @@ const styles = StyleSheet.create({
 
   footer: {
     flexDirection: "row",
-    justifyContent: "flex-end",
     alignItems: "center",
     gap: 8,
     padding: 12,
@@ -1146,6 +1205,9 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainerHigh,
   },
+  // Pushes the destructive "Delete" leftward and pins Cancel/Save to the
+  // right (mirrors `ListDialog`'s primary/destructive footer split).
+  footerSpacer: { flex: 1 },
   stopRecurringBadge: {
     marginTop: 12,
     marginBottom: 12,

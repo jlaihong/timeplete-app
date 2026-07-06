@@ -12,8 +12,8 @@ import {
   Pressable,
   TextInput,
   Platform,
-  ScrollView,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import {
   closestCenter,
   DndContext,
@@ -266,8 +266,13 @@ export function ReviewQuestionsSettingsModal({
                                     setShowAddInput(false);
                                     setNewQuestionText("");
                                   }}
+                                  size="small"
                                 />
-                                <Button title="Add" onPress={addQuestion} />
+                                <Button
+                                  title="Add"
+                                  onPress={addQuestion}
+                                  size="small"
+                                />
                               </View>
                             </View>
                           ) : (
@@ -316,18 +321,28 @@ export function ReviewQuestionsSettingsModal({
                       {body}
                     </View>
                   ) : (
-                    <ScrollView
+                    <KeyboardAwareScrollView
                       key={tab}
                       style={styles.settingsScroll}
                       keyboardShouldPersistTaps="handled"
+                      bottomOffset={120}
+                      // Hide the vertical scrollbar so it doesn't overlap
+                      // inputs below (RN draws the indicator inside the
+                      // viewport).
+                      showsVerticalScrollIndicator={false}
                     >
                       {body}
-                    </ScrollView>
+                    </KeyboardAwareScrollView>
                   );
                 })()}
 
                 <DialogFooter>
-                  <Button title="Close" variant="ghost" onPress={onClose} />
+                  <Button
+                    title="Close"
+                    variant="ghost"
+                    onPress={onClose}
+                    size="small"
+                  />
                 </DialogFooter>
               </>
             )}
@@ -357,8 +372,9 @@ export function ReviewQuestionsSettingsModal({
                   title="Cancel"
                   variant="ghost"
                   onPress={() => setEditTarget(null)}
+                  size="small"
                 />
-                <Button title="Save" onPress={saveEdit} />
+                <Button title="Save" onPress={saveEdit} size="small" />
               </DialogFooter>
             </DialogCard>
           </DialogOverlay>
@@ -403,6 +419,7 @@ export function ReviewQuestionsSettingsModal({
                     setDeleteTarget(null);
                     setDeleteConfirm("");
                   }}
+                  size="small"
                 />
                 <Button
                   title="Delete"
@@ -412,6 +429,7 @@ export function ReviewQuestionsSettingsModal({
                     setDeleteConfirm("");
                   }}
                   disabled={deleteConfirm !== "Delete"}
+                  size="small"
                 />
               </DialogFooter>
             </DialogCard>

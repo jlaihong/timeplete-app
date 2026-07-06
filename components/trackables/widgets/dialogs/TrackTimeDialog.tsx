@@ -4,10 +4,10 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  ScrollView,
   Pressable,
   Platform,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
@@ -23,6 +23,7 @@ import {
 } from "../../../../lib/dates";
 import { defaultStartTimeQuarterHour } from "../../../../lib/trackableLogPresets";
 import { useRegisterEscapeClose } from "../../../../hooks/useRegisterEscapeClose";
+import { useVisualViewportHeight } from "../../../../hooks/useVisualViewportHeight";
 import {
   TrackableLogDurationBlock,
   TrackableLogStartTimeBlock,
@@ -106,14 +107,24 @@ export function TrackTimeDialog({
     }
   };
 
+  const vvHeight = useVisualViewportHeight();
+  const overlayHeightStyle =
+    Platform.OS === "web" && vvHeight != null ? { height: vvHeight } : null;
+
   return (
-    <Pressable style={styles.overlay} onPress={onClose}>
+    <Pressable style={[styles.overlay, overlayHeightStyle]} onPress={onClose}>
       <Pressable
         onPress={(e) => e.stopPropagation?.()}
         style={styles.dialogWrap}
       >
         <Card style={styles.dialog}>
-          <ScrollView>
+          <KeyboardAwareScrollView
+            keyboardShouldPersistTaps="handled"
+            bottomOffset={100}
+            // Hide the vertical scrollbar so it doesn't overlap inputs
+            // below (RN draws the indicator inside the viewport).
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.header}>
               <View
                 style={[
@@ -149,15 +160,21 @@ export function TrackTimeDialog({
             {error && <Text style={styles.error}>{error}</Text>}
 
             <View style={styles.actions}>
-              <Button title="Cancel" variant="outline" onPress={onClose} />
+              <Button
+                title="Cancel"
+                variant="outline"
+                onPress={onClose}
+                size="small"
+              />
               <Button
                 title="Save"
                 onPress={onSave}
                 loading={saving}
                 disabled={!canSave}
+                size="small"
               />
             </View>
-          </ScrollView>
+          </KeyboardAwareScrollView>
         </Card>
       </Pressable>
     </Pressable>

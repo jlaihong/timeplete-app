@@ -5,9 +5,9 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   TouchableOpacity,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Link, router } from "expo-router";
 import { useConvex } from "convex/react";
 import { Button } from "../../components/ui/Button";
@@ -110,9 +110,10 @@ export default function LoginScreen() {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView
+      <KeyboardAwareScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
+        bottomOffset={80}
       >
         <View style={styles.header}>
           <Text style={styles.logo}>Timeplete</Text>
@@ -171,7 +172,7 @@ export default function LoginScreen() {
             </Link>
           </View>
         </Card>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </KeyboardAvoidingView>
   );
 }

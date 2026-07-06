@@ -17,8 +17,9 @@
  * Submit button on step 3 is "Let's do this!".
  */
 import React, { useState, useMemo } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, Platform } from "react-native";
+import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import { useMutation } from "convex/react";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Colors } from "../../../constants/colors";
 import { api } from "../../../convex/_generated/api";
 import { Button } from "../../ui/Button";
@@ -123,11 +124,21 @@ export function GoalForm({ variant, seed, onSubmitted }: GoalFormProps) {
     <View style={styles.container}>
       <Text style={styles.title}>Create a new goal</Text>
 
-      {/* Vertical stepper — only the active step renders its content */}
-      <ScrollView
+      {/* Vertical stepper — only the active step renders its content.
+       * `KeyboardAwareScrollView` keeps the focused input above the
+       * software keyboard on iOS/Android and (with `bottomOffset`) leaves
+       * enough room below the focused field that the next few inputs
+       * remain visible — the user shouldn't have to guess where to tap
+       * next. On web it renders as a plain scroll view; the overlay's
+       * visual-viewport sizing handles keyboard avoidance there. */}
+      <KeyboardAwareScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        bottomOffset={120}
+        // Hide the vertical scrollbar so it doesn't overlap inputs below
+        // (RN draws the indicator inside the viewport).
+        showsVerticalScrollIndicator={false}
       >
         {stepLabels.map((label, i) => {
           const isActive = i === stepIndex;
@@ -196,6 +207,7 @@ export function GoalForm({ variant, seed, onSubmitted }: GoalFormProps) {
                         title="Previous"
                         variant="ghost"
                         onPress={goPrev}
+                        size="small"
                       />
                     )}
                     {i < 2 ? (
@@ -204,6 +216,7 @@ export function GoalForm({ variant, seed, onSubmitted }: GoalFormProps) {
                         variant="primary"
                         onPress={goNext}
                         disabled={!stepValid}
+                        size="small"
                       />
                     ) : (
                       <Button
@@ -212,6 +225,7 @@ export function GoalForm({ variant, seed, onSubmitted }: GoalFormProps) {
                         onPress={submit}
                         disabled={!stepValid || submitting}
                         loading={submitting}
+                        size="small"
                       />
                     )}
                   </View>
@@ -224,7 +238,7 @@ export function GoalForm({ variant, seed, onSubmitted }: GoalFormProps) {
             </View>
           );
         })}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </View>
   );
 }

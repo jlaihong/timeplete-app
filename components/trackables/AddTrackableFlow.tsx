@@ -27,12 +27,12 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  ScrollView,
   Platform,
   useWindowDimensions,
 } from "react-native";
 import { useMutation } from "convex/react";
 import { MaterialIcons } from "@expo/vector-icons";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Input } from "../ui/Input";
@@ -42,6 +42,7 @@ import { CardOption, CardOptionButton } from "./CardOptionButton";
 import { ColourSwatchPicker } from "./ColourSwatchPicker";
 import { GoalForm } from "./goal/GoalForm";
 import type { CommitmentVariant } from "./goal/CommitmentForms";
+import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
 
 /* ------------------------------------------------------------------ *
  * Types                                                              *
@@ -115,8 +116,14 @@ export function AddTrackableFlow({ onClose }: AddTrackableFlowProps) {
   const [step, setStep] = useState<Step>({ kind: "selection" });
   const upsertTrackable = useMutation(api.trackables.upsert);
 
-  const { width } = useWindowDimensions();
+  const { width, height: windowHeight } = useWindowDimensions();
   const isWide = width >= 768; // matches Tailwind's `md:` breakpoint
+  // Track the visible viewport on mobile web so the dialog shrinks when the
+  // software keyboard opens (see `useVisualViewportHeight` for the full
+  // rationale). No-op on native — `KeyboardProvider` + `KeyboardAwareScrollView`
+  // handle keyboard avoidance there.
+  const vvHeight = useVisualViewportHeight();
+  const availableHeight = vvHeight ?? windowHeight;
 
   /* ESC closes the dialog — matches MatDialog's default keyboard handling. */
   useEffect(() => {
@@ -205,11 +212,19 @@ export function AddTrackableFlow({ onClose }: AddTrackableFlowProps) {
   // (Expo's default) leaves the portal as `null` until the next re-render
   // — manifesting as "the dialog only appears after another sibling
   // dialog opens".
+  // On mobile web we pin the overlay to the *visual* viewport height so it
+  // shrinks when the keyboard opens. Falls back to `bottom: 0` on native
+  // (RN converts unknown web-only properties gracefully) and when
+  // `visualViewport` isn't available.
+  const overlayHeightStyle =
+    Platform.OS === "web" && vvHeight != null ? { height: vvHeight } : null;
+
   return (
     <Pressable
       style={[
         styles.overlay,
         isWide ? styles.overlayDesktop : styles.overlayMobile,
+        overlayHeightStyle,
       ]}
       onPress={onClose}
     >
@@ -219,6 +234,15 @@ export function AddTrackableFlow({ onClose }: AddTrackableFlowProps) {
           styles.dialog,
           isWide ? styles.dialogDesktop : styles.dialogMobile,
           isGoalForm && { padding: 0 },
+          // GoalForm uses `flex: 1` on its container + inner scroll view so
+          // it can host a tall vertical stepper with its own scrolling. On
+          // mobile our dialog is content-sized (`maxHeight: 92%`), so `flex: 1`
+          // collapses to zero and the stepper renders blank. Give the dialog
+          // a concrete height for that step only — matches the fix used by
+          // `EditTrackableDialog` for the same reason. We use the visible
+          // viewport height (`availableHeight`) so the dialog also shrinks
+          // when the keyboard opens on mobile web.
+          isGoalForm && !isWide && { height: availableHeight * 0.92 },
         ]}
       >
         {/* Top-right close X — port of `app-dialog-close-button`. */}
@@ -576,10 +600,21 @@ function NewTrackerForm({ seed, onCancel, onSubmit }: NewTrackerFormProps) {
     <View>
       <Text style={styles.dialogTitle}>Create Tracker</Text>
 
-      <ScrollView
+      {/* `KeyboardAwareScrollView` from react-native-keyboard-controller
+       * detects the software keyboard, pads the scroll container so the
+       * focused input can scroll above it, and (with `bottomOffset`) keeps
+       * upcoming fields visible below the focused one so the user doesn't
+       * have to guess where to tap next. On web it degrades to a plain
+       * scroll view; keyboard avoidance there comes from the visual
+       * viewport-sized overlay. */}
+      <KeyboardAwareScrollView
         style={styles.formScroll}
         contentContainerStyle={styles.formContent}
         keyboardShouldPersistTaps="handled"
+        bottomOffset={80}
+        // Hide the vertical scrollbar so it doesn't overlap inputs below
+        // (RN draws the indicator inside the viewport).
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.field}>
           <Input
@@ -642,16 +677,22 @@ function NewTrackerForm({ seed, onCancel, onSubmit }: NewTrackerFormProps) {
             </View>
           )}
         </View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       <View style={styles.actions}>
         {/* Cancel mirrors angular's text-only `mat-button` */}
-        <Button title="Cancel" variant="ghost" onPress={onCancel} />
+        <Button
+          title="Cancel"
+          variant="ghost"
+          onPress={onCancel}
+          size="small"
+        />
         <Button
           title="Create"
           onPress={handleCreate}
           disabled={isCreateDisabled}
           loading={submitting}
+          size="small"
         />
       </View>
     </View>

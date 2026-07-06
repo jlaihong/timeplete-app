@@ -3,13 +3,13 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TextInput,
   TouchableOpacity,
   Alert,
   Pressable,
   Platform,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -208,7 +208,11 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        bottomOffset={120}
+      >
         {!questions ? (
           <Text style={styles.empty}>Loading...</Text>
         ) : displayQs.length === 0 ? (
@@ -243,7 +247,7 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
             />
           </>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       <ReviewQuestionsSettingsModal
         visible={settingsOpen}

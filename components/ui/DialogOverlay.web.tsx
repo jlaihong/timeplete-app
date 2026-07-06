@@ -5,6 +5,7 @@ import {
   type DialogOverlayProps,
 } from "./dialogOverlayShared";
 import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
+import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
 
 export type { DialogOverlayProps } from "./dialogOverlayShared";
 
@@ -31,6 +32,15 @@ export function DialogOverlay({
 }: DialogOverlayProps) {
   useRegisterEscapeClose(onBackdropPress);
 
+  // On mobile web, when the software keyboard opens the *layout* viewport
+  // stays the same size but the *visual* viewport shrinks. Since our
+  // backdrop uses `position: fixed` (which sizes against the layout
+  // viewport), the dialog's bottom would slide underneath the keyboard —
+  // hiding inputs the user still needs to reach. Sizing the overlay to
+  // `visualViewport.height` instead makes the whole dialog stay above the
+  // keyboard, mirroring what native platforms do with `adjustResize`.
+  const vvHeight = useVisualViewportHeight();
+
   // Flatten the RN StyleSheet definitions into inline CSS so we can render
   // a plain `<div>` while keeping visuals identical to the native overlay.
   const overlayBg =
@@ -41,7 +51,10 @@ export function DialogOverlay({
     top: 0,
     left: 0,
     right: 0,
-    bottom: 0,
+    // When we know the visual viewport height, pin the overlay to that
+    // so the dialog shrinks with the keyboard. Fall back to `bottom: 0`
+    // for browsers without `window.visualViewport`.
+    ...(vvHeight != null ? { height: vvHeight } : { bottom: 0 }),
     backgroundColor: overlayBg ?? "rgba(0,0,0,0.6)",
     display: "flex",
     flexDirection: "column",

@@ -44,8 +44,18 @@ export function UnsavedReviewChangesDialog({
         <Text style={styles.body}>{message}</Text>
         <DialogFooter>
           <View style={styles.footerInner}>
-            <Button title="Discard" variant="ghost" onPress={() => void onDiscard()} />
-            <Button title="Keep editing" variant="ghost" onPress={onDismiss} />
+            <Button
+              title="Discard"
+              variant="ghost"
+              onPress={() => void onDiscard()}
+              size="small"
+            />
+            <Button
+              title="Keep editing"
+              variant="ghost"
+              onPress={onDismiss}
+              size="small"
+            />
             {mode === "navigation" && onSave ? (
               <Button
                 title="Save"
@@ -53,6 +63,7 @@ export function UnsavedReviewChangesDialog({
                 loading={saveLoading ?? false}
                 disabled={saveDisabled ?? saveLoading}
                 onPress={() => void onSave()}
+                size="small"
               />
             ) : null}
           </View>

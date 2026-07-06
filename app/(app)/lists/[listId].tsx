@@ -52,8 +52,9 @@ import {
 } from "../../../lib/taskFilters";
 import { applySetTimeSpentOptimisticUpdate } from "../../../lib/setTimeSpentOptimisticUpdate";
 import { calendarGridIANAZoneForManualEvents } from "../../../lib/calendarGridTimeZone";
-import { applyTaskRemoveOptimisticUpdate } from "../../../lib/taskRemoveOptimisticUpdate";
+import { useTaskDeleteMutation } from "../../../hooks/useTaskDeleteMutation";
 import { useRegisterEscapeClose } from "../../../hooks/useRegisterEscapeClose";
+import { useVisualViewportHeight } from "../../../hooks/useVisualViewportHeight";
 
 /** `lists.getPaginated` enriches rows with `tagIds` like `tasks.search`. */
 type ListPageTask = Doc<"tasks"> & { tagIds?: Id<"tags">[] };
@@ -157,6 +158,14 @@ function ContextMenuPopover({
 }
 
 export default function ListDetailScreen() {
+  // On mobile web the layout viewport doesn't shrink when the soft
+  // keyboard opens, so `Modal`-hosted dialogs that use `flex: 1;
+  // justifyContent: center` slide under the keyboard. Feeding the
+  // visible viewport height into the "Add section" modal keeps it
+  // reachable while typing.
+  const vvHeight = useVisualViewportHeight();
+  const modalBackdropOverride =
+    Platform.OS === "web" && vvHeight != null ? { height: vvHeight } : null;
   const { listId: listIdParam } = useLocalSearchParams<{
     listId: string | string[];
   }>();
@@ -241,18 +250,10 @@ export default function ListDetailScreen() {
   );
 
   const upsertTask = useTaskUpsertMutation();
-  const removeTask = useMutation(api.tasks.remove).withOptimisticUpdate(
-    (localStore, args) => {
-      applyTaskRemoveOptimisticUpdate(localStore, args.id);
-    },
-  );
-  const deleteRecurringInstance = useMutation(
-    api.recurringTasks.deleteInstance,
-  ).withOptimisticUpdate((localStore, args) => {
-    applyTaskRemoveOptimisticUpdate(localStore, args.taskId, {
-      cascadeRootChildren: false,
-    });
-  });
+  // Shared delete hook — routes recurring instances through
+  // `deleteInstance` (skip-set aware) and normal rows through `remove`,
+  // in one place used across every task surface.
+  const deleteTaskMutation = useTaskDeleteMutation();
   const timer = useTimer();
   const clientCalendarIANAZone = useMemo(
     () =>
@@ -442,6 +443,72 @@ export default function ListDetailScreen() {
     );
   }, [paginatedData, filterUserIds]);
 
+  /**
+   * Flattened row model for the native single-list drag implementation.
+   *
+   * Mirrors the pattern used on the mobile home screen (`TaskList.tsx`):
+   * collapse every section into one flat data array containing `header`,
+   * `task`, and `empty-placeholder` rows, then render as a single
+   * `NestableDraggableFlatList`. This is what enables cross-section drag —
+   * one `NestableDraggableFlatList` per section (the previous approach)
+   * bounded drags to a single section because each list "owned" its own
+   * rows.
+   *
+   * On drop, `handleNativeSectionDragEnd` walks backwards from the drop
+   * index to find the nearest preceding `header` row — that's the
+   * destination section. Task rows in between contribute to the new order
+   * index within the destination.
+   */
+  type FlatListRow =
+    | {
+        kind: "header";
+        sectionKey: string;
+        sectionId: Id<"listSections">;
+        title: string;
+        isDefault: boolean;
+        headerCompletedCount: number;
+        headerTotalCount: number;
+        collapsed: boolean;
+      }
+    | {
+        kind: "task";
+        task: ListPageTask;
+        sectionId: Id<"listSections">;
+        indexInSection: number;
+      }
+    | { kind: "empty-placeholder"; sectionId: Id<"listSections"> };
+
+  const flatListRows = useMemo<FlatListRow[]>(() => {
+    const out: FlatListRow[] = [];
+    for (const section of filteredSections) {
+      const collapsed = collapsedSectionKeys.has(section.sectionKey);
+      out.push({
+        kind: "header",
+        sectionKey: section.sectionKey,
+        sectionId: section.sectionId,
+        title: section.title,
+        isDefault: section.isDefault,
+        headerCompletedCount: section.headerCompletedCount,
+        headerTotalCount: section.headerTotalCount,
+        collapsed,
+      });
+      if (collapsed) continue;
+      if (section.data.length === 0) {
+        out.push({ kind: "empty-placeholder", sectionId: section.sectionId });
+        continue;
+      }
+      section.data.forEach((task, i) => {
+        out.push({
+          kind: "task",
+          task,
+          sectionId: section.sectionId,
+          indexInSection: i,
+        });
+      });
+    }
+    return out;
+  }, [filteredSections, collapsedSectionKeys]);
+
   const webDndSections = useMemo(() => {
     return filteredSections.map((s) => ({
       sectionId: s.sectionId,
@@ -496,15 +563,16 @@ export default function ListDetailScreen() {
   );
 
   const handleDelete = useCallback(
-    async (taskId: Id<"tasks">) => {
+    (taskId: Id<"tasks">) => {
       const task = allTasksInPage.find((t) => t._id === taskId);
-      if (task?.isRecurringInstance && task.recurringTaskId) {
-        await deleteRecurringInstance({ taskId });
-      } else {
-        await removeTask({ id: taskId });
-      }
+      deleteTaskMutation({
+        taskId,
+        taskName: task?.name,
+        isRecurringInstance: task?.isRecurringInstance,
+        recurringTaskId: task?.recurringTaskId,
+      });
     },
-    [removeTask, deleteRecurringInstance, allTasksInPage],
+    [deleteTaskMutation, allTasksInPage],
   );
 
   const openContextMenu = useCallback(
@@ -735,6 +803,110 @@ export default function ListDetailScreen() {
     );
   };
 
+  /**
+   * Native cross-section drag-end handler. Given the post-drop `data`
+   * array (a flattened header + task + placeholder sequence), we:
+   *   1. Confirm the moved row is a `task` (headers/placeholders can't be
+   *      dragged because we don't wire `drag` on them).
+   *   2. Walk backwards from `to - 1` to find the most recent `header`
+   *      row — that's the destination section.
+   *   3. Count `task` rows between the header and the drop index —
+   *      that's the `newOrderIndex` within the destination section.
+   *   4. Dispatch `moveBetweenSections` (which handles both same- and
+   *      cross-section moves).
+   */
+  const handleNativeSectionDragEnd = useCallback(
+    (params: { data: FlatListRow[]; from: number; to: number }) => {
+      const { data, from, to } = params;
+      if (from === to) return;
+      const moved = data[to];
+      if (!moved || moved.kind !== "task") return;
+
+      let targetSectionId: Id<"listSections"> | null = null;
+      let indexInTargetSection = 0;
+      for (let i = to - 1; i >= 0; i--) {
+        const row = data[i];
+        if (!row) continue;
+        if (row.kind === "header") {
+          targetSectionId = row.sectionId;
+          break;
+        }
+        if (row.kind === "task") indexInTargetSection++;
+      }
+      if (!targetSectionId) return;
+
+      void moveBetweenSections({
+        taskId: moved.task._id as Id<"tasks">,
+        toSectionId: targetSectionId,
+        newOrderIndex: indexInTargetSection,
+      });
+    },
+    [moveBetweenSections],
+  );
+
+  /**
+   * `renderItem` for the native single-list path. Headers and empty-
+   * section placeholders are NOT draggable — we omit `onLongPressDrag`
+   * for them. Only task rows wire `drag` so long-press activation
+   * initiates a drag on tasks alone.
+   */
+  const renderFlatListRow = useCallback(
+    ({ item, drag, isActive }: RenderItemParams<FlatListRow>) => {
+      if (item.kind === "header") {
+        return (
+          <View style={styles.sectionHeaderRow}>
+            <TouchableOpacity
+              style={styles.sectionHeaderMain}
+              onPress={() => toggleSectionCollapsed(item.sectionKey)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: !item.collapsed }}
+              accessibilityLabel={`${item.title}, ${item.collapsed ? "collapsed" : "expanded"}`}
+            >
+              <MaterialIcons
+                name="arrow-forward-ios"
+                size={18}
+                color={Colors.textTertiary}
+                style={[
+                  styles.sectionExpandArrow,
+                  !item.collapsed && styles.sectionExpandArrowOpen,
+                ]}
+              />
+              <Text style={styles.sectionTitle} numberOfLines={1}>
+                {item.title}
+                <Text style={styles.sectionCountInline}>
+                  {listSectionCountSuffix(
+                    item.headerCompletedCount,
+                    item.headerTotalCount,
+                  )}
+                </Text>
+              </Text>
+            </TouchableOpacity>
+            <SectionHeadingAddButton
+              onPress={() => setAddTaskSectionId(item.sectionId)}
+              accessibilityLabel={`Add task to ${item.title}`}
+              hitSlop={10}
+            />
+          </View>
+        );
+      }
+      if (item.kind === "empty-placeholder") {
+        return (
+          <View style={styles.emptySectionPlaceholder}>
+            <Text style={styles.emptySectionPlaceholderText}>
+              Drop a task here
+            </Text>
+          </View>
+        );
+      }
+      return renderListTaskRow(item.task, {
+        onLongPressDrag: canDragReorder ? drag : undefined,
+        isActive,
+      });
+    },
+    [canDragReorder, renderListTaskRow, toggleSectionCollapsed],
+  );
+
   return (
     <View style={styles.container}>
       <Stack.Screen
@@ -793,7 +965,7 @@ export default function ListDetailScreen() {
         onRequestClose={() => setShowAddSection(false)}
       >
         <Pressable
-          style={styles.modalBackdrop}
+          style={[styles.modalBackdrop, modalBackdropOverride]}
           onPress={() => setShowAddSection(false)}
         >
           <Pressable style={styles.filterSheet} onPress={(e) => e.stopPropagation()}>
@@ -805,8 +977,17 @@ export default function ListDetailScreen() {
               placeholder="Section name"
             />
             <View style={styles.addSectionActions}>
-              <Button title="Cancel" variant="ghost" onPress={() => setShowAddSection(false)} />
-              <Button title="Save" onPress={() => void handleAddSection()} />
+              <Button
+                title="Cancel"
+                variant="ghost"
+                onPress={() => setShowAddSection(false)}
+                size="small"
+              />
+              <Button
+                title="Save"
+                onPress={() => void handleAddSection()}
+                size="small"
+              />
             </View>
           </Pressable>
         </Pressable>
@@ -868,13 +1049,12 @@ export default function ListDetailScreen() {
         </View>
       ) : (
         /**
-         * Native list view. Uses `NestableScrollContainer` so the per-section
-         * `NestableDraggableFlatList`s can auto-scroll the outer page while
-         * dragging, and so multiple draggable lists can coexist on one screen
-         * without warnings about "VirtualizedLists in plain ScrollViews".
-         * Cross-section drag is intentionally out of scope here — within-
-         * section reorder only (matches the legacy productivity-one
-         * touch-delay behaviour).
+         * Native list view. Single `NestableDraggableFlatList` over a
+         * flattened header + task + empty-placeholder row list, so a long-
+         * press drag can cross section boundaries. Drop handling is in
+         * `handleNativeSectionDragEnd`. See the same pattern in
+         * `components/shared/TaskList.tsx` (mobile home screen) for the
+         * cross-day equivalent.
          */
         <NestableScrollContainer
           style={styles.sectionList}
@@ -894,92 +1074,28 @@ export default function ListDetailScreen() {
             </View>
           )}
 
-          {filteredSections.map((section) => {
-            const collapsed = collapsedSectionKeys.has(section.sectionKey);
-            const countSuffix = listSectionCountSuffix(
-              section.headerCompletedCount,
-              section.headerTotalCount,
-            );
-            return (
-              <View key={section.sectionKey}>
-                <View style={styles.sectionHeaderRow}>
-                  <TouchableOpacity
-                    style={styles.sectionHeaderMain}
-                    onPress={() => toggleSectionCollapsed(section.sectionKey)}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded: !collapsed }}
-                    accessibilityLabel={`${section.title}, ${collapsed ? "collapsed" : "expanded"}`}
-                  >
-                    <MaterialIcons
-                      name="arrow-forward-ios"
-                      size={18}
-                      color={Colors.textTertiary}
-                      style={[
-                        styles.sectionExpandArrow,
-                        !collapsed && styles.sectionExpandArrowOpen,
-                      ]}
-                    />
-                    <Text style={styles.sectionTitle} numberOfLines={1}>
-                      {section.title}
-                      <Text style={styles.sectionCountInline}>
-                        {countSuffix}
-                      </Text>
-                    </Text>
-                  </TouchableOpacity>
-                  <SectionHeadingAddButton
-                    onPress={() => setAddTaskSectionId(section.sectionId)}
-                    accessibilityLabel={`Add task to ${section.title}`}
-                    hitSlop={10}
-                  />
-                </View>
-
-                {!collapsed &&
-                  (canDragReorder && section.data.length > 0 ? (
-                    <NestableDraggableFlatList
-                      data={section.data}
-                      keyExtractor={(t: any) => t._id}
-                      activationDistance={5}
-                      // Disable autoscroll. See TaskList.tsx for the
-                      // divide-by-zero rationale — keep `autoscrollSpeed={0}`
-                      // alone and leave `autoscrollThreshold` at its default
-                      // so the internal math doesn't produce a NaN.
-                      autoscrollSpeed={0}
-                      onDragEnd={({
-                        from,
-                        to,
-                      }: {
-                        from: number;
-                        to: number;
-                      }) => {
-                        if (from === to) return;
-                        const moved = section.data[from];
-                        if (!moved) return;
-                        void moveBetweenSections({
-                          taskId: moved._id as Id<"tasks">,
-                          toSectionId: section.sectionId,
-                          newOrderIndex: to,
-                        });
-                      }}
-                      renderItem={({
-                        item,
-                        drag,
-                        isActive,
-                      }: RenderItemParams<ListPageTask>) =>
-                        renderListTaskRow(item, {
-                          onLongPressDrag: drag,
-                          isActive,
-                        })
-                      }
-                    />
-                  ) : (
-                    section.data.map((task) => (
-                      <View key={task._id}>{renderListTaskRow(task)}</View>
-                    ))
-                  ))}
-              </View>
-            );
-          })}
+          {!noSections && (
+            <NestableDraggableFlatList
+              data={flatListRows}
+              keyExtractor={(row: FlatListRow) =>
+                row.kind === "header"
+                  ? `h:${row.sectionKey}`
+                  : row.kind === "empty-placeholder"
+                    ? `e:${row.sectionId}`
+                    : `t:${row.task._id}`
+              }
+              activationDistance={5}
+              // Autoscroll the outer `NestableScrollContainer` when the
+              // dragged cell hovers within `autoscrollThreshold` pixels of
+              // the viewport edge. Values chosen to match the home-screen
+              // TaskList — see comment there for the pixels-per-frame
+              // math (we apply `scrollTo({animated:false})` per frame).
+              autoscrollSpeed={12}
+              autoscrollThreshold={80}
+              onDragEnd={handleNativeSectionDragEnd}
+              renderItem={renderFlatListRow}
+            />
+          )}
 
           {listFooter}
         </NestableScrollContainer>
@@ -1032,7 +1148,7 @@ export default function ListDetailScreen() {
           onDelete={() => {
             const id = contextMenu.taskId;
             setContextMenu(null);
-            void handleDelete(id);
+            handleDelete(id);
           }}
         />
       )}
@@ -1128,6 +1244,23 @@ const styles = StyleSheet.create({
     }),
   },
   listContent: { padding: 16, paddingBottom: 24 },
+  // Empty drop-zone placeholder for a section with zero tasks in the
+  // native flat-draggable-list view. Gives the user a small visible
+  // target to drop a task onto when moving into an empty section.
+  emptySectionPlaceholder: {
+    borderWidth: 2,
+    borderColor: Colors.outlineVariant,
+    borderStyle: "dashed",
+    borderRadius: 8,
+    padding: 12,
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  emptySectionPlaceholderText: {
+    fontSize: 13,
+    fontStyle: "italic",
+    color: Colors.textTertiary,
+  },
   listContentEmpty: {
     flexGrow: 1,
     minHeight: 320,

@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TextInput, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, Platform } from "react-native";
+import {
+  KeyboardAwareScrollView,
+  KeyboardStickyView,
+} from "react-native-keyboard-controller";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -14,6 +18,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { AutoDismissToast } from "../ui/AutoDismissToast";
 import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
+import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
 import {
   initialAssignmentStateFromAddTaskContext,
   resolveEffectiveListIdForTaskCreate,
@@ -167,10 +172,25 @@ export function AddTaskSheet({
     });
   };
 
+  // Mobile-web keyboard avoidance: keep the overlay pinned to the visible
+  // viewport so the dialog (and its inputs) shrink with the soft keyboard
+  // instead of sliding behind it. Native platforms rely on
+  // `KeyboardAwareScrollView` (below) + `KeyboardProvider` at the app root.
+  const vvHeight = useVisualViewportHeight();
+  const overlayHeightStyle =
+    Platform.OS === "web" && vvHeight != null ? { height: vvHeight } : null;
+
   return (
-    <View style={styles.overlay}>
+    <View style={[styles.overlay, overlayHeightStyle]}>
       <Card style={styles.dialog}>
-        <ScrollView>
+        <KeyboardAwareScrollView
+          keyboardShouldPersistTaps="handled"
+          bottomOffset={80}
+          // Hide the vertical scrollbar so it doesn't paint on top of the
+          // rounded right edge of the inputs/pickers below it (RN draws
+          // the indicator inside the scroll viewport, not outside it).
+          showsVerticalScrollIndicator={false}
+        >
           <Text style={styles.title}>
             {parentId ? "Add Subtask" : "Add Task"}
           </Text>
@@ -203,12 +223,28 @@ export function AddTaskSheet({
           )}
 
           <View style={styles.actions}>
-            <Button title="Cancel" variant="outline" onPress={onClose} />
-            <Button title="Create Task" onPress={handleCreate} />
+            <Button
+              title="Cancel"
+              variant="outline"
+              onPress={onClose}
+              size="small"
+            />
+            <Button title="Create" onPress={handleCreate} size="small" />
           </View>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </Card>
-      <AutoDismissToast key={toastKey} message={toastMessage} onDismiss={clearToast} />
+      {/**
+       * `KeyboardStickyView` (from react-native-keyboard-controller) tracks
+       * the software keyboard on iOS/Android and translates its child up
+       * by the keyboard height. Without it, the toast sits at the screen
+       * bottom and is completely hidden while the keyboard is open — the
+       * user never sees "Task added". On web it's a no-op; there the
+       * `overlayHeightStyle` above already re-anchors the container to
+       * the visible viewport, so the toast lands above the keyboard.
+       */}
+      <KeyboardStickyView style={styles.toastLayer} pointerEvents="box-none">
+        <AutoDismissToast key={toastKey} message={toastMessage} onDismiss={clearToast} />
+      </KeyboardStickyView>
     </View>
   );
 }
@@ -237,5 +273,14 @@ const styles = StyleSheet.create({
     gap: 12,
     justifyContent: "flex-end",
     marginTop: 8,
+  },
+  // Full-viewport overlay that pins the toast to the visible area (or
+  // above the keyboard, via `KeyboardStickyView`). `pointerEvents:
+  // "box-none"` lets taps flow through to the backdrop below.
+  toastLayer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
 });

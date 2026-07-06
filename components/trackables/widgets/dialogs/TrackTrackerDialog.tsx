@@ -4,11 +4,11 @@ import {
   Text,
   StyleSheet,
   TextInput,
-  ScrollView,
   TouchableOpacity,
   Pressable,
   Platform,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
@@ -27,6 +27,7 @@ import {
   defaultStartTimeQuarterHour,
 } from "../../../../lib/trackableLogPresets";
 import { useRegisterEscapeClose } from "../../../../hooks/useRegisterEscapeClose";
+import { useVisualViewportHeight } from "../../../../hooks/useVisualViewportHeight";
 import {
   TrackableLogDurationBlock,
   TrackableLogStartTimeBlock,
@@ -157,8 +158,12 @@ export function TrackTrackerDialog({
     }
   };
 
+  const vvHeight = useVisualViewportHeight();
+  const overlayHeightStyle =
+    Platform.OS === "web" && vvHeight != null ? { height: vvHeight } : null;
+
   return (
-    <Pressable style={styles.overlay} onPress={onClose}>
+    <Pressable style={[styles.overlay, overlayHeightStyle]} onPress={onClose}>
       <Pressable
         onPress={(e) => e.stopPropagation?.()}
         style={[
@@ -167,7 +172,13 @@ export function TrackTrackerDialog({
         ]}
       >
         <Card style={styles.dialog}>
-        <ScrollView>
+        <KeyboardAwareScrollView
+          keyboardShouldPersistTaps="handled"
+          bottomOffset={100}
+          // Hide the vertical scrollbar so it doesn't overlap inputs
+          // below (RN draws the indicator inside the viewport).
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.header}>
             <View
               style={[styles.colourDot, { backgroundColor: trackableColour }]}
@@ -270,15 +281,21 @@ export function TrackTrackerDialog({
           {error && <Text style={styles.error}>{error}</Text>}
 
           <View style={styles.actions}>
-            <Button title="Cancel" variant="outline" onPress={onClose} />
+            <Button
+              title="Cancel"
+              variant="outline"
+              onPress={onClose}
+              size="small"
+            />
             <Button
               title="Save"
               onPress={onSave}
               loading={saving}
               disabled={!canSubmit}
+              size="small"
             />
           </View>
-        </ScrollView>
+        </KeyboardAwareScrollView>
         </Card>
       </Pressable>
     </Pressable>

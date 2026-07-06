@@ -15,6 +15,7 @@ import {
   Platform,
 } from "react-native";
 import { useQuery, useMutation } from "convex/react";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   useDndMonitor,
   useDroppable,
@@ -41,6 +42,7 @@ import { wallClockInTimeZone, wallClockGridToEpochMs } from "../../lib/wallClock
 import { traceTimer } from "../../lib/timerTimeTrace";
 import { AutoDismissToast } from "../ui/AutoDismissToast";
 import { applyRemoveTimeWindowOptimisticUpdate } from "../../lib/removeTimeWindowOptimisticUpdate";
+import { useCalendarEventNativeGestures } from "./CalendarEventNativeGestures";
 
 /* ────────────────────────────────────────────────────────────────────────
  *  Constants
@@ -665,6 +667,16 @@ interface CalendarEventBlockProps {
    * pseudo-event.
    */
   onEditRequest?: () => void;
+  /**
+   * Native "edit mode" flag — when true, visible drag handles are
+   * rendered at the top and bottom of the tile and handle gestures
+   * activate immediately (no long-press needed).
+   */
+  isSelected?: boolean;
+  /** Enter edit mode. Fired when a native long-press activates. */
+  onSelect?: (id: string) => void;
+  /** Exit edit mode. Fired on tap or after a native commit. */
+  onDeselect?: () => void;
 }
 
 function CalendarEventBlock({
@@ -673,6 +685,9 @@ function CalendarEventBlock({
   layout,
   onCommit,
   onEditRequest,
+  isSelected = false,
+  onSelect,
+  onDeselect,
 }: CalendarEventBlockProps) {
   const baseStart = useMemo(
     () => eventGridStartMinutes(tw, gridTimeZone),
@@ -739,8 +754,13 @@ function CalendarEventBlock({
   const height = eventBlockHeightPx(renderDuration);
 
   const isLive = !!tw.isLive;
+  // Web = pointer events on invisible edge strips (existing). Native =
+  // gesture-handler with visible drag handles that appear only when the
+  // event is in "edit mode" (`isSelected`). `canDragBody` still gates
+  // the web-only "grab" cursor + `onPointerDown` handlers below.
   const canDragBody = isWeb && !isLive;
   const allowLiveTopResize = isWeb && isLive;
+  const showNativeHandles = !isWeb && !isLive && isSelected;
 
   const tierLayout = pickTierLayout(height);
   const tierHandlePx = tierLayout.handlePx;
@@ -763,6 +783,14 @@ function CalendarEventBlock({
           maxResizeEdgePx
         )
       : 0;
+
+  // Fixed visible-handle height on native. Capped for short events so
+  // the body still has a usable middle band. 14 px is a comfortable
+  // finger target on iOS while remaining unobtrusive.
+  const NATIVE_HANDLE_PX = 14;
+  const nativeHandleHeightPx = showNativeHandles && height > 4
+    ? Math.min(NATIVE_HANDLE_PX, Math.max(4, Math.floor((height - 6) / 2)))
+    : 0;
 
   const liveTopHitPx =
     allowLiveTopResize && height > 4
@@ -955,6 +983,68 @@ function CalendarEventBlock({
     [baseStart, baseDuration, onCommit, onEditRequest, tw._id, tw.isLive, tw.startDayYYYYMMDD, gridTimeZone]
   );
 
+  // ── Native gesture wiring (iOS / Android). On mobile-web the pointer
+  // handlers above already work. Native has no PointerEvent so we
+  // substitute react-native-gesture-handler gestures. Refs keep the
+  // gesture callbacks stable across re-renders while still tracking
+  // the latest server-committed baseStart / baseDuration. See
+  // `CalendarEventNativeGestures.tsx` for the interaction model.
+  const baseStartRef = useRef(baseStart);
+  const baseDurationRef = useRef(baseDuration);
+  useEffect(() => {
+    baseStartRef.current = baseStart;
+  }, [baseStart]);
+  useEffect(() => {
+    baseDurationRef.current = baseDuration;
+  }, [baseDuration]);
+
+  const handleNativeDraftChange = useCallback(
+    (d: { start: number; duration: number } | null) => {
+      setDraft(d);
+    },
+    [],
+  );
+  const handleNativeCommit = useCallback(
+    (start: number, duration: number) => {
+      setPendingCommit({ start, duration });
+      void Promise.resolve(onCommit(tw._id, start, duration));
+      // Exit edit mode after a successful move / resize so the handles
+      // hide and the calendar returns to its "clean" state. Users can
+      // re-enter edit mode by long-pressing again.
+      onDeselect?.();
+    },
+    [onCommit, onDeselect, tw._id],
+  );
+  const handleNativeEditRequest = useCallback(() => {
+    // Tapping the event opens the dialog and also exits edit mode —
+    // gives the user a way out of the selected state without needing
+    // to hunt for empty calendar space.
+    onDeselect?.();
+    if (onEditRequest) onEditRequest();
+  }, [onDeselect, onEditRequest]);
+  const handleNativeSelect = useCallback(() => {
+    if (onSelect) onSelect(tw._id);
+  }, [onSelect, tw._id]);
+
+  const {
+    bodyGesture: nativeBodyGesture,
+    topHandleGesture: nativeTopHandleGesture,
+    bottomHandleGesture: nativeBottomHandleGesture,
+  } = useCalendarEventNativeGestures({
+    baseStartRef,
+    baseDurationRef,
+    // Live-timer resize is web-only for parity with the pointer path.
+    enabled: !isWeb && !isLive,
+    pxPerMinute: PX_PER_MINUTE,
+    snapMinutes: SNAP_MINUTES,
+    dayMinutes: DAY_MINUTES,
+    minDurationMinutes: MIN_DURATION_MINUTES,
+    onDraftChange: handleNativeDraftChange,
+    onEditRequest: handleNativeEditRequest,
+    onSelect: handleNativeSelect,
+    onCommit: handleNativeCommit,
+  });
+
   // Colour composition — server-provided `displayColor` (trackable
   // ?? list ?? DEFAULT) is rendered as a translucent fill so the
   // calendar feels lightweight and layered (matches the previous
@@ -1004,13 +1094,20 @@ function CalendarEventBlock({
   const topResizeProps =
     resizeHitPxTop > 0
       ? ({
-          onPointerDown: (e: any) => startInteraction("resize-top", e),
+          // `onPointerDown` is a no-op on native (View ignores unknown
+          // props). Native uses the `nativeTopEdgeGesture` wrapper
+          // below. Guarding `cursor` avoids the "unknown style key"
+          // warning on iOS / Android where the CSS property doesn't
+          // exist.
+          ...(isWeb
+            ? { onPointerDown: (e: any) => startInteraction("resize-top", e) }
+            : {}),
           style: [
             styles.resizeEdgeHitZone,
             {
               height: resizeHitPxTop,
               top: 0,
-              cursor: "ns-resize" as const,
+              ...(isWeb ? { cursor: "ns-resize" as const } : {}),
             } as any,
           ],
         } as Record<string, unknown>)
@@ -1018,13 +1115,15 @@ function CalendarEventBlock({
   const bottomResizeProps =
     resizeHitPxBottom > 0
       ? ({
-          onPointerDown: (e: any) => startInteraction("resize-bottom", e),
+          ...(isWeb
+            ? { onPointerDown: (e: any) => startInteraction("resize-bottom", e) }
+            : {}),
           style: [
             styles.resizeEdgeHitZone,
             {
               height: resizeHitPxBottom,
               bottom: 0,
-              cursor: "ns-resize" as const,
+              ...(isWeb ? { cursor: "ns-resize" as const } : {}),
             } as any,
           ],
         } as Record<string, unknown>)
@@ -1068,6 +1167,13 @@ function CalendarEventBlock({
 
   return (
     <View
+      // Android/Fabric: force a real native view. The slot's `top` and
+      // `height` change every frame during drag/resize; letting Fabric
+      // flatten/unflatten "layout-only" views mid-interaction corrupts
+      // the children's native layout (verified on-device: after a move,
+      // the title/time Text nodes still exist in the uiautomator dump
+      // but with inverted bounds, and never paint again).
+      collapsable={false}
       style={[
         styles.eventSlot,
         {
@@ -1077,6 +1183,17 @@ function CalendarEventBlock({
           width: `${colWidthPercent}%` as unknown as number,
           paddingLeft: slotPaddingLeft,
           paddingRight: slotPaddingRight,
+          // Lift the tile above siblings while it's selected or being
+          // dragged/resized. IMPORTANT (Android): the `zIndex` property
+          // must ALWAYS be present with a numeric value — only its
+          // VALUE may change. Adding/removing `zIndex` dynamically on
+          // Android re-sorts the native child drawing order and can
+          // permanently stop the view's children (title/time Text)
+          // from being drawn, even though the view's own background
+          // still renders. Previously the interaction zIndex was
+          // toggled on the inner `eventBlock`, which triggered exactly
+          // that bug after every move/resize.
+          zIndex: showNativeHandles ? 12 : isInteracting ? 10 : 2,
         },
       ]}
       pointerEvents="box-none"
@@ -1102,14 +1219,31 @@ function CalendarEventBlock({
           },
           isLive && styles.eventBlockLive,
           isInteracting && styles.eventBlockDragging,
+          // Visual hint that the tile is now in "edit mode" on native.
+          // Slightly stronger outline so the handles at top/bottom read
+          // as part of a distinct, focused element.
+          showNativeHandles && styles.eventBlockSelected,
         ]}
       >
         <View
+          // Android/Fabric: keep this wrapper as a real native view.
+          // Without this it is "layout-only" (style-only View) and gets
+          // flattened; its margins change when edit-mode handles
+          // appear/disappear, and the flatten/unflatten transition is
+          // what breaks the Text layout after a move/resize.
+          collapsable={false}
           style={[
             {
               flex: 1,
-              marginTop: resizeHitPxTop > 0 ? resizeHitPxTop : 0,
-              marginBottom: resizeHitPxBottom > 0 ? resizeHitPxBottom : 0,
+              // Reserve space at top/bottom for either the web edge
+              // hit strips OR the native visible drag handles (only
+              // one of these is ever > 0 at a time).
+              marginTop:
+                (resizeHitPxTop > 0 ? resizeHitPxTop : 0) +
+                (showNativeHandles ? nativeHandleHeightPx : 0),
+              marginBottom:
+                (resizeHitPxBottom > 0 ? resizeHitPxBottom : 0) +
+                (showNativeHandles ? nativeHandleHeightPx : 0),
             },
             canDragBody
               ? ({
@@ -1118,80 +1252,123 @@ function CalendarEventBlock({
               : null,
           ]}
         >
+          <MaybeGestureDetector gesture={nativeBodyGesture}>
           <View {...bodyHandlers}>
-          {/* While dragging or resizing, swap the title for the live
-              start–end times so the user can see exactly what slot
-              they're moving the event to. The time text reuses the
-              tier-appropriate title style so it fits the same
-              vertical room — even a 30-minute tile shows the new
-              window. (When not interacting we render the title first
-              because the body uses `flex-start` + `overflow:hidden`
-              and the first child is what's guaranteed visible.) */}
-          {isInteracting ? (
+          {/* Title is ALWAYS rendered — the tile's minimum guaranteed
+              visible element. During an interaction (drag / resize) we
+              additionally render the live start–end times underneath
+              if there's room for the tier. This is more forgiving than
+              the previous "swap title for times" approach: even if
+              `isInteracting` ever got stuck `true` on native (e.g. a
+              dropped gesture-handler callback), the user still sees
+              the event's title. */}
+          <Text
+            style={[titleStyle, { color: Colors.text }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {displayTitle}
+          </Text>
+          {(isInteracting || tierLayout.showTime) && (
             <Text
-              style={[titleStyle, { color: Colors.text }]}
+              style={[
+                styles.eventTime,
+                { color: isInteracting ? Colors.text : displayColor },
+              ]}
               numberOfLines={1}
-              ellipsizeMode="clip"
             >
               {formatClockTime(renderStart)} – {formatClockTime(renderStart + renderDuration)}
-              {tierLayout.tier === "large" ? (
-                <Text
-                  style={[
-                    styles.eventDuration,
-                    { color: Colors.textSecondary },
-                  ]}
-                >
-                  {"  "}({formatSecondsAsHM(renderDuration * 60)})
-                </Text>
+              {tierLayout.showDuration || (isInteracting && tierLayout.tier === "large") ? (
+                <>
+                  {"  "}
+                  <Text
+                    style={[
+                      styles.eventDuration,
+                      { color: Colors.textSecondary },
+                    ]}
+                  >
+                    ({formatSecondsAsHM(renderDuration * 60)})
+                  </Text>
+                </>
               ) : null}
             </Text>
-          ) : (
-            <>
-              <Text
-                style={[titleStyle, { color: Colors.text }]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {displayTitle}
-              </Text>
-              {tierLayout.showTime && (
-                <Text
-                  style={[styles.eventTime, { color: displayColor }]}
-                  numberOfLines={1}
-                >
-                  {formatClockTime(renderStart)} – {formatClockTime(renderStart + renderDuration)}
-                  {tierLayout.showDuration ? (
-                    <>
-                      {"  "}
-                      <Text
-                        style={[
-                          styles.eventDuration,
-                          { color: Colors.textSecondary },
-                        ]}
-                      >
-                        ({formatSecondsAsHM(renderDuration * 60)})
-                      </Text>
-                    </>
-                  ) : null}
-                </Text>
-              )}
-              {tw.budgetType === "BUDGETED" && tierLayout.showBadges && (
-                <Text style={[styles.budgetBadge, { color: Colors.warning }]}>
-                  Budgeted
-                </Text>
-              )}
-              {isLive && tierLayout.showBadges && (
-                <Text style={styles.liveBadge}>Live</Text>
-              )}
-            </>
+          )}
+          {tw.budgetType === "BUDGETED" && tierLayout.showBadges && (
+            <Text style={[styles.budgetBadge, { color: Colors.warning }]}>
+              Budgeted
+            </Text>
+          )}
+          {isLive && tierLayout.showBadges && (
+            <Text style={styles.liveBadge}>Live</Text>
           )}
         </View>
+        </MaybeGestureDetector>
         </View>
-        {topResizeProps && <View {...topResizeProps} />}
-        {bottomResizeProps && <View {...bottomResizeProps} />}
+        {/* Web-only invisible pointer-hit strips. Rendered via the same
+         * absolute positioning as the visible native handles below so
+         * the layout math (`marginTop`/`marginBottom`) matches. */}
+        {isWeb && topResizeProps && <View {...topResizeProps} />}
+        {isWeb && bottomResizeProps && <View {...bottomResizeProps} />}
+        {/* Native drag handles — appear only while the event is in
+         * edit mode. The visible bar acts as a hit target for the
+         * resize Pan gesture (attached via `<GestureDetector>`). */}
+        {showNativeHandles && nativeHandleHeightPx > 0 && (
+          <>
+            <MaybeGestureDetector gesture={nativeTopHandleGesture}>
+              <View
+                style={[
+                  styles.nativeResizeHandle,
+                  { height: nativeHandleHeightPx, top: 0 },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.nativeResizeHandleGrip,
+                    { backgroundColor: displayColor },
+                  ]}
+                />
+              </View>
+            </MaybeGestureDetector>
+            <MaybeGestureDetector gesture={nativeBottomHandleGesture}>
+              <View
+                style={[
+                  styles.nativeResizeHandle,
+                  { height: nativeHandleHeightPx, bottom: 0 },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.nativeResizeHandleGrip,
+                    { backgroundColor: displayColor },
+                  ]}
+                />
+              </View>
+            </MaybeGestureDetector>
+          </>
+        )}
       </View>
     </View>
   );
+}
+
+/**
+ * Wraps children in `<GestureDetector>` when a native gesture is
+ * supplied, otherwise renders them directly. Lets us keep a single
+ * JSX tree that works on both web (no gestures) and native (gestures
+ * attached to each hit surface).
+ */
+function MaybeGestureDetector({
+  gesture,
+  children,
+}: {
+  gesture:
+    | ReturnType<typeof Gesture.Race>
+    | ReturnType<typeof Gesture.Pan>
+    | null;
+  children: React.ReactElement;
+}) {
+  if (!gesture) return children;
+  return <GestureDetector gesture={gesture}>{children}</GestureDetector>;
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -1213,6 +1390,27 @@ export function CalendarView({
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
   }, [timerHook.isRunning, timerHook.canonicalTimeZone]);
   const [selectedDay, setSelectedDay] = useState(todayYYYYMMDD());
+
+  /**
+   * Native-only "edit mode": on iOS/Android, long-pressing an event
+   * selects it and reveals visible drag handles at the top and bottom
+   * of the tile. Only one event can be selected at a time. Web relies
+   * on the pointer-based edge-hit strips and doesn't need this state.
+   */
+  // `_id` on `TimeWindowDoc` is a plain `string` (not the branded
+  // `Id<"timeWindows">`), so the selection state matches that. This
+  // avoids gratuitous casts at the call site.
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const handleSelectEvent = useCallback(
+    (id: string) => setSelectedEventId(id),
+    [],
+  );
+  const handleDeselectEvent = useCallback(() => setSelectedEventId(null), []);
+  // Auto-deselect when the day changes — the previously-selected event
+  // isn't on screen any more.
+  useEffect(() => {
+    setSelectedEventId(null);
+  }, [selectedDay]);
 
   useEffect(() => {
     onSelectedDayChange?.(selectedDay);
@@ -2141,6 +2339,9 @@ export function CalendarView({
                     gridTimeZone={gridTimeZone}
                     layout={layout}
                     onCommit={handleEventUpdate}
+                    isSelected={selectedEventId === tw._id}
+                    onSelect={handleSelectEvent}
+                    onDeselect={handleDeselectEvent}
                     onEditRequest={
                       onEditEvent
                         ? () =>
@@ -2542,7 +2743,14 @@ const styles = StyleSheet.create({
     flex: 1,
     position: "relative",
     borderRadius: 4,
-    overflow: "hidden",
+    // Android (Fabric): a clipping view whose bounds change every frame
+    // during drag/resize permanently stops painting its Text children
+    // after the gesture ends (views survive with correct bounds in the
+    // uiautomator dump — they just never draw again). Verified on
+    // device: with `hidden` the title/time vanish after every
+    // move/resize; with `visible` they persist. Web keeps `hidden` for
+    // rounded-corner clipping.
+    overflow: Platform.OS === "web" ? "hidden" : "visible",
     ...Platform.select({
       web: {
         boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
@@ -2570,6 +2778,9 @@ const styles = StyleSheet.create({
       },
     }),
   },
+  // NOTE: no `zIndex` here — interaction lift lives on the OUTER slot
+  // (always-present numeric value). Toggling zIndex on this inner view
+  // breaks child drawing order on Android (text stops rendering).
   eventBlockDragging: {
     ...Platform.select({
       web: {
@@ -2577,12 +2788,20 @@ const styles = StyleSheet.create({
       } as any,
       default: {},
     }),
-    zIndex: 10,
   },
   eventBody: {
     flex: 1,
     justifyContent: "flex-start",
-    overflow: "hidden",
+    // `overflow: hidden` clips text on short tiles (web). On Android
+    // (Fabric / New Architecture), a clipping ancestor whose bounds
+    // change every frame during a drag/resize permanently stops the
+    // Text children from being painted after the gesture ends (the
+    // views survive — uiautomator still reports correct bounds — they
+    // just never draw). Keeping overflow visible on native avoids the
+    // bug; the parent `eventBlock` still rounds corners via its own
+    // border radius and the title uses numberOfLines so nothing
+    // meaningfully overflows in practice.
+    overflow: Platform.OS === "web" ? "hidden" : "visible",
   },
   /** Invisible top/bottom layer: receives hover before `eventBody` so resize cursor wins. */
   resizeEdgeHitZone: {
@@ -2590,6 +2809,53 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 3,
+  },
+  /**
+   * Native "edit mode" visual polish. A subtle white outline signals
+   * that the tile is focused / interactive; the pop is intentionally
+   * gentle so it doesn't look like an error state.
+   */
+  // NOTE: no `zIndex` here — see `eventBlockDragging` note above.
+  eventBlockSelected: {
+    ...Platform.select({
+      web: {},
+      default: {
+        borderWidth: 1,
+        borderColor: Colors.white + "88",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.24,
+        shadowRadius: 6,
+      },
+    }),
+  },
+  /**
+   * Visible resize handle on native. Uses the event's `displayColor`
+   * for the inner grip so the affordance reads as "part of this
+   * event". The outer bar is transparent — the grip does the visual
+   * lifting while the whole bar is the hit target.
+   */
+  // IMPORTANT (Android): NO `zIndex` on this style. The handles mount
+  // and unmount dynamically (on select/deselect), and adding/removing
+  // a zIndexed child corrupts the parent ViewGroup's custom child
+  // drawing order on Android — after which the tile's title/time Text
+  // silently stops being painted (the views still exist and are laid
+  // out correctly, they just never draw). Verified on-device via
+  // uiautomator: text nodes present at correct bounds but invisible.
+  // The handles render after the body in JSX, so default order already
+  // draws them on top.
+  nativeResizeHandle: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  nativeResizeHandleGrip: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    opacity: 0.9,
   },
 
   // Title text — one style per size tier. `lineHeight` is set tight

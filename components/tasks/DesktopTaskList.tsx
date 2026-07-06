@@ -60,7 +60,7 @@ import {
 } from "../../lib/taskFilters";
 import { applySetTimeSpentOptimisticUpdate } from "../../lib/setTimeSpentOptimisticUpdate";
 import { calendarGridIANAZoneForManualEvents } from "../../lib/calendarGridTimeZone";
-import { applyTaskRemoveOptimisticUpdate } from "../../lib/taskRemoveOptimisticUpdate";
+import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
 
 const isWeb = Platform.OS === "web";
 const LOAD_MORE_DAYS = 7;
@@ -430,21 +430,10 @@ export function DesktopTaskList({
     generateInstances,
   ]);
   const upsertTask = useTaskUpsertMutation();
-  const removeTask = useMutation(api.tasks.remove).withOptimisticUpdate(
-    (localStore, args) => {
-      applyTaskRemoveOptimisticUpdate(localStore, args.id);
-    }
-  );
-  // Recurring-instance delete uses a dedicated mutation that adds the date
-  // to `deletedRecurringOccurrences` (the skip set) before removing the
-  // task row, so the next `generateInstances` call doesn't recreate it.
-  const deleteRecurringInstance = useMutation(
-    api.recurringTasks.deleteInstance
-  ).withOptimisticUpdate((localStore, args) => {
-    applyTaskRemoveOptimisticUpdate(localStore, args.taskId, {
-      cascadeRootChildren: false,
-    });
-  });
+  // Recurring-instance vs normal-task delete routing lives in the shared
+  // hook (`useTaskDeleteMutation`) so desktop / mobile / detail-sheet all
+  // apply the same skip-set-aware `deleteInstance` for recurring rows.
+  const deleteTaskMutation = useTaskDeleteMutation();
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
   const timer = useTimer();
@@ -738,17 +727,16 @@ export function DesktopTaskList({
   );
 
   const handleDelete = useCallback(
-    async (taskId: Id<"tasks">) => {
-      // Route recurring-instance deletes through the skip-set-aware
-      // mutation; everything else uses the normal cascade delete.
+    (taskId: Id<"tasks">) => {
       const task = tasks?.find((t) => t._id === taskId);
-      if (task?.isRecurringInstance && task.recurringTaskId) {
-        await deleteRecurringInstance({ taskId });
-      } else {
-        await removeTask({ id: taskId });
-      }
+      deleteTaskMutation({
+        taskId,
+        taskName: task?.name,
+        isRecurringInstance: task?.isRecurringInstance,
+        recurringTaskId: task?.recurringTaskId,
+      });
     },
-    [removeTask, deleteRecurringInstance, tasks]
+    [deleteTaskMutation, tasks]
   );
 
   const handleSetTimeSpent = useCallback(
@@ -1259,7 +1247,7 @@ export function DesktopTaskList({
           onDelete={() => {
             const id = contextMenu.taskId;
             setContextMenu(null);
-            void handleDelete(id);
+            handleDelete(id);
           }}
         />
       )}

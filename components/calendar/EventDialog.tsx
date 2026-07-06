@@ -24,10 +24,16 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  ScrollView,
   useWindowDimensions,
   Switch,
+  Platform,
+  Alert,
 } from "react-native";
+import {
+  KeyboardAwareScrollView,
+  KeyboardStickyView,
+  useKeyboardState,
+} from "react-native-keyboard-controller";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -37,6 +43,7 @@ import { DateField } from "../ui/DateField";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
+import { applyRemoveTimeWindowOptimisticUpdate } from "../../lib/removeTimeWindowOptimisticUpdate";
 import {
   RecurrenceSection,
   type RecurrenceFormValue,
@@ -132,6 +139,7 @@ export function EventDialog({
   const [comments, setComments] = useState(existingEvent?.comments ?? "");
   const [titleError, setTitleError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [showRecurringScopeModal, setShowRecurringScopeModal] = useState(false);
   const [pendingScopeSave, setPendingScopeSave] = useState<{
     titleToPersist: string | undefined;
@@ -139,6 +147,13 @@ export function EventDialog({
   } | null>(null);
 
   const upsertTimeWindow = useMutation(api.timeWindows.upsert);
+  // Same optimistic update as the calendar's context-menu delete path so
+  // the tile disappears immediately, without waiting for the round-trip.
+  const removeTimeWindow = useMutation(
+    api.timeWindows.remove
+  ).withOptimisticUpdate((localStore, args) => {
+    applyRemoveTimeWindowOptimisticUpdate(localStore, args.id);
+  });
   const recurringRules = useQuery(
     (api as any).recurringEvents.list,
     profileReady ? {} : "skip",
@@ -194,8 +209,35 @@ export function EventDialog({
     trackables,
   ]);
 
-  const { width } = useWindowDimensions();
+  const { width, height: windowHeight } = useWindowDimensions();
   const isWide = width >= 768;
+
+  // ── Native keyboard avoidance for the card itself ──────────────────
+  // On iOS/Android the window does NOT resize when the soft keyboard
+  // opens (react-native-keyboard-controller manages the keyboard and
+  // keeps the window full-size), so this bottom-aligned card would keep
+  // its footer (Delete / Cancel / Save) hidden behind the keyboard —
+  // and the Title input autofocuses, so that was the dialog's default
+  // state on phones. Fix in two parts:
+  //   1. `KeyboardStickyView` translates the card up by the keyboard
+  //      height (plus the KeyboardToolbar's 42px, see offset below);
+  //   2. cap the card's height to the space that remains above the
+  //      keyboard so the (flex-shrinkable) scroll area gives up height
+  //      instead of pushing the footer off-screen.
+  // Web needs neither: `DialogOverlay.web` already sizes the backdrop to
+  // `visualViewport.height`, which shrinks with the keyboard.
+  // NOTE: the sticky wrapper also breaks `DialogCard`'s percentage
+  // `maxHeight: "92%"` (the wrapper has no definite height for the
+  // percentage to resolve against), so on native we always pass an
+  // explicit pixel maxHeight instead.
+  const KEYBOARD_TOOLBAR_HEIGHT = 42;
+  const keyboardHeight = useKeyboardState((s) => (s.isVisible ? s.height : 0));
+  const nativeCardMaxHeight =
+    Platform.OS === "web"
+      ? undefined
+      : keyboardHeight > 0
+        ? windowHeight - keyboardHeight - KEYBOARD_TOOLBAR_HEIGHT - 12
+        : windowHeight * 0.92;
 
   useEffect(() => {
     if (existingRule) {
@@ -421,18 +463,75 @@ export function EventDialog({
     }
   };
 
-  return (
-    <DialogOverlay onBackdropPress={onClose} align={isWide ? "center" : "bottom"}>
-      <DialogCard desktopWidth={520}>
+  /**
+   * Delete the event being edited. Confirmation first (same pattern as
+   * task / trackable deletes: `window.confirm` on web, `Alert.alert` on
+   * native), then:
+   *
+   *  - recurring instance → record a skip for this occurrence BEFORE
+   *    removing the row, so `generateInstances` doesn't immediately
+   *    re-create it on the next calendar render;
+   *  - then remove the time window (optimistic, tile disappears at once).
+   */
+  const handleDelete = () => {
+    if (!existingEvent) return;
+    const eventName =
+      existingEvent.title ?? existingEvent.derivedTitle ?? "this event";
+    const message = `Delete "${eventName}"?`;
+
+    const run = async () => {
+      setDeleting(true);
+      try {
+        if (
+          existingEvent.isRecurringInstance &&
+          existingEvent.recurringEventId &&
+          existingEvent.startDayYYYYMMDD
+        ) {
+          await recordDeletedRecurringOcc({
+            recurringEventId:
+              existingEvent.recurringEventId as Id<"recurringEvents">,
+            deletedDateYYYYMMDD: existingEvent.startDayYYYYMMDD,
+          });
+        }
+        await removeTimeWindow({ id: existingEvent._id as Id<"timeWindows"> });
+        onClose();
+      } finally {
+        setDeleting(false);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm(message)) void run();
+      return;
+    }
+    Alert.alert("Delete event", message, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => void run() },
+    ]);
+  };
+
+  const card = (
+      <DialogCard
+        desktopWidth={520}
+        style={
+          nativeCardMaxHeight != null
+            ? { maxHeight: nativeCardMaxHeight }
+            : undefined
+        }
+      >
         <DialogHeader
           title={existingEvent ? "Edit Event" : "New Event"}
           onClose={onClose}
         />
 
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          bottomOffset={120}
+          // Hide the vertical scrollbar so it doesn't overlap inputs
+          // below (RN draws the indicator inside the viewport).
+          showsVerticalScrollIndicator={false}
         >
           <Input
             // Title is only strictly required when there's no derived
@@ -538,14 +637,35 @@ export function EventDialog({
               hideTimeWindowControls
             />
           ) : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         <DialogFooter>
-          <Button title="Cancel" variant="outline" onPress={onClose} />
+          {/* Destructive action pinned bottom-left with a spacer before the
+              primary actions — same footer split as TaskDetailSheet /
+              ListDialog. Only shown when editing an existing event. */}
+          {existingEvent ? (
+            <>
+              <Button
+                title="Delete"
+                variant="danger"
+                onPress={handleDelete}
+                loading={deleting}
+                size="small"
+              />
+              <View style={styles.footerSpacer} />
+            </>
+          ) : null}
+          <Button
+            title="Cancel"
+            variant="outline"
+            onPress={onClose}
+            size="small"
+          />
           <Button
             title={existingEvent ? "Save" : "Create"}
             onPress={handleSave}
             loading={loading}
+            size="small"
           />
         </DialogFooter>
 
@@ -611,13 +731,37 @@ export function EventDialog({
         </Pressable>
       ) : null}
       </DialogCard>
+  );
+
+  return (
+    <DialogOverlay onBackdropPress={onClose} align={isWide ? "center" : "bottom"}>
+      {Platform.OS === "web" ? (
+        card
+      ) : (
+        // Rides above the soft keyboard (translateY = -keyboardHeight,
+        // minus the KeyboardToolbar's height) so the pinned footer stays
+        // visible while typing. See `nativeCardMaxHeight` above.
+        <KeyboardStickyView offset={{ opened: -KEYBOARD_TOOLBAR_HEIGHT }}>
+          {card}
+        </KeyboardStickyView>
+      )}
     </DialogOverlay>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { maxHeight: 480 },
+  // `flexShrink: 1` (RN default is 0) lets the scroll region give up
+  // height when the card is constrained — e.g. when the soft keyboard
+  // resizes the window on mobile. Without it, header + 480px scroll +
+  // footer overflow the height-capped card and `overflow: hidden` on
+  // `DialogCard` clips the footer (Save / Cancel invisible while the
+  // keyboard is open — the Title input autofocuses, so that was the
+  // dialog's default state on phones).
+  scroll: { flexGrow: 0, flexShrink: 1, maxHeight: 480 },
   scrollContent: { paddingBottom: 8 },
+  // Pushes Delete to the far left, Cancel/Save to the right (same
+  // footer split as TaskDetailSheet / ListDialog).
+  footerSpacer: { flex: 1 },
   row: {
     flexDirection: "row",
     gap: 12,

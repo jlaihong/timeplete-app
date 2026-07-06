@@ -36,7 +36,12 @@ export function ShareDialog({ type, entityId, onClose }: ShareDialogProps) {
         )}
 
         <View style={styles.actions}>
-          <Button title="Close" variant="outline" onPress={onClose} />
+          <Button
+            title="Close"
+            variant="outline"
+            onPress={onClose}
+            size="small"
+          />
         </View>
       </Card>
     </View>

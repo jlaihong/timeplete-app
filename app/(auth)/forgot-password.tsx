@@ -5,9 +5,9 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   TouchableOpacity,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Link } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -76,9 +76,10 @@ export default function ForgotPasswordScreen() {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView
+      <KeyboardAwareScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
+        bottomOffset={80}
       >
         <Card style={styles.card}>
           <Text style={styles.title}>Reset Password</Text>
@@ -110,7 +111,7 @@ export default function ForgotPasswordScreen() {
             </TouchableOpacity>
           </Link>
         </Card>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </KeyboardAvoidingView>
   );
 }
