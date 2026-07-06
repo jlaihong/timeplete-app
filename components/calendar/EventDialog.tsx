@@ -18,7 +18,7 @@
  * `budgetType` is hard-coded to `"ACTUAL"` — the "BUDGETED" branch is
  * legacy and no longer surfaced in the UI.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -31,7 +31,6 @@ import {
 } from "react-native";
 import {
   KeyboardAwareScrollView,
-  KeyboardStickyView,
   useKeyboardState,
 } from "react-native-keyboard-controller";
 import { useMutation, useQuery } from "convex/react";
@@ -41,6 +40,7 @@ import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { DateField } from "../ui/DateField";
 import { TrackablePicker } from "../tasks/TrackablePicker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
 import { applyRemoveTimeWindowOptimisticUpdate } from "../../lib/removeTimeWindowOptimisticUpdate";
@@ -218,25 +218,63 @@ export function EventDialog({
   // keeps the window full-size), so this bottom-aligned card would keep
   // its footer (Delete / Cancel / Save) hidden behind the keyboard —
   // and the Title input autofocuses, so that was the dialog's default
-  // state on phones. Fix in two parts:
-  //   1. `KeyboardStickyView` translates the card up by the keyboard
-  //      height (plus the KeyboardToolbar's 42px, see offset below);
-  //   2. cap the card's height to the space that remains above the
-  //      keyboard so the (flex-shrinkable) scroll area gives up height
-  //      instead of pushing the footer off-screen.
-  // Web needs neither: `DialogOverlay.web` already sizes the backdrop to
-  // `visualViewport.height`, which shrinks with the keyboard.
-  // NOTE: the sticky wrapper also breaks `DialogCard`'s percentage
-  // `maxHeight: "92%"` (the wrapper has no definite height for the
-  // percentage to resolve against), so on native we always pass an
-  // explicit pixel maxHeight instead.
+  // state on phones.
+  //
+  // The card is therefore translated up so its bottom edge lands just
+  // above the keyboard (plus the app-wide KeyboardToolbar). Crucially,
+  // the translation must NOT be the raw keyboard height: this overlay is
+  // mounted inside the tab screen, so its bottom edge — where the card
+  // is anchored — already sits a tab-bar's-height above the physical
+  // screen bottom. Translating by the full keyboard height left a
+  // tab-bar-sized blank gap floating between the card and the keyboard.
+  // We measure the anchor's real distance from the window bottom
+  // (`overlayBottomGap`) and subtract it from the shift.
+  //
+  // Web needs none of this: `DialogOverlay.web` already sizes the
+  // backdrop to `visualViewport.height`, which shrinks with the keyboard.
+  const insets = useSafeAreaInsets();
   const KEYBOARD_TOOLBAR_HEIGHT = 42;
+  const KEYBOARD_GAP = 8;
   const keyboardHeight = useKeyboardState((s) => (s.isVisible ? s.height : 0));
+
+  // Distance (dp) from the card anchor's bottom to the window bottom —
+  // tab bar + any navigation inset below the overlay. Measured on an
+  // UNtransformed wrapper so the value stays valid while the card is
+  // shifted. Re-measured on layout changes (e.g. rotation).
+  const [overlayBottomGap, setOverlayBottomGap] = useState(0);
+  const anchorRef = useRef<View>(null);
+  const measureAnchor = useCallback(() => {
+    anchorRef.current?.measureInWindow((_x, y, _w, h) => {
+      if (typeof y !== "number" || typeof h !== "number") return;
+      setOverlayBottomGap(Math.max(0, windowHeight - (y + h)));
+    });
+  }, [windowHeight]);
+
+  const keyboardShift =
+    Platform.OS === "web" || keyboardHeight === 0
+      ? 0
+      : Math.max(
+          0,
+          keyboardHeight +
+            KEYBOARD_TOOLBAR_HEIGHT +
+            KEYBOARD_GAP -
+            overlayBottomGap,
+        );
+
+  // The shifted card also needs a pixel height cap so its top stays
+  // below the status bar / timer area instead of sliding off-screen.
+  // (A pixel value is also required because the wrapper views break
+  // `DialogCard`'s percentage `maxHeight: "92%"` — percentages can't
+  // resolve against a content-sized parent.)
   const nativeCardMaxHeight =
     Platform.OS === "web"
       ? undefined
       : keyboardHeight > 0
-        ? windowHeight - keyboardHeight - KEYBOARD_TOOLBAR_HEIGHT - 12
+        ? windowHeight -
+          keyboardHeight -
+          KEYBOARD_TOOLBAR_HEIGHT -
+          KEYBOARD_GAP -
+          insets.top
         : windowHeight * 0.92;
 
   useEffect(() => {
@@ -738,12 +776,21 @@ export function EventDialog({
       {Platform.OS === "web" ? (
         card
       ) : (
-        // Rides above the soft keyboard (translateY = -keyboardHeight,
-        // minus the KeyboardToolbar's height) so the pinned footer stays
-        // visible while typing. See `nativeCardMaxHeight` above.
-        <KeyboardStickyView offset={{ opened: -KEYBOARD_TOOLBAR_HEIGHT }}>
-          {card}
-        </KeyboardStickyView>
+        // The lift MUST be layout-based (margin), not a `transform`:
+        // Android only dispatches touches to children whose LAYOUT
+        // bounds contain the touch point, so a translateY'd card keeps
+        // its touch target at the untranslated position — taps/scrolls
+        // on the visually shifted card fell through to the backdrop
+        // (scrolling broke, inputs blurred). With `marginBottom` the
+        // anchor grows upward from the overlay's bottom edge, bounds
+        // match the visuals, and hit-testing just works.
+        //
+        // The anchor's BOTTOM edge stays pinned to the overlay bottom
+        // regardless of the margin, so `measureAnchor` keeps reporting
+        // the un-lifted base gap — no measurement feedback loop.
+        <View ref={anchorRef} onLayout={measureAnchor} collapsable={false}>
+          <View style={{ marginBottom: keyboardShift }}>{card}</View>
+        </View>
       )}
     </DialogOverlay>
   );
