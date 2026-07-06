@@ -244,9 +244,14 @@ export function EventDialog({
   const [overlayBottomGap, setOverlayBottomGap] = useState(0);
   const anchorRef = useRef<View>(null);
   const measureAnchor = useCallback(() => {
-    anchorRef.current?.measureInWindow((_x, y, _w, h) => {
-      if (typeof y !== "number" || typeof h !== "number") return;
-      setOverlayBottomGap(Math.max(0, windowHeight - (y + h)));
+    // measure() (pageY) rather than measureInWindow(): on some Android
+    // devices measureInWindow's y is relative to the app window below the
+    // status bar while useWindowDimensions().height spans the full screen,
+    // which would overstate the gap by insets.top and leave the footer
+    // buttons hidden under the keyboard toolbar.
+    anchorRef.current?.measure((_x, _y, _w, h, _pageX, pageY) => {
+      if (typeof pageY !== "number" || typeof h !== "number") return;
+      setOverlayBottomGap(Math.max(0, windowHeight - (pageY + h)));
     });
   }, [windowHeight]);
 
