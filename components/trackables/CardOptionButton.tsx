@@ -28,6 +28,11 @@ export function CardOptionButton({
   const [isHovering, setIsHovering] = React.useState(false);
   const [isPressed, setIsPressed] = React.useState(false);
 
+  // Desktop keeps productivity-one's oversized 64px icon. On mobile the
+  // card is much narrower, so a 64px icon squeezes the text column and
+  // forces titles/captions into awkward wraps — use a compact icon.
+  const iconSize = twoColumn ? 64 : 40;
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -43,16 +48,25 @@ export function CardOptionButton({
         isPressed && styles.cardPressed,
       ]}
     >
-      <View style={styles.row}>
+      <View style={[styles.row, !twoColumn && styles.rowCompact]}>
         <MaterialIcons
           name={option.icon}
-          size={64}
+          size={iconSize}
           color={Colors.text}
-          style={styles.icon}
+          style={{ width: iconSize, height: iconSize, lineHeight: iconSize }}
         />
         <View style={styles.copy}>
-          <Text style={styles.name}>{option.name}</Text>
-          <Text style={styles.caption} numberOfLines={2}>
+          {/* `simple` break strategy = greedy wrapping. Android defaults to
+           * `highQuality`, which balances line lengths and breaks lines
+           * early ("Create a goal / with targets…" instead of filling the
+           * first line), reading like accidental formatting. */}
+          <Text
+            style={[styles.name, !twoColumn && styles.nameCompact]}
+            textBreakStrategy="simple"
+          >
+            {option.name}
+          </Text>
+          <Text style={styles.caption} textBreakStrategy="simple">
             {option.caption}
           </Text>
         </View>
@@ -106,13 +120,22 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     gap: 12,
   },
-  icon: { width: 64, height: 64, lineHeight: 64 },
+  rowCompact: {
+    alignItems: "center",
+    gap: 16,
+  },
   copy: { flex: 1, minWidth: 0 },
   name: {
     fontSize: 20,
     fontWeight: "600",
     color: Colors.text,
     marginBottom: 2,
+  },
+  // Mobile: slightly smaller title so common option names fit on one line
+  // in the narrower single-column card.
+  nameCompact: {
+    fontSize: 17,
+    marginBottom: 3,
   },
   caption: {
     fontSize: 13,

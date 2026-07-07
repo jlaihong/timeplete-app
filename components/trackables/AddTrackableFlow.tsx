@@ -861,7 +861,9 @@ const styles = StyleSheet.create({
     color: Colors.text,
     textAlign: "center",
     marginBottom: 8,
-    paddingRight: 24, // leave room for close X
+    // Symmetric padding keeps the centered title truly centered while
+    // still clearing the top-right close X.
+    paddingHorizontal: 32,
   },
   dialogTitle: {
     fontSize: 22,
@@ -877,8 +879,10 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   cardGrid: {
+    // Mobile single-column: a tighter gap keeps all options (and ideally
+    // the whole sheet) visible without scrolling on small screens.
     flexDirection: "column",
-    gap: 24,
+    gap: 12,
   },
   cardGridTwoCol: {
     flexDirection: "row",
