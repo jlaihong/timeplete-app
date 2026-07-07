@@ -628,7 +628,10 @@ function ArchivedRow({
 
 const styles = StyleSheet.create({
   settingsCard: { maxHeight: Platform.OS === "web" ? ("90vh" as any) : 600 },
-  settingsScroll: { maxHeight: 360 },
+  // `flexShrink: 1` (RN default 0) lets the list give up height when the
+  // card is height-capped (native keyboard open) so the Close footer stays
+  // visible; content beyond that scrolls.
+  settingsScroll: { maxHeight: 360, flexGrow: 0, flexShrink: 1 },
   settingsBodyWeb: {
     maxHeight: 360,
     width: "100%",

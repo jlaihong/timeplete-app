@@ -5,21 +5,16 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  Pressable,
-  Platform,
 } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { Colors } from "../../../../constants/colors";
-import { Card } from "../../../ui/Card";
 import { Button } from "../../../ui/Button";
 import { formatYYYYMMDDtoDDMMM } from "../../../../lib/dates";
 import { useAuth } from "../../../../hooks/useAuth";
-import { useRegisterEscapeClose } from "../../../../hooks/useRegisterEscapeClose";
-import { useVisualViewportHeight } from "../../../../hooks/useVisualViewportHeight";
+import { TrackDialogShell } from "./TrackDialogShell";
 
 interface TrackCountDialogProps {
   trackableId: Id<"trackables">;
@@ -46,7 +41,6 @@ export function TrackCountDialog({
   initialComments,
   onClose,
 }: TrackCountDialogProps) {
-  useRegisterEscapeClose(onClose);
   const { profileReady } = useAuth();
   const [count, setCount] = useState(initialCount);
   const [comments, setComments] = useState(initialComments);
@@ -77,24 +71,27 @@ export function TrackCountDialog({
     }
   };
 
-  const vvHeight = useVisualViewportHeight();
-  const overlayHeightStyle =
-    Platform.OS === "web" && vvHeight != null ? { height: vvHeight } : null;
-
   return (
-    <Pressable style={[styles.overlay, overlayHeightStyle]} onPress={onClose}>
-      <Pressable
-        onPress={(e) => e.stopPropagation?.()}
-        style={styles.dialogWrap}
-      >
-        <Card style={styles.dialog}>
-        <KeyboardAwareScrollView
-          keyboardShouldPersistTaps="handled"
-          bottomOffset={100}
-          // Hide the vertical scrollbar so it doesn't overlap inputs
-          // below (RN draws the indicator inside the viewport).
-          showsVerticalScrollIndicator={false}
-        >
+    <TrackDialogShell
+      onClose={onClose}
+      maxWidth={420}
+      actions={
+        <>
+          <Button
+            title="Cancel"
+            variant="outline"
+            onPress={onClose}
+            size="small"
+          />
+          <Button
+            title="Save"
+            onPress={onSave}
+            loading={saving}
+            size="small"
+          />
+        </>
+      }
+    >
           <View style={styles.header}>
             <View
               style={[styles.colourDot, { backgroundColor: trackableColour }]}
@@ -170,46 +167,11 @@ export function TrackCountDialog({
             multiline
           />
 
-          <View style={styles.actions}>
-            <Button
-              title="Cancel"
-              variant="outline"
-              onPress={onClose}
-              size="small"
-            />
-            <Button
-              title="Save"
-              onPress={onSave}
-              loading={saving}
-              size="small"
-            />
-          </View>
-        </KeyboardAwareScrollView>
-        </Card>
-      </Pressable>
-    </Pressable>
+    </TrackDialogShell>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-    zIndex: 1000,
-    ...Platform.select({
-      web: { position: "fixed" as any },
-      default: {},
-    }),
-  },
-  dialogWrap: { width: "100%", maxWidth: 420, maxHeight: "85%" },
-  dialog: { width: "100%", maxHeight: "100%" },
   header: { flexDirection: "row", alignItems: "center", gap: 8 },
   colourDot: { width: 14, height: 14, borderRadius: 7 },
   title: { fontSize: 18, fontWeight: "700", color: Colors.text, flex: 1 },
@@ -295,10 +257,5 @@ const styles = StyleSheet.create({
     minHeight: 72,
     textAlignVertical: "top",
     marginBottom: 16,
-  },
-  actions: {
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "flex-end",
   },
 });

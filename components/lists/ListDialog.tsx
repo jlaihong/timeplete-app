@@ -1,9 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  Modal,
   Pressable,
   Switch,
   Alert,
@@ -22,7 +21,8 @@ import { ColorPicker } from "../ui/ColorPicker";
 import { Card } from "../ui/Card";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { ListSharePanel } from "../sharing/ListSharePanel";
-import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
+import { DialogOverlay } from "../ui/DialogScaffold";
+import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
@@ -57,7 +57,7 @@ export function ListDialog({
   onClose,
   visible: visibleProp = true,
 }: ListDialogProps) {
-  useRegisterEscapeClose(onClose, visibleProp);
+  // ESC-to-close is registered by `DialogOverlay` (web) while visible.
   const { height: windowHeight } = useWindowDimensions();
   // On mobile web the layout viewport doesn't shrink when the soft
   // keyboard opens — see `useVisualViewportHeight` for details. Feed
@@ -140,20 +140,15 @@ export function ListDialog({
     Math.round(effectiveHeight - webBodyChromeReservePx),
   );
 
-  const overlayHeightStyle =
-    Platform.OS === "web" && vvHeight != null ? { height: vvHeight } : null;
+  if (!visibleProp) return null;
 
   return (
-    <Modal
-      visible={visibleProp}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View style={[styles.overlay, overlayHeightStyle]}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
-        <View style={styles.dialogSurface} pointerEvents="box-none">
-          <Card style={styles.dialog}>
+    // `DialogOverlay` supplies the backdrop, ESC-to-close (web), the
+    // mobile-web visual-viewport sizing, and — on native — the keyboard
+    // shift that keeps the card (and its footer buttons) above the soft
+    // keyboard. High zIndex mirrors the previous Modal stacking on web.
+    <DialogOverlay onBackdropPress={onClose} align="center" zIndex={2000}>
+      <ListDialogCard>
             <Text style={styles.title}>
               {isEditMode ? "Edit List" : "Create List"}
             </Text>
@@ -300,42 +295,36 @@ export function ListDialog({
                 </View>
               </View>
             )}
-          </Card>
-        </View>
-      </View>
-    </Modal>
+      </ListDialogCard>
+    </DialogOverlay>
+  );
+}
+
+/**
+ * The dialog surface. A separate component (rendered inside `DialogOverlay`)
+ * so it can read `DialogMaxHeightContext` — the overlay's keyboard-aware
+ * pixel height cap. That pixel cap also replaces the old percentage
+ * `maxHeight` on native, which can't resolve against the overlay's
+ * content-sized anchor wrappers.
+ */
+function ListDialogCard({ children }: { children: React.ReactNode }) {
+  const keyboardMax = useContext(DialogMaxHeightContext);
+  return (
+    <Card
+      style={[
+        styles.dialog,
+        keyboardMax != null ? { maxHeight: keyboardMax } : null,
+      ]}
+    >
+      {children}
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-    // On web, stack headers / drawers can sit above RN `Modal` unless we
-    // establish an explicit stacking order (otherwise state updates but the
-    // dialog appears "invisible" behind chrome).
-    ...Platform.select({
-      web: { zIndex: 200000 } as object,
-      default: {},
-    }),
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 0,
-  },
-  /** Sits above the dimmed backdrop so taps hit the sheet, not the dismiss layer. */
-  dialogSurface: {
-    zIndex: 1,
-    width: "100%",
-    maxWidth: 440,
-    maxHeight: "90%",
-    alignItems: "stretch",
-  },
   dialog: {
-    width: "100%",
+    // 92% (not 100%) keeps the old Modal-era side insets on phones.
+    width: "92%",
     maxWidth: 440,
     maxHeight: "90%",
     ...Platform.select({

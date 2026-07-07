@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
+import { DialogMaxHeightContext } from "./useDialogKeyboardShift";
 
 export { DialogOverlay, type DialogOverlayProps } from "./DialogOverlay";
 
@@ -29,6 +30,22 @@ export function DialogCard({
 }: DialogCardProps) {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 768;
+  // Native `DialogOverlay` provides a pixel height cap (keyboard-aware, and
+  // required because the overlay's anchor wrappers break the percentage
+  // `maxHeight` in `cardMobile`/`cardDesktop` — percentages can't resolve
+  // against a content-sized parent). Undefined on web.
+  //
+  // Applied LAST and merged with any caller `maxHeight` via `min` so a
+  // dialog's own (smaller) cap survives while the keyboard cap still wins
+  // when the keyboard shrinks the available space below it.
+  const contextMax = React.useContext(DialogMaxHeightContext);
+  const callerMax = StyleSheet.flatten(style)?.maxHeight;
+  const effectiveMax =
+    contextMax != null
+      ? typeof callerMax === "number"
+        ? Math.min(contextMax, callerMax)
+        : contextMax
+      : undefined;
   return (
     <View
       style={[
@@ -37,6 +54,7 @@ export function DialogCard({
           ? [styles.cardDesktop, { width: desktopWidth }, desktopHeight ? { height: desktopHeight } : null]
           : styles.cardMobile,
         style,
+        effectiveMax != null ? { maxHeight: effectiveMax } : null,
       ]}
     >
       {children}

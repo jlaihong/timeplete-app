@@ -65,6 +65,7 @@ import {
 } from "../trackables/TrackingHistoryTable";
 import { Id } from "../../convex/_generated/dataModel";
 import { DialogOverlay } from "../ui/DialogScaffold";
+import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 
 type Tab = "details" | "time" | "comments";
 type RecurringEditScope = "THIS_INSTANCE" | "THIS_AND_FUTURE" | "ALL_INSTANCES";
@@ -845,13 +846,10 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   );
 
   const content = (
-    <View
-      style={[
-        isDesktop ? styles.dialogPanel : styles.sheet,
-        // Use fixed `height` (not maxHeight) so the dialog never
-        // resizes when switching tabs — eliminates layout shift.
-        { width: dialogWidth, height: dialogHeight },
-      ]}
+    <SheetPanel
+      style={isDesktop ? styles.dialogPanel : styles.sheet}
+      width={dialogWidth}
+      height={dialogHeight}
     >
       {/* Header — title row + a tracked-time chip directly underneath
           so total time is visible from every tab, not just Details. */}
@@ -984,7 +982,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
           />
         </View>
       )}
-    </View>
+    </SheetPanel>
   );
 
   return (
@@ -1123,6 +1121,34 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   );
 }
 
+/**
+ * The sheet surface. A separate component (rendered inside `DialogOverlay`)
+ * so it can read `DialogMaxHeightContext` — the overlay's keyboard-aware
+ * pixel height cap. The sheet keeps a fixed height so switching tabs never
+ * resizes it, but while the soft keyboard is up the cap wins; otherwise the
+ * overlay's keyboard lift would push the sheet's top off-screen. Inside,
+ * the `flex: 1` scroll region absorbs the difference and the footer stays
+ * visible.
+ */
+function SheetPanel({
+  style,
+  width,
+  height,
+  children,
+}: {
+  style: ViewStyle;
+  width: number;
+  height: number;
+  children: React.ReactNode;
+}) {
+  const keyboardMax = React.useContext(DialogMaxHeightContext);
+  const cappedHeight =
+    keyboardMax != null ? Math.min(height, keyboardMax) : height;
+  return (
+    <View style={[style, { width, height: cappedHeight }]}>{children}</View>
+  );
+}
+
 const styles = StyleSheet.create({
   sheet: {
     backgroundColor: Colors.surfaceContainerHigh,
@@ -1167,7 +1193,10 @@ const styles = StyleSheet.create({
     color: Colors.textTertiary,
   },
   nameInput: {
-    flex: 1,
+    // No `flex: 1` here: inside the column-direction `headerMain` it made
+    // the input's height grow from a 0 basis with nothing to grow into,
+    // collapsing it to just the underline. Width comes from the default
+    // cross-axis stretch.
     fontSize: 18,
     fontWeight: "600",
     color: Colors.text,

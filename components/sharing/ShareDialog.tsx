@@ -1,12 +1,13 @@
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import React, { useContext } from "react";
+import { Text, View, StyleSheet } from "react-native";
 import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Id } from "../../convex/_generated/dataModel";
 import { ListSharePanel } from "./ListSharePanel";
 import { TrackableSharePanel } from "./TrackableSharePanel";
-import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
+import { DialogOverlay } from "../ui/DialogScaffold";
+import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 
 interface ShareDialogProps {
   type: "list" | "trackable";
@@ -15,10 +16,12 @@ interface ShareDialogProps {
 }
 
 export function ShareDialog({ type, entityId, onClose }: ShareDialogProps) {
-  useRegisterEscapeClose(onClose);
   return (
-    <View style={styles.overlay}>
-      <Card style={styles.dialog}>
+    // `DialogOverlay` supplies the backdrop, ESC-to-close (web) and — on
+    // native — the keyboard shift that keeps the card (with its email
+    // input and Close button) above the soft keyboard.
+    <DialogOverlay onBackdropPress={onClose} align="center">
+      <ShareDialogCard>
         <Text style={styles.title}>
           Share {type === "list" ? "List" : "Goal"}
         </Text>
@@ -43,24 +46,33 @@ export function ShareDialog({ type, entityId, onClose }: ShareDialogProps) {
             size="small"
           />
         </View>
-      </Card>
-    </View>
+      </ShareDialogCard>
+    </DialogOverlay>
+  );
+}
+
+/**
+ * Rendered inside `DialogOverlay` so it can read `DialogMaxHeightContext`
+ * — the overlay's keyboard-aware pixel height cap on native.
+ */
+function ShareDialogCard({ children }: { children: React.ReactNode }) {
+  const keyboardMax = useContext(DialogMaxHeightContext);
+  return (
+    <Card
+      style={[
+        styles.dialog,
+        keyboardMax != null ? { maxHeight: keyboardMax } : null,
+      ]}
+    >
+      {children}
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  dialog: { width: "100%", maxWidth: 400 },
+  // 92% (not 100%) keeps side insets on phones now that the overlay no
+  // longer applies padding.
+  dialog: { width: "92%", maxWidth: 400, alignSelf: "center" },
   title: {
     fontSize: 20,
     fontWeight: "700",
@@ -72,5 +84,6 @@ const styles = StyleSheet.create({
     gap: 12,
     justifyContent: "flex-end",
     marginTop: 20,
+    flexShrink: 0,
   },
 });

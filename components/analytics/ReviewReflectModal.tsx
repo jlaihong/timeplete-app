@@ -377,6 +377,12 @@ const styles = StyleSheet.create({
   },
   reflectContent: {
     overflow: "hidden",
+    // Shrinkable middle region: when the card is height-capped (native
+    // keyboard open — see DialogOverlay/useDialogKeyboardShift), this
+    // yields height so the DialogFooter below stays visible instead of
+    // being clipped by the card's overflow:hidden.
+    flexShrink: 1,
+    minHeight: 0,
   },
   reflectContentWeb: {
     height: "70vh" as any,

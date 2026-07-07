@@ -21,7 +21,7 @@
  *   - Top-right `×` close button (productivity-one's
  *     `app-dialog-close-button`).
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useContext, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -43,6 +43,8 @@ import { ColourSwatchPicker } from "./ColourSwatchPicker";
 import { GoalForm } from "./goal/GoalForm";
 import type { CommitmentVariant } from "./goal/CommitmentForms";
 import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
+import { DialogOverlay } from "../ui/DialogScaffold";
+import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 
 /* ------------------------------------------------------------------ *
  * Types                                                              *
@@ -125,19 +127,6 @@ export function AddTrackableFlow({ onClose }: AddTrackableFlowProps) {
   const vvHeight = useVisualViewportHeight();
   const availableHeight = vvHeight ?? windowHeight;
 
-  /* ESC closes the dialog — matches MatDialog's default keyboard handling. */
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const renderStep = useCallback(() => {
     switch (step.kind) {
       case "selection":
@@ -205,45 +194,18 @@ export function AddTrackableFlow({ onClose }: AddTrackableFlowProps) {
    * other step we mount the close button + content in a flex column. */
   const isGoalForm = step.kind === "goal-form";
 
-  // The dialog is mounted at `DesktopHome` root (a viewport-sized View) on
-  // desktop. We deliberately do **not** use react-native's `Modal` here:
-  // RN-Web's `ModalPortal` creates its portal `<div>` during render and
-  // tears it down in a `useEffect` cleanup, which under `StrictMode`
-  // (Expo's default) leaves the portal as `null` until the next re-render
-  // — manifesting as "the dialog only appears after another sibling
-  // dialog opens".
-  // On mobile web we pin the overlay to the *visual* viewport height so it
-  // shrinks when the keyboard opens. Falls back to `bottom: 0` on native
-  // (RN converts unknown web-only properties gracefully) and when
-  // `visualViewport` isn't available.
-  const overlayHeightStyle =
-    Platform.OS === "web" && vvHeight != null ? { height: vvHeight } : null;
-
+  // `DialogOverlay` supplies the backdrop, ESC-to-close (web), the mobile-web
+  // visual-viewport sizing, and — on native — the keyboard shift that keeps
+  // the card (and its footer buttons) above the soft keyboard.
   return (
-    <Pressable
-      style={[
-        styles.overlay,
-        isWide ? styles.overlayDesktop : styles.overlayMobile,
-        overlayHeightStyle,
-      ]}
-      onPress={onClose}
+    <DialogOverlay
+      onBackdropPress={onClose}
+      align={isWide ? "center" : "bottom"}
     >
-      <Pressable
-        onPress={(e) => e.stopPropagation?.()}
-        style={[
-          styles.dialog,
-          isWide ? styles.dialogDesktop : styles.dialogMobile,
-          isGoalForm && { padding: 0 },
-          // GoalForm uses `flex: 1` on its container + inner scroll view so
-          // it can host a tall vertical stepper with its own scrolling. On
-          // mobile our dialog is content-sized (`maxHeight: 92%`), so `flex: 1`
-          // collapses to zero and the stepper renders blank. Give the dialog
-          // a concrete height for that step only — matches the fix used by
-          // `EditTrackableDialog` for the same reason. We use the visible
-          // viewport height (`availableHeight`) so the dialog also shrinks
-          // when the keyboard opens on mobile web.
-          isGoalForm && !isWide && { height: availableHeight * 0.92 },
-        ]}
+      <FlowDialogCard
+        isWide={isWide}
+        isGoalForm={isGoalForm}
+        availableHeight={availableHeight}
       >
         {/* Top-right close X — port of `app-dialog-close-button`. */}
         <Pressable
@@ -256,8 +218,57 @@ export function AddTrackableFlow({ onClose }: AddTrackableFlowProps) {
         </Pressable>
 
         {renderStep()}
-      </Pressable>
-    </Pressable>
+      </FlowDialogCard>
+    </DialogOverlay>
+  );
+}
+
+/**
+ * The flow's card surface. Must be its own component (rendered inside
+ * `DialogOverlay`) so it can read `DialogMaxHeightContext` — the native
+ * overlay's keyboard-aware pixel height cap. The percentage `maxHeight`
+ * in `dialogMobile`/`dialogDesktop` can't resolve against the overlay's
+ * content-sized anchor wrappers on native, so the pixel cap is what
+ * actually constrains the card there. Undefined on web (CSS percentages
+ * keep working).
+ */
+function FlowDialogCard({
+  isWide,
+  isGoalForm,
+  availableHeight,
+  children,
+}: {
+  isWide: boolean;
+  isGoalForm: boolean;
+  availableHeight: number;
+  children: React.ReactNode;
+}) {
+  const nativeMaxHeight = useContext(DialogMaxHeightContext);
+
+  // GoalForm uses `flex: 1` on its container + inner scroll view so it can
+  // host a tall vertical stepper with its own scrolling. The dialog is
+  // otherwise content-sized, so `flex: 1` would collapse to zero and the
+  // stepper would render blank. Give the dialog a concrete height for that
+  // step only. Uses the visible viewport height (`availableHeight`) so the
+  // dialog also shrinks when the keyboard opens on mobile web; on native
+  // `nativeMaxHeight` shrinks with the keyboard instead.
+  const goalFormHeight = Math.min(
+    availableHeight * 0.92,
+    nativeMaxHeight ?? Number.POSITIVE_INFINITY,
+  );
+
+  return (
+    <View
+      style={[
+        styles.dialog,
+        isWide ? styles.dialogDesktop : styles.dialogMobile,
+        nativeMaxHeight != null ? { maxHeight: nativeMaxHeight } : null,
+        isGoalForm && { padding: 0 },
+        isGoalForm && !isWide && { height: goalFormHeight },
+      ]}
+    >
+      {children}
+    </View>
   );
 }
 
@@ -597,7 +608,11 @@ function NewTrackerForm({ seed, onCancel, onSubmit }: NewTrackerFormProps) {
   };
 
   return (
-    <View>
+    // `flexShrink: 1` lets this column give up height when the card is
+    // height-capped (keyboard open); without it the column keeps its
+    // natural height and the card's `overflow: hidden` clips the footer
+    // (Create / Cancel invisible or cut in half).
+    <View style={styles.trackerForm}>
       <Text style={styles.dialogTitle}>Create Tracker</Text>
 
       {/* `KeyboardAwareScrollView` from react-native-keyboard-controller
@@ -679,7 +694,7 @@ function NewTrackerForm({ seed, onCancel, onSubmit }: NewTrackerFormProps) {
         </View>
       </KeyboardAwareScrollView>
 
-      <View style={styles.actions}>
+      <View style={[styles.actions, styles.actionsFooter]}>
         {/* Cancel mirrors angular's text-only `mat-button` */}
         <Button
           title="Cancel"
@@ -793,25 +808,6 @@ function ValueTypeButton({
  * ------------------------------------------------------------------ */
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    zIndex: 1000,
-    // On web we must escape any absolutely-positioned ancestor (e.g. the
-    // narrow side column on DesktopHome) so the overlay always covers the
-    // full viewport — same trick we use for TrackablePicker and the
-    // per-trackable widget dialogs.
-    ...Platform.select({
-      web: { position: "fixed" as any },
-      default: {},
-    }),
-  },
-  overlayMobile: { justifyContent: "flex-end" },
-  overlayDesktop: { justifyContent: "center", alignItems: "center" },
   dialog: {
     backgroundColor: Colors.surfaceContainerHigh,
     overflow: "hidden",
@@ -889,7 +885,11 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 24,
   },
-  formScroll: { maxHeight: 480 },
+  trackerForm: { flexShrink: 1 },
+  // `flexShrink: 1` (RN default 0) lets the scroll region give up height
+  // when the card is constrained, keeping the footer visible; content
+  // beyond that scrolls.
+  formScroll: { maxHeight: 480, flexGrow: 0, flexShrink: 1 },
   formContent: { paddingBottom: 8, gap: 16 },
   field: { gap: 6 },
   fieldLabel: {
@@ -972,4 +972,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.outlineVariant,
   },
+  /** Footer must never shrink — the scroll region above it gives up height instead. */
+  actionsFooter: { flexShrink: 0 },
 });

@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { View, Text, StyleSheet, TextInput, Platform } from "react-native";
 import {
   KeyboardAwareScrollView,
@@ -17,8 +23,8 @@ import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { AutoDismissToast } from "../ui/AutoDismissToast";
-import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
-import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
+import { DialogOverlay } from "../ui/DialogScaffold";
+import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 import {
   initialAssignmentStateFromAddTaskContext,
   resolveEffectiveListIdForTaskCreate,
@@ -67,7 +73,7 @@ export function AddTaskSheet({
   lockListToContext = false,
   onClose,
 }: AddTaskSheetProps) {
-  useRegisterEscapeClose(onClose);
+  // ESC-to-close (web) is registered by `DialogOverlay`.
   const { profileReady, profile } = useAuth();
   const titleInputRef = useRef<TextInput>(null);
   const [name, setName] = useState("");
@@ -172,56 +178,58 @@ export function AddTaskSheet({
     });
   };
 
-  // Mobile-web keyboard avoidance: keep the overlay pinned to the visible
-  // viewport so the dialog (and its inputs) shrink with the soft keyboard
-  // instead of sliding behind it. Native platforms rely on
-  // `KeyboardAwareScrollView` (below) + `KeyboardProvider` at the app root.
-  const vvHeight = useVisualViewportHeight();
-  const overlayHeightStyle =
-    Platform.OS === "web" && vvHeight != null ? { height: vvHeight } : null;
-
   return (
-    <View style={[styles.overlay, overlayHeightStyle]}>
-      <Card style={styles.dialog}>
-        <KeyboardAwareScrollView
-          keyboardShouldPersistTaps="handled"
-          bottomOffset={80}
-          // Hide the vertical scrollbar so it doesn't paint on top of the
-          // rounded right edge of the inputs/pickers below it (RN draws
-          // the indicator inside the scroll viewport, not outside it).
-          showsVerticalScrollIndicator={false}
-        >
-          <Text style={styles.title}>
-            {parentId ? "Add Subtask" : "Add Task"}
-          </Text>
+    <>
+      {/* `DialogOverlay` supplies the backdrop, ESC-to-close (web), the
+       * mobile-web visual-viewport sizing, and — on native — the keyboard
+       * shift that keeps the card (and its footer buttons) above the soft
+       * keyboard. */}
+      <DialogOverlay onBackdropPress={onClose} align="center">
+        <AddTaskCard>
+          <KeyboardAwareScrollView
+            style={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            bottomOffset={80}
+            // Hide the vertical scrollbar so it doesn't paint on top of the
+            // rounded right edge of the inputs/pickers below it (RN draws
+            // the indicator inside the scroll viewport, not outside it).
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.title}>
+              {parentId ? "Add Subtask" : "Add Task"}
+            </Text>
 
-          <Input
-            ref={titleInputRef}
-            label="Task Name"
-            value={name}
-            onChangeText={setName}
-            placeholder="What needs to be done?"
-            autoFocus
-            returnKeyType="done"
-            blurOnSubmit={false}
-            onSubmitEditing={handleCreate}
-          />
-
-          <TrackablePicker
-            value={trackableId}
-            onChange={handleTrackableChange}
-            editable={!lockTrackableAssignment}
-          />
-
-          {/* List picker hidden when a trackable is selected, or list context locks the roster. */}
-          {!hideListPicker && (
-            <ListPicker
-              value={listId}
-              onChange={handleListChange}
-              mode="add"
+            <Input
+              ref={titleInputRef}
+              label="Task Name"
+              value={name}
+              onChangeText={setName}
+              placeholder="What needs to be done?"
+              autoFocus
+              returnKeyType="done"
+              blurOnSubmit={false}
+              onSubmitEditing={handleCreate}
             />
-          )}
 
+            <TrackablePicker
+              value={trackableId}
+              onChange={handleTrackableChange}
+              editable={!lockTrackableAssignment}
+            />
+
+            {/* List picker hidden when a trackable is selected, or list context locks the roster. */}
+            {!hideListPicker && (
+              <ListPicker
+                value={listId}
+                onChange={handleListChange}
+                mode="add"
+              />
+            )}
+          </KeyboardAwareScrollView>
+
+          {/* Fixed footer (outside the scroll) so Cancel/Create stay
+           * visible while the keyboard is up and the card is
+           * height-capped. */}
           <View style={styles.actions}>
             <Button
               title="Cancel"
@@ -231,37 +239,55 @@ export function AddTaskSheet({
             />
             <Button title="Create" onPress={handleCreate} size="small" />
           </View>
-        </KeyboardAwareScrollView>
-      </Card>
+        </AddTaskCard>
+      </DialogOverlay>
       {/**
        * `KeyboardStickyView` (from react-native-keyboard-controller) tracks
        * the software keyboard on iOS/Android and translates its child up
        * by the keyboard height. Without it, the toast sits at the screen
        * bottom and is completely hidden while the keyboard is open — the
        * user never sees "Task added". On web it's a no-op; there the
-       * `overlayHeightStyle` above already re-anchors the container to
-       * the visible viewport, so the toast lands above the keyboard.
+       * overlay already tracks the visible viewport, so the toast lands
+       * above the keyboard. Rendered as a SIBLING of the overlay so the
+       * card's keyboard lift doesn't double-shift it.
        */}
       <KeyboardStickyView style={styles.toastLayer} pointerEvents="box-none">
         <AutoDismissToast key={toastKey} message={toastMessage} onDismiss={clearToast} />
       </KeyboardStickyView>
-    </View>
+    </>
+  );
+}
+
+/**
+ * Rendered inside `DialogOverlay` so it can read `DialogMaxHeightContext`
+ * — the overlay's keyboard-aware pixel height cap on native.
+ */
+function AddTaskCard({ children }: { children: React.ReactNode }) {
+  const keyboardMax = useContext(DialogMaxHeightContext);
+  return (
+    <Card
+      style={[
+        styles.dialog,
+        keyboardMax != null ? { maxHeight: keyboardMax } : null,
+      ]}
+    >
+      {children}
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
+  dialog: {
+    // 92% (not 100%) keeps the old overlay-padding side insets on phones.
+    width: "92%",
+    maxWidth: 420,
+    maxHeight: "85%",
+    alignSelf: "center",
+    overflow: "hidden",
   },
-  dialog: { width: "100%", maxWidth: 420, maxHeight: "85%" },
+  // `flexShrink: 1` (RN default 0) lets the form give up height when the
+  // card is height-capped (keyboard open); content beyond that scrolls.
+  scroll: { flexGrow: 0, flexShrink: 1 },
   title: {
     fontSize: 20,
     fontWeight: "700",
@@ -273,14 +299,16 @@ const styles = StyleSheet.create({
     gap: 12,
     justifyContent: "flex-end",
     marginTop: 8,
+    flexShrink: 0,
   },
-  // Full-viewport overlay that pins the toast to the visible area (or
-  // above the keyboard, via `KeyboardStickyView`). `pointerEvents:
-  // "box-none"` lets taps flow through to the backdrop below.
+  // Pins the toast to the visible area (or above the keyboard, via
+  // `KeyboardStickyView`). `pointerEvents: "box-none"` lets taps flow
+  // through to the backdrop below.
   toastLayer: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
+    zIndex: 1100,
   },
 });
