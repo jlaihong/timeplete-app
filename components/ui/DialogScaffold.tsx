@@ -39,12 +39,22 @@ export function DialogCard({
   // dialog's own (smaller) cap survives while the keyboard cap still wins
   // when the keyboard shrinks the available space below it.
   const contextMax = React.useContext(DialogMaxHeightContext);
-  const callerMax = StyleSheet.flatten(style)?.maxHeight;
+  const flat = StyleSheet.flatten(style);
+  const callerMax = flat?.maxHeight;
+  const callerHeight = flat?.height;
   const effectiveMax =
     contextMax != null
       ? typeof callerMax === "number"
         ? Math.min(contextMax, callerMax)
         : contextMax
+      : undefined;
+  // A caller-fixed pixel height must be clamped to the cap explicitly:
+  // relying on `height` + `maxHeight` together collapses the card on
+  // Android Fabric when the keyboard cap kicks in (seen with
+  // EditTrackableDialog), while a single resolved height works.
+  const clampedHeight =
+    effectiveMax != null && typeof callerHeight === "number"
+      ? Math.min(callerHeight, effectiveMax)
       : undefined;
   return (
     <View
@@ -55,6 +65,7 @@ export function DialogCard({
           : styles.cardMobile,
         style,
         effectiveMax != null ? { maxHeight: effectiveMax } : null,
+        clampedHeight != null ? { height: clampedHeight } : null,
       ]}
     >
       {children}
