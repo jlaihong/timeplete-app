@@ -363,6 +363,7 @@ export function RecurrenceSection({
               <DateField
                 label="End Date (optional)"
                 value={value.endDateYYYYMMDD}
+                clearable
                 onChange={(yyyymmdd) =>
                   onChange({ ...value, endDateYYYYMMDD: yyyymmdd })
                 }

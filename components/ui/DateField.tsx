@@ -1,13 +1,14 @@
 /**
- * Shared date field used by EventDialog and TaskDetailSheet so date
- * editing looks/behaves the same everywhere.
+ * Shared date field used by EventDialog, TaskDetailSheet, the goal forms
+ * and RecurrenceSection so date editing looks/behaves the same everywhere.
  *
  * Format contract (IMPORTANT):
  *   - `value` and `onChange` always speak the project-wide `YYYYMMDD`
  *     8-character format (no dashes), the same shape stored in Convex
  *     (`taskDay`, `startDayYYYYMMDD`, etc).
  *   - This component is the conversion boundary to/from the HTML5
- *     `<input type="date">` which mandates `YYYY-MM-DD`.
+ *     `<input type="date">` (which mandates `YYYY-MM-DD`) and the native
+ *     platform pickers (which speak `Date`).
  *
  * Why this matters: `<input type="date">` silently rejects any value
  * that is not exactly `YYYY-MM-DD`, and would emit dashed strings on
@@ -17,34 +18,36 @@
  * (0x2D) precedes `0` (0x30), which silently flagged future tasks as
  * overdue.
  *
- * On web: renders a Material-style filled wrapper around a native
- * `<input type="date">` so the field visually matches the floating-
- * label `Input` (real OS date picker, keyboard nav, locale-aware
- * formatting; only the chrome is custom).
- * On native: falls back to a Material `Input` whose visible text is
- * masked as `YYYY-MM-DD` (auto-inserted dashes as the user types
- * digits) so mobile matches what web renders. The canonical value
- * emitted via `onChange` is still `YYYYMMDD`.
+ * On web: a Material-style filled wrapper around a native
+ * `<input type="date">`. Clicking ANYWHERE on the field opens the
+ * browser's calendar via `showPicker()` (not just the tiny built-in
+ * icon), with a trailing calendar glyph as the affordance. Keyboard
+ * entry still works — the input remains a real focusable input.
+ * On native: the field is a Pressable showing the date in a friendly
+ * locale format ("Jan 2, 2026"); tapping opens the platform date
+ * picker (Material calendar dialog on Android, spinner sheet on iOS)
+ * instead of asking the user to type 8 digits.
  */
-import React, { useEffect, useState } from "react";
-import { Platform, View, Text, StyleSheet, Pressable } from "react-native";
+import React, { useRef, useState } from "react";
+import {
+  Platform,
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Modal,
+} from "react-native";
+import DateTimePicker, {
+  DateTimePickerAndroid,
+} from "@react-native-community/datetimepicker";
+import { MaterialIcons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
-import { Input } from "./Input";
-import { yyyymmddToIsoDate, isoDateToYyyymmdd } from "../../lib/dates";
-
-/**
- * Native fallback typing mask: takes any string, strips non-digits,
- * caps at 8 chars, and reintroduces `-` after positions 4 and 6 so
- * the visible text matches the web `<input type="date">` display
- * (`YYYY-MM-DD`). Callers still emit / accept canonical `YYYYMMDD`
- * via `onChange` — the mask lives purely in local input state.
- */
-function formatIsoDateMask(raw: string): string {
-  const d = raw.replace(/\D/g, "").slice(0, 8);
-  if (d.length <= 4) return d;
-  if (d.length <= 6) return `${d.slice(0, 4)}-${d.slice(4)}`;
-  return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}`;
-}
+import {
+  yyyymmddToIsoDate,
+  isoDateToYyyymmdd,
+  parseYYYYMMDD,
+  formatYYYYMMDD,
+} from "../../lib/dates";
 
 interface DateFieldProps {
   /** YYYYMMDD (8 chars, no dashes), or "" when unset. */
@@ -52,90 +55,122 @@ interface DateFieldProps {
   /** Always emits YYYYMMDD, or "" if the user cleared the field. */
   onChange: (yyyymmdd: string) => void;
   label?: string;
-  /** Optional placeholder text shown on native fallback. */
+  /** Placeholder shown when no value is set (native only). */
   placeholder?: string;
+  /**
+   * Shows a trailing ✕ that resets the value to "". Only enable for
+   * genuinely optional dates — native pickers have no built-in clear.
+   */
+  clearable?: boolean;
 }
 
 const FIELD_HORIZONTAL_PADDING = 12;
 const FIELD_MIN_HEIGHT = 56;
 
-export function DateField({
-  value,
-  onChange,
-  label,
-  placeholder = "YYYY-MM-DD",
-}: DateFieldProps) {
-  const [focused, setFocused] = useState(false);
-  // Local mirror of the visible text on native. Keeps a partial mask
-  // (`2026-01`) alive while the user is still typing — canonical
-  // `YYYYMMDD` state doesn't accept those. Synced back from `value`
-  // whenever the parent value changes externally (form reset, etc.).
-  const [nativeText, setNativeText] = useState<string>(() =>
-    yyyymmddToIsoDate(value),
-  );
-  useEffect(() => {
-    if (Platform.OS === "web") return;
-    // Only overwrite local state when the parent's canonical value
-    // diverges from what our local text represents. Preserves partial
-    // typing (`2026-01`) — those still encode `202601` which is not
-    // `value`, but we don't want to clobber them mid-entry. We only
-    // pull from parent when either (a) parent has a full date and we
-    // don't match it, or (b) parent cleared while we have text.
-    const localDigits = nativeText.replace(/\D/g, "");
-    if (value.length === 8 && localDigits !== value) {
-      setNativeText(yyyymmddToIsoDate(value));
-    } else if (value === "" && nativeText !== "" && localDigits.length === 8) {
-      setNativeText("");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+/** Friendly display for the native field: "Jan 2, 2026". */
+function formatForDisplay(yyyymmdd: string): string {
+  if (yyyymmdd.length !== 8) return "";
+  return parseYYYYMMDD(yyyymmdd).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
+export function DateField(props: DateFieldProps) {
   if (Platform.OS === "web") {
-    // The browser-native picker uses ISO YYYY-MM-DD; convert at the
-    // boundary so everything else in the app continues to use our
-    // canonical YYYYMMDD shape.
-    const isoValue = yyyymmddToIsoDate(value);
-    const hasValue = isoValue.length > 0;
-    const isFloating = focused || hasValue;
-    const accent = focused ? Colors.primary : Colors.outline;
-    const labelColor = focused ? Colors.primary : Colors.textSecondary;
-    // Hide the browser's "yyyy-mm-dd" placeholder text when the field
-    // is at rest so the floating label can sit centered as the
-    // placeholder (matches productivity-one's mat-form-field). Once
-    // the user focuses or picks a value, the label floats up and the
-    // native placeholder/value reappears in the freed-up space.
-    const showNativeText = label ? isFloating : true;
+    return <WebDateField {...props} />;
+  }
+  return <NativeDateField {...props} />;
+}
 
-    return (
-      <View style={styles.container}>
-        <Pressable style={styles.field}>
-          {label ? (
-            <Text
-              style={[
-                styles.label,
-                {
-                  top: isFloating ? 6 : 18,
-                  fontSize: isFloating ? 12 : 16,
-                  color: labelColor,
-                },
-              ]}
-            >
-              {label}
-            </Text>
-          ) : null}
-          {label ? (
-            // Width-reserving ghost — see Input.tsx for full rationale.
-            // The floating label is absolutely positioned and contributes
-            // 0 to the field's intrinsic width, so without this the
-            // field collapses to the native date input's natural size
-            // and a long label like "Required weeks (out of the X
-            // weeks)" would clip.
-            // @ts-expect-error - aria-hidden is web-only and not on Text types.
-            <Text aria-hidden pointerEvents="none" style={styles.labelGhost}>
-              {label}
-            </Text>
-          ) : null}
+/* ──────────────────────────── web ──────────────────────────── */
+
+/**
+ * Web-only global style: hides the browser's built-in calendar glyph on
+ * our date inputs (we render our own trailing icon and the whole field
+ * opens the picker), while keeping the input itself fully functional
+ * for keyboard entry.
+ */
+function DateInputChromeStyle() {
+  return React.createElement("style", null, [
+    `input.tp-date-input::-webkit-calendar-picker-indicator {`,
+    `  display: none;`,
+    `}`,
+  ].join("\n"));
+}
+
+interface WebDateInputEl {
+  focus: () => void;
+  showPicker?: () => void;
+}
+
+function WebDateField({ value, onChange, label, clearable }: DateFieldProps) {
+  const [focused, setFocused] = useState(false);
+  const inputRef = useRef<WebDateInputEl | null>(null);
+
+  // The browser-native picker uses ISO YYYY-MM-DD; convert at the
+  // boundary so everything else in the app continues to use our
+  // canonical YYYYMMDD shape.
+  const isoValue = yyyymmddToIsoDate(value);
+  const hasValue = isoValue.length > 0;
+  const isFloating = focused || hasValue;
+  const accent = focused ? Colors.primary : Colors.outline;
+  const labelColor = focused ? Colors.primary : Colors.textSecondary;
+  // Hide the browser's "yyyy-mm-dd" placeholder text when the field
+  // is at rest so the floating label can sit centered as the
+  // placeholder (matches productivity-one's mat-form-field). Once
+  // the user focuses or picks a value, the label floats up and the
+  // native placeholder/value reappears in the freed-up space.
+  const showNativeText = label ? isFloating : true;
+
+  const openPicker = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    // showPicker() throws when unsupported (older Safari) or when not
+    // triggered by a user gesture — fall back to plain focus, which
+    // still lets the user type or use the browser's built-in icon.
+    try {
+      el.showPicker?.();
+    } catch {
+      /* fall through to focus */
+    }
+    el.focus();
+  };
+
+  return (
+    <View style={styles.container}>
+      <Pressable style={styles.field} onPress={openPicker}>
+        {label ? (
+          <Text
+            style={[
+              styles.label,
+              {
+                top: isFloating ? 6 : 18,
+                fontSize: isFloating ? 12 : 16,
+                color: labelColor,
+              },
+            ]}
+          >
+            {label}
+          </Text>
+        ) : null}
+        {label ? (
+          // Width-reserving ghost — see Input.tsx for full rationale.
+          // The floating label is absolutely positioned and contributes
+          // 0 to the field's intrinsic width, so without this the
+          // field collapses to the native date input's natural size
+          // and a long label like "Required weeks (out of the X
+          // weeks)" would clip.
+          <Text aria-hidden pointerEvents="none" style={styles.labelGhost}>
+            {label}
+          </Text>
+        ) : null}
+        <DateInputChromeStyle />
+        <View style={styles.webInputRow}>
           {React.createElement("input", {
+            ref: inputRef,
+            className: "tp-date-input",
             type: "date",
             value: isoValue,
             onChange: (e: { target: { value: string } }) =>
@@ -147,41 +182,164 @@ export function DateField({
               color: showNativeText ? Colors.text : "transparent",
             },
           })}
-          <View
-            style={[
-              styles.underline,
-              { backgroundColor: accent, height: focused ? 2 : 1 },
-            ]}
-          />
-        </Pressable>
-      </View>
-    );
-  }
+          {clearable && hasValue ? (
+            <ClearButton onPress={() => onChange("")} />
+          ) : (
+            <MaterialIcons
+              name="calendar-today"
+              size={18}
+              color={Colors.textSecondary}
+              style={styles.trailingIcon}
+            />
+          )}
+        </View>
+        <View
+          style={[
+            styles.underline,
+            { backgroundColor: accent, height: focused ? 2 : 1 },
+          ]}
+        />
+      </Pressable>
+    </View>
+  );
+}
+
+/* ─────────────────────────── native ─────────────────────────── */
+
+function NativeDateField({
+  value,
+  onChange,
+  label,
+  placeholder = "Pick a date",
+  clearable,
+}: DateFieldProps) {
+  // iOS renders the picker inline inside a modal sheet; Android uses
+  // the imperative Material dialog API (no mounted component at all).
+  const [iosPickerOpen, setIosPickerOpen] = useState(false);
+  // Draft while the iOS spinner is open — only committed on "Done" so
+  // Cancel doesn't leak intermediate spins to the parent.
+  const [iosDraft, setIosDraft] = useState<Date | null>(null);
+
+  const hasValue = value.length === 8;
+  const currentDate = hasValue ? parseYYYYMMDD(value) : new Date();
+  const isFloating = hasValue;
+
+  const openPicker = () => {
+    if (Platform.OS === "android") {
+      DateTimePickerAndroid.open({
+        value: currentDate,
+        mode: "date",
+        onChange: (event, date) => {
+          if (event.type === "set" && date) onChange(formatYYYYMMDD(date));
+        },
+      });
+      return;
+    }
+    setIosDraft(currentDate);
+    setIosPickerOpen(true);
+  };
+
   return (
-    <Input
-      label={label}
-      value={nativeText}
-      onChangeText={(s) => {
-        const masked = formatIsoDateMask(s);
-        setNativeText(masked);
-        const digits = masked.replace(/\D/g, "");
-        if (digits.length === 8) {
-          onChange(digits);
-        } else if (digits.length === 0) {
-          onChange("");
-        }
-        // Intermediate partial dates don't emit — the canonical value
-        // stays at its last complete state so consumers never see an
-        // incomplete YYYYMMDD (which would fail `length === 8`
-        // validators throughout the app).
-      }}
-      placeholder={placeholder}
-      keyboardType="number-pad"
-      inputMode="numeric"
-      maxLength={10}
-      autoCapitalize="none"
-      containerStyle={{ marginBottom: 0 }}
-    />
+    <View style={styles.container}>
+      <Pressable
+        style={styles.field}
+        onPress={openPicker}
+        accessibilityRole="button"
+        accessibilityLabel={label ? `${label}, pick a date` : "Pick a date"}
+      >
+        {label ? (
+          <Text
+            style={[
+              styles.label,
+              {
+                top: isFloating ? 6 : 18,
+                fontSize: isFloating ? 12 : 16,
+                color: Colors.textSecondary,
+              },
+            ]}
+          >
+            {label}
+          </Text>
+        ) : null}
+        <View style={styles.nativeValueRow}>
+          <Text
+            style={[
+              styles.nativeValueText,
+              !hasValue && !label ? styles.nativePlaceholderText : null,
+            ]}
+            numberOfLines={1}
+          >
+            {hasValue ? formatForDisplay(value) : label ? "" : placeholder}
+          </Text>
+          {clearable && hasValue ? (
+            <ClearButton onPress={() => onChange("")} />
+          ) : (
+            <MaterialIcons
+              name="calendar-today"
+              size={18}
+              color={Colors.textSecondary}
+              style={styles.trailingIcon}
+            />
+          )}
+        </View>
+        <View style={[styles.underline, { backgroundColor: Colors.outline }]} />
+      </Pressable>
+
+      {Platform.OS === "ios" && iosPickerOpen ? (
+        <Modal transparent animationType="fade">
+          <Pressable
+            style={styles.iosBackdrop}
+            onPress={() => setIosPickerOpen(false)}
+          >
+            {/* Stop backdrop-press from closing when tapping the sheet. */}
+            <Pressable style={styles.iosSheet} onPress={() => {}}>
+              <DateTimePicker
+                value={iosDraft ?? currentDate}
+                mode="date"
+                display="inline"
+                onChange={(_event, date) => {
+                  if (date) setIosDraft(date);
+                }}
+                themeVariant="dark"
+              />
+              <View style={styles.iosSheetActions}>
+                <Pressable
+                  onPress={() => setIosPickerOpen(false)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.iosSheetCancel}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    if (iosDraft) onChange(formatYYYYMMDD(iosDraft));
+                    setIosPickerOpen(false);
+                  }}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.iosSheetDone}>Done</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      ) : null}
+    </View>
+  );
+}
+
+function ClearButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel="Clear date"
+      style={styles.trailingIcon}
+    >
+      <MaterialIcons name="close" size={18} color={Colors.textSecondary} />
+    </Pressable>
   );
 }
 
@@ -196,6 +354,9 @@ const webDateInputStyle = {
   boxSizing: "border-box" as const,
   fontFamily: "inherit",
   colorScheme: "dark" as const,
+  // The whole field opens the picker via showPicker(); hide the
+  // browser's own tiny indicator so there aren't two calendar icons.
+  cursor: "pointer" as const,
 } as const;
 
 const styles = StyleSheet.create({
@@ -228,5 +389,58 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    height: 1,
+  },
+  webInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  trailingIcon: {
+    marginLeft: 8,
+    marginBottom: 10,
+  },
+  nativeValueRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    paddingTop: 22,
+    paddingBottom: 8,
+    minHeight: FIELD_MIN_HEIGHT,
+  },
+  nativeValueText: {
+    fontSize: 16,
+    color: Colors.text,
+    flexShrink: 1,
+  },
+  nativePlaceholderText: {
+    color: Colors.textSecondary,
+  },
+  iosBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  iosSheet: {
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    paddingBottom: 32,
+  },
+  iosSheetActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 24,
+    marginTop: 8,
+  },
+  iosSheetCancel: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  iosSheetDone: {
+    color: Colors.primary,
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
