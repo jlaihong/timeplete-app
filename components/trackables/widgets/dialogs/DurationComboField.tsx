@@ -27,9 +27,18 @@ export function DurationComboField({
   allowNone,
 }: DurationComboFieldProps) {
   const [open, setOpen] = useState(false);
-  const filtered = useMemo(
-    () => filterDurationComboOptions(value, allowNone),
-    [value, allowNone]
+  // Unlike web (where the dropdown is a type-ahead attached to the
+  // input), the native modal is a PICKER opened deliberately via the
+  // chevron — always show every preset. Filtering by the current value
+  // meant a pre-filled field (e.g. "0:30") reduced the list to that
+  // one option until the user backspaced.
+  const options = useMemo(
+    () => filterDurationComboOptions("", allowNone),
+    [allowNone]
+  );
+  const selectedIndex = useMemo(
+    () => options.findIndex((o) => o.value === value),
+    [options, value]
   );
 
   const status = assessDurationHhMmInput(value, allowNone);
@@ -107,13 +116,21 @@ export function DurationComboField({
           >
             <Text style={styles.modalTitle}>{label}</Text>
             <FlatList
-              data={filtered}
+              data={options}
               keyExtractor={(item, i) =>
                 item.value === "" ? `none-${i}` : item.value
               }
               style={styles.list}
               keyboardShouldPersistTaps="handled"
               renderItem={renderRow}
+              // Open with the current value in view (rows have a fixed
+              // height so the offset math is exact).
+              initialScrollIndex={selectedIndex > 0 ? selectedIndex : 0}
+              getItemLayout={(_, index) => ({
+                length: ROW_HEIGHT,
+                offset: ROW_HEIGHT * index,
+                index,
+              })}
             />
           </Pressable>
         </Pressable>
@@ -121,6 +138,9 @@ export function DurationComboField({
     </View>
   );
 }
+
+/** Fixed preset-row height so `getItemLayout` scroll offsets are exact. */
+const ROW_HEIGHT = 44;
 
 const styles = StyleSheet.create({
   block: { width: "100%", marginBottom: 0 },
@@ -182,8 +202,9 @@ const styles = StyleSheet.create({
   },
   list: { maxHeight: 360 },
   row: {
+    height: ROW_HEIGHT,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    justifyContent: "center",
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.outlineVariant,
   },

@@ -14,12 +14,13 @@ import { Colors } from "../../../../constants/colors";
 import { assessClockHhMmInput } from "../../../../lib/dates";
 import { applyClockHhmmMask } from "../../../../lib/clockHhmmMask";
 import {
-  filterStartPresets,
+  ALL_START_PRESETS,
   type StartTimeComboFieldProps,
 } from "./startTimeComboShared";
 
 /**
- * Native: single bounded row — type HH:MM + chevron opens filtered preset list.
+ * Native: single bounded row — type HH:MM + chevron opens the full preset
+ * list scrolled to the current value.
  */
 export function StartTimeComboField({
   label,
@@ -27,7 +28,14 @@ export function StartTimeComboField({
   onChange,
 }: StartTimeComboFieldProps) {
   const [open, setOpen] = useState(false);
-  const filtered = useMemo(() => filterStartPresets(value), [value]);
+  // The modal is a deliberate picker (opened via the chevron), not a
+  // type-ahead — always show every quarter-hour option. Filtering by
+  // the pre-filled value used to collapse the list to a single row
+  // until the user backspaced.
+  const selectedIndex = useMemo(
+    () => ALL_START_PRESETS.indexOf(value),
+    [value]
+  );
 
   const status = assessClockHhMmInput(value);
   const errText =
@@ -80,10 +88,18 @@ export function StartTimeComboField({
           >
             <Text style={styles.modalTitle}>{label}</Text>
             <FlatList
-              data={filtered}
+              data={ALL_START_PRESETS}
               keyExtractor={(item) => item}
               style={styles.list}
               keyboardShouldPersistTaps="handled"
+              // Open with the current time in view (rows have a fixed
+              // height so the offset math is exact).
+              initialScrollIndex={selectedIndex > 0 ? selectedIndex : 0}
+              getItemLayout={(_, index) => ({
+                length: ROW_HEIGHT,
+                offset: ROW_HEIGHT * index,
+                index,
+              })}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[styles.row, item === value && styles.rowActive]}
@@ -109,6 +125,9 @@ export function StartTimeComboField({
     </View>
   );
 }
+
+/** Fixed preset-row height so `getItemLayout` scroll offsets are exact. */
+const ROW_HEIGHT = 44;
 
 const styles = StyleSheet.create({
   block: { width: "100%", marginBottom: 0 },
@@ -170,8 +189,9 @@ const styles = StyleSheet.create({
   },
   list: { maxHeight: 360 },
   row: {
+    height: ROW_HEIGHT,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    justifyContent: "center",
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.outlineVariant,
   },
