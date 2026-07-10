@@ -20,7 +20,7 @@
  *   tab UI reuses `TrackingHistoryTable` with the same row shape as edit
  *   trackable → Time Tracked.
  */
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -75,14 +75,14 @@ interface TaskDetailSheetProps {
   onClose: () => void;
 }
 
-/** Local-state shape for the controlled Details-tab form.
+/** Local-state shape for the controlled form.
  *
- *  Note: `name` is intentionally NOT part of this form. The header
- *  title is editable on every tab (it's not Details-specific UI), so
- *  it persists immediately on blur — mirroring the productivity-one
- *  "rename in place" behavior — instead of waiting for the Details
- *  tab's Save button. */
+ *  `name` is part of the form like every other field: editing the
+ *  header title marks the form dirty and enables Save, and the new
+ *  name persists on Save (with the recurring-scope prompt when the
+ *  task belongs to a series). Cancel / close discards it. */
 interface EditableForm {
+  name: string;
   /** YYYYMMDD or "" when unset. */
   taskDay: string;
   trackableId: Id<"trackables"> | null;
@@ -169,16 +169,14 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const [activeTab, setActiveTab] = useState<Tab>("details");
   const [newComment, setNewComment] = useState("");
   const [editingName, setEditingName] = useState(false);
-  // Local buffer for the rename-in-place text input. Persisted on blur
-  // / submit, independent of the Details tab's Save button.
+  // Local buffer for the click-to-edit title input. Committed into
+  // `form.name` as the user types (when non-empty), so Save enables
+  // live; a blank draft simply never commits and reverts on blur.
   const [nameDraft, setNameDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [showRecurringScopeModal, setShowRecurringScopeModal] = useState(false);
-  const [pendingNameChange, setPendingNameChange] = useState<string | null>(null);
   const [showStopRecurringModal, setShowStopRecurringModal] = useState(false);
   const [stopAfterDay, setStopAfterDay] = useState("");
-  // Prevent the click that triggers name-blur from also closing the sheet.
-  const suppressNextBackdropCloseRef = useRef(false);
 
   /**
    * Form state. `null` until the task query resolves, after which it
@@ -198,6 +196,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
       if (task.recurringTaskId && recurringRules === undefined) return;
 
       setForm({
+        name: task.name,
         taskDay: task.taskDay ?? "",
         trackableId: (task.trackableId as Id<"trackables"> | undefined) ?? null,
         listId: (task.listId as Id<"lists"> | undefined) ?? null,
@@ -288,6 +287,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const hasNonRecurrenceChanges = useMemo(() => {
     if (!task || !form) return false;
     return (
+      form.name.trim() !== task.name ||
       (form.taskDay || "") !== (task.taskDay ?? "") ||
       (form.trackableId ?? null) !==
         ((task.trackableId as Id<"trackables"> | undefined) ?? null) ||
@@ -338,8 +338,8 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
   const buildTaskPatch = (nameToPersist: string): Parameters<typeof upsertTask>[0] => {
     const patch: Parameters<typeof upsertTask>[0] = {
       id: taskId,
-      // `name` is required by the validator but isn't part of this
-      // form (it persists instantly via `commitNameDraft`).
+      // `name` is required by the validator, so it's always sent —
+      // unchanged names just re-send the current value.
       name: nameToPersist,
     };
 
@@ -501,11 +501,10 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     }
   };
 
-  const executeSave = async (
-    scope: RecurringEditScope,
-    nameOverride?: string
-  ) => {
-    const nameToPersist = nameOverride ?? task.name;
+  const executeSave = async (scope: RecurringEditScope) => {
+    // Fall back to the persisted name if the draft somehow ended up
+    // blank — a task can't be saved without a name.
+    const nameToPersist = form.name.trim() || task.name;
     const patch = buildTaskPatch(nameToPersist);
     await upsertTask(patch);
 
@@ -548,7 +547,6 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
       (hasNonRecurrenceChanges || recurrenceDirty) &&
       !(task as any).isException;
     if (shouldPromptForRecurringScope) {
-      setPendingNameChange(null);
       setShowRecurringScopeModal(true);
       return;
     }
@@ -565,13 +563,11 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
 
   const handleSelectRecurringScope = async (scope: RecurringEditScope) => {
     if (saving) return;
-    const openedFromNameOnly = pendingNameChange !== null && !isDirty;
     setShowRecurringScopeModal(false);
     setSaving(true);
     try {
-      await executeSave(scope, pendingNameChange ?? undefined);
-      setPendingNameChange(null);
-      if (!openedFromNameOnly) handleClose();
+      await executeSave(scope);
+      handleClose();
     } finally {
       setSaving(false);
     }
@@ -610,32 +606,17 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     }
   };
 
-  // Rename-in-place: persists immediately on blur / submit, matching
-  // the original click-to-edit behavior. Independent of the Details
-  // tab's controlled form so the rename works from any tab.
-  const commitNameDraft = async () => {
+  // Click-to-edit title. Edits live in `form.name` (dirty-checked like
+  // any other field) and persist via the Save button — nothing is
+  // written to the server on blur. A blank draft is discarded so the
+  // task can never end up unnamed.
+  const handleNameDraftChange = (text: string) => {
+    setNameDraft(text);
+    const trimmed = text.trim();
+    if (trimmed) setForm((f) => (f ? { ...f, name: trimmed } : f));
+  };
+  const finishEditingName = () => {
     setEditingName(false);
-    const trimmed = nameDraft.trim();
-    if (!trimmed || trimmed === task.name) return;
-    const shouldPromptForRecurringScope =
-      task.isRecurringInstance &&
-      !!task.recurringTaskId &&
-      !(task as any).isException;
-    if (shouldPromptForRecurringScope) {
-      suppressNextBackdropCloseRef.current = true;
-      setPendingNameChange(trimmed);
-      setShowRecurringScopeModal(true);
-      setTimeout(() => {
-        suppressNextBackdropCloseRef.current = false;
-      }, 0);
-      return;
-    }
-    setSaving(true);
-    try {
-      await executeSave((task as any).isException ? "THIS_INSTANCE" : "ALL_INSTANCES", trimmed);
-    } finally {
-      setSaving(false);
-    }
   };
 
   const handleAddComment = async () => {
@@ -859,15 +840,15 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
             <TextInput
               style={styles.nameInput}
               value={nameDraft}
-              onChangeText={setNameDraft}
-              onBlur={commitNameDraft}
-              onSubmitEditing={commitNameDraft}
+              onChangeText={handleNameDraftChange}
+              onBlur={finishEditingName}
+              onSubmitEditing={finishEditingName}
               autoFocus
             />
           ) : (
             <TouchableOpacity
               onPress={() => {
-                setNameDraft(task.name);
+                setNameDraft(form.name);
                 setEditingName(true);
               }}
             >
@@ -877,7 +858,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                   task.dateCompleted && styles.taskNameCompleted,
                 ]}
               >
-                {task.name}
+                {form.name}
               </Text>
             </TouchableOpacity>
           )}
@@ -989,11 +970,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     <DialogOverlay
       align={isDesktop ? "center" : "bottom"}
       onBackdropPress={() => {
-        if (
-          showRecurringScopeModal ||
-          showStopRecurringModal ||
-          suppressNextBackdropCloseRef.current
-        ) {
+        if (showRecurringScopeModal || showStopRecurringModal) {
           return;
         }
         handleClose();
@@ -1005,7 +982,6 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
           style={styles.scopeModalOverlay}
           onPress={(e) => {
             e.stopPropagation?.();
-            setPendingNameChange(null);
             setShowRecurringScopeModal(false);
           }}
         >
@@ -1065,7 +1041,6 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
                 title="Cancel"
                 variant="ghost"
                 onPress={() => {
-                  setPendingNameChange(null);
                   setShowRecurringScopeModal(false);
                 }}
                 size="small"
