@@ -109,6 +109,42 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const trackables = useQuery(api.trackables.search, profileReady ? {} : "skip");
+  const recurringRules = useQuery(
+    api.recurringTasks.list,
+    profileReady ? {} : "skip",
+  );
+
+  /* ──────────────────  Recurring instance materialization  ──────────────────
+   * Same lazy materialization as `DesktopTaskList`: recurring occurrences
+   * only exist as `tasks` rows after `generateInstances` runs for a date
+   * window. Without this, Load More widened the query range but the new
+   * days had no materialized instances — recurring tasks (e.g. daily
+   * workout / review) never appeared on mobile's future days.
+   *
+   * Idempotent: the mutation de-dupes on `(recurringTaskId, taskDay)`, so
+   * firing on every window change / rule edit cannot create duplicates.
+   */
+  const generateInstances = useMutation(api.recurringTasks.generateInstances);
+  useEffect(() => {
+    // Wait for the rules subscription so the first call isn't a no-op
+    // that immediately re-fires once rules resolve.
+    if (!profileReady || recurringRules === undefined) return;
+    void generateInstances({
+      rangeStartYYYYMMDD: today,
+      rangeEndYYYYMMDD: visibleEndDay,
+    });
+    // Keyed on rule *content* (not array identity) so editing/creating a
+    // rule re-materializes immediately, but plain re-renders are no-ops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    profileReady,
+    today,
+    visibleEndDay,
+    recurringRules?.length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    recurringRules?.map((r) => r._id).join(","),
+    generateInstances,
+  ]);
   const upsertTask = useTaskUpsertMutation();
   const deleteTask = useTaskDeleteMutation();
   const moveOnDay = useMutation(api.tasks.moveOnDay);
