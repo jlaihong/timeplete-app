@@ -12,12 +12,12 @@ import {
   hhmmToSeconds,
   normalizeClockHhMm,
 } from "../../../../lib/dates";
-import { defaultStartTimeQuarterHour } from "../../../../lib/trackableLogPresets";
 import {
   TrackableLogDurationBlock,
   TrackableLogStartTimeBlock,
 } from "./TrackableLogHhMmFields";
 import { TrackDialogShell } from "./TrackDialogShell";
+import { useDurationDrivenStartTime } from "./useDurationDrivenStartTime";
 
 interface TrackTimeDialogProps {
   trackableId: Id<"trackables">;
@@ -41,8 +41,12 @@ export function TrackTimeDialog({
   dayYYYYMMDD,
   onClose,
 }: TrackTimeDialogProps) {
-  const [startTime, setStartTime] = useState(defaultStartTimeQuarterHour);
   const [durationHhmm, setDurationHhmm] = useState("0:30");
+  // Duration comes first; start time defaults to "ended just now"
+  // (now − duration) until the user edits it directly.
+  const { startTime, onStartTimeChange } = useDurationDrivenStartTime(
+    durationHhmm,
+  );
   const [comments, setComments] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -133,11 +137,14 @@ export function TrackTimeDialog({
               {formatYYYYMMDDtoDDMMM(dayYYYYMMDD)} — log time
             </Text>
 
-            <TrackableLogStartTimeBlock value={startTime} onChange={setStartTime} />
             <TrackableLogDurationBlock
               value={durationHhmm}
               onChange={setDurationHhmm}
               allowNone={false}
+            />
+            <TrackableLogStartTimeBlock
+              value={startTime}
+              onChange={onStartTimeChange}
             />
 
             <Text style={styles.fieldLabel}>Comments</Text>

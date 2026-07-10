@@ -20,13 +20,11 @@ import {
   normalizeClockHhMm,
 } from "../../../../lib/dates";
 import {
-  defaultStartTimeQuarterHour,
-} from "../../../../lib/trackableLogPresets";
-import {
   TrackableLogDurationBlock,
   TrackableLogStartTimeBlock,
 } from "./TrackableLogHhMmFields";
 import { TrackDialogShell } from "./TrackDialogShell";
+import { useDurationDrivenStartTime } from "./useDurationDrivenStartTime";
 
 interface TrackTrackerDialogProps {
   trackableId: Id<"trackables">;
@@ -46,7 +44,10 @@ const RATING_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
  * Mirror of productivity-one's `TrackTrackerDialog`. Conditional fields:
  *   - `isRatingTracker` → 1-10 mood selector (required)
  *   - else `trackCount` → numeric count input (default 1)
- *   - `trackTime` → start time + duration `HH:MM` (optional unless duration entered)
+ *   - `trackTime` → duration + start time `HH:MM`. Duration is required
+ *     for time-only trackers (nothing to log without it) and optional
+ *     when a count can carry the entry. Start time defaults to
+ *     now − duration until edited.
  *
  * Persists via `trackerEntries.upsert`.
  */
@@ -63,8 +64,17 @@ export function TrackTrackerDialog({
   const [count, setCount] = useState<number | null>(
     isRatingTracker ? null : 1
   );
-  const [startTime, setStartTime] = useState(defaultStartTimeQuarterHour);
-  const [durationHhmm, setDurationHhmm] = useState("");
+  // Duration is only optional when a count can carry the entry on its
+  // own; for a time-only tracker there is nothing to log without it.
+  const durationOptional = trackCount;
+  const [durationHhmm, setDurationHhmm] = useState(
+    durationOptional ? "" : "0:30"
+  );
+  // Duration comes first; start time defaults to "ended just now"
+  // (now − duration) until the user edits it directly.
+  const { startTime, onStartTimeChange } = useDurationDrivenStartTime(
+    durationHhmm,
+  );
   const [comments, setComments] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -75,8 +85,8 @@ export function TrackTrackerDialog({
     [startTime]
   );
   const durationStatus = useMemo(
-    () => assessDurationHhMmInput(durationHhmm, true),
-    [durationHhmm]
+    () => assessDurationHhMmInput(durationHhmm, durationOptional),
+    [durationHhmm, durationOptional]
   );
   const hasValidDuration = trackTime && durationStatus === "valid";
   const durationDirty = trackTime && durationHhmm.trim() !== "";
@@ -114,7 +124,11 @@ export function TrackTrackerDialog({
     }
 
     if (durationIncomplete) {
-      return setError("Enter a valid duration or choose None.");
+      return setError(
+        durationOptional
+          ? "Enter a valid duration or choose None."
+          : "Enter a valid duration (hours:minutes, e.g. 1:30)."
+      );
     }
 
     let durationSeconds: number | undefined;
@@ -251,14 +265,14 @@ export function TrackTrackerDialog({
 
           {trackTime && (
             <>
-              <TrackableLogStartTimeBlock
-                value={startTime}
-                onChange={setStartTime}
-              />
               <TrackableLogDurationBlock
                 value={durationHhmm}
                 onChange={setDurationHhmm}
-                allowNone
+                allowNone={durationOptional}
+              />
+              <TrackableLogStartTimeBlock
+                value={startTime}
+                onChange={onStartTimeChange}
               />
             </>
           )}
