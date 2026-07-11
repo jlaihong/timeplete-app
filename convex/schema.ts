@@ -112,6 +112,20 @@ export default defineSchema({
     // Both used to share a `by_user_day` scan that pulled every task
     // ever scheduled before `today` — quadratic with completed history.
     .index("by_user_completed_day", ["userId", "dateCompleted", "taskDay"])
+    // Overdue-scan companion to `by_user_completed_day` that additionally
+    // pins `isRecurringInstance`. The home page's Overdue group excludes
+    // recurring instances, and on real data ~95% of open past-day rows ARE
+    // recurring instances (stale daily occurrences) — the old scan read
+    // them all just to discard them in JS. Pinning the flag in the index
+    // means those rows are never read at all:
+    //   `eq(userId).eq(isRecurringInstance, false).eq(dateCompleted, undefined)
+    //    .gt(taskDay, "").lt(taskDay, today)`
+    .index("by_user_recurring_completed_day", [
+      "userId",
+      "isRecurringInstance",
+      "dateCompleted",
+      "taskDay",
+    ])
     .index("by_legacy", ["legacyId"]),
 
   taskTags: defineTable({
@@ -479,6 +493,16 @@ export default defineSchema({
     trackableId: v.optional(v.id("trackables")),
     tagIds: v.optional(v.array(v.id("tags"))),
     timeEstimatedInSeconds: v.number(),
+    /**
+     * Inclusive YYYYMMDD bounds of the window `generateInstances` has
+     * already materialized for this rule. Lets repeat calls for an
+     * already-covered window skip the per-rule instance/skip-set reads
+     * entirely (those reads were ~190 KB per home-screen mount). Cleared
+     * by `updateRule` because a rule edit can change which occurrences
+     * exist inside a previously covered window.
+     */
+    materializedFromYYYYMMDD: v.optional(v.string()),
+    materializedThroughYYYYMMDD: v.optional(v.string()),
     userId: v.id("users"),
     legacyId: v.optional(v.string()),
   })

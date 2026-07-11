@@ -378,24 +378,25 @@ export const getHomeTasks = query({
     // 2. Overdue tasks: incomplete, scheduled before today, not a
     //    recurring instance.
     //
-    //    Uses the `by_user_completed_day` index pinned to
-    //    `dateCompleted=undefined`, so the scan visits *only open*
-    //    tasks for this user — the previous implementation pulled
-    //    every past task ever created (incl. years of completed
-    //    history) and filtered in memory, which scaled linearly with
-    //    lifetime completed-task volume.
-    const overdueTasks = await ctx.db
+    //    Uses `by_user_recurring_completed_day` pinned to
+    //    `isRecurringInstance=false` + `dateCompleted=undefined`, so the
+    //    scan visits only open, NON-recurring past tasks. The previous
+    //    index couldn't express the recurring exclusion, so it read every
+    //    stale open recurring occurrence (172 of 179 scanned docs on real
+    //    data) just to discard them in JS below. The `.gt("taskDay", "")`
+    //    lower bound likewise excludes unscheduled rows (taskDay
+    //    undefined) from the scan instead of filtering them in memory.
+    const filteredOverdue = await ctx.db
       .query("tasks")
-      .withIndex("by_user_completed_day", (q) =>
+      .withIndex("by_user_recurring_completed_day", (q) =>
         q
           .eq("userId", user._id)
+          .eq("isRecurringInstance", false)
           .eq("dateCompleted", undefined)
+          .gt("taskDay", "")
           .lt("taskDay", today),
       )
       .collect();
-    const filteredOverdue = overdueTasks.filter(
-      (t) => t.taskDay !== undefined && !t.isRecurringInstance,
-    );
 
     // 3. Tasks completed inside [today, rangeEnd] but originally scheduled
     //    before today – we want them to render in their completion-day
@@ -451,45 +452,49 @@ export const searchWithCriteria = query({
     const user = await requireApprovedUserOrEmpty(ctx);
     if (!user) return [];
 
-    let allTasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .collect();
+    // Bounded read strategy: the previous implementation collected the
+    // caller's ENTIRE task table (plus each collaborator's) and filtered
+    // in JS — ~540 KB read per execution on real data, re-run on every
+    // task write because the read set overlapped the whole table. The
+    // requested day ranges and completed window are expressible directly
+    // against `by_user_day` / `by_user_completed_day`, so read only those.
+    const userIds = [
+      user._id,
+      ...(args.collaboratorIds ?? []).filter((id) => id !== user._id),
+    ];
 
-    if (args.collaboratorIds && args.collaboratorIds.length > 0) {
-      const collabSet = new Set(args.collaboratorIds);
-      for (const collabId of args.collaboratorIds) {
-        const collabTasks = await ctx.db
-          .query("tasks")
-          .withIndex("by_user", (q) => q.eq("userId", collabId))
-          .collect();
-        allTasks = [...allTasks, ...collabTasks];
-      }
-    }
-
-    let filtered = allTasks.filter((t) => {
+    const byId = new Map<string, Doc<"tasks">>();
+    for (const uid of userIds) {
       for (const range of args.dayRanges) {
-        if (t.taskDay && t.taskDay >= range.startDay && t.taskDay <= range.endDay) {
-          return true;
-        }
+        const rows = await ctx.db
+          .query("tasks")
+          .withIndex("by_user_day", (q) =>
+            q
+              .eq("userId", uid)
+              .gte("taskDay", range.startDay)
+              .lte("taskDay", range.endDay),
+          )
+          .collect();
+        for (const t of rows) byId.set(t._id, t);
       }
-      return false;
-    });
 
-    if (args.includeCompleted && args.completedStartDay) {
-      const completed = allTasks.filter(
-        (t) =>
-          t.dateCompleted &&
-          t.dateCompleted >= (args.completedStartDay ?? "") &&
-          t.dateCompleted <= (args.completedEndDay ?? "99999999")
-      );
-      const ids = new Set(filtered.map((t) => t._id));
-      for (const c of completed) {
-        if (!ids.has(c._id)) filtered.push(c);
+      if (args.includeCompleted && args.completedStartDay) {
+        const completed = await ctx.db
+          .query("tasks")
+          .withIndex("by_user_completed_day", (q) =>
+            q
+              .eq("userId", uid)
+              .gte("dateCompleted", args.completedStartDay!)
+              .lte("dateCompleted", args.completedEndDay ?? "99999999"),
+          )
+          .collect();
+        for (const t of completed) byId.set(t._id, t);
       }
     }
 
-    return filtered.sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex);
+    return Array.from(byId.values()).sort(
+      (a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex,
+    );
   },
 });
 

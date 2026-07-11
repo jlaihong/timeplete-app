@@ -166,17 +166,20 @@ export const searchAnswersRange = query({
     const user = await requireApprovedUserOrEmpty(ctx);
     if (!user) return [];
 
-    const all = await ctx.db
+    // `by_user_frequency_day` ends on `dayUnderReview`, so the range can
+    // be applied in the index scan directly — the previous collect-then-
+    // filter read every answer of this frequency (all ~240 DAILY rows,
+    // ~140 KB) to return a handful.
+    return await ctx.db
       .query("reviewAnswers")
       .withIndex("by_user_frequency_day", (q) =>
-        q.eq("userId", user._id).eq("frequency", args.frequency)
+        q
+          .eq("userId", user._id)
+          .eq("frequency", args.frequency)
+          .gte("dayUnderReview", args.startDate)
+          .lte("dayUnderReview", args.endDate)
       )
       .collect();
-
-    return all.filter(
-      (a) =>
-        a.dayUnderReview >= args.startDate && a.dayUnderReview <= args.endDate
-    );
   },
 });
 

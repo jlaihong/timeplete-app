@@ -184,6 +184,14 @@ export const updateRule = mutation({
     if (args.timeEstimatedInSeconds !== undefined)
       patch.timeEstimatedInSeconds = args.timeEstimatedInSeconds;
 
+    // Any rule edit can change which occurrences exist inside a window
+    // `generateInstances` previously covered (frequency, start/end dates,
+    // template fields on future instances). Clear the coverage markers so
+    // the next materialization pass re-walks the full window instead of
+    // skipping it.
+    patch.materializedFromYYYYMMDD = undefined;
+    patch.materializedThroughYYYYMMDD = undefined;
+
     await ctx.db.patch(args.id, patch as any);
 
     // If the caller passes a regeneration floor, wipe future incomplete
@@ -456,6 +464,23 @@ export const generateInstances = mutation({
         continue;
       }
 
+      // Coverage skip: the requested window was already materialized by a
+      // previous call, so the (rule, date) de-dupe below is guaranteed to
+      // be a no-op. Skipping avoids re-reading every existing instance
+      // row for the rule — the dominant read cost of this mutation, since
+      // clients fire it on every home-screen mount. Instance deletions do
+      // NOT invalidate coverage (deleted occurrences must stay deleted —
+      // that's what `deletedRecurringOccurrences` is for); rule edits DO,
+      // and `updateRule` clears these fields.
+      if (
+        rule.materializedFromYYYYMMDD !== undefined &&
+        rule.materializedThroughYYYYMMDD !== undefined &&
+        rule.materializedFromYYYYMMDD <= args.rangeStartYYYYMMDD &&
+        rule.materializedThroughYYYYMMDD >= args.rangeEndYYYYMMDD
+      ) {
+        continue;
+      }
+
       const skipRows = await ctx.db
         .query("deletedRecurringOccurrences")
         .withIndex("by_recurring_task", (q) =>
@@ -574,6 +599,35 @@ export const generateInstances = mutation({
             }
           }
         }
+      }
+
+      // Record what this pass covered so the next call for the same (or a
+      // narrower) window can skip the instance reads above. Merge only when
+      // the new window overlaps the previous coverage — a disjoint window
+      // (e.g. reopening the app weeks later) resets coverage to the new
+      // range so the gap between the two windows is never falsely claimed
+      // as materialized (the desktop's backward "load past days" path
+      // still needs to generate inside that gap).
+      const prevFrom = rule.materializedFromYYYYMMDD;
+      const prevThrough = rule.materializedThroughYYYYMMDD;
+      const overlapsPrev =
+        prevFrom !== undefined &&
+        prevThrough !== undefined &&
+        args.rangeStartYYYYMMDD <= prevThrough &&
+        args.rangeEndYYYYMMDD >= prevFrom;
+      const nextFrom =
+        overlapsPrev && prevFrom! < args.rangeStartYYYYMMDD
+          ? prevFrom!
+          : args.rangeStartYYYYMMDD;
+      const nextThrough =
+        overlapsPrev && prevThrough! > args.rangeEndYYYYMMDD
+          ? prevThrough!
+          : args.rangeEndYYYYMMDD;
+      if (nextFrom !== prevFrom || nextThrough !== prevThrough) {
+        await ctx.db.patch(rule._id, {
+          materializedFromYYYYMMDD: nextFrom,
+          materializedThroughYYYYMMDD: nextThrough,
+        });
       }
     }
 
