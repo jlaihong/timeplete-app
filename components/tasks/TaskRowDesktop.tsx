@@ -17,6 +17,7 @@ import {
   secondsToDurationString,
 } from "../../lib/dates";
 import { Id } from "../../convex/_generated/dataModel";
+import { useTimerElapsed } from "../../hooks/useTimer";
 import { DurationPickerDesktop } from "./DurationPickerDesktop";
 
 const isWeb = Platform.OS === "web";
@@ -56,7 +57,12 @@ export interface TaskRowDesktopProps {
   task: TaskRowTask;
   meta: TaskRowMeta;
   isTicking: boolean;
-  timerElapsedSeconds: number;
+  /**
+   * Epoch ms the running timer started at (`useTimer().startTime`).
+   * The ticking row derives its own per-second elapsed from this, so
+   * only THIS row re-renders each second — not the whole list.
+   */
+  timerStartTime: number | null;
   showDate?: boolean;
   isDragging?: boolean;
   isOverlay?: boolean;
@@ -100,7 +106,7 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
       task,
       meta,
       isTicking,
-      timerElapsedSeconds,
+      timerStartTime,
       showDate,
       isDragging,
       isOverlay,
@@ -114,7 +120,10 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
 
     const isCompleted = !!task.dateCompleted;
     const baseSeconds = task.timeSpentInSecondsUnallocated ?? 0;
-    const totalSeconds = baseSeconds + (isTicking ? timerElapsedSeconds : 0);
+    // Only the ticking row subscribes to the 1s tick (null pauses it),
+    // so the rest of the list is untouched while a timer runs.
+    const liveElapsed = useTimerElapsed(isTicking ? timerStartTime : null);
+    const totalSeconds = baseSeconds + (isTicking ? liveElapsed : 0);
 
     const initials = getInitials(task.assignedToUserName);
     const dateLabel = showDate ? getDateDisplay(task.taskDay) : null;

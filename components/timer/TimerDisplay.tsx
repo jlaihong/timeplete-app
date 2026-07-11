@@ -4,6 +4,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "../../constants/colors";
 import { useTimer } from "../../hooks/useTimer";
+import { LiveElapsedText } from "./LiveElapsedText";
+
+function formatClock(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+    : `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
 
 export function TimerDisplay() {
   const timer = useTimer();
@@ -16,14 +26,6 @@ export function TimerDisplay() {
 
   if (!timer.isRunning) return null;
 
-  const hours = Math.floor(timer.elapsed / 3600);
-  const minutes = Math.floor((timer.elapsed % 3600) / 60);
-  const seconds = timer.elapsed % 60;
-
-  const display = hours > 0
-    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
-    : `${minutes}:${String(seconds).padStart(2, "0")}`;
-
   return (
     <View style={[styles.container, { paddingTop: 8 + insets.top }]}>
       <View style={styles.indicator} />
@@ -34,7 +36,12 @@ export function TimerDisplay() {
       <Text style={styles.title} numberOfLines={1}>
         {timer.displayTitle ?? ""}
       </Text>
-      <Text style={styles.time}>{display}</Text>
+      {/* Leaf component owns the 1s tick — this bar renders once. */}
+      <LiveElapsedText
+        startTime={timer.startTime}
+        format={formatClock}
+        style={styles.time}
+      />
       <TouchableOpacity
         style={styles.stopButton}
         onPress={() => timer.stop()}

@@ -50,6 +50,7 @@ import {
   recurrenceFormToRuleFields,
 } from "./RecurrenceSection";
 import { useTimer } from "../../hooks/useTimer";
+import { LiveElapsedText } from "../timer/LiveElapsedText";
 import { useAuth } from "../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
@@ -767,9 +768,11 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
           <Text style={[styles.sessionTime, styles.sessionTimeActive]}>
             Active now
           </Text>
-          <Text style={[styles.sessionDuration, styles.sessionTimeActive]}>
-            {formatLive(timer.elapsed)}
-          </Text>
+          <LiveElapsedText
+            startTime={timer.startTime}
+            format={formatLive}
+            style={[styles.sessionDuration, styles.sessionTimeActive]}
+          />
         </View>
       )}
 

@@ -35,7 +35,7 @@ import {
 } from "../../lib/dates";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useAuth } from "../../hooks/useAuth";
-import { useTimer } from "../../hooks/useTimer";
+import { useTimer, useTimerElapsed } from "../../hooks/useTimer";
 import { Id } from "../../convex/_generated/dataModel";
 import { DEFAULT_EVENT_COLOR } from "../../lib/eventColors";
 import { wallClockInTimeZone, wallClockGridToEpochMs } from "../../lib/wallClockTimeZone";
@@ -1825,10 +1825,7 @@ export function CalendarView({
   const handleLiveTimerStartResize = useCallback(
     async (startMinutes: number) => {
       const tz = gridTimeZone;
-      const epochMs =
-        timerHook.elapsed > 0
-          ? Date.now() - timerHook.elapsed * 1000
-          : Date.now();
+      const epochMs = timerHook.startTime ?? Date.now();
       const wall = wallClockInTimeZone(epochMs, tz);
       if (wall.startDayYYYYMMDD !== selectedDay) return;
 
@@ -2145,13 +2142,18 @@ export function CalendarView({
   );
 
   /* ─── Live timer pseudo-event ─────────────────────────────────────── */
+  // Minute-resolution tick: the live block's geometry is minute-grained
+  // (PX_PER_MINUTE), so re-rendering the calendar every SECOND bought
+  // nothing visible and cost a full-tree render per tick. One tick per
+  // minute keeps the block growing in step with the grid.
+  const liveElapsedMinuteRes = useTimerElapsed(
+    timerHook.startTime,
+    60_000,
+  );
   const liveTimerWindow = useMemo<TimeWindowDoc | null>(() => {
     if (!timerHook.isRunning) return null;
     const tz = gridTimeZone;
-    const epochMs =
-      timerHook.elapsed > 0
-        ? Date.now() - timerHook.elapsed * 1000
-        : Date.now();
+    const epochMs = timerHook.startTime ?? Date.now();
     const wall = wallClockInTimeZone(epochMs, tz);
     if (wall.startDayYYYYMMDD !== selectedDay) return null;
 
@@ -2160,7 +2162,7 @@ export function CalendarView({
       startTimeHHMM: wall.startTimeHHMM,
       startDayYYYYMMDD: selectedDay,
       startTimeEpochMs: epochMs,
-      durationSeconds: timerHook.elapsed,
+      durationSeconds: liveElapsedMinuteRes,
       activityType: timerHook.taskId ? "TASK" : "TRACKABLE",
       budgetType: "ACTUAL",
       timeZone: tz,
@@ -2173,7 +2175,8 @@ export function CalendarView({
     };
   }, [
     timerHook.isRunning,
-    timerHook.elapsed,
+    timerHook.startTime,
+    liveElapsedMinuteRes,
     timerHook.taskId,
     timerHook.trackableId,
     timerHook.displayTitle,

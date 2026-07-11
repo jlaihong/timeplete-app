@@ -3,8 +3,11 @@ import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../../../constants/colors";
 import { useTimer } from "../../../../hooks/useTimer";
+import { LiveElapsedText } from "../../../timer/LiveElapsedText";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { secondsToHhmm } from "../../../../lib/dates";
+
+const formatTicking = (s: number) => secondsToHhmm(s, true);
 
 interface WidgetTimerRowProps {
   trackableId: Id<"trackables">;
@@ -44,9 +47,11 @@ export function WidgetTimerRow({ trackableId }: WidgetTimerRowProps) {
         />
       </TouchableOpacity>
       {ticking && (
-        <Text style={styles.display}>
-          {secondsToHhmm(timer.elapsed, true)}
-        </Text>
+        <LiveElapsedText
+          startTime={timer.startTime}
+          format={formatTicking}
+          style={styles.display}
+        />
       )}
     </View>
   );

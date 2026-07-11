@@ -115,7 +115,7 @@ interface SortableRowProps {
   meta: TaskRowMeta;
   groupId: string;
   isTicking: boolean;
-  timerElapsed: number;
+  timerStartTime: number | null;
   canDrag: boolean;
   /** Resolved display colour (trackable → list → default grey). */
   displayColor: string;
@@ -133,7 +133,7 @@ function SortableRow({
   meta,
   groupId,
   isTicking,
-  timerElapsed,
+  timerStartTime,
   canDrag,
   displayColor,
   durationSec,
@@ -183,7 +183,7 @@ function SortableRow({
           task={task}
           meta={meta}
           isTicking={isTicking}
-          timerElapsedSeconds={timerElapsed}
+          timerStartTime={timerStartTime}
           onSelect={onSelect}
           onToggleComplete={onToggleComplete}
           onToggleTimer={onToggleTimer}
@@ -1211,7 +1211,7 @@ export function DesktopTaskList({
                                 meta={buildMeta(task)}
                                 groupId={group.id}
                                 isTicking={isTicking}
-                                timerElapsed={timer.elapsed}
+                                timerStartTime={timer.startTime}
                                 canDrag={group.canDrag}
                                 displayColor={deriveDisplayColor(task)}
                                 durationSec={deriveDurationSec(task)}

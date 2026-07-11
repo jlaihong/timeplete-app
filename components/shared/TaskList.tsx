@@ -35,6 +35,7 @@ import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
 import { SwipeableTaskRow } from "../tasks/SwipeableTaskRow";
+import { LiveElapsedText } from "../timer/LiveElapsedText";
 import { EditTimeSpentDialog } from "../tasks/EditTimeSpentDialog";
 import { applySetTimeSpentOptimisticUpdate } from "../../lib/setTimeSpentOptimisticUpdate";
 import { Id } from "../../convex/_generated/dataModel";
@@ -578,9 +579,6 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       const isTimerActive =
         timer.isRunning && timer.taskId === task._id;
       const timeSpent = task.timeSpentInSecondsUnallocated ?? 0;
-      const totalTime = isTimerActive
-        ? timeSpent + timer.elapsed
-        : timeSpent;
       const isDragTarget =
         dragOverTarget?.day === group.day &&
         dragOverTarget?.index === taskIndex;
@@ -673,16 +671,20 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                   hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
                   accessibilityLabel={`Edit time spent on ${task.name}`}
                 >
-                  <Text
-                    style={[
-                      styles.duration,
-                      isTimerActive && styles.durationActive,
-                    ]}
-                  >
-                    {isTimerActive
-                      ? formatElapsed(totalTime)
-                      : formatSecondsAsHM(totalTime)}
-                  </Text>
+                  {isTimerActive ? (
+                    // Leaf owns the 1s tick so the whole list doesn't
+                    // re-render every second while a timer runs.
+                    <LiveElapsedText
+                      startTime={timer.startTime}
+                      baseSeconds={timeSpent}
+                      format={formatElapsed}
+                      style={[styles.duration, styles.durationActive]}
+                    />
+                  ) : (
+                    <Text style={styles.duration}>
+                      {formatSecondsAsHM(timeSpent)}
+                    </Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>

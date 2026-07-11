@@ -36,6 +36,7 @@ import {
 } from "../../../components/tasks/TaskRowDesktop";
 import { ListDetailWebDnd } from "../../../components/lists/ListDetailWebDnd";
 import { useTimer } from "../../../hooks/useTimer";
+import { LiveElapsedText } from "../../../components/timer/LiveElapsedText";
 import { todayYYYYMMDD, formatSecondsAsHM } from "../../../lib/dates";
 import { normalizeListMembersQuery } from "../../../lib/listMembersQuery";
 import type { Id, Doc } from "../../../convex/_generated/dataModel";
@@ -599,35 +600,6 @@ export default function ListDetailScreen() {
     });
   }, []);
 
-  if (!listId) {
-    return (
-      <View style={styles.loading}>
-        <Text style={styles.loadingMessage}>Missing list id.</Text>
-      </View>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <View style={styles.loading}>
-        <Stack.Screen options={{ title: "List" }} />
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingMessage}>Loading list…</Text>
-      </View>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <View style={styles.loading}>
-        <Stack.Screen options={{ title: "List" }} />
-        <Text style={styles.loadingMessage}>
-          You need to sign in to view this list.
-        </Text>
-      </View>
-    );
-  }
-
   const tasksReady = listQueryMatchesRoute;
 
   const noSections =
@@ -676,7 +648,6 @@ export default function ListDetailScreen() {
 
     const isCompleted = !!task.dateCompleted;
     const timeSpent = task.timeSpentInSecondsUnallocated ?? 0;
-    const totalTime = isTicking ? timeSpent + timer.elapsed : timeSpent;
     const trackable = task.trackableId
       ? trackableMap.get(task.trackableId)
       : null;
@@ -729,11 +700,19 @@ export default function ListDetailScreen() {
                   />
                 </TouchableOpacity>
               )}
-              <Text
-                style={[styles.duration, isTicking && styles.durationActive]}
-              >
-                {formatSecondsAsHM(totalTime)}
-              </Text>
+              {isTicking ? (
+                // Leaf owns the 1s tick — see note on `useTimerElapsed`.
+                <LiveElapsedText
+                  startTime={timer.startTime}
+                  baseSeconds={timeSpent}
+                  format={formatSecondsAsHM}
+                  style={[styles.duration, styles.durationActive]}
+                />
+              ) : (
+                <Text style={styles.duration}>
+                  {formatSecondsAsHM(timeSpent)}
+                </Text>
+              )}
             </View>
           </TouchableOpacity>
           {(trackable ||
@@ -907,6 +886,39 @@ export default function ListDetailScreen() {
     [canDragReorder, renderListTaskRow, toggleSectionCollapsed],
   );
 
+  // Guard returns must come AFTER every hook above: this screen renders
+  // in a loading state first, and an early return before the trailing
+  // `useCallback`s changes the hook count between renders ("Rendered
+  // more hooks than during the previous render").
+  if (!listId) {
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.loadingMessage}>Missing list id.</Text>
+      </View>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <View style={styles.loading}>
+        <Stack.Screen options={{ title: "List" }} />
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.loadingMessage}>Loading list…</Text>
+      </View>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <View style={styles.loading}>
+        <Stack.Screen options={{ title: "List" }} />
+        <Text style={styles.loadingMessage}>
+          You need to sign in to view this list.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <Stack.Screen
@@ -1013,7 +1025,7 @@ export default function ListDetailScreen() {
             }
             canDrag={canDragReorder}
             isTicking={(id) => timer.isRunning && timer.taskId === id}
-            timerElapsed={timer.elapsed}
+            timerStartTime={timer.startTime}
             onSelectTask={setSelectedTaskId}
             onToggleComplete={(id) => {
               const task = allTasksInPage.find((t) => t._id === id);

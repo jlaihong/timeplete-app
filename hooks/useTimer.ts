@@ -1,10 +1,51 @@
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Id } from "../convex/_generated/dataModel";
 import { useAuth } from "./useAuth";
 import { deriveEventColors } from "../lib/eventColors";
 import { applyStopTimerOptimisticUpdate } from "../lib/stopTimerOptimisticUpdate";
+
+/**
+ * Seconds elapsed since `startTime` (epoch ms), re-rendering the caller
+ * once per second while enabled.
+ *
+ * PERFORMANCE: subscribe from small LEAF components only (the text that
+ * actually displays the number). `useTimer()` itself deliberately does
+ * NOT tick — it used to, and because every mounted tab screen calls it
+ * (task list, calendar, trackable widgets), all of them re-rendered
+ * top-down every second whenever a timer ran. On a mid-range phone that
+ * burned ~185ms of JS thread per tick with four tabs mounted, so tab
+ * presses queued behind background renders and felt ~1s laggy.
+ *
+ * Pass `null` to pause (e.g. when this row isn't the ticking one).
+ * `intervalMs` can be raised (e.g. 60_000) where second-resolution
+ * isn't visible, like the calendar's live event block.
+ */
+export function useTimerElapsed(
+  startTime: number | null | undefined,
+  intervalMs = 1000,
+): number {
+  const compute = () =>
+    startTime != null
+      ? Math.max(0, Math.floor((Date.now() - startTime) / 1000))
+      : 0;
+  const [elapsed, setElapsed] = useState(compute);
+
+  useEffect(() => {
+    if (startTime == null) {
+      setElapsed(0);
+      return;
+    }
+    const tick = () =>
+      setElapsed(Math.max(0, Math.floor((Date.now() - startTime) / 1000)));
+    tick();
+    const id = setInterval(tick, intervalMs);
+    return () => clearInterval(id);
+  }, [startTime, intervalMs]);
+
+  return elapsed;
+}
 
 export function useTimer() {
   const { profileReady } = useAuth();
@@ -74,42 +115,6 @@ export function useTimer() {
     trackablesList,
   ]);
 
-  const [localElapsed, setLocalElapsed] = useState(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  /**
-   * Elapsed seconds are derived from the row's `startTime` epoch on the client.
-   * The server intentionally no longer returns `elapsedSeconds` because reading
-   * `Date.now()` inside a Convex query is non-deterministic and bypasses the
-   * result cache — see `convex/timers.ts` for the rationale. The display owns
-   * the second-by-second tick locally.
-   */
-  useEffect(() => {
-    if (timerData?.startTime) {
-      const tick = () => {
-        const elapsed = Math.max(
-          0,
-          Math.floor((Date.now() - timerData.startTime) / 1000),
-        );
-        setLocalElapsed(elapsed);
-      };
-      tick();
-
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(tick, 1000);
-    } else {
-      setLocalElapsed(0);
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [timerData?._id, timerData?.startTime]);
-
   const rowTz =
     typeof timerData?.timeZone === "string" && timerData.timeZone.trim() !== ""
       ? timerData.timeZone.trim()
@@ -117,7 +122,12 @@ export function useTimer() {
 
   return {
     isRunning: !!timerData,
-    elapsed: localElapsed,
+    /**
+     * Epoch ms the running timer started at, or null. To display a live
+     * elapsed count, pass this to {@link useTimerElapsed} from a small
+     * leaf component — `useTimer` itself intentionally does not tick.
+     */
+    startTime: timerData?.startTime ?? null,
     displayTitle,
     displayColor,
     secondaryColor,

@@ -148,7 +148,7 @@ function HomeDndProviderWeb({ children }: Props) {
             task={activeDrag.task}
             meta={activeDrag.meta}
             isTicking={false}
-            timerElapsedSeconds={0}
+            timerStartTime={null}
             isOverlay
           />
         ) : null}

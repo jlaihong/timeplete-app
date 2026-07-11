@@ -83,7 +83,7 @@ interface SortableRowProps {
   meta: TaskRowMeta;
   groupId: string;
   isTicking: boolean;
-  timerElapsed: number;
+  timerStartTime: number | null;
   canDrag: boolean;
   displayColor: string;
   durationSec: number;
@@ -99,7 +99,7 @@ function SortableRow({
   meta,
   groupId,
   isTicking,
-  timerElapsed,
+  timerStartTime,
   canDrag,
   displayColor,
   durationSec,
@@ -140,7 +140,7 @@ function SortableRow({
           task={task}
           meta={meta}
           isTicking={isTicking}
-          timerElapsedSeconds={timerElapsed}
+          timerStartTime={timerStartTime}
           showDate
           onSelect={onSelect}
           onToggleComplete={onToggleComplete}
@@ -219,7 +219,8 @@ export interface ListDetailWebDndProps {
   buildMeta: (task: TaskRowTask) => TaskRowMeta;
   canDrag: boolean;
   isTicking: (taskId: Id<"tasks">) => boolean;
-  timerElapsed: number;
+  /** `useTimer().startTime` — see TaskRowDesktop for how rows tick. */
+  timerStartTime: number | null;
   onSelectTask?: (id: Id<"tasks">) => void;
   onToggleComplete?: (id: Id<"tasks">) => void;
   onToggleTimer?: (id: Id<"tasks">) => void;
@@ -293,7 +294,7 @@ export function ListDetailWebDnd({
   buildMeta,
   canDrag,
   isTicking,
-  timerElapsed,
+  timerStartTime,
   onSelectTask,
   onToggleComplete,
   onToggleTimer,
@@ -692,7 +693,7 @@ export function ListDetailWebDnd({
                                 meta={meta}
                                 groupId={group.id}
                                 isTicking={tick}
-                                timerElapsed={timerElapsed}
+                                timerStartTime={timerStartTime}
                                 canDrag={canDrag}
                                 displayColor={deriveDisplayColor(task, meta)}
                                 durationSec={deriveDurationSec(task)}
@@ -720,7 +721,7 @@ export function ListDetailWebDnd({
               task={activeDrag.task}
               meta={activeDrag.meta}
               isTicking={isTicking(activeDrag.task._id)}
-              timerElapsedSeconds={timerElapsed}
+              timerStartTime={timerStartTime}
               showDate
               isOverlay
             />
