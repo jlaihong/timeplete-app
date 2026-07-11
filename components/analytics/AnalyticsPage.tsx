@@ -23,13 +23,14 @@ import { ReviewSection } from "./sections/ReviewSection";
  *  - Single state provider at the root (selectedTab + selectedDate)
  *  - Tab bar
  *  - Date navigator (hides picker on Yearly)
- *  - 4 sections that ALL consume the same dataset via
+ *  - Sections that ALL consume the same dataset via
  *    `useAnalyticsDataset()`. Switching tab or date triggers a single
- *    Convex re-query and re-renders all 4 sections together.
+ *    Convex re-query and re-renders every section together.
  *
  * Layout: row of four columns from `md+` (≥1280px), single-column
  * stack on narrow viewports. Matches P1's `flex flex-col md:flex-row
- * gap-4`.
+ * gap-4`. The stacked layout omits `ReviewSection` — mobile reaches
+ * reviews via the dedicated sidebar page instead.
  *
  * Note: there is no `TrackableDialogHost` mounted here — analytics
  * widgets are intentionally read-only (header `open_in_new` only;
@@ -103,12 +104,14 @@ function AnalyticsBody() {
     );
   }
 
+  // No ReviewSection in the stacked (mobile / narrow) layout — the
+  // dedicated Reviews page is reachable from the sidebar there, so
+  // repeating the questions at the bottom of Analytics is redundant.
   return (
     <ScrollView contentContainerStyle={styles.scrollContent}>
       <TrackableProgressionSection />
       <TimeBreakdownSection />
       <TimeSpendSection />
-      <ReviewSection />
     </ScrollView>
   );
 }
