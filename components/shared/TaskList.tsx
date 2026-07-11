@@ -35,6 +35,8 @@ import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
 import { SwipeableTaskRow } from "../tasks/SwipeableTaskRow";
+import { EditTimeSpentDialog } from "../tasks/EditTimeSpentDialog";
+import { applySetTimeSpentOptimisticUpdate } from "../../lib/setTimeSpentOptimisticUpdate";
 import { Id } from "../../convex/_generated/dataModel";
 
 const LOAD_MORE_DAYS = 7;
@@ -149,10 +151,26 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const deleteTask = useTaskDeleteMutation();
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
+  // Tap-to-edit time spent (parity with web's `DurationPickerDesktop`) —
+  // same mutation + optimistic update as `DesktopTaskList`.
+  const setTimeSpentMutation = useMutation(
+    api.tasks.setTimeSpent,
+  ).withOptimisticUpdate((localStore, args) => {
+    applySetTimeSpentOptimisticUpdate(localStore, {
+      taskId: args.taskId,
+      timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated,
+    });
+  });
   const timer = useTimer();
 
   const [showCompleted, setShowCompleted] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  /** Task whose time-spent is being edited in `EditTimeSpentDialog`. */
+  const [editTimeSpentTask, setEditTimeSpentTask] = useState<{
+    id: Id<"tasks">;
+    name: string;
+    seconds: number;
+  } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
   );
@@ -302,6 +320,19 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const handleLoadMore = useCallback(() => {
     setVisibleDays((d) => d + LOAD_MORE_DAYS);
   }, []);
+
+  const handleSaveTimeSpent = useCallback(
+    async (taskId: Id<"tasks">, newSeconds: number) => {
+      await setTimeSpentMutation({
+        taskId,
+        timeSpentInSecondsUnallocated: Math.max(0, Math.floor(newSeconds)),
+        // Mirrors the optimistic update so the wall-clock slice the
+        // server inserts matches what the cache already shows.
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+    },
+    [setTimeSpentMutation]
+  );
 
   /**
    * Flattened row model for the native single-list drag implementation.
@@ -627,16 +658,32 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                     />
                   </TouchableOpacity>
                 )}
-                <Text
-                  style={[
-                    styles.duration,
-                    isTimerActive && styles.durationActive,
-                  ]}
+                {/* Tap-to-edit time spent (web parity: DurationPickerDesktop).
+                    Read-only while the timer drives the value. */}
+                <TouchableOpacity
+                  disabled={isTimerActive}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    setEditTimeSpentTask({
+                      id: task._id,
+                      name: task.name,
+                      seconds: timeSpent,
+                    });
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                  accessibilityLabel={`Edit time spent on ${task.name}`}
                 >
-                  {isTimerActive
-                    ? formatElapsed(totalTime)
-                    : formatSecondsAsHM(totalTime)}
-                </Text>
+                  <Text
+                    style={[
+                      styles.duration,
+                      isTimerActive && styles.durationActive,
+                    ]}
+                  >
+                    {isTimerActive
+                      ? formatElapsed(totalTime)
+                      : formatSecondsAsHM(totalTime)}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </TouchableOpacity>
 
@@ -1138,6 +1185,15 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         >
           <Ionicons name="add" size={24} color={Colors.onPrimary} />
         </TouchableOpacity>
+      )}
+
+      {editTimeSpentTask && (
+        <EditTimeSpentDialog
+          taskName={editTimeSpentTask.name}
+          initialSeconds={editTimeSpentTask.seconds}
+          onClose={() => setEditTimeSpentTask(null)}
+          onSave={(secs) => handleSaveTimeSpent(editTimeSpentTask.id, secs)}
+        />
       )}
     </View>
   );
