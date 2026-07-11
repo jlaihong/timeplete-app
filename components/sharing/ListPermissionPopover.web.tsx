@@ -9,8 +9,9 @@ export function WebListPermissionPopover(props: {
   updating: boolean;
   onDismiss: () => void;
   onPick: (perm: "VIEWER" | "EDITOR") => void;
+  onRemove: () => void;
 }) {
-  const { permMenu, updating, onDismiss, onPick } = props;
+  const { permMenu, updating, onDismiss, onPick, onRemove } = props;
   const { top, left, minWidth, current } = permMenu;
 
   /**
@@ -108,6 +109,37 @@ export function WebListPermissionPopover(props: {
             ) : null}
           </button>
         ))}
+        <div
+          role="separator"
+          style={{
+            height: 1,
+            margin: "4px 6px",
+            backgroundColor: Colors.border,
+          }}
+        />
+        <button
+          type="button"
+          role="menuitem"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            width: "100%",
+            padding: "10px 14px",
+            border: "none",
+            margin: 0,
+            cursor: "pointer",
+            background: "transparent",
+            color: Colors.error,
+            borderRadius: 6,
+            fontSize: 15,
+            fontWeight: 600,
+            textAlign: "left",
+            fontFamily: "system-ui,sans-serif",
+          }}
+          onClick={onRemove}
+        >
+          Remove access
+        </button>
       </div>
     </>
   );

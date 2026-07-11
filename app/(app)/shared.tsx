@@ -6,6 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
+  Platform,
 } from "react-native";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -28,6 +29,8 @@ export default function SharedScreen() {
   );
   const acceptShare = useMutation(api.sharing.acceptShare);
   const rejectShare = useMutation(api.sharing.rejectShare);
+  const leaveList = useMutation(api.sharing.leaveList);
+  const removeTrackableShare = useMutation(api.sharing.removeTrackableShare);
 
   if (!shared) {
     return (
@@ -65,6 +68,31 @@ export default function SharedScreen() {
         style: "destructive",
         onPress: () => rejectShare({ shareId, shareType: type }),
       },
+    ]);
+  };
+
+  /** Give up your own access to an accepted share. The owner can
+   *  re-invite later. */
+  const handleLeave = (
+    item: { _id: string; type: "list" | "trackable" } & Record<string, any>,
+  ) => {
+    const name = item.type === "list" ? item.listName : item.trackableName;
+    const doLeave = () => {
+      if (item.type === "list") {
+        void leaveList({ listId: item.listId });
+      } else {
+        void removeTrackableShare({ shareId: item._id as any });
+      }
+    };
+    const message = `You will lose access to "${name}". ${item.ownerName} can share it with you again later.`;
+    if (Platform.OS === "web") {
+      // eslint-disable-next-line no-alert
+      if (window.confirm(`Leave?\n\n${message}`)) doLeave();
+      return;
+    }
+    Alert.alert("Leave?", message, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Leave", style: "destructive", onPress: doLeave },
     ]);
   };
 
@@ -122,6 +150,16 @@ export default function SharedScreen() {
                     title="Reject"
                     variant="outline"
                     onPress={() => handleReject(item._id, item.type)}
+                  />
+                </View>
+              )}
+              {item.status === "ACCEPTED" && (
+                <View style={styles.actions}>
+                  <Button
+                    title="Leave"
+                    variant="outline"
+                    size="small"
+                    onPress={() => handleLeave(item)}
                   />
                 </View>
               )}

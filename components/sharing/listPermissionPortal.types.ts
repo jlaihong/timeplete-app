@@ -10,4 +10,6 @@ export interface ListPermissionPortalArgs {
   onDismiss: () => void;
   /** Apply new role — caller persists + closes modal */
   onPick: (perm: "VIEWER" | "EDITOR") => void;
+  /** Revoke this collaborator's access — caller confirms + persists. */
+  onRemove: () => void;
 }

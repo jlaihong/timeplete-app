@@ -34,6 +34,7 @@ function emailsEqual(a: string, b: string): boolean {
 
 interface PermMenuAnchored {
   collaboratorUserId: Id<"users">;
+  collaboratorName: string;
   current: "VIEWER" | "EDITOR";
   top: number;
   left: number;
@@ -56,6 +57,7 @@ export function MemberList({ listId }: MemberListProps) {
   const setCollaboratorPermission = useMutation(
     api.sharing.updateListCollaboratorPermission,
   );
+  const removeCollaborator = useMutation(api.sharing.removeListCollaborator);
   const [updatingCollaboratorUserId, setUpdatingCollaboratorUserId] =
     useState<Id<"users"> | null>(null);
   const [permMenu, setPermMenu] = useState<PermMenuAnchored | null>(null);
@@ -96,13 +98,49 @@ export function MemberList({ listId }: MemberListProps) {
     }
   };
 
+  const handleRemoveAccess = async (collaboratorUserId: Id<"users">) => {
+    setUpdatingCollaboratorUserId(collaboratorUserId);
+    try {
+      await removeCollaborator({ listId, collaboratorUserId });
+    } catch (e: unknown) {
+      notifyError(e instanceof Error ? e.message : "Could not remove access");
+    } finally {
+      setUpdatingCollaboratorUserId(null);
+    }
+  };
+
+  /** Platform-appropriate destructive confirmation, matching the app's
+   *  delete flows (native `Alert`, web `window.confirm`). */
+  const confirmRemoveAccess = (
+    collaboratorUserId: Id<"users">,
+    collaboratorName: string,
+  ) => {
+    const message = `${collaboratorName} will lose access to this list. They can be re-invited later.`;
+    if (Platform.OS === "web") {
+      // eslint-disable-next-line no-alert
+      if (window.confirm(`Remove access?\n\n${message}`)) {
+        void handleRemoveAccess(collaboratorUserId);
+      }
+      return;
+    }
+    Alert.alert("Remove access?", message, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => void handleRemoveAccess(collaboratorUserId),
+      },
+    ]);
+  };
+
   const openNativePicker = (
     collaboratorUserId: Id<"users">,
+    collaboratorName: string,
     current: "VIEWER" | "EDITOR",
   ) => {
     Alert.alert(
       "Change permission",
-      "Pick a role for this person.",
+      `Pick a role for ${collaboratorName}, or remove their access.`,
       [
         {
           text: "Viewer",
@@ -120,6 +158,12 @@ export function MemberList({ listId }: MemberListProps) {
             }
           },
         },
+        {
+          text: "Remove access",
+          style: "destructive",
+          onPress: () =>
+            confirmRemoveAccess(collaboratorUserId, collaboratorName),
+        },
         { text: "Cancel", style: "cancel" },
       ],
       { cancelable: true },
@@ -130,6 +174,7 @@ export function MemberList({ listId }: MemberListProps) {
 
   const applyMenuRectViewport = (
     collaboratorUserId: Id<"users">,
+    collaboratorName: string,
     current: "VIEWER" | "EDITOR",
     bounds: { left: number; top: number; width: number; height: number },
   ) => {
@@ -147,6 +192,7 @@ export function MemberList({ listId }: MemberListProps) {
       topPx = Math.max(8, bounds.top - 96);
     setPermMenu({
       collaboratorUserId,
+      collaboratorName,
       current,
       top: topPx,
       left,
@@ -157,6 +203,7 @@ export function MemberList({ listId }: MemberListProps) {
   /** Web: measure the wrapper `View` (host node); `TouchableOpacity`'s Animated ref often has no DOM node here, so rn-web drops the measurement callback entirely. */
   const openWebMenuFromMeasuredAnchor = (
     collaboratorUserId: Id<"users">,
+    collaboratorName: string,
     role: "VIEWER" | "EDITOR",
     anchor: View | null,
   ) => {
@@ -167,7 +214,7 @@ export function MemberList({ listId }: MemberListProps) {
       if (!(w > 2 && h > 2)) {
         return;
       }
-      applyMenuRectViewport(collaboratorUserId, role, {
+      applyMenuRectViewport(collaboratorUserId, collaboratorName, role, {
         left: x,
         top: y,
         width: w,
@@ -209,11 +256,18 @@ export function MemberList({ listId }: MemberListProps) {
           },
           busyUpdating,
           onDismiss: () => setPermMenu(null),
-          onPick: (perm) => {
+          onPick: (perm: "VIEWER" | "EDITOR") => {
             if (permMenu.current !== perm) {
               void handleSetPermission(permMenu.collaboratorUserId, perm);
             }
             setPermMenu(null);
+          },
+          onRemove: () => {
+            setPermMenu(null);
+            confirmRemoveAccess(
+              permMenu.collaboratorUserId,
+              permMenu.collaboratorName,
+            );
           },
         })
       : null;
@@ -226,7 +280,7 @@ export function MemberList({ listId }: MemberListProps) {
       {isOwnerViewer && hasCollaborators ? (
         <Text style={styles.ownerHint}>
           Tap a collaborator&apos;s role (Viewer / Editor) to change their
-          permission.
+          permission or remove their access.
         </Text>
       ) : null}
 
@@ -270,6 +324,7 @@ export function MemberList({ listId }: MemberListProps) {
                     onPress={() => {
                       openWebMenuFromMeasuredAnchor(
                         member.userId,
+                        member.name,
                         editablePerm,
                         touchableRefsByUserId.current.get(member.userId) ??
                           null,
@@ -294,7 +349,7 @@ export function MemberList({ listId }: MemberListProps) {
                   style={styles.roleBadge}
                   disabled={busyUpdating}
                   onPress={() =>
-                    openNativePicker(member.userId, editablePerm)
+                    openNativePicker(member.userId, member.name, editablePerm)
                   }
                   accessibilityRole="button"
                   accessibilityHint="Opens options to choose Viewer or Editor"

@@ -223,6 +223,15 @@ export const removeTrackableShare = mutation({
   args: { shareId: v.id("trackableShares") },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    const share = await ctx.db.get(args.shareId);
+    if (!share) throw new Error("Share not found");
+    // Only the trackable's owner (revoking access) or the recipient
+    // (leaving) may delete a share.
+    const trackable = await ctx.db.get(share.trackableId);
+    const isOwner = trackable != null && trackable.userId === user._id;
+    const isRecipient = share.sharedWithUserId === user._id;
+    if (!isOwner && !isRecipient)
+      throw new Error("Only the owner or the recipient can remove this share");
     await ctx.db.delete(args.shareId);
   },
 });
@@ -269,6 +278,38 @@ export const updateListCollaboratorPermission = mutation({
 
     if (!share) throw new Error("That person does not have access to this list");
     await ctx.db.patch(share._id, { permission: args.permission });
+  },
+});
+
+/**
+ * Owner revokes a collaborator's access entirely. Resolved by
+ * (listId, collaboratorUserId) like `updateListCollaboratorPermission`
+ * so the client never depends on a possibly-stale `shareId`.
+ */
+export const removeListCollaborator = mutation({
+  args: {
+    listId: v.id("lists"),
+    collaboratorUserId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const list = await ctx.db.get(args.listId);
+    if (!list || list.userId !== user._id)
+      throw new Error("Only the list owner can remove access");
+    if (args.collaboratorUserId === user._id) {
+      throw new Error("You own this list — you can't remove your own access");
+    }
+
+    const share = await ctx.db
+      .query("listShares")
+      .withIndex("by_list", (q) => q.eq("listId", args.listId))
+      .filter((q) =>
+        q.eq(q.field("sharedWithUserId"), args.collaboratorUserId),
+      )
+      .first();
+
+    if (!share) throw new Error("That person does not have access to this list");
+    await ctx.db.delete(share._id);
   },
 });
 

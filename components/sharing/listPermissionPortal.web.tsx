@@ -8,6 +8,7 @@ export function renderListPermissionPortal({
   busyUpdating,
   onDismiss,
   onPick,
+  onRemove,
 }: ListPermissionPortalArgs): React.ReactNode {
   if (typeof document === "undefined") return null;
   return createPortal(
@@ -16,6 +17,7 @@ export function renderListPermissionPortal({
       updating={busyUpdating}
       onDismiss={onDismiss}
       onPick={onPick}
+      onRemove={onRemove}
     />,
     document.body,
   );
