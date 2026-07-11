@@ -4,13 +4,13 @@
  * edit / archive / delete, add-question flow. Width 560px.
  */
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
   Pressable,
-  TextInput,
   Platform,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
@@ -36,6 +36,8 @@ import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
+import { EmptyState } from "../ui/EmptyState";
 import {
   DialogCard,
   DialogFooter,
@@ -74,10 +76,17 @@ export function ReviewQuestionsSettingsModal({
     null
   );
   const [editText, setEditText] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<Doc<"reviewQuestions"> | null>(
-    null
-  );
-  const [deleteConfirm, setDeleteConfirm] = useState("");
+
+  // The component stays mounted while hidden (`visible` gate below), so
+  // without this a reopened dialog resumes wherever it was left — e.g. on
+  // the Archived tab with a half-typed add form.
+  useEffect(() => {
+    if (!visible) return;
+    setTab("active");
+    setShowAddInput(false);
+    setNewQuestionText("");
+    setEditTarget(null);
+  }, [visible]);
 
   const activeQuestions = useMemo(() => {
     const list = questions?.filter((q) => !q.archived) ?? [];
@@ -148,6 +157,26 @@ export function ReviewQuestionsSettingsModal({
     setShowAddInput(false);
   };
 
+  // App-standard destructive confirm (same pattern as deleting a
+  // trackable / list): native Alert or window.confirm, with the
+  // "answers are deleted too" consequence spelled out.
+  const confirmDeleteQuestion = (q: Doc<"reviewQuestions">) => {
+    const doDelete = async () => {
+      await removeQuestion({ id: q._id });
+    };
+    const consequence = "This will also delete all answers to this question.";
+    if (Platform.OS === "web") {
+      if (window.confirm(`Delete "${q.questionText}"?\n\n${consequence}`)) {
+        void doDelete();
+      }
+      return;
+    }
+    Alert.alert("Delete question?", `"${q.questionText}"\n\n${consequence}`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => void doDelete() },
+    ]);
+  };
+
   if (!visible) return null;
 
   return (
@@ -195,14 +224,19 @@ export function ReviewQuestionsSettingsModal({
                 </View>
 
                 {(() => {
+                  // Scroll region holds ONLY the question list; the Add
+                  // affordance is pinned below it so it never disappears
+                  // under the fold of a long list.
                   const body = (
                     <>
                       {tab === "active" ? (
                         <>
-                          {activeQuestions.length === 0 && !showAddInput ? (
-                            <Text style={styles.muted}>
-                              No questions yet. Add one below.
-                            </Text>
+                          {activeQuestions.length === 0 ? (
+                            <EmptyState
+                              fillScreen={false}
+                              title="No questions yet"
+                              message="Questions you add appear in every review of this frequency."
+                            />
                           ) : null}
 
                           {Platform.OS === "web" ? (
@@ -223,7 +257,7 @@ export function ReviewQuestionsSettingsModal({
                                     onArchive={() =>
                                       archiveQuestion({ id: q._id })
                                     }
-                                    onDelete={() => setDeleteTarget(q)}
+                                    onDelete={() => confirmDeleteQuestion(q)}
                                   />
                                 ))}
                               </SortableContext>
@@ -241,60 +275,16 @@ export function ReviewQuestionsSettingsModal({
                                 onArchive={() =>
                                   archiveQuestion({ id: q._id })
                                 }
-                                onDelete={() => setDeleteTarget(q)}
+                                onDelete={() => confirmDeleteQuestion(q)}
                               />
                             ))
                           )}
-
-                          {showAddInput ? (
-                            <View style={styles.addForm}>
-                              <Text style={styles.inputLabel}>
-                                New question
-                              </Text>
-                              <TextInput
-                                style={styles.outlineInput}
-                                value={newQuestionText}
-                                onChangeText={setNewQuestionText}
-                                placeholder="e.g. What went well?"
-                                placeholderTextColor={Colors.textTertiary}
-                              />
-                              <View style={styles.addActions}>
-                                <Button
-                                  title="Cancel"
-                                  variant="ghost"
-                                  onPress={() => {
-                                    setShowAddInput(false);
-                                    setNewQuestionText("");
-                                  }}
-                                  size="small"
-                                />
-                                <Button
-                                  title="Add"
-                                  onPress={addQuestion}
-                                  size="small"
-                                />
-                              </View>
-                            </View>
-                          ) : (
-                            <Pressable
-                              style={styles.addQuestionBtn}
-                              onPress={() => setShowAddInput(true)}
-                            >
-                              <Ionicons
-                                name="add"
-                                size={20}
-                                color={Colors.primary}
-                              />
-                              <Text style={styles.addQuestionBtnText}>
-                                Add question
-                              </Text>
-                            </Pressable>
-                          )}
                         </>
                       ) : archivedQuestions.length === 0 ? (
-                        <Text style={styles.muted}>
-                          No archived questions.
-                        </Text>
+                        <EmptyState
+                          fillScreen={false}
+                          title="No archived questions"
+                        />
                       ) : (
                         archivedQuestions.map((q) => (
                           <ArchivedRow
@@ -304,7 +294,7 @@ export function ReviewQuestionsSettingsModal({
                             onUnarchive={() =>
                               archiveQuestion({ id: q._id })
                             }
-                            onDelete={() => setDeleteTarget(q)}
+                            onDelete={() => confirmDeleteQuestion(q)}
                           />
                         ))
                       )}
@@ -336,6 +326,53 @@ export function ReviewQuestionsSettingsModal({
                   );
                 })()}
 
+                {tab === "active" ? (
+                  showAddInput ? (
+                    <View style={styles.addForm}>
+                      <Input
+                        label="New question"
+                        value={newQuestionText}
+                        onChangeText={setNewQuestionText}
+                        placeholder="e.g. What went well?"
+                        autoFocus
+                        onSubmitEditing={addQuestion}
+                        returnKeyType="done"
+                      />
+                      <View style={styles.addActions}>
+                        <Button
+                          title="Cancel"
+                          variant="ghost"
+                          onPress={() => {
+                            setShowAddInput(false);
+                            setNewQuestionText("");
+                          }}
+                          size="small"
+                        />
+                        <Button
+                          title="Add"
+                          onPress={addQuestion}
+                          disabled={!newQuestionText.trim()}
+                          size="small"
+                        />
+                      </View>
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={styles.addQuestionBtn}
+                      onPress={() => setShowAddInput(true)}
+                    >
+                      <Ionicons
+                        name="add"
+                        size={20}
+                        color={Colors.primary}
+                      />
+                      <Text style={styles.addQuestionBtnText}>
+                        Add question
+                      </Text>
+                    </Pressable>
+                  )
+                ) : null}
+
                 <DialogFooter>
                   <Button
                     title="Close"
@@ -359,13 +396,14 @@ export function ReviewQuestionsSettingsModal({
                 title="Edit question"
                 onClose={() => setEditTarget(null)}
               />
-              <Text style={styles.inputLabel}>Question</Text>
-              <TextInput
-                style={styles.outlineInput}
+              <Input
+                label="Question"
                 value={editText}
                 onChangeText={setEditText}
                 placeholder="e.g. What went well?"
-                placeholderTextColor={Colors.textTertiary}
+                autoFocus
+                onSubmitEditing={saveEdit}
+                returnKeyType="done"
               />
               <DialogFooter>
                 <Button
@@ -374,67 +412,17 @@ export function ReviewQuestionsSettingsModal({
                   onPress={() => setEditTarget(null)}
                   size="small"
                 />
-                <Button title="Save" onPress={saveEdit} size="small" />
+                <Button
+                  title="Save"
+                  onPress={saveEdit}
+                  disabled={!editText.trim()}
+                  size="small"
+                />
               </DialogFooter>
             </DialogCard>
           </DialogOverlay>
         ) : null}
 
-        {deleteTarget ? (
-          <DialogOverlay
-            onBackdropPress={() => {
-              setDeleteTarget(null);
-              setDeleteConfirm("");
-            }}
-            zIndex={2600}
-          >
-            <DialogCard desktopWidth={400}>
-              <DialogHeader
-                title="Delete question?"
-                onClose={() => {
-                  setDeleteTarget(null);
-                  setDeleteConfirm("");
-                }}
-              />
-              <Text style={styles.deleteBody}>{deleteTarget.questionText}</Text>
-              <Text style={styles.deleteWarn}>
-                This will also delete all answers to this question.
-              </Text>
-              <Text style={styles.inputLabel}>
-                Type &quot;Delete&quot; to confirm
-              </Text>
-              <TextInput
-                style={styles.outlineInput}
-                value={deleteConfirm}
-                onChangeText={setDeleteConfirm}
-                placeholder="Delete"
-                placeholderTextColor={Colors.textTertiary}
-                autoCapitalize="none"
-              />
-              <DialogFooter>
-                <Button
-                  title="Cancel"
-                  variant="danger"
-                  onPress={() => {
-                    setDeleteTarget(null);
-                    setDeleteConfirm("");
-                  }}
-                  size="small"
-                />
-                <Button
-                  title="Delete"
-                  onPress={async () => {
-                    await removeQuestion({ id: deleteTarget._id });
-                    setDeleteTarget(null);
-                    setDeleteConfirm("");
-                  }}
-                  disabled={deleteConfirm !== "Delete"}
-                  size="small"
-                />
-              </DialogFooter>
-            </DialogCard>
-          </DialogOverlay>
-        ) : null}
       </>
     );
 }
@@ -482,7 +470,7 @@ function WebQuestionSortRow({
         {...listeners}
         aria-label="Reorder question"
         style={{
-          width: 40,
+          width: 28,
           flexShrink: 0,
           display: "flex",
           alignItems: "center",
@@ -559,10 +547,14 @@ function NativeQuestionRow({
 }) {
   return (
     <View style={styles.nativeRow}>
+      {/* Up/down nudges only — a drag glyph that can't be dragged is a
+          false affordance on touch. */}
       <View style={styles.nativeReorder}>
         <Pressable
           onPress={onMoveUp}
           disabled={index === 0}
+          hitSlop={6}
+          accessibilityLabel="Move question up"
           style={[styles.nudge, index === 0 && styles.nudgeOff]}
         >
           <MaterialIcons
@@ -571,15 +563,11 @@ function NativeQuestionRow({
             color={index === 0 ? Colors.textTertiary : Colors.textSecondary}
           />
         </Pressable>
-        <MaterialIcons
-          name="drag-indicator"
-          size={20}
-          color={Colors.textTertiary}
-          style={{ opacity: 0.35 }}
-        />
         <Pressable
           onPress={onMoveDown}
           disabled={index >= total - 1}
+          hitSlop={6}
+          accessibilityLabel="Move question down"
           style={[styles.nudge, index >= total - 1 && styles.nudgeOff]}
         >
           <MaterialIcons
@@ -629,9 +617,11 @@ function ArchivedRow({
 const styles = StyleSheet.create({
   settingsCard: { maxHeight: Platform.OS === "web" ? ("90vh" as any) : 600 },
   // `flexShrink: 1` (RN default 0) lets the list give up height when the
-  // card is height-capped (native keyboard open) so the Close footer stays
-  // visible; content beyond that scrolls.
-  settingsScroll: { maxHeight: 360, flexGrow: 0, flexShrink: 1 },
+  // card is height-capped (native keyboard open, or the 600pt cap above)
+  // so the pinned Add affordance + Close footer stay visible; content
+  // beyond that scrolls. No fixed maxHeight — the card's cap drives it,
+  // so tall phones see more of the list.
+  settingsScroll: { flexGrow: 0, flexShrink: 1 },
   settingsBodyWeb: {
     maxHeight: 360,
     width: "100%",
@@ -661,37 +651,23 @@ const styles = StyleSheet.create({
   tabText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
   tabTextOn: { color: Colors.primary },
   tabTextDis: { color: Colors.textTertiary },
-  addForm: { marginTop: 12, gap: 8 },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: Colors.textSecondary,
-    marginBottom: 4,
-  },
-  outlineInput: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    color: Colors.text,
-    backgroundColor: Colors.surfaceContainer,
-    minHeight: 44,
-  },
+  // Pinned below the scroll region (never under the fold of a long list).
+  addForm: { marginTop: 12, flexShrink: 0 },
   addActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
     gap: 8,
-    marginTop: 4,
   },
   addQuestionBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     marginTop: 12,
+    paddingVertical: 6,
     alignSelf: "flex-start",
+    flexShrink: 0,
   },
-  addQuestionBtnText: { fontSize: 14, color: Colors.primary },
+  addQuestionBtnText: { fontSize: 14, fontWeight: "600", color: Colors.primary },
   nativeRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -700,7 +676,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.outlineVariant,
     gap: 8,
   },
-  nativeReorder: { width: 40, alignItems: "center" },
+  nativeReorder: { width: 28, alignItems: "center" },
   nudge: { padding: 2 },
   nudgeOff: { opacity: 0.35 },
   cellQuestion: { flex: 1, fontSize: 14, color: Colors.text, minWidth: 0 },
@@ -714,10 +690,4 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   iconHit: { padding: 8 },
-  deleteBody: { fontSize: 14, color: Colors.text, marginBottom: 8 },
-  deleteWarn: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    marginBottom: 12,
-  },
 });

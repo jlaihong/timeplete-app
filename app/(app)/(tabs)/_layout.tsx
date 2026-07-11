@@ -69,6 +69,10 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="reviews"
         options={{
+          // Hidden from the tab bar (reached via the drawer), but still
+          // needs a title — the header falls back to the lowercase route
+          // name ("reviews") without one.
+          title: "Reviews",
           href: null,
         }}
       />
