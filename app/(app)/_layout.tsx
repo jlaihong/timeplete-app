@@ -230,28 +230,42 @@ function buildStableGo(envRef: { current: DrawerGoEnv }): (href: Href) => void {
       }
     }
 
-    if (useReplace || useReplaceCrossGroup) {
-      expoRouter.replace(href);
-      if (typeof href === "string") {
-        logRouterInvoked(traceSeq, "replace");
-        traceRouterDispatched("replace", href);
+    const dispatchNavigation = () => {
+      if (useReplace || useReplaceCrossGroup) {
+        expoRouter.replace(href);
+        if (typeof href === "string") {
+          logRouterInvoked(traceSeq, "replace");
+          traceRouterDispatched("replace", href);
+        }
+      } else {
+        expoRouter.navigate(href);
+        if (typeof href === "string") {
+          logRouterInvoked(traceSeq, "navigate");
+          traceRouterDispatched("navigate", href);
+        }
       }
-    } else {
-      expoRouter.navigate(href);
-      if (typeof href === "string") {
-        logRouterInvoked(traceSeq, "navigate");
-        traceRouterDispatched("navigate", href);
+
+      flushExpoRouterNavigationQueue(navigationContainerRef);
+      if (traceSeq !== 0) {
+        traceSidebarClickFlushComplete(traceSeq);
       }
+    };
+
+    if (isDesktop) {
+      dispatchNavigation();
+      return;
     }
 
-    flushExpoRouterNavigationQueue(navigationContainerRef);
-    if (traceSeq !== 0) {
-      traceSidebarClickFlushComplete(traceSeq);
-    }
-
-    if (!isDesktop) {
-      navigation.closeDrawer();
-    }
+    // MOBILE ORDERING MATTERS: close the drawer BEFORE dispatching the
+    // navigation. The flushed dispatch mounts the destination screen
+    // synchronously (hundreds of ms of JS for heavy tabs), and when
+    // `closeDrawer()` ran after it, the drawer sat frozen for that whole
+    // render before retracting — the perceived "half second delay".
+    // Closing first + deferring the dispatch one frame lets the retract
+    // animation start (and, on native, run on the UI thread) while React
+    // builds the new screen.
+    navigation.closeDrawer();
+    requestAnimationFrame(dispatchNavigation);
   };
 }
 
