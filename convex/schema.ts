@@ -260,6 +260,13 @@ export default defineSchema({
     timeZone: v.string(),
     startTime: v.number(),
     /**
+     * Long-running-timer check-ins: highest elapsed-ms checkpoint (2h, 4h,
+     * ... 22h) the user confirmed "yes, still working" for. The client
+     * shows the check-in popup whenever the elapsed time crosses a
+     * checkpoint above this value. Absent (0) until the first Yes.
+     */
+    acknowledgedUpToMs: v.optional(v.number()),
+    /**
      * Legacy anchor fields from an earlier timer pipeline; no longer written.
      * Cleared on `timers.adjust`. Wall clock for UI + persistence is derived
      * only from `startTime` + `timeZone`.
@@ -270,6 +277,28 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_legacy", ["legacyId"]),
+
+  /**
+   * A timer that hit the 24h cap and was auto-stopped by the
+   * `autoStopLongTimers` cron WITHOUT logging any time. The elapsed
+   * period is held here for review: next time the user opens the app,
+   * the check-in gate shows the duration screen so they decide what
+   * (if anything) to log. Resolved rows are deleted.
+   */
+  pendingTimerReviews: defineTable({
+    userId: v.id("users"),
+    taskId: v.optional(v.id("tasks")),
+    trackableId: v.optional(v.id("trackables")),
+    timeZone: v.string(),
+    /** Original timer start (epoch ms). */
+    startTime: v.number(),
+    /** When the cron auto-stopped it (epoch ms). */
+    stoppedAtMs: v.number(),
+    /** Display name snapshot so the review screen has a title even if the task/trackable was renamed/deleted. */
+    displayTitle: v.optional(v.string()),
+    /** Carried over from the timer for duration pre-fill. */
+    acknowledgedUpToMs: v.optional(v.number()),
+  }).index("by_user", ["userId"]),
 
   trackables: defineTable({
     name: v.string(),

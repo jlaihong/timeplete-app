@@ -31,6 +31,7 @@ import type * as _helpers_trackableLifetime from "../_helpers/trackableLifetime.
 import type * as _helpers_wallClockTimeZone from "../_helpers/wallClockTimeZone.js";
 import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
+import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as listSections from "../listSections.js";
 import type * as lists from "../lists.js";
@@ -78,6 +79,7 @@ declare const fullApi: ApiFromModules<{
   "_helpers/wallClockTimeZone": typeof _helpers_wallClockTimeZone;
   analytics: typeof analytics;
   auth: typeof auth;
+  crons: typeof crons;
   http: typeof http;
   listSections: typeof listSections;
   lists: typeof lists;

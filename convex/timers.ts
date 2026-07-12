@@ -1,4 +1,4 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import {
@@ -128,6 +128,9 @@ export const adjust = mutation({
 
     await ctx.db.patch(timer._id, {
       startTime: start,
+      // Elapsed time changed, so confirmed check-in checkpoints no longer
+      // line up — recalibrate against the new start.
+      acknowledgedUpToMs: undefined,
       calendarStartDayYYYYMMDD: undefined,
       calendarStartTimeHHMM: undefined,
     });
@@ -146,95 +149,274 @@ export const adjust = mutation({
   },
 });
 
+/** Elapsed-time cap: timers running this long are auto-stopped for review. */
+export const TIMER_AUTO_STOP_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Insert the ACTUAL time window (+ derived counters) for a finished timer
+ * period. Shared by normal stop (`finalizeTimer`, duration = now − start),
+ * the check-in "No" flow (`stopWithDuration`, user-edited start/duration)
+ * and the 24h auto-stop review (`resolvePendingReview`).
+ */
+async function insertTimerWindow(
+  ctx: any,
+  source: {
+    userId: any;
+    taskId?: any;
+    trackableId?: any;
+    timeZone?: string;
+    startTime: number;
+  },
+  durationSeconds: number,
+): Promise<void> {
+  if (durationSeconds <= 0) return;
+
+  const tz =
+    typeof source.timeZone === "string" && source.timeZone.trim() !== ""
+      ? source.timeZone.trim()
+      : "UTC";
+  const wall = wallClockInTimeZone(source.startTime, tz);
+  const { startDayYYYYMMDD: day, startTimeHHMM } = wall;
+
+  let snapshotTrackableId: any = source.trackableId;
+  if (source.taskId && !snapshotTrackableId) {
+    const task = await ctx.db.get(source.taskId);
+    const links = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_user", (q: any) => q.eq("userId", source.userId))
+      .collect();
+    const listIdToTrackableId = buildListIdToTrackableId(links);
+    snapshotTrackableId = resolveSnapshotTrackableIdForTask({
+      task: task
+        ? { trackableId: task.trackableId, listId: task.listId }
+        : null,
+      listIdToTrackableId,
+    });
+  }
+
+  const twId = await ctx.db.insert("timeWindows", {
+    startTimeHHMM,
+    startDayYYYYMMDD: day,
+    startTimeEpochMs: source.startTime,
+    durationSeconds,
+    userId: source.userId,
+    budgetType: "ACTUAL" as const,
+    activityType: source.taskId ? ("TASK" as const) : ("TRACKABLE" as const),
+    taskId: source.taskId,
+    trackableId: snapshotTrackableId,
+    timeZone: tz,
+    isRecurringInstance: false,
+    source: "timer" as const,
+  });
+
+  // Keep `task.timeSpentInSecondsUnallocated` aligned with the row
+  // we just inserted so the home/list views can serve the total
+  // straight off the task document (no per-task `timeWindows` scan).
+  await onTimeWindowInserted(ctx, {
+    taskId: source.taskId ?? undefined,
+    activityType: source.taskId ? ("TASK" as const) : ("TRACKABLE" as const),
+    budgetType: "ACTUAL" as const,
+    durationSeconds,
+  });
+  // Mirror the lifetime totals on the trackable so `getGoalDetails`
+  // can serve all-time numbers off the row (fix #1).
+  if (snapshotTrackableId) {
+    await onAttributedWindowInserted(ctx, {
+      trackableId: snapshotTrackableId,
+      durationSeconds,
+      startDayYYYYMMDD: day,
+    });
+  }
+
+  const inserted = await ctx.db.get(twId);
+  console.log(
+    JSON.stringify({
+      tag: "timers.finalize.insertedTimeWindow",
+      timeWindowId: twId,
+      row: inserted,
+    }),
+  );
+}
+
 async function finalizeTimer(ctx: any, timer: any): Promise<number> {
   const now = Date.now();
   const effectiveStart = Math.min(timer.startTime, now);
   const elapsed = Math.max(0, Math.floor((now - effectiveStart) / 1000));
 
-  const tz =
-    typeof timer.timeZone === "string" && timer.timeZone.trim() !== ""
-      ? timer.timeZone.trim()
-      : "UTC";
-
-  const wall = wallClockInTimeZone(timer.startTime, tz);
   console.log(
     JSON.stringify({
       tag: "timers.finalizeTimer",
       timerId: timer._id,
       startTimeEpochMs: timer.startTime,
-      startTimeIso: new Date(timer.startTime).toISOString(),
       serverNowEpochMs: now,
-      serverNowIso: new Date(now).toISOString(),
-      timeZoneIANA: tz,
-      derivedStartDayYYYYMMDD: wall.startDayYYYYMMDD,
-      derivedStartTimeHHMM: wall.startTimeHHMM,
       elapsedSeconds: elapsed,
     }),
   );
 
-  if (elapsed > 0) {
-    const { startDayYYYYMMDD: day, startTimeHHMM } = wall;
-
-    let snapshotTrackableId: any = timer.trackableId;
-    if (timer.taskId && !snapshotTrackableId) {
-      const task = await ctx.db.get(timer.taskId);
-      const links = await ctx.db
-        .query("listTrackableLinks")
-        .withIndex("by_user", (q: any) => q.eq("userId", timer.userId))
-        .collect();
-      const listIdToTrackableId = buildListIdToTrackableId(links);
-      snapshotTrackableId = resolveSnapshotTrackableIdForTask({
-        task: task
-          ? { trackableId: task.trackableId, listId: task.listId }
-          : null,
-        listIdToTrackableId,
-      });
-    }
-
-    const twId = await ctx.db.insert("timeWindows", {
-      startTimeHHMM,
-      startDayYYYYMMDD: day,
-      startTimeEpochMs: timer.startTime,
-      durationSeconds: elapsed,
-      userId: timer.userId,
-      budgetType: "ACTUAL" as const,
-      activityType: timer.taskId ? ("TASK" as const) : ("TRACKABLE" as const),
-      taskId: timer.taskId,
-      trackableId: snapshotTrackableId,
-      timeZone: tz,
-      isRecurringInstance: false,
-      source: "timer" as const,
-    });
-
-    // Keep `task.timeSpentInSecondsUnallocated` aligned with the row
-    // we just inserted so the home/list views can serve the total
-    // straight off the task document (no per-task `timeWindows` scan).
-    await onTimeWindowInserted(ctx, {
-      taskId: timer.taskId ?? undefined,
-      activityType: timer.taskId ? ("TASK" as const) : ("TRACKABLE" as const),
-      budgetType: "ACTUAL" as const,
-      durationSeconds: elapsed,
-    });
-    // Mirror the lifetime totals on the trackable so `getGoalDetails`
-    // can serve all-time numbers off the row (fix #1).
-    if (snapshotTrackableId) {
-      await onAttributedWindowInserted(ctx, {
-        trackableId: snapshotTrackableId,
-        durationSeconds: elapsed,
-        startDayYYYYMMDD: day,
-      });
-    }
-
-    const inserted = await ctx.db.get(twId);
-    console.log(
-      JSON.stringify({
-        tag: "timers.finalize.insertedTimeWindow",
-        timeWindowId: twId,
-        row: inserted,
-      }),
-    );
-  }
-
+  await insertTimerWindow(ctx, timer, elapsed);
   await ctx.db.delete(timer._id);
   return elapsed;
 }
+
+/**
+ * Check-in "Yes, still working": remember the confirmed checkpoint so the
+ * popup doesn't re-appear until the NEXT 2h boundary is crossed.
+ */
+export const acknowledgeCheckpoint = mutation({
+  args: { checkpointMs: v.number() },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const timer = await ctx.db
+      .query("taskTimers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+    if (!timer) return null;
+
+    const elapsed = Math.max(0, Date.now() - timer.startTime);
+    const next = Math.max(
+      timer.acknowledgedUpToMs ?? 0,
+      Math.min(Math.max(0, args.checkpointMs), elapsed),
+    );
+    await ctx.db.patch(timer._id, { acknowledgedUpToMs: next });
+    return null;
+  },
+});
+
+/**
+ * Check-in "No, I stopped earlier": stop the running timer and log the
+ * period the user actually worked — an edited start instant plus an
+ * explicit duration — instead of start → now.
+ */
+export const stopWithDuration = mutation({
+  args: {
+    startTimeEpochMs: v.number(),
+    durationSeconds: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const timer = await ctx.db
+      .query("taskTimers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+    if (!timer) throw new Error("No active timer");
+
+    const now = Date.now();
+    let start = args.startTimeEpochMs;
+    if (!Number.isFinite(start)) throw new Error("Invalid start time");
+    if (start > now) start = now;
+    const duration = Math.max(
+      0,
+      Math.min(
+        Math.floor(args.durationSeconds),
+        Math.floor(TIMER_AUTO_STOP_MS / 1000),
+      ),
+    );
+
+    await insertTimerWindow(ctx, { ...timer, startTime: start }, duration);
+    await ctx.db.delete(timer._id);
+    return { loggedSeconds: duration };
+  },
+});
+
+/** Oldest unresolved 24h auto-stop held for the user's review, if any. */
+export const getPendingReview = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return null;
+    return await ctx.db
+      .query("pendingTimerReviews")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+  },
+});
+
+/**
+ * Resolve a 24h auto-stop: log the user-confirmed period (duration 0 =
+ * log nothing / discard) and clear the pending row.
+ */
+export const resolvePendingReview = mutation({
+  args: {
+    pendingId: v.id("pendingTimerReviews"),
+    startTimeEpochMs: v.number(),
+    durationSeconds: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const pending = await ctx.db.get(args.pendingId);
+    if (!pending || pending.userId !== user._id) {
+      throw new Error("Pending review not found");
+    }
+
+    let start = args.startTimeEpochMs;
+    if (!Number.isFinite(start)) throw new Error("Invalid start time");
+    if (start > pending.stoppedAtMs) start = pending.stoppedAtMs;
+    const duration = Math.max(
+      0,
+      Math.min(
+        Math.floor(args.durationSeconds),
+        Math.floor(TIMER_AUTO_STOP_MS / 1000),
+      ),
+    );
+
+    await insertTimerWindow(
+      ctx,
+      {
+        userId: pending.userId,
+        taskId: pending.taskId,
+        trackableId: pending.trackableId,
+        timeZone: pending.timeZone,
+        startTime: start,
+      },
+      duration,
+    );
+    await ctx.db.delete(pending._id);
+    return { loggedSeconds: duration };
+  },
+});
+
+/**
+ * Cron target: stop timers that have been running for 24h+ WITHOUT
+ * logging anything — park them in `pendingTimerReviews` so the owner
+ * decides what to log next time they open the app.
+ *
+ * Scans the whole table: at most one row per user with a live timer,
+ * so this stays tiny.
+ */
+export const autoStopLongTimers = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const timers = await ctx.db.query("taskTimers").collect();
+    for (const timer of timers) {
+      if (now - timer.startTime < TIMER_AUTO_STOP_MS) continue;
+
+      const { displayTitle } = await resolveActiveTimerCalendarDisplay(
+        ctx,
+        timer.userId,
+        timer,
+      );
+      await ctx.db.insert("pendingTimerReviews", {
+        userId: timer.userId,
+        taskId: timer.taskId,
+        trackableId: timer.trackableId,
+        timeZone: timer.timeZone,
+        startTime: timer.startTime,
+        stoppedAtMs: now,
+        displayTitle: displayTitle ?? undefined,
+        acknowledgedUpToMs: timer.acknowledgedUpToMs,
+      });
+      await ctx.db.delete(timer._id);
+      console.log(
+        JSON.stringify({
+          tag: "timers.autoStopLongTimers.stopped",
+          timerId: timer._id,
+          userId: timer.userId,
+          startTimeEpochMs: timer.startTime,
+          elapsedMs: now - timer.startTime,
+        }),
+      );
+    }
+    return null;
+  },
+});
