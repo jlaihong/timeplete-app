@@ -13,6 +13,7 @@ import {
   TextInput,
   Platform,
   Alert,
+  Pressable,
   useWindowDimensions,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
@@ -33,9 +34,13 @@ import {
   type ReviewFrequency,
 } from "../../lib/reviewParity";
 import { useAuth } from "../../hooks/useAuth";
+import { AnswerEditorSheet } from "../reviews/AnswerEditorSheet";
 import { UnsavedReviewChangesDialog } from "./UnsavedReviewChangesDialog";
 
 type ParentTab = Exclude<ReviewFrequency, "DAILY">;
+
+/** Native swaps inline answer inputs for the full-height editor sheet. */
+const useSheetEditing = Platform.OS !== "web";
 
 type ReflectDraft = { dirty: boolean; save: () => Promise<void> } | null;
 
@@ -58,7 +63,11 @@ export function ReviewReflectModal({
   onDraftStateChange?: (draft: ReflectDraft) => void;
 }) {
   const { profileReady } = useAuth();
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  // Side-by-side columns need real width for each column to be a usable
+  // reading/writing surface. Below the app's desktop breakpoint, show one
+  // full-width pane at a time behind a segmented toggle instead.
+  const isCompact = windowWidth < 768;
   const meta = useMemo(
     () => getReflectMeta(parentTab, canonicalReviewDate),
     [parentTab, canonicalReviewDate]
@@ -137,6 +146,18 @@ export function ReviewReflectModal({
   const [initialTexts, setInitialTexts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [unsavedDismissOpen, setUnsavedDismissOpen] = useState(false);
+  const [segment, setSegment] = useState<"past" | "current">("past");
+  const [editingQuestion, setEditingQuestion] = useState<{
+    id: string;
+    questionText: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    // Fresh open: start on the read-back pane and no editor sheet.
+    setSegment("past");
+    setEditingQuestion(null);
+  }, [visible]);
 
   useEffect(() => {
     if (!visible || !currentAnswers) return;
@@ -250,6 +271,112 @@ export function ReviewReflectModal({
   const childHeading = `${meta.childLabel} Reviews`;
   const currentHeading = `${meta.currentLabel} Review`;
 
+  // On compact the segmented toggle already names the pane, so the
+  // in-column headings are only rendered on desktop.
+  const childColumn = (
+    <ScrollView
+      style={[
+        styles.reflectColumn,
+        !isCompact && styles.reflectChildColumn,
+      ]}
+      contentContainerStyle={styles.columnPad}
+    >
+      {!isCompact ? (
+        <Text style={styles.columnHeading}>{childHeading}</Text>
+      ) : null}
+      {datesWithAnswers.map((date) => {
+        const answersForDate = childAnswersByDate.get(date);
+        if (!answersForDate || answersForDate.length === 0) return null;
+        return (
+          <View key={date} style={styles.dateGroup}>
+            <Text style={styles.dateHeading}>
+              {dateLabels.get(date) ?? date}
+            </Text>
+            {childQuestions.map((q) => {
+              const answer = getAnswerForQuestion(date, q._id);
+              if (!answer) return null;
+              return (
+                <View key={q._id} style={styles.qaPair}>
+                  <Text style={styles.questionLabel}>{q.questionText}</Text>
+                  <Text style={styles.answerText}>{answer}</Text>
+                </View>
+              );
+            })}
+          </View>
+        );
+      })}
+      {datesWithAnswers.length === 0 ? (
+        <Text style={styles.emptyState}>
+          No {meta.childLabel.toLowerCase()} reviews found for this period.
+        </Text>
+      ) : null}
+    </ScrollView>
+  );
+
+  const currentColumn = (
+    <KeyboardAwareScrollView
+      style={styles.reflectColumn}
+      contentContainerStyle={styles.columnPad}
+      keyboardShouldPersistTaps="handled"
+      bottomOffset={120}
+      // Hide the vertical scrollbar so it doesn't overlap inputs
+      // below (RN draws the indicator inside the viewport).
+      showsVerticalScrollIndicator={false}
+    >
+      {!isCompact ? (
+        <Text style={styles.columnHeading}>{currentHeading}</Text>
+      ) : null}
+      {displayCurrentQs.length === 0 ? (
+        <Text style={styles.emptyState}>
+          No questions configured for {meta.currentLabel.toLowerCase()}{" "}
+          reviews.
+        </Text>
+      ) : (
+        displayCurrentQs.map((q) => {
+          const answer = answerTexts[q._id] ?? "";
+          return (
+            <View key={q._id} style={styles.currentField}>
+              <Text style={styles.currentLabel}>{q.questionText}</Text>
+              {useSheetEditing ? (
+                <Pressable
+                  style={styles.currentPreview}
+                  onPress={() =>
+                    setEditingQuestion({
+                      id: q._id,
+                      questionText: q.questionText,
+                    })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={`Answer: ${q.questionText}`}
+                >
+                  {answer ? (
+                    <Text style={styles.answerText}>{answer}</Text>
+                  ) : (
+                    <Text style={styles.currentPlaceholder}>
+                      Tap to answer...
+                    </Text>
+                  )}
+                </Pressable>
+              ) : (
+                <TextInput
+                  style={styles.currentTextarea}
+                  value={answer}
+                  onChangeText={(t) =>
+                    setAnswerTexts((prev) => ({ ...prev, [q._id]: t }))
+                  }
+                  placeholder="Your answer..."
+                  placeholderTextColor={Colors.textTertiary}
+                  multiline
+                  textAlignVertical="top"
+                />
+              )}
+            </View>
+          );
+        })
+      )}
+    </KeyboardAwareScrollView>
+  );
+
   return (
     <>
       <DialogOverlay onBackdropPress={requestCloseMain} zIndex={2500}>
@@ -275,78 +402,44 @@ export function ReviewReflectModal({
                 : { height: Math.round(windowHeight * 0.7) },
             ]}
           >
-            <View style={styles.reflectColumns}>
-              <ScrollView
-                style={[styles.reflectColumn, styles.reflectChildColumn]}
-                contentContainerStyle={styles.columnPad}
-              >
-                <Text style={styles.columnHeading}>{childHeading}</Text>
-                {datesWithAnswers.map((date) => {
-                  const answersForDate = childAnswersByDate.get(date);
-                  if (!answersForDate || answersForDate.length === 0) return null;
-                  return (
-                    <View key={date} style={styles.dateGroup}>
-                      <Text style={styles.dateHeading}>
-                        {dateLabels.get(date) ?? date}
+            {isCompact ? (
+              <View style={styles.compactBody}>
+                <View style={styles.segmentTabs}>
+                  {(
+                    [
+                      { key: "past", label: childHeading },
+                      { key: "current", label: currentHeading },
+                    ] as const
+                  ).map((s) => (
+                    <Pressable
+                      key={s.key}
+                      style={[
+                        styles.segmentTab,
+                        segment === s.key && styles.segmentTabActive,
+                      ]}
+                      onPress={() => setSegment(s.key)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: segment === s.key }}
+                    >
+                      <Text
+                        style={[
+                          styles.segmentTabText,
+                          segment === s.key && styles.segmentTabTextActive,
+                        ]}
+                      >
+                        {s.label}
                       </Text>
-                      {childQuestions.map((q) => {
-                        const answer = getAnswerForQuestion(date, q._id);
-                        if (!answer) return null;
-                        return (
-                          <View key={q._id} style={styles.qaPair}>
-                            <Text style={styles.questionLabel}>
-                              {q.questionText}
-                            </Text>
-                            <Text style={styles.answerText}>{answer}</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  );
-                })}
-                {datesWithAnswers.length === 0 ? (
-                  <Text style={styles.emptyState}>
-                    No {meta.childLabel.toLowerCase()} reviews found for this
-                    period.
-                  </Text>
-                ) : null}
-              </ScrollView>
-
-              <KeyboardAwareScrollView
-                style={styles.reflectColumn}
-                contentContainerStyle={styles.columnPad}
-                keyboardShouldPersistTaps="handled"
-                bottomOffset={120}
-                // Hide the vertical scrollbar so it doesn't overlap inputs
-                // below (RN draws the indicator inside the viewport).
-                showsVerticalScrollIndicator={false}
-              >
-                <Text style={styles.columnHeading}>{currentHeading}</Text>
-                {displayCurrentQs.length === 0 ? (
-                  <Text style={styles.emptyState}>
-                    No questions configured for{" "}
-                    {meta.currentLabel.toLowerCase()} reviews.
-                  </Text>
-                ) : (
-                  displayCurrentQs.map((q) => (
-                    <View key={q._id} style={styles.currentField}>
-                      <Text style={styles.currentLabel}>{q.questionText}</Text>
-                      <TextInput
-                        style={styles.currentTextarea}
-                        value={answerTexts[q._id] ?? ""}
-                        onChangeText={(t) =>
-                          setAnswerTexts((prev) => ({ ...prev, [q._id]: t }))
-                        }
-                        placeholder="Your answer..."
-                        placeholderTextColor={Colors.textTertiary}
-                        multiline
-                        textAlignVertical="top"
-                      />
-                    </View>
-                  ))
-                )}
-              </KeyboardAwareScrollView>
-            </View>
+                    </Pressable>
+                  ))}
+                </View>
+                {segment === "past" ? childColumn : currentColumn}
+              </View>
+            ) : (
+              <View style={styles.reflectColumns}>
+                {childColumn}
+                {currentColumn}
+              </View>
+            )}
           </View>
 
           <DialogFooter>
@@ -366,6 +459,20 @@ export function ReviewReflectModal({
           </DialogFooter>
         </DialogCard>
       </DialogOverlay>
+
+      {editingQuestion ? (
+        <AnswerEditorSheet
+          questionText={editingQuestion.questionText}
+          initialText={answerTexts[editingQuestion.id] ?? ""}
+          onCancel={() => setEditingQuestion(null)}
+          onDone={(text) => {
+            setEditingQuestion(null);
+            // Draft only — the Reflect footer Save persists all answers,
+            // same as the inline inputs on web.
+            setAnswerTexts((prev) => ({ ...prev, [editingQuestion.id]: text }));
+          }}
+        />
+      ) : null}
 
       <UnsavedReviewChangesDialog
         visible={unsavedDismissOpen}
@@ -474,5 +581,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.text,
     backgroundColor: Colors.surfaceContainer,
+  },
+  currentPreview: {
+    minHeight: 56,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: Colors.surfaceContainer,
+  },
+  currentPlaceholder: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: Colors.textTertiary,
+  },
+  compactBody: {
+    flex: 1,
+    minHeight: 0,
+  },
+  segmentTabs: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 12,
+  },
+  segmentTab: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: Colors.surfaceVariant,
+    alignItems: "center",
+  },
+  segmentTabActive: {
+    backgroundColor: Colors.primary,
+  },
+  segmentTabText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  segmentTabTextActive: {
+    color: Colors.onPrimary,
   },
 });

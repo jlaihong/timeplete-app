@@ -12,6 +12,7 @@ import {
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { Card } from "../ui/Card";
@@ -24,10 +25,20 @@ import {
 } from "../../lib/dates";
 import { displayReviewQuestions } from "../../lib/reviewParity";
 import { ReviewQuestionsSettingsModal } from "../reviews/ReviewQuestionsSettingsModal";
+import { AnswerEditorSheet } from "../reviews/AnswerEditorSheet";
 import { ReviewReflectModal } from "../analytics/ReviewReflectModal";
 import { useAuth } from "../../hooks/useAuth";
 
 type Frequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
+
+/**
+ * Native uses tap-to-edit answer cards + a full-height `AnswerEditorSheet`
+ * instead of inline inputs: the soft keyboard covers most of a phone
+ * screen, so inline multiline editing leaves almost no visible writing
+ * surface. Each answer saves as soon as its editor is confirmed, so the
+ * explicit Save button (kept on web) isn't needed.
+ */
+const useSheetEditing = Platform.OS !== "web";
 
 interface ReviewPanelProps {
   title?: string;
@@ -42,6 +53,10 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [reflectOpen, setReflectOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState<{
+    id: Id<"reviewQuestions">;
+    questionText: string;
+  } | null>(null);
 
   const today = todayYYYYMMDD();
 
@@ -113,6 +128,29 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
     } finally {
       setSaving(false);
     }
+  };
+
+  /** Native sheet flow: persist one answer immediately on Done. */
+  const saveSingleAnswer = (
+    questionId: Id<"reviewQuestions">,
+    text: string,
+  ) => {
+    setEditingQuestion(null);
+    setAnswers((prev) => ({ ...prev, [questionId]: text }));
+    void bulkUpsert({
+      answers: [
+        {
+          reviewQuestionId: questionId,
+          answerText: text,
+          frequency,
+          dayUnderReview,
+        },
+      ],
+    }).catch((e) => {
+      const msg = e instanceof Error ? e.message : "Save failed";
+      if (Platform.OS === "web") window.alert(msg);
+      else Alert.alert("Save failed", msg);
+    });
   };
 
   const handleFrequencySwitch = (f: Frequency) => {
@@ -221,33 +259,69 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
           </Text>
         ) : (
           <>
-            {displayQs.map((q) => (
-              <Card key={q._id} style={styles.questionCard}>
-                <Text style={styles.questionText}>{q.questionText}</Text>
-                <TextInput
-                  style={styles.answerInput}
-                  value={answers[q._id] ?? ""}
-                  onChangeText={(text) => {
-                    setAnswers((prev) => ({ ...prev, [q._id]: text }));
-                    setIsDirty(true);
-                  }}
-                  placeholder="Your answer..."
-                  placeholderTextColor={Colors.textTertiary}
-                  multiline
-                  textAlignVertical="top"
-                />
-              </Card>
-            ))}
+            {displayQs.map((q) => {
+              const answer = answers[q._id] ?? "";
+              return (
+                <Card key={q._id} style={styles.questionCard}>
+                  <Text style={styles.questionText}>{q.questionText}</Text>
+                  {useSheetEditing ? (
+                    <Pressable
+                      style={styles.answerPreview}
+                      onPress={() =>
+                        setEditingQuestion({
+                          id: q._id,
+                          questionText: q.questionText,
+                        })
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={`Answer: ${q.questionText}`}
+                    >
+                      {answer ? (
+                        <Text style={styles.answerPreviewText}>{answer}</Text>
+                      ) : (
+                        <Text style={styles.answerPlaceholder}>
+                          Tap to answer...
+                        </Text>
+                      )}
+                    </Pressable>
+                  ) : (
+                    <TextInput
+                      style={styles.answerInput}
+                      value={answer}
+                      onChangeText={(text) => {
+                        setAnswers((prev) => ({ ...prev, [q._id]: text }));
+                        setIsDirty(true);
+                      }}
+                      placeholder="Your answer..."
+                      placeholderTextColor={Colors.textTertiary}
+                      multiline
+                      textAlignVertical="top"
+                    />
+                  )}
+                </Card>
+              );
+            })}
 
-            <Button
-              title={saving ? "Saving..." : "Save"}
-              onPress={handleSave}
-              disabled={saving}
-              variant="primary"
-            />
+            {!useSheetEditing && (
+              <Button
+                title={saving ? "Saving..." : "Save"}
+                onPress={handleSave}
+                disabled={saving}
+                variant="primary"
+              />
+            )}
           </>
         )}
       </KeyboardAwareScrollView>
+
+      {editingQuestion ? (
+        <AnswerEditorSheet
+          questionText={editingQuestion.questionText}
+          initialText={answers[editingQuestion.id] ?? ""}
+          onCancel={() => setEditingQuestion(null)}
+          onDone={(text) => saveSingleAnswer(editingQuestion.id, text)}
+        />
+      ) : null}
 
       <ReviewQuestionsSettingsModal
         visible={settingsOpen}
@@ -347,5 +421,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.text,
     backgroundColor: Colors.surfaceContainer,
+  },
+  answerPreview: {
+    minHeight: 56,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: Colors.surfaceContainer,
+  },
+  answerPreviewText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: Colors.text,
+  },
+  answerPlaceholder: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: Colors.textTertiary,
   },
 });
