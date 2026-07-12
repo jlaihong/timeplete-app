@@ -26,7 +26,6 @@ import {
   addDays,
   formatDisplayDate,
   isToday,
-  formatSecondsAsHM,
   getDaysInRange,
 } from "../../lib/dates";
 import { useTimer } from "../../hooks/useTimer";
@@ -35,9 +34,8 @@ import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
 import { SwipeableTaskRow } from "../tasks/SwipeableTaskRow";
-import { LiveElapsedText } from "../timer/LiveElapsedText";
-import { EditTimeSpentDialog } from "../tasks/EditTimeSpentDialog";
-import { applySetTimeSpentOptimisticUpdate } from "../../lib/setTimeSpentOptimisticUpdate";
+import { TaskTimeSpentButton } from "../tasks/TaskTimeSpentButton";
+import { useTaskTimeSpentEditor } from "../tasks/useTaskTimeSpentEditor";
 import { Id } from "../../convex/_generated/dataModel";
 
 const LOAD_MORE_DAYS = 7;
@@ -152,26 +150,13 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const deleteTask = useTaskDeleteMutation();
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
-  // Tap-to-edit time spent (parity with web's `DurationPickerDesktop`) —
-  // same mutation + optimistic update as `DesktopTaskList`.
-  const setTimeSpentMutation = useMutation(
-    api.tasks.setTimeSpent,
-  ).withOptimisticUpdate((localStore, args) => {
-    applySetTimeSpentOptimisticUpdate(localStore, {
-      taskId: args.taskId,
-      timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated,
-    });
-  });
+  // Tap-to-edit time spent — ALL task surfaces share this hook so the
+  // mutation, optimistic update, and dialog behave identically.
+  const { openTimeSpentEditor, timeSpentDialog } = useTaskTimeSpentEditor();
   const timer = useTimer();
 
   const [showCompleted, setShowCompleted] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  /** Task whose time-spent is being edited in `EditTimeSpentDialog`. */
-  const [editTimeSpentTask, setEditTimeSpentTask] = useState<{
-    id: Id<"tasks">;
-    name: string;
-    seconds: number;
-  } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
   );
@@ -321,19 +306,6 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const handleLoadMore = useCallback(() => {
     setVisibleDays((d) => d + LOAD_MORE_DAYS);
   }, []);
-
-  const handleSaveTimeSpent = useCallback(
-    async (taskId: Id<"tasks">, newSeconds: number) => {
-      await setTimeSpentMutation({
-        taskId,
-        timeSpentInSecondsUnallocated: Math.max(0, Math.floor(newSeconds)),
-        // Mirrors the optimistic update so the wall-clock slice the
-        // server inserts matches what the cache already shows.
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      });
-    },
-    [setTimeSpentMutation]
-  );
 
   /**
    * Flattened row model for the native single-list drag implementation.
@@ -527,15 +499,6 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
     };
   }, [handleDrop]);
 
-  const formatElapsed = (seconds: number) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0)
-      return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-    return `${m}:${String(s).padStart(2, "0")}`;
-  };
-
   const setDragAttrs = useCallback(
     (node: any, taskId: string, day: string, index: number) => {
       if (!isWeb || !node) return;
@@ -658,34 +621,14 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                 )}
                 {/* Tap-to-edit time spent (web parity: DurationPickerDesktop).
                     Read-only while the timer drives the value. */}
-                <TouchableOpacity
-                  disabled={isTimerActive}
-                  onPress={(e) => {
-                    e.stopPropagation?.();
-                    setEditTimeSpentTask({
-                      id: task._id,
-                      name: task.name,
-                      seconds: timeSpent,
-                    });
-                  }}
-                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
-                  accessibilityLabel={`Edit time spent on ${task.name}`}
-                >
-                  {isTimerActive ? (
-                    // Leaf owns the 1s tick so the whole list doesn't
-                    // re-render every second while a timer runs.
-                    <LiveElapsedText
-                      startTime={timer.startTime}
-                      baseSeconds={timeSpent}
-                      format={formatElapsed}
-                      style={[styles.duration, styles.durationActive]}
-                    />
-                  ) : (
-                    <Text style={styles.duration}>
-                      {formatSecondsAsHM(timeSpent)}
-                    </Text>
-                  )}
-                </TouchableOpacity>
+                <TaskTimeSpentButton
+                  taskId={task._id}
+                  taskName={task.name}
+                  seconds={timeSpent}
+                  isTicking={isTimerActive}
+                  timerStartTime={timer.startTime}
+                  onEdit={openTimeSpentEditor}
+                />
               </View>
             </TouchableOpacity>
 
@@ -797,6 +740,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       onSelectTask,
       toggleComplete,
       handleToggleTimer,
+      openTimeSpentEditor,
       setDragAttrs,
       deleteTask,
     ],
@@ -1189,14 +1133,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         </TouchableOpacity>
       )}
 
-      {editTimeSpentTask && (
-        <EditTimeSpentDialog
-          taskName={editTimeSpentTask.name}
-          initialSeconds={editTimeSpentTask.seconds}
-          onClose={() => setEditTimeSpentTask(null)}
-          onSave={(secs) => handleSaveTimeSpent(editTimeSpentTask.id, secs)}
-        />
-      )}
+      {timeSpentDialog}
     </View>
   );
 }

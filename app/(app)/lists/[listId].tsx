@@ -3,7 +3,6 @@ import React, {
   useCallback,
   useMemo,
   useEffect,
-  useRef,
 } from "react";
 import {
   View,
@@ -30,14 +29,15 @@ import { SectionHeadingAddButton } from "../../../components/ui/SectionHeadingAd
 import { ListDialog } from "../../../components/lists/ListDialog";
 import { AddTaskSheet } from "../../../components/tasks/AddTaskSheet";
 import { TaskDetailSheet } from "../../../components/tasks/TaskDetailSheet";
+import { TaskTimeSpentButton } from "../../../components/tasks/TaskTimeSpentButton";
+import { useTaskTimeSpentEditor } from "../../../components/tasks/useTaskTimeSpentEditor";
 import {
   type TaskRowMeta,
   type TaskRowTask,
 } from "../../../components/tasks/TaskRowDesktop";
 import { ListDetailWebDnd } from "../../../components/lists/ListDetailWebDnd";
 import { useTimer } from "../../../hooks/useTimer";
-import { LiveElapsedText } from "../../../components/timer/LiveElapsedText";
-import { todayYYYYMMDD, formatSecondsAsHM } from "../../../lib/dates";
+import { todayYYYYMMDD } from "../../../lib/dates";
 import { normalizeListMembersQuery } from "../../../lib/listMembersQuery";
 import type { Id, Doc } from "../../../convex/_generated/dataModel";
 import { useAuth } from "../../../hooks/useAuth";
@@ -51,8 +51,6 @@ import {
   taskCompletedForFilters,
   taskMatchesUserFilter,
 } from "../../../lib/taskFilters";
-import { applySetTimeSpentOptimisticUpdate } from "../../../lib/setTimeSpentOptimisticUpdate";
-import { calendarGridIANAZoneForManualEvents } from "../../../lib/calendarGridTimeZone";
 import { useTaskDeleteMutation } from "../../../hooks/useTaskDeleteMutation";
 import { useRegisterEscapeClose } from "../../../hooks/useRegisterEscapeClose";
 import { useVisualViewportHeight } from "../../../hooks/useVisualViewportHeight";
@@ -256,25 +254,10 @@ export default function ListDetailScreen() {
   // in one place used across every task surface.
   const deleteTaskMutation = useTaskDeleteMutation();
   const timer = useTimer();
-  const clientCalendarIANAZone = useMemo(
-    () =>
-      calendarGridIANAZoneForManualEvents({
-        isTimerRunning: timer.isRunning,
-        canonicalTimerIANAZone: timer.canonicalTimeZone,
-      }),
-    [timer.isRunning, timer.canonicalTimeZone],
-  );
-  const optimisticGridTzRef = useRef(clientCalendarIANAZone);
-  optimisticGridTzRef.current = clientCalendarIANAZone;
-  const setTimeSpentMutation = useMutation(
-    api.tasks.setTimeSpent,
-  ).withOptimisticUpdate((localStore, args) => {
-    applySetTimeSpentOptimisticUpdate(localStore, {
-      taskId: args.taskId,
-      timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated,
-      optimisticGridIANAZone: optimisticGridTzRef.current,
-    });
-  });
+  // Tap-to-edit time spent — ALL task surfaces share this hook so the
+  // mutation, optimistic update, and dialog behave identically.
+  const { openTimeSpentEditor, closeTimeSpentEditor, saveTimeSpent, timeSpentDialog } =
+    useTaskTimeSpentEditor();
   const upsertSection = useMutation(api.listSections.upsert);
   const moveBetweenSections = useMutation(api.tasks.moveBetweenSections);
 
@@ -313,13 +296,14 @@ export default function ListDetailScreen() {
     setTaskLimit(2500);
     setCollapsedSectionKeys(() => new Set());
     setSelectedTaskId(null);
+    closeTimeSpentEditor();
     setContextMenu(null);
     setAddTaskSectionId(null);
     setShowAddSection(false);
     setNewSectionName("");
     setShowEditDialog(false);
     setFilterMenuOpen(false);
-  }, [listId]);
+  }, [listId, closeTimeSpentEditor]);
 
   useEffect(() => {
     if (!isWeb || !contextMenu) return;
@@ -548,21 +532,6 @@ export default function ListDetailScreen() {
     [timer],
   );
 
-  const handleSetTimeSpent = useCallback(
-    async (taskId: Id<"tasks">, newSeconds: number) => {
-      const safe = Math.max(0, Math.floor(newSeconds));
-      await setTimeSpentMutation({
-        taskId,
-        timeSpentInSecondsUnallocated: safe,
-        // Must mirror the optimistic update above so the wall-clock
-        // slice the server inserts lines up byte-for-byte with what
-        // the cache already shows.
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      });
-    },
-    [setTimeSpentMutation],
-  );
-
   const handleDelete = useCallback(
     (taskId: Id<"tasks">) => {
       const task = allTasksInPage.find((t) => t._id === taskId);
@@ -700,19 +669,17 @@ export default function ListDetailScreen() {
                   />
                 </TouchableOpacity>
               )}
-              {isTicking ? (
-                // Leaf owns the 1s tick — see note on `useTimerElapsed`.
-                <LiveElapsedText
-                  startTime={timer.startTime}
-                  baseSeconds={timeSpent}
-                  format={formatSecondsAsHM}
-                  style={[styles.duration, styles.durationActive]}
-                />
-              ) : (
-                <Text style={styles.duration}>
-                  {formatSecondsAsHM(timeSpent)}
-                </Text>
-              )}
+              {/* Tap-to-edit time spent — the SAME control as the home
+                  screen's TaskList. Read-only while the timer drives the
+                  value. */}
+              <TaskTimeSpentButton
+                taskId={task._id}
+                taskName={task.name}
+                seconds={timeSpent}
+                isTicking={isTicking}
+                timerStartTime={timer.startTime}
+                onEdit={openTimeSpentEditor}
+              />
             </View>
           </TouchableOpacity>
           {(trackable ||
@@ -1034,7 +1001,7 @@ export default function ListDetailScreen() {
               }
             }}
             onToggleTimer={handleToggleTimer}
-            onSetTimeSpent={handleSetTimeSpent}
+            onSetTimeSpent={saveTimeSpent}
             onRequestContextMenu={openContextMenu}
             moveBetweenSections={async (args) => {
               await moveBetweenSections(args);
@@ -1152,6 +1119,8 @@ export default function ListDetailScreen() {
           onClose={() => setSelectedTaskId(null)}
         />
       )}
+
+      {timeSpentDialog}
 
       {isWeb && contextMenu && (
         <ContextMenuPopover

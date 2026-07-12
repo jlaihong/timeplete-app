@@ -58,8 +58,7 @@ import {
   taskCompletedForFilters,
   taskMatchesUserFilter,
 } from "../../lib/taskFilters";
-import { applySetTimeSpentOptimisticUpdate } from "../../lib/setTimeSpentOptimisticUpdate";
-import { calendarGridIANAZoneForManualEvents } from "../../lib/calendarGridTimeZone";
+import { useTaskTimeSpentEditor } from "./useTaskTimeSpentEditor";
 import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
 
 const isWeb = Platform.OS === "web";
@@ -437,25 +436,9 @@ export function DesktopTaskList({
   const moveOnDay = useMutation(api.tasks.moveOnDay);
   const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
   const timer = useTimer();
-  const clientCalendarIANAZone = useMemo(
-    () =>
-      calendarGridIANAZoneForManualEvents({
-        isTimerRunning: timer.isRunning,
-        canonicalTimerIANAZone: timer.canonicalTimeZone,
-      }),
-    [timer.isRunning, timer.canonicalTimeZone],
-  );
-  const optimisticGridTzRef = useRef(clientCalendarIANAZone);
-  optimisticGridTzRef.current = clientCalendarIANAZone;
-  const setTimeSpentMutation = useMutation(
-    api.tasks.setTimeSpent,
-  ).withOptimisticUpdate((localStore, args) => {
-    applySetTimeSpentOptimisticUpdate(localStore, {
-      taskId: args.taskId,
-      timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated,
-      optimisticGridIANAZone: optimisticGridTzRef.current,
-    });
-  });
+  // Tap-to-edit time spent — ALL task surfaces share this hook so the
+  // mutation, optimistic update, and dialog behave identically.
+  const { saveTimeSpent } = useTaskTimeSpentEditor();
   const homeFilterScope = useMemo(() => ({ kind: "home" as const }), []);
   const {
     showCompleted,
@@ -739,20 +722,7 @@ export function DesktopTaskList({
     [deleteTaskMutation, tasks]
   );
 
-  const handleSetTimeSpent = useCallback(
-    async (taskId: Id<"tasks">, newSeconds: number) => {
-      const safe = Math.max(0, Math.floor(newSeconds));
-      await setTimeSpentMutation({
-        taskId,
-        timeSpentInSecondsUnallocated: safe,
-        // Must mirror the optimistic update above so the wall-clock
-        // slice the server inserts lines up byte-for-byte with what
-        // the cache already shows.
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      });
-    },
-    [setTimeSpentMutation]
-  );
+  const handleSetTimeSpent = saveTimeSpent;
 
   /* ───── DnD ─────
    * Sensors, the DndContext, the DragOverlay, and the custom collision
