@@ -13,6 +13,7 @@ import {
   TextInput,
   Platform,
   Alert,
+  useWindowDimensions,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useMutation, useQuery } from "convex/react";
@@ -57,6 +58,7 @@ export function ReviewReflectModal({
   onDraftStateChange?: (draft: ReflectDraft) => void;
 }) {
   const { profileReady } = useAuth();
+  const { height: windowHeight } = useWindowDimensions();
   const meta = useMemo(
     () => getReflectMeta(parentTab, canonicalReviewDate),
     [parentTab, canonicalReviewDate]
@@ -264,7 +266,13 @@ export function ReviewReflectModal({
           <View
             style={[
               styles.reflectContent,
-              Platform.OS === "web" && styles.reflectContentWeb,
+              // Web mirrors productivity-one's fixed 70vh content region.
+              // Native needs an explicit pixel height for the same reason:
+              // the columns inside use `flex: 1` (basis 0), so an auto-height
+              // parent collapses to 0 and `overflow: hidden` clips everything.
+              Platform.OS === "web"
+                ? styles.reflectContentWeb
+                : { height: Math.round(windowHeight * 0.7) },
             ]}
           >
             <View style={styles.reflectColumns}>
