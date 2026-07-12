@@ -22,6 +22,7 @@ import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useDrawerSelection } from "../../hooks/useDrawerSelection";
 import { TimerDisplay } from "../../components/timer/TimerDisplay";
 import { TimerCheckInGate } from "../../components/timer/TimerCheckInGate";
+import { TimerNotifications } from "../../components/timer/TimerNotifications";
 import {
   DesktopAppChromeProvider,
   DesktopAppTopBar,
@@ -559,6 +560,8 @@ export default function AppLayout() {
       </SafeAreaInsetsContext.Provider>
       {/* Long-running-timer check-ins — overlays every screen. */}
       <TimerCheckInGate />
+      {/* Reminder notifications for the check-ins (renders nothing). */}
+      <TimerNotifications />
       {overlayBlocked && (
         <View
           style={styles.bootstrapOverlay}

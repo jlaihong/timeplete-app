@@ -267,6 +267,13 @@ export default defineSchema({
      */
     acknowledgedUpToMs: v.optional(v.number()),
     /**
+     * Highest elapsed-ms checkpoint a reminder push was SENT for (see
+     * `timerNotifications.ts`). Separate from `acknowledgedUpToMs`: a push
+     * for 4h must not repeat, but the in-app popup still shows until the
+     * user actually answers.
+     */
+    notifiedUpToMs: v.optional(v.number()),
+    /**
      * Legacy anchor fields from an earlier timer pipeline; no longer written.
      * Cleared on `timers.adjust`. Wall clock for UI + persistence is derived
      * only from `startTime` + `timeZone`.

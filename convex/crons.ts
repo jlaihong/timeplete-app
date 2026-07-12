@@ -13,4 +13,14 @@ crons.interval(
   {},
 );
 
+// Remote "still working?" reminders for timers that crossed a 2h elapsed
+// boundary. 5-minute cadence keeps reminders close to the boundary; the
+// query is cheap (taskTimers holds at most one row per active user).
+crons.interval(
+  "timer check-in reminders",
+  { minutes: 5 },
+  internal.timerNotifications.sendDueReminders,
+  {},
+);
+
 export default crons;

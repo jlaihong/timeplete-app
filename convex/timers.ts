@@ -1,4 +1,5 @@
 import { query, mutation, internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import {
@@ -129,8 +130,11 @@ export const adjust = mutation({
     await ctx.db.patch(timer._id, {
       startTime: start,
       // Elapsed time changed, so confirmed check-in checkpoints no longer
-      // line up — recalibrate against the new start.
+      // line up — recalibrate against the new start. Clearing notifiedUpToMs
+      // also re-arms reminders; devices observing the new startTime cancel
+      // and reschedule their local notifications, then re-claim delivery.
       acknowledgedUpToMs: undefined,
+      notifiedUpToMs: undefined,
       calendarStartDayYYYYMMDD: undefined,
       calendarStartTimeHHMM: undefined,
     });
@@ -283,6 +287,28 @@ export const acknowledgeCheckpoint = mutation({
 });
 
 /**
+ * A native device scheduled LOCAL notifications for every remaining
+ * check-in boundary of the running timer (plus the 24h auto-stop one),
+ * so remote pushes for this run would be duplicates. Marks the timer
+ * fully notified; `timers.adjust` clears the flag when boundaries move.
+ */
+export const claimLocalNotificationDelivery = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireApprovedUser(ctx);
+    const timer = await ctx.db
+      .query("taskTimers")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+    if (!timer) return null;
+    if ((timer.notifiedUpToMs ?? 0) < TIMER_AUTO_STOP_MS) {
+      await ctx.db.patch(timer._id, { notifiedUpToMs: TIMER_AUTO_STOP_MS });
+    }
+    return null;
+  },
+});
+
+/**
  * Check-in "No, I stopped earlier": stop the running timer and log the
  * period the user actually worked — an edited start instant plus an
  * explicit duration — instead of start → now.
@@ -407,6 +433,14 @@ export const autoStopLongTimers = internalMutation({
         acknowledgedUpToMs: timer.acknowledgedUpToMs,
       });
       await ctx.db.delete(timer._id);
+      await ctx.scheduler.runAfter(
+        0,
+        internal.timerNotifications.sendAutoStopNotification,
+        {
+          userId: timer.userId,
+          displayTitle: displayTitle ?? "Timer",
+        },
+      );
       console.log(
         JSON.stringify({
           tag: "timers.autoStopLongTimers.stopped",
