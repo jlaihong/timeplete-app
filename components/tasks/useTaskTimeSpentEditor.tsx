@@ -8,6 +8,14 @@
  * directly from a screen — that's how the home page and the list pages
  * drifted apart in the past.
  *
+ * PERFORMANCE: the "which task is being edited" state lives inside a
+ * small host component (`TimeSpentEditorHost`) controlled through a
+ * ref, NOT inside the calling screen. If the hook held that state
+ * itself, every open/close would re-render the whole screen — on a
+ * list with hundreds of task rows that made the dialog visibly lag
+ * both opening and closing. With the host, open/close re-renders only
+ * the host itself.
+ *
  * Usage:
  *   const { openTimeSpentEditor, saveTimeSpent, timeSpentDialog } =
  *     useTaskTimeSpentEditor();
@@ -15,7 +23,14 @@
  *   // Web rows (DurationPickerDesktop): onDurationChanged={(s) => void saveTimeSpent(id, s)}
  *   // Render `timeSpentDialog` once at the end of the screen.
  */
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -29,6 +44,41 @@ export interface TimeSpentEditTarget {
   name: string;
   seconds: number;
 }
+
+interface TimeSpentEditorHostHandle {
+  open: (target: TimeSpentEditTarget) => void;
+  close: () => void;
+}
+
+/**
+ * Owns the open/closed dialog state so toggling it re-renders ONLY this
+ * component, not the (potentially huge) screen that mounted it.
+ */
+const TimeSpentEditorHost = forwardRef<
+  TimeSpentEditorHostHandle,
+  { onSave: (taskId: Id<"tasks">, newSeconds: number) => Promise<void> }
+>(function TimeSpentEditorHost({ onSave }, ref) {
+  const [editing, setEditing] = useState<TimeSpentEditTarget | null>(null);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      open: (target) => setEditing(target),
+      close: () => setEditing(null),
+    }),
+    [],
+  );
+
+  if (!editing) return null;
+  return (
+    <EditTimeSpentDialog
+      taskName={editing.name}
+      initialSeconds={editing.seconds}
+      onClose={() => setEditing(null)}
+      onSave={(secs) => onSave(editing.id, secs)}
+    />
+  );
+});
 
 export function useTaskTimeSpentEditor() {
   const timer = useTimer();
@@ -51,15 +101,20 @@ export function useTaskTimeSpentEditor() {
   const optimisticGridTzRef = useRef(clientCalendarIANAZone);
   optimisticGridTzRef.current = clientCalendarIANAZone;
 
-  const setTimeSpentMutation = useMutation(
-    api.tasks.setTimeSpent,
-  ).withOptimisticUpdate((localStore, args) => {
-    applySetTimeSpentOptimisticUpdate(localStore, {
-      taskId: args.taskId,
-      timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated,
-      optimisticGridIANAZone: optimisticGridTzRef.current,
-    });
-  });
+  const baseSetTimeSpent = useMutation(api.tasks.setTimeSpent);
+  // Memoized so `saveTimeSpent` keeps a stable identity across renders —
+  // safe because the optimistic closure reads the zone through a ref.
+  const setTimeSpentMutation = useMemo(
+    () =>
+      baseSetTimeSpent.withOptimisticUpdate((localStore, args) => {
+        applySetTimeSpentOptimisticUpdate(localStore, {
+          taskId: args.taskId,
+          timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated,
+          optimisticGridIANAZone: optimisticGridTzRef.current,
+        });
+      }),
+    [baseSetTimeSpent],
+  );
 
   const saveTimeSpent = useCallback(
     async (taskId: Id<"tasks">, newSeconds: number) => {
@@ -75,22 +130,19 @@ export function useTaskTimeSpentEditor() {
     [setTimeSpentMutation],
   );
 
-  const [editing, setEditing] = useState<TimeSpentEditTarget | null>(null);
+  const hostRef = useRef<TimeSpentEditorHostHandle>(null);
 
   const openTimeSpentEditor = useCallback((target: TimeSpentEditTarget) => {
-    setEditing(target);
+    hostRef.current?.open(target);
   }, []);
 
-  const closeTimeSpentEditor = useCallback(() => setEditing(null), []);
+  const closeTimeSpentEditor = useCallback(() => {
+    hostRef.current?.close();
+  }, []);
 
-  const timeSpentDialog = editing ? (
-    <EditTimeSpentDialog
-      taskName={editing.name}
-      initialSeconds={editing.seconds}
-      onClose={closeTimeSpentEditor}
-      onSave={(secs) => saveTimeSpent(editing.id, secs)}
-    />
-  ) : null;
+  const timeSpentDialog = (
+    <TimeSpentEditorHost ref={hostRef} onSave={saveTimeSpent} />
+  );
 
   return {
     openTimeSpentEditor,
