@@ -80,6 +80,9 @@ export function EditTimeSpentDialog({
           value={value}
           onChange={setValue}
           allowNone
+          // Empty is allowed here only as "clear to zero" — time spent
+          // isn't an optional field, so don't advertise it as such.
+          placeholder="hh:mm"
         />
         <DialogFooter>
           <Button

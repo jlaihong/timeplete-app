@@ -6,6 +6,13 @@ export interface DurationComboFieldProps {
   onChange: (hhmm: string) => void;
   /** Tracker dialog: allow empty duration (“None”). */
   allowNone: boolean;
+  /**
+   * Override the input placeholder. Defaults to "Optional — hh:mm" when
+   * `allowNone`, else "hh:mm" — callers where empty is allowed but the
+   * value isn't conceptually optional (e.g. editing time spent) can pass
+   * a plain "hh:mm".
+   */
+  placeholder?: string;
 }
 
 export interface DurationComboOption {

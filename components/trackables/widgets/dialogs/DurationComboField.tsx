@@ -25,6 +25,7 @@ export function DurationComboField({
   value,
   onChange,
   allowNone,
+  placeholder,
 }: DurationComboFieldProps) {
   const [open, setOpen] = useState(false);
   // Unlike web (where the dropdown is a type-ahead attached to the
@@ -86,7 +87,7 @@ export function DurationComboField({
           style={styles.comboInput}
           value={value}
           onChangeText={(t) => onChange(applyDurationHhmmMask(t))}
-          placeholder={allowNone ? "Optional — hh:mm" : "hh:mm"}
+          placeholder={placeholder ?? (allowNone ? "Optional — hh:mm" : "hh:mm")}
           placeholderTextColor={Colors.textTertiary}
           keyboardType="number-pad"
           autoCapitalize="none"

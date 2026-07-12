@@ -25,6 +25,7 @@ export function DurationComboField({
   value,
   onChange,
   allowNone,
+  placeholder,
 }: DurationComboFieldProps) {
   const [focused, setFocused] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(0);
@@ -214,7 +215,7 @@ export function DurationComboField({
             userNavigatedRef.current = false;
           },
           onBlur: hideDropdownSoon,
-          placeholder: allowNone ? "Optional — hh:mm" : "hh:mm",
+          placeholder: placeholder ?? (allowNone ? "Optional — hh:mm" : "hh:mm"),
           inputMode: "numeric",
           autoComplete: "off",
           "aria-label": label,
