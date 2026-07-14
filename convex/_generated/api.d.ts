@@ -33,6 +33,7 @@ import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
+import type * as lib_sendOtpEmail from "../lib/sendOtpEmail.js";
 import type * as listSections from "../listSections.js";
 import type * as lists from "../lists.js";
 import type * as pushTokens from "../pushTokens.js";
@@ -83,6 +84,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   crons: typeof crons;
   http: typeof http;
+  "lib/sendOtpEmail": typeof lib_sendOtpEmail;
   listSections: typeof listSections;
   lists: typeof lists;
   pushTokens: typeof pushTokens;

@@ -4,6 +4,7 @@ import {
   convexClient,
   crossDomainClient,
 } from "@convex-dev/better-auth/client/plugins";
+import { emailOTPClient } from "better-auth/client/plugins";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
@@ -20,6 +21,7 @@ if (!convexSiteUrl) {
 export const authClient = createAuthClient({
   baseURL: convexSiteUrl,
   plugins: [
+    emailOTPClient(),
     convexClient(),
     ...(Platform.OS === "web"
       ? [crossDomainClient()]

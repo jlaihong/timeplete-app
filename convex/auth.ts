@@ -4,7 +4,9 @@ import {
   crossDomain,
 } from "@convex-dev/better-auth/plugins";
 import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
+import { emailOTP } from "better-auth/plugins/email-otp";
 import { expo } from "@better-auth/expo";
+import { sendOtpEmail } from "./lib/sendOtpEmail";
 import { components } from "./_generated/api";
 import { DataModel } from "./_generated/dataModel";
 import { query } from "./_generated/server";
@@ -156,12 +158,24 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     database: authComponent.adapter(ctx),
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: false,
+      autoSignIn: false,
+      requireEmailVerification: true,
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      sendOnSignIn: true,
+      autoSignInAfterVerification: true,
     },
     plugins: [
       expo(),
       convex({ authConfig }),
       crossDomain({ siteUrl }),
+      emailOTP({
+        overrideDefaultEmailVerification: true,
+        async sendVerificationOTP({ email, otp, type }) {
+          await sendOtpEmail({ email, otp, type });
+        },
+      }),
     ],
   } satisfies BetterAuthOptions);
 };

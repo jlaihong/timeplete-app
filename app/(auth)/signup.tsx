@@ -33,9 +33,10 @@ export default function SignupScreen() {
     }
     setLoading(true);
     setError("");
+    const normalizedEmail = email.trim().toLowerCase();
     try {
       const { error: authError } = await authClient.signUp.email({
-        email,
+        email: normalizedEmail,
         password,
         name,
       });
@@ -43,7 +44,10 @@ export default function SignupScreen() {
         setError(authError.message ?? "Signup failed");
         return;
       }
-      router.replace("/(app)/(tabs)");
+      router.replace({
+        pathname: "/(auth)/verify-email",
+        params: { email: normalizedEmail },
+      });
     } catch (e: any) {
       setError(e.message ?? "Signup failed");
     } finally {

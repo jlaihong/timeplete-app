@@ -8,66 +8,149 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import { Link } from "expo-router";
+import { Link, router } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Card } from "../../components/ui/Card";
 import { Colors } from "../../constants/colors";
 import { authClient } from "../../lib/auth-client";
 
+type Step = "email" | "reset";
+
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState("");
-  const [step, setStep] = useState<"email" | "sent">("email");
+  const [otp, setOtp] = useState("");
+  const [password, setPassword] = useState("");
+  const [step, setStep] = useState<Step>("email");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleRequestReset = async () => {
-    if (!email) {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
       setError("Please enter your email");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      const { error: authError } = await authClient.forgetPassword({
-        email,
-        redirectTo: "/(auth)/login",
+      const { error: authError } = await authClient.emailOtp.requestPasswordReset({
+        email: normalizedEmail,
       });
       if (authError) {
-        setError(authError.message ?? "Failed to send reset email");
+        setError(authError.message ?? "Failed to send reset code");
         return;
       }
-      setStep("sent");
-    } catch (e: any) {
-      setError(
-        e.message ??
-          "Password reset requires an email sender (e.g. Resend) to be configured."
-      );
+      setEmail(normalizedEmail);
+      setStep("reset");
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : "Failed to send reset code";
+      setError(message);
     } finally {
       setLoading(false);
     }
   };
 
-  if (step === "sent") {
+  const handleResetPassword = async () => {
+    if (!otp || otp.length < 6) {
+      setError("Enter the 6-digit code from your email");
+      return;
+    }
+    if (!password || password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const { error: authError } = await authClient.emailOtp.resetPassword({
+        email,
+        otp: otp.trim(),
+        password,
+      });
+      if (authError) {
+        setError(authError.message ?? "Failed to reset password");
+        return;
+      }
+
+      const { error: signInError } = await authClient.signIn.email({
+        email,
+        password,
+      });
+      if (signInError) {
+        setError(
+          "Password updated, but sign-in failed. Please sign in with your new password.",
+        );
+        router.replace({
+          pathname: "/(auth)/login",
+          params: { email },
+        });
+        return;
+      }
+
+      router.replace("/(app)/(tabs)");
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error ? e.message : "Failed to reset password";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (step === "reset") {
     return (
-      <View style={[styles.container, styles.center]}>
-        <Card style={styles.card}>
-          <Text style={styles.title}>Check Your Email</Text>
-          <Text style={styles.subtitle}>
-            If an account exists for {email}, a password reset link has been
-            sent. Check your inbox and follow the link to reset your password.
-          </Text>
-          <Text style={styles.note}>
-            Note: If you haven't configured an email sender (e.g. Resend),
-            the email won't be delivered. This can be set up later.
-          </Text>
-          <Link href="/(auth)/login" asChild>
-            <TouchableOpacity style={styles.backLink}>
-              <Text style={styles.link}>Back to Sign In</Text>
-            </TouchableOpacity>
-          </Link>
-        </Card>
-      </View>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <KeyboardAwareScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          bottomOffset={80}
+        >
+          <Card style={styles.card}>
+            <Text style={styles.title}>Reset Password</Text>
+            <Text style={styles.subtitle}>
+              Enter the 6-digit code sent to {email}, then choose a new password.
+            </Text>
+
+            <Input
+              label="Verification code"
+              value={otp}
+              onChangeText={(value) =>
+                setOtp(value.replace(/\D/g, "").slice(0, 6))
+              }
+              placeholder="123456"
+              keyboardType="number-pad"
+              autoCapitalize="none"
+              maxLength={6}
+            />
+            <Input
+              label="New password"
+              value={password}
+              onChangeText={setPassword}
+              placeholder="At least 8 characters"
+              secureTextEntry
+            />
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            <Button
+              title="Update Password"
+              onPress={handleResetPassword}
+              loading={loading}
+            />
+
+            <Link href="/(auth)/login" asChild>
+              <TouchableOpacity style={styles.backLink}>
+                <Text style={styles.link}>Back to Sign In</Text>
+              </TouchableOpacity>
+            </Link>
+          </Card>
+        </KeyboardAwareScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -84,8 +167,8 @@ export default function ForgotPasswordScreen() {
         <Card style={styles.card}>
           <Text style={styles.title}>Reset Password</Text>
           <Text style={styles.subtitle}>
-            Enter your email address and we'll send you a link to reset your
-            password.
+            Enter your email address and we'll send you a 6-digit code to reset
+            your password.
           </Text>
 
           <Input
@@ -100,7 +183,7 @@ export default function ForgotPasswordScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <Button
-            title="Send Reset Link"
+            title="Send Reset Code"
             onPress={handleRequestReset}
             loading={loading}
           />
@@ -130,12 +213,6 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     color: Colors.textSecondary,
-    marginBottom: 20,
-  },
-  note: {
-    fontSize: 13,
-    color: Colors.textTertiary,
-    fontStyle: "italic",
     marginBottom: 20,
   },
   error: {

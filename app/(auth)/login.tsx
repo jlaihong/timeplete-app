@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import { Link, router } from "expo-router";
+import { Link, router, useLocalSearchParams } from "expo-router";
 import { useConvex } from "convex/react";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
@@ -23,11 +23,18 @@ import {
 
 export default function LoginScreen() {
   const convex = useConvex();
-  const [email, setEmail] = useState("");
+  const params = useLocalSearchParams<{ verified?: string; email?: string }>();
+  const [email, setEmail] = useState(
+    typeof params.email === "string" ? params.email : "",
+  );
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState(
+    params.verified === "1"
+      ? "Email verified. Sign in with your password to continue."
+      : "",
+  );
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -57,7 +64,19 @@ export default function LoginScreen() {
         { email: normalizedEmail },
       );
       if (!needsMigration) {
-        setError(authError.message ?? "Invalid email or password");
+        const message = authError.message ?? "Invalid email or password";
+        if (
+          message.toLowerCase().includes("email not verified") ||
+          authError.status === 403
+        ) {
+          setError("Please verify your email before signing in.");
+          router.push({
+            pathname: "/(auth)/verify-email",
+            params: { email: normalizedEmail },
+          });
+          return;
+        }
+        setError(message);
         return;
       }
 
