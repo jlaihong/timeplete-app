@@ -8,10 +8,10 @@ import { Button } from "../../../ui/Button";
 import {
   assessClockHhMmInput,
   assessDurationHhMmInput,
-  formatYYYYMMDDtoDDMMM,
   hhmmToSeconds,
   normalizeClockHhMm,
 } from "../../../../lib/dates";
+import { DateField } from "../../../ui/DateField";
 import {
   TrackableLogDurationBlock,
   TrackableLogStartTimeBlock,
@@ -41,11 +41,15 @@ export function TrackTimeDialog({
   dayYYYYMMDD,
   onClose,
 }: TrackTimeDialogProps) {
+  // The log's day — starts at the caller-supplied day (usually today)
+  // and is editable so time can be logged for any past day.
+  const [day, setDay] = useState(dayYYYYMMDD);
   const [durationHhmm, setDurationHhmm] = useState("0:30");
   // Duration comes first; start time defaults to "ended just now"
   // (now − duration) until the user edits it directly.
   const { startTime, onStartTimeChange } = useDurationDrivenStartTime(
     durationHhmm,
+    day,
   );
   const [comments, setComments] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +87,7 @@ export function TrackTimeDialog({
     try {
       await upsertWindow({
         startTimeHHMM: normalizedStart,
-        startDayYYYYMMDD: dayYYYYMMDD,
+        startDayYYYYMMDD: day,
         durationSeconds: seconds,
         budgetType: "ACTUAL",
         activityType: "TRACKABLE",
@@ -133,9 +137,11 @@ export function TrackTimeDialog({
                 {trackableName}
               </Text>
             </View>
-            <Text style={styles.subtitle}>
-              {formatYYYYMMDDtoDDMMM(dayYYYYMMDD)} — log time
-            </Text>
+            <Text style={styles.subtitle}>Log time</Text>
+
+            <View style={styles.dateBlock}>
+              <DateField label="Date" value={day} onChange={setDay} />
+            </View>
 
             <TrackableLogDurationBlock
               value={durationHhmm}
@@ -171,6 +177,9 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
     marginBottom: 8,
+  },
+  dateBlock: {
+    marginBottom: 12,
   },
   fieldLabel: {
     fontSize: 13,

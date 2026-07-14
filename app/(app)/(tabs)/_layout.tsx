@@ -27,6 +27,11 @@ export default function TabsLayout() {
             },
         headerShown: !isDesktop,
         ...stackHeaderChromeOptions,
+        // `DrawerMenuButton` is symmetric on iOS (so it centers inside the
+        // native-header capsule on Stack screens); this JS tab header draws
+        // no capsule, so restore the left inset at the container level.
+        headerLeftContainerStyle:
+          Platform.OS === "ios" ? { paddingLeft: 8 } : undefined,
         headerLeft,
       })}
     >

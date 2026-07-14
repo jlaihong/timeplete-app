@@ -15,10 +15,10 @@ import { Button } from "../../../ui/Button";
 import {
   assessClockHhMmInput,
   assessDurationHhMmInput,
-  formatYYYYMMDDtoDDMMM,
   hhmmToSeconds,
   normalizeClockHhMm,
 } from "../../../../lib/dates";
+import { DateField } from "../../../ui/DateField";
 import {
   TrackableLogDurationBlock,
   TrackableLogStartTimeBlock,
@@ -61,6 +61,9 @@ export function TrackTrackerDialog({
   isRatingTracker,
   onClose,
 }: TrackTrackerDialogProps) {
+  // The entry's day — starts at the caller-supplied day (usually today)
+  // and is editable so progress can be logged for any past day.
+  const [day, setDay] = useState(dayYYYYMMDD);
   const [count, setCount] = useState<number | null>(
     isRatingTracker ? null : 1
   );
@@ -74,6 +77,7 @@ export function TrackTrackerDialog({
   // (now − duration) until the user edits it directly.
   const { startTime, onStartTimeChange } = useDurationDrivenStartTime(
     durationHhmm,
+    day,
   );
   const [comments, setComments] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -151,7 +155,7 @@ export function TrackTrackerDialog({
     try {
       await upsertEntry({
         trackableId,
-        dayYYYYMMDD,
+        dayYYYYMMDD: day,
         countValue: trackCount ? count ?? undefined : undefined,
         durationSeconds: trackTime ? durationSeconds : undefined,
         startTimeHHMM:
@@ -196,9 +200,9 @@ export function TrackTrackerDialog({
               {trackableName}
             </Text>
           </View>
-          <Text style={styles.subtitle}>
-            {formatYYYYMMDDtoDDMMM(dayYYYYMMDD)}
-          </Text>
+          <View style={styles.dateBlock}>
+            <DateField label="Date" value={day} onChange={setDay} />
+          </View>
 
           {trackCount && isRatingTracker && (
             <View style={styles.ratingBlock}>
@@ -296,10 +300,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8 },
   colourDot: { width: 14, height: 14, borderRadius: 7 },
   title: { fontSize: 18, fontWeight: "700", color: Colors.text, flex: 1 },
-  subtitle: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    marginTop: 2,
+  dateBlock: {
+    marginTop: 10,
     marginBottom: 16,
   },
   ratingBlock: { marginBottom: 16 },

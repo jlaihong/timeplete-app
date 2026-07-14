@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { Colors } from "../../../../constants/colors";
 import { Button } from "../../../ui/Button";
-import { formatYYYYMMDDtoDDMMM } from "../../../../lib/dates";
+import { DateField } from "../../../ui/DateField";
 import { useAuth } from "../../../../hooks/useAuth";
 import { TrackDialogShell } from "./TrackDialogShell";
 
@@ -42,15 +42,55 @@ export function TrackCountDialog({
   onClose,
 }: TrackCountDialogProps) {
   const { profileReady } = useAuth();
+  // The log's day — starts at the caller-supplied day (usually today)
+  // and is editable so progress can be logged for any past day.
+  const [day, setDay] = useState(dayYYYYMMDD);
   const [count, setCount] = useState(initialCount);
   const [comments, setComments] = useState(initialComments);
   const [saving, setSaving] = useState(false);
   const upsertDay = useMutation(api.trackableDays.upsert);
   const completedTaskNames = useQuery(
     api.trackables.getCompletedTaskNamesForDay,
-    profileReady ? { trackableId, dayYYYYMMDD } : "skip",
+    profileReady ? { trackableId, dayYYYYMMDD: day } : "skip",
   );
   const taskCount = completedTaskNames?.length ?? 0;
+
+  // When the user picks a DIFFERENT day, the caller-supplied initial
+  // values no longer apply — load that day's stored row so the stepper
+  // shows the day's current total instead of silently overwriting it.
+  const dayRows = useQuery(
+    api.trackableDays.search,
+    profileReady && day !== dayYYYYMMDD
+      ? { trackableIds: [trackableId], startDay: day, endDay: day }
+      : "skip",
+  );
+  const appliedDayRef = useRef(dayYYYYMMDD);
+  useEffect(() => {
+    if (appliedDayRef.current === day) return;
+    if (day === dayYYYYMMDD) {
+      // Back to the original day: the props already carry its values.
+      setCount(initialCount);
+      setComments(initialComments);
+      appliedDayRef.current = day;
+      return;
+    }
+    // Wait for both day-scoped queries to resolve before applying,
+    // otherwise we could pair the new day's row with the old day's tasks.
+    if (dayRows === undefined || completedTaskNames === undefined) return;
+    const row = dayRows.find(
+      (r) => r.dayYYYYMMDD.replace(/\D/g, "").slice(0, 8) === day,
+    );
+    setCount((row?.numCompleted ?? 0) + completedTaskNames.length);
+    setComments(row?.comments ?? "");
+    appliedDayRef.current = day;
+  }, [
+    day,
+    dayYYYYMMDD,
+    dayRows,
+    completedTaskNames,
+    initialCount,
+    initialComments,
+  ]);
 
   const onSave = async () => {
     setSaving(true);
@@ -61,7 +101,7 @@ export function TrackCountDialog({
       // already completed for this day.
       await upsertDay({
         trackableId,
-        dayYYYYMMDD,
+        dayYYYYMMDD: day,
         numCompleted: Math.max(0, count - taskCount),
         comments,
       });
@@ -100,9 +140,11 @@ export function TrackCountDialog({
               {trackableName}
             </Text>
           </View>
-          <Text style={styles.subtitle}>
-            {formatYYYYMMDDtoDDMMM(dayYYYYMMDD)} — log count
-          </Text>
+          <Text style={styles.subtitle}>Log count</Text>
+
+          <View style={styles.dateBlock}>
+            <DateField label="Date" value={day} onChange={setDay} />
+          </View>
 
           <View style={styles.stepperRow}>
             <TouchableOpacity
@@ -136,7 +178,7 @@ export function TrackCountDialog({
               <Text style={styles.completedTasksLabel}>
                 {completedTaskNames.length} task
                 {completedTaskNames.length === 1 ? "" : "s"} already counted
-                today
+                on this day
               </Text>
               {completedTaskNames.map((name, i) => (
                 <View key={`${name}-${i}`} style={styles.completedTaskRow}>
@@ -179,7 +221,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     marginTop: 2,
-    marginBottom: 20,
+    marginBottom: 12,
+  },
+  dateBlock: {
+    marginBottom: 16,
   },
   stepperRow: {
     flexDirection: "row",

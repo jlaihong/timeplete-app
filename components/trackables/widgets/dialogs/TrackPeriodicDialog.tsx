@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { Colors } from "../../../../constants/colors";
 import { Button } from "../../../ui/Button";
-import { formatYYYYMMDDtoDDMMM } from "../../../../lib/dates";
+import { DateField } from "../../../ui/DateField";
 import { useAuth } from "../../../../hooks/useAuth";
 import { TrackDialogShell } from "./TrackDialogShell";
 
@@ -43,21 +43,61 @@ export function TrackPeriodicDialog({
   onClose,
 }: TrackPeriodicDialogProps) {
   const { profileReady } = useAuth();
+  // The log's day — starts at the caller-supplied day (usually today)
+  // and is editable so progress can be logged for any past day.
+  const [day, setDay] = useState(dayYYYYMMDD);
   const [isCompleted, setIsCompleted] = useState(initialNumCompleted > 0);
   const [comments, setComments] = useState(initialComments);
   const [saving, setSaving] = useState(false);
   const upsertDay = useMutation(api.trackableDays.upsert);
   const completedTaskNames = useQuery(
     api.trackables.getCompletedTaskNamesForDay,
-    profileReady ? { trackableId, dayYYYYMMDD } : "skip",
+    profileReady ? { trackableId, dayYYYYMMDD: day } : "skip",
   );
+
+  // When the user picks a DIFFERENT day, the caller-supplied initial
+  // values no longer apply — load that day's stored row so the checkbox
+  // reflects its saved state instead of silently overwriting it.
+  const dayRows = useQuery(
+    api.trackableDays.search,
+    profileReady && day !== dayYYYYMMDD
+      ? { trackableIds: [trackableId], startDay: day, endDay: day }
+      : "skip",
+  );
+  const appliedDayRef = useRef(dayYYYYMMDD);
+  useEffect(() => {
+    if (appliedDayRef.current === day) return;
+    if (day === dayYYYYMMDD) {
+      // Back to the original day: the props already carry its values.
+      setIsCompleted(initialNumCompleted > 0);
+      setComments(initialComments);
+      appliedDayRef.current = day;
+      return;
+    }
+    if (dayRows === undefined || completedTaskNames === undefined) return;
+    const row = dayRows.find(
+      (r) => r.dayYYYYMMDD.replace(/\D/g, "").slice(0, 8) === day,
+    );
+    setIsCompleted(
+      (row?.numCompleted ?? 0) + completedTaskNames.length > 0,
+    );
+    setComments(row?.comments ?? "");
+    appliedDayRef.current = day;
+  }, [
+    day,
+    dayYYYYMMDD,
+    dayRows,
+    completedTaskNames,
+    initialNumCompleted,
+    initialComments,
+  ]);
 
   const onSave = async () => {
     setSaving(true);
     try {
       await upsertDay({
         trackableId,
-        dayYYYYMMDD,
+        dayYYYYMMDD: day,
         numCompleted: isCompleted ? 1 : 0,
         comments,
       });
@@ -96,9 +136,9 @@ export function TrackPeriodicDialog({
               {trackableName}
             </Text>
           </View>
-          <Text style={styles.subtitle}>
-            {formatYYYYMMDDtoDDMMM(dayYYYYMMDD)}
-          </Text>
+          <View style={styles.dateBlock}>
+            <DateField label="Date" value={day} onChange={setDay} />
+          </View>
 
           <TouchableOpacity
             style={styles.checkboxRow}
@@ -123,7 +163,7 @@ export function TrackPeriodicDialog({
           {completedTaskNames && completedTaskNames.length > 0 && (
             <View style={styles.completedTasksBlock}>
               <Text style={styles.completedTasksLabel}>
-                Tasks completed today
+                Tasks completed on this day
               </Text>
               {completedTaskNames.map((name, i) => (
                 <View key={`${name}-${i}`} style={styles.completedTaskRow}>
@@ -159,10 +199,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8 },
   colourDot: { width: 14, height: 14, borderRadius: 7 },
   title: { fontSize: 18, fontWeight: "700", color: Colors.text, flex: 1 },
-  subtitle: {
-    fontSize: 13,
-    color: Colors.textSecondary,
-    marginTop: 2,
+  dateBlock: {
+    marginTop: 10,
     marginBottom: 16,
   },
   checkboxRow: {

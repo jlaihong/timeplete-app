@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Modal, ScrollView } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Platform,
+  Pressable,
+  Modal,
+  ScrollView,
+} from "react-native";
 import { useQuery } from "convex/react";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../convex/_generated/api";
@@ -16,12 +24,24 @@ import {
 import { useAuth } from "../../hooks/useAuth";
 import { dialogOverlayStyles } from "../ui/dialogOverlayShared";
 import { DialogCard, DialogHeader } from "../ui/DialogScaffold";
+import { Button } from "../ui/Button";
+import { TrackCountDialog } from "./widgets/dialogs/TrackCountDialog";
+import { TrackPeriodicDialog } from "./widgets/dialogs/TrackPeriodicDialog";
+import { TrackTimeDialog } from "./widgets/dialogs/TrackTimeDialog";
+import { TrackTrackerDialog } from "./widgets/dialogs/TrackTrackerDialog";
 
-type GoalProgressType = "NUMBER" | "TIME_TRACK" | "DAYS_A_WEEK" | "MINUTES_A_WEEK";
+type GoalProgressType =
+  | "NUMBER"
+  | "TIME_TRACK"
+  | "DAYS_A_WEEK"
+  | "MINUTES_A_WEEK"
+  | "TRACKER";
 
 type ProgressTabTrackable = {
   _id: Id<"trackables">;
   trackableType: GoalProgressType;
+  name: string;
+  colour: string;
   startDayYYYYMMDD: string;
   endDayYYYYMMDD: string;
   targetCount?: number;
@@ -29,6 +49,10 @@ type ProgressTabTrackable = {
   targetNumberOfDaysAWeek?: number;
   targetNumberOfMinutesAWeek?: number;
   targetNumberOfWeeks?: number;
+  /** TRACKER-only flags — which fields its log dialog shows. */
+  trackCount?: boolean;
+  trackTime?: boolean;
+  isRatingTracker?: boolean;
 };
 
 type DayDetail = {
@@ -116,13 +140,16 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     type === "NUMBER" ||
     type === "TIME_TRACK" ||
     type === "DAYS_A_WEEK" ||
-    type === "MINUTES_A_WEEK";
+    type === "MINUTES_A_WEEK" ||
+    type === "TRACKER";
 
   const defaultAnchor = clipYYYYMMDD(todayYYYYMMDD(), trackable.startDayYYYYMMDD, trackable.endDayYYYYMMDD);
   const [viewAnchor, setViewAnchor] = useState(defaultAnchor);
   const [expandedDayYYYYMMDD, setExpandedDayYYYYMMDD] = useState<string | null>(
     null,
   );
+  /** Day the user is logging progress for (opens the type-matched dialog). */
+  const [logDayYYYYMMDD, setLogDayYYYYMMDD] = useState<string | null>(null);
 
   useEffect(() => {
     setViewAnchor(
@@ -179,13 +206,29 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
   // `today` so the handler stays deterministic and cacheable.
   const todayCompact = useMemo(() => todayYYYYMMDD(), []);
 
+  const showsTime = type === "TIME_TRACK" || type === "TRACKER";
+
   const analyticsSeries = useQuery(
     api.trackables.getTrackableAnalyticsSeries,
-    profileReady && type === "TIME_TRACK" && calendarBounds
+    profileReady && showsTime && calendarBounds
       ? {
           windowStart: calendarBounds.start,
           windowEnd: calendarBounds.end,
           today: todayCompact,
+        }
+      : "skip",
+  );
+
+  // TRACKER progress lives in `trackerEntries` (per-entry count/duration),
+  // not `trackableDays` — pull the month's entries for count + comments.
+  const trackerEntries = useQuery(
+    api.trackerEntries.search,
+    profileReady && type === "TRACKER" && calendarBounds
+      ? {
+          trackableId: trackable._id,
+          startDay: calendarBounds.start,
+          endDay: calendarBounds.end,
+          limit: 2000,
         }
       : "skip",
   );
@@ -241,7 +284,7 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
       }
     }
 
-    if (type === "TIME_TRACK" && analyticsSeries) {
+    if (showsTime && analyticsSeries) {
       const goal = analyticsSeries.trackables.find((t) => t._id === trackable._id);
       if (goal) {
         for (const d of goal.days) {
@@ -263,10 +306,39 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
       }
     }
 
+    // TRACKER: fold per-entry counts and comments into the day buckets
+    // (time already arrives via `analyticsSeries`, which sums tracker
+    // entry durations alongside attributed timeWindows).
+    if (type === "TRACKER" && trackerEntries) {
+      for (const entry of trackerEntries.entries) {
+        const key = normalizeDayKey(entry.dayYYYYMMDD);
+        if (key.length !== 8) continue;
+        const existing = m.get(key);
+        const count = entry.countValue ?? 0;
+        const comment = (entry.comments ?? "").trim();
+        if (!existing) {
+          m.set(key, {
+            numCompleted: count,
+            comments: comment,
+            completedTaskNames: [],
+          });
+        } else {
+          existing.numCompleted += count;
+          if (comment) {
+            existing.comments = existing.comments
+              ? `${existing.comments} · ${comment}`
+              : comment;
+          }
+        }
+      }
+    }
+
     return m;
   }, [
     type,
+    showsTime,
     analyticsSeries,
+    trackerEntries,
     daysSearch,
     completedWindowTasks,
     listsSearch,
@@ -277,7 +349,8 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     daysSearch === undefined ||
     completedWindowTasks === undefined ||
     listsSearch === undefined ||
-    (type === "TIME_TRACK" && analyticsSeries === undefined);
+    (showsTime && analyticsSeries === undefined) ||
+    (type === "TRACKER" && trackerEntries === undefined);
 
   const cellRows = useMemo(() => {
     const rows: (typeof cells)[] = [];
@@ -309,6 +382,63 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
     expandedDayYYYYMMDD != null
       ? formatYYYYMMDDForDisplay(expandedDayYYYYMMDD.slice(0, 8))
       : "";
+
+  const closeLogDialog = useCallback(() => setLogDayYYYYMMDD(null), []);
+
+  /** Opens the type-matched quick-log dialog pre-set to the given day. */
+  const openLogDialogForDay = useCallback((yyyymmdd: string) => {
+    // Close the RN-Modal day sheet FIRST: on web the log dialogs portal
+    // to document.body, which sits under an open RN Modal layer.
+    setExpandedDayYYYYMMDD(null);
+    setLogDayYYYYMMDD(normalizeDayKey(yyyymmdd));
+  }, []);
+
+  const renderLogDialog = (day: string) => {
+    const detail = detailsByDay.get(normalizeDayKey(day));
+    const manual = detail?.numCompleted ?? 0;
+    const taskCount = detail?.completedTaskNames.length ?? 0;
+    const common = {
+      trackableId: trackable._id,
+      trackableName: trackable.name,
+      trackableColour: trackable.colour,
+      dayYYYYMMDD: day,
+      onClose: closeLogDialog,
+    };
+    switch (type) {
+      case "NUMBER":
+        return (
+          <TrackCountDialog
+            {...common}
+            // Widget parity: the stepper shows the day's TOTAL
+            // (manual + attributed task completions).
+            initialCount={manual + taskCount}
+            initialComments={detail?.comments ?? ""}
+          />
+        );
+      case "DAYS_A_WEEK":
+        return (
+          <TrackPeriodicDialog
+            {...common}
+            initialNumCompleted={manual + taskCount}
+            initialComments={detail?.comments ?? ""}
+          />
+        );
+      case "TIME_TRACK":
+      case "MINUTES_A_WEEK":
+        return <TrackTimeDialog {...common} />;
+      case "TRACKER":
+        return (
+          <TrackTrackerDialog
+            {...common}
+            trackCount={trackable.trackCount ?? false}
+            trackTime={trackable.trackTime ?? false}
+            isRatingTracker={trackable.isRatingTracker ?? false}
+          />
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <View style={styles.wrap}>
@@ -363,7 +493,7 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
               const tasksArr = detail?.completedTaskNames ?? [];
               const faded = cell.inMonth === false || !inGoalRange;
               const isToday = cell.yyyymmdd === todayYYYYMMDD();
-              const hasTimeProgress = type === "TIME_TRACK" && sec > 0;
+              const hasTimeProgress = showsTime && sec > 0;
               const hasCountProgress = type !== "TIME_TRACK" && logged > 0;
               const done =
                 inGoalRange &&
@@ -428,6 +558,16 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                         ]}
                       >
                         {logged}
+                      </Text>
+                    ) : type === "TRACKER" && hasTimeProgress ? (
+                      <Text
+                        style={[
+                          styles.contributionNum,
+                          faded && styles.contributionNumFaded,
+                          done && styles.contributionNumDone,
+                        ]}
+                      >
+                        {hoursLabel}
                       </Text>
                     ) : null}
                     {visibleTasks.map((name, ti) => (
@@ -508,11 +648,48 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                     />
                   ) : null}
                 </ScrollView>
+                <View style={styles.dayDetailFooter}>
+                  <Button
+                    title="Add progress"
+                    size="small"
+                    icon={
+                      <Ionicons name="add" size={18} color={Colors.onPrimary} />
+                    }
+                    onPress={() => {
+                      if (expandedDayYYYYMMDD != null) {
+                        openLogDialogForDay(expandedDayYYYYMMDD);
+                      }
+                    }}
+                  />
+                </View>
               </DialogCard>
             </Pressable>
           </Pressable>
         </View>
       </Modal>
+
+      {/*
+        Quick-log dialog for the day picked in the calendar. On native the
+        Track* dialogs' DialogOverlay is ABSOLUTE-positioned — rendered this
+        deep inside the edit dialog's card it would be clipped to the tab
+        area, so it needs an RN Modal to escape to the root layer. On web
+        the overlay portals to document.body (position: fixed), where an RN
+        Modal wrapper would instead BLOCK its clicks — so render it bare.
+      */}
+      {logDayYYYYMMDD != null ? (
+        Platform.OS === "web" ? (
+          renderLogDialog(logDayYYYYMMDD)
+        ) : (
+          <Modal
+            visible
+            transparent
+            animationType="fade"
+            onRequestClose={closeLogDialog}
+          >
+            {renderLogDialog(logDayYYYYMMDD)}
+          </Modal>
+        )
+      ) : null}
     </View>
   );
 }
@@ -560,6 +737,12 @@ function DayDetailModalBody({
               : "—"}
         </Text>
       </View>
+      {trackable.trackableType === "TRACKER" && sec > 0 ? (
+        <View style={styles.modalSection}>
+          <Text style={styles.modalSectionLabel}>Time logged</Text>
+          <Text style={styles.modalBodyText}>{formatSecondsAsHM(sec)}</Text>
+        </View>
+      ) : null}
       <View style={styles.modalSection}>
         <Text style={styles.modalSectionLabel}>
           Completed tasks ({tasks.length})
@@ -739,6 +922,14 @@ const styles = StyleSheet.create({
   dayDetailScroll: {
     flexGrow: 0,
     maxHeight: 360,
+  },
+  dayDetailFooter: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.outlineVariant,
   },
   modalBody: {
     gap: 16,

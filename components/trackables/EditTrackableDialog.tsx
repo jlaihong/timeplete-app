@@ -56,7 +56,7 @@ type GoalEditTab =
   | "motivations"
   | "accountability";
 
-type TrackerEditTab = "details" | "tracking_history";
+type TrackerEditTab = "details" | "progress" | "tracking_history";
 
 const GOAL_TAB_DEFS: { key: GoalEditTab; label: string }[] = [
   { key: "progress", label: "Progress" },
@@ -68,6 +68,7 @@ const GOAL_TAB_DEFS: { key: GoalEditTab; label: string }[] = [
 
 const TRACKER_TAB_DEFS: { key: TrackerEditTab; label: string }[] = [
   { key: "details", label: "Details" },
+  { key: "progress", label: "Progress" },
   { key: "tracking_history", label: "Tracking History" },
 ];
 
@@ -435,44 +436,50 @@ export function EditTrackableDialog({
     return Number.isFinite(n) ? n : fallback;
   };
 
+  /** Shared by the goal "Progress" tab and the tracker "Progress" tab. */
+  const renderProgressTabPane = () => (
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
+    >
+      <EditTrackableProgressTab
+        trackable={{
+          _id: trackableId,
+          trackableType,
+          name: trackable.name,
+          colour: trackable.colour,
+          startDayYYYYMMDD: trackable.startDayYYYYMMDD,
+          endDayYYYYMMDD: trackable.endDayYYYYMMDD,
+          targetCount: coercePreviewInt(targetCount, trackable.targetCount),
+          targetNumberOfHours: coercePreviewInt(
+            targetHours,
+            trackable.targetNumberOfHours
+          ),
+          targetNumberOfDaysAWeek: coercePreviewInt(
+            targetDaysAWeek,
+            trackable.targetNumberOfDaysAWeek
+          ),
+          targetNumberOfMinutesAWeek: coercePreviewInt(
+            targetMinutesAWeek,
+            trackable.targetNumberOfMinutesAWeek
+          ),
+          targetNumberOfWeeks: coercePreviewInt(
+            targetWeeks,
+            trackable.targetNumberOfWeeks
+          ),
+          trackCount: trackable.trackCount ?? undefined,
+          trackTime: trackable.trackTime ?? undefined,
+          isRatingTracker: trackable.isRatingTracker ?? undefined,
+        }}
+      />
+    </ScrollView>
+  );
+
   const renderGoalTabContents = () => {
     switch (goalTab) {
       case "progress":
-        return (
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            <EditTrackableProgressTab trackable={{
-              _id: trackableId,
-              trackableType: trackableType as
-                | "NUMBER"
-                | "TIME_TRACK"
-                | "DAYS_A_WEEK"
-                | "MINUTES_A_WEEK",
-              startDayYYYYMMDD: trackable.startDayYYYYMMDD,
-              endDayYYYYMMDD: trackable.endDayYYYYMMDD,
-              targetCount: coercePreviewInt(targetCount, trackable.targetCount),
-              targetNumberOfHours: coercePreviewInt(
-                targetHours,
-                trackable.targetNumberOfHours
-              ),
-              targetNumberOfDaysAWeek: coercePreviewInt(
-                targetDaysAWeek,
-                trackable.targetNumberOfDaysAWeek
-              ),
-              targetNumberOfMinutesAWeek: coercePreviewInt(
-                targetMinutesAWeek,
-                trackable.targetNumberOfMinutesAWeek
-              ),
-              targetNumberOfWeeks: coercePreviewInt(
-                targetWeeks,
-                trackable.targetNumberOfWeeks
-              ),
-            }} />
-          </ScrollView>
-        );
+        return renderProgressTabPane();
       case "time_tracked":
         return (
           <View style={styles.historyTabPane}>
@@ -551,6 +558,9 @@ export function EditTrackableDialog({
           {renderMyCommitmentBody()}
         </KeyboardAwareScrollView>
       );
+    }
+    if (trackerTab === "progress") {
+      return renderProgressTabPane();
     }
     return (
       <View style={styles.historyTabPane}>
