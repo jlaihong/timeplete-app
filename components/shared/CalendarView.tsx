@@ -826,8 +826,11 @@ function CalendarEventBlock({
         typeof ev?.clientY === "number"
           ? ev.clientY
           : (ev?.nativeEvent?.clientY ?? 0);
-      const initialStart = baseStart;
-      const initialDuration = baseDuration;
+      // Anchor on the on-screen position. After a prior drop, `pendingCommit`
+      // holds the new slot until the query refetch updates `baseStart`; using
+      // `baseStart` alone makes the second drag jump back to the old time.
+      const initialStart = pendingCommit?.start ?? baseStart;
+      const initialDuration = pendingCommit?.duration ?? baseDuration;
       const initialEnd = initialStart + initialDuration;
 
       const gridEl =
@@ -980,23 +983,23 @@ function CalendarEventBlock({
       window.addEventListener("pointerup", onUp);
       window.addEventListener("pointercancel", onUp);
     },
-    [baseStart, baseDuration, onCommit, onEditRequest, tw._id, tw.isLive, tw.startDayYYYYMMDD, gridTimeZone]
+    [baseStart, baseDuration, pendingCommit, onCommit, onEditRequest, tw._id, tw.isLive, tw.startDayYYYYMMDD, gridTimeZone]
   );
 
   // ── Native gesture wiring (iOS / Android). On mobile-web the pointer
   // handlers above already work. Native has no PointerEvent so we
   // substitute react-native-gesture-handler gestures. Refs keep the
   // gesture callbacks stable across re-renders while still tracking
-  // the latest server-committed baseStart / baseDuration. See
-  // `CalendarEventNativeGestures.tsx` for the interaction model.
-  const baseStartRef = useRef(baseStart);
-  const baseDurationRef = useRef(baseDuration);
+  // the on-screen position (pendingCommit until the server catches up).
+  // See `CalendarEventNativeGestures.tsx` for the interaction model.
+  const baseStartRef = useRef(pendingCommit?.start ?? baseStart);
+  const baseDurationRef = useRef(pendingCommit?.duration ?? baseDuration);
   useEffect(() => {
-    baseStartRef.current = baseStart;
-  }, [baseStart]);
+    baseStartRef.current = pendingCommit?.start ?? baseStart;
+  }, [baseStart, pendingCommit?.start]);
   useEffect(() => {
-    baseDurationRef.current = baseDuration;
-  }, [baseDuration]);
+    baseDurationRef.current = pendingCommit?.duration ?? baseDuration;
+  }, [baseDuration, pendingCommit?.duration]);
 
   const handleNativeDraftChange = useCallback(
     (d: { start: number; duration: number } | null) => {
