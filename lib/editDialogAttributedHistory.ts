@@ -54,35 +54,6 @@ function linkMap(
   return m;
 }
 
-function resolveAttributedTrackableIdClient(
-  tw: Pick<TW, "trackableId" | "taskId" | "listId">,
-  taskMap: Map<
-    string,
-    {
-      trackableId?: Id<"trackables"> | null;
-      listId?: Id<"lists"> | null;
-    }
-  >,
-  listIdToTrackableId: Map<string, Id<"trackables">>,
-): string | null {
-  if (tw.trackableId) return String(tw.trackableId);
-  if (tw.taskId) {
-    const task = taskMap.get(String(tw.taskId));
-    if (task) {
-      if (task.trackableId) return String(task.trackableId);
-      if (task.listId) {
-        const tgt = listIdToTrackableId.get(String(task.listId));
-        return tgt ? String(tgt) : null;
-      }
-    }
-  }
-  if (tw.listId) {
-    const tgt = listIdToTrackableId.get(String(tw.listId));
-    return tgt ? String(tgt) : null;
-  }
-  return null;
-}
-
 function windowAttributedToTrackableClient(
   tw: Pick<TW, "trackableId" | "taskId" | "listId">,
   trackableId: string,
@@ -95,10 +66,17 @@ function windowAttributedToTrackableClient(
   >,
   listIdToTrackableId: Map<string, Id<"trackables">>,
 ): boolean {
-  return (
-    resolveAttributedTrackableIdClient(tw, taskMap, listIdToTrackableId) ===
-    trackableId
-  );
+  const tid = trackableId;
+  if (tw.trackableId && String(tw.trackableId) === tid) return true;
+  if (!tw.taskId) return false;
+  const task = taskMap.get(String(tw.taskId));
+  if (!task) return false;
+  if (task.trackableId && String(task.trackableId) === tid) return true;
+  if (task.listId) {
+    const linked = listIdToTrackableId.get(String(task.listId));
+    if (linked && String(linked) === tid) return true;
+  }
+  return false;
 }
 
 /** Rows maps only need fields used by the calendar title ladder. */

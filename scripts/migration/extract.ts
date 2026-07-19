@@ -501,6 +501,16 @@ async function main() {
   // Note: `source` is a Convex-side field that didn't exist in PG; leave it
   // undefined for migrated rows so the app's backwards-compat treats them
   // as `"timer"` (see schema.ts comment on `timeWindows.source`).
+  //
+  // timeZone repair: in productivity-one `start_time_hhmm` was a plain
+  // wall-clock string — the calendar rendered it verbatim and never
+  // converted through `time_windows.time_zone`. The legacy backend
+  // hardcoded `time_zone='UTC'` when generating recurring instances, so
+  // `11:00 + UTC` in the dump really means "11:00 on the user's clock".
+  // Timeplete DOES convert through `timeZone`, which would shift those
+  // rows by the whole UTC offset. Re-stamp UTC rows with the zone the
+  // wall clock was authored in: the recurring rule's zone if linked,
+  // else the user's dominant non-UTC zone across their other windows.
   const timeWindows = await client.query(
     `SELECT id, start_time_hhmm, start_day_yyyymmdd,
             COALESCE(duration_seconds,0) AS duration_seconds, user_id,
@@ -510,6 +520,49 @@ async function main() {
      FROM public.time_windows ${inUsers}`,
     [userIdParam],
   );
+
+  const ruleZoneById = new Map<string, string>();
+  for (const r of recEvents.rows) {
+    const tz = (r.time_zone ?? "").trim();
+    if (tz && tz !== "UTC") ruleZoneById.set(r.id as string, tz);
+  }
+  const zoneCountsByUser = new Map<string, Map<string, number>>();
+  for (const r of timeWindows.rows) {
+    const tz = (r.time_zone ?? "").trim();
+    if (!tz || tz === "UTC") continue;
+    let counts = zoneCountsByUser.get(r.user_id as string);
+    if (!counts) {
+      counts = new Map();
+      zoneCountsByUser.set(r.user_id as string, counts);
+    }
+    counts.set(tz, (counts.get(tz) ?? 0) + 1);
+  }
+  const dominantZoneByUser = new Map<string, string>();
+  for (const [userId, counts] of zoneCountsByUser) {
+    let dominant: string | undefined;
+    let max = 0;
+    for (const [tz, c] of counts) {
+      if (c > max) {
+        max = c;
+        dominant = tz;
+      }
+    }
+    if (dominant) dominantZoneByUser.set(userId, dominant);
+  }
+  const resolveWindowZone = (r: {
+    time_zone: string | null;
+    recurring_event_id: string | null;
+    user_id: string;
+  }): string => {
+    const tz = (r.time_zone ?? "").trim();
+    if (tz && tz !== "UTC") return tz;
+    if (r.recurring_event_id) {
+      const ruleTz = ruleZoneById.get(r.recurring_event_id);
+      if (ruleTz) return ruleTz;
+    }
+    return dominantZoneByUser.get(r.user_id) ?? "UTC";
+  };
+
   writeJsonl(
     "timeWindows.jsonl",
     timeWindows.rows.map((r) => ({
@@ -525,7 +578,7 @@ async function main() {
       title: r.title ?? undefined,
       comments: r.comments ?? undefined,
       tagIds: r.tag_ids ?? undefined,
-      timeZone: r.time_zone ?? "UTC",
+      timeZone: resolveWindowZone(r),
       recurringEventId: r.recurring_event_id ?? undefined,
       isRecurringInstance: b(r.is_recurring_instance),
     })),

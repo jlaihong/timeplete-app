@@ -385,7 +385,9 @@ export default defineSchema({
      *
      * Maintained by `_helpers/trackableLifetime.onTaskCompletionAttribution`
      * called from `tasks.upsert` whenever a task's completion state
-     * or trackable/list attribution changes.
+     * or trackable/list attribution changes, and by
+     * `onListTrackableLinkChange` when a list is re-linked to a
+     * different trackable.
      */
     lifetimeAttributedTaskDayCount: v.optional(v.number()),
     /**
@@ -410,7 +412,9 @@ export default defineSchema({
      * Σ completed tasks whose attribution resolves to this trackable on
      * this `dayYYYYMMDD`. Maintained by `onTaskCompletionAttribution`
      * in `_helpers/trackableLifetime` whenever a task's completion
-     * state or trackable/list attribution changes.
+     * state or trackable/list attribution changes, and by
+     * `onListTrackableLinkChange` when a list is re-linked to a
+     * different trackable.
      *
      * Lets `getGoalDetails` / `getTrackableAnalyticsSeries` compute
      * per-day counts (`weeklyDayCompletion`, `todayDayCount`,
@@ -428,6 +432,35 @@ export default defineSchema({
     .index("by_user_trackable", ["userId", "trackableId"])
     .index("by_trackable", ["trackableId"])
     .index("by_legacy", ["legacyId"]),
+
+  /**
+   * Per-(trackable, day) sum of attributed ACTUAL `timeWindows` seconds.
+   *
+   * Maintained by `_helpers/trackableLifetime` alongside
+   * `trackable.lifetimeTotalSeconds` — every writer that inserts /
+   * patches / deletes an ACTUAL window (or moves credit on task/list
+   * attribution changes) applies the same signed delta here, bucketed
+   * by the window's compact `startDayYYYYMMDD`.
+   *
+   * Lets `getGoalDetails` compute `periodicOverallProgress` for
+   * `MINUTES_A_WEEK` trackables from these small rows instead of
+   * re-scanning every historical time window since the trackable's
+   * start day on every reactive fire (the last remaining deep-history
+   * read on the home page, ~86% of the `timeWindows` table per
+   * execution on real data).
+   *
+   * Rows are garbage-collected when their sum returns to zero.
+   * Backfill: `_admin/backfillTrackableDaySeconds:runAll`.
+   */
+  trackableDaySeconds: defineTable({
+    trackableId: v.id("trackables"),
+    userId: v.id("users"),
+    /** Compact YYYYMMDD (no dashes) — normalized at write time. */
+    dayYYYYMMDD: v.string(),
+    attributedSeconds: v.number(),
+  })
+    .index("by_trackable_day", ["trackableId", "dayYYYYMMDD"])
+    .index("by_user", ["userId"]),
 
   trackerEntries: defineTable({
     trackableId: v.id("trackables"),

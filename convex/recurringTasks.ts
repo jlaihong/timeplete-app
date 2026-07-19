@@ -25,6 +25,7 @@ import { generateOccurrences } from "./_helpers/recurrence";
 import { onTimeWindowInserted } from "./_helpers/taskTimeSpent";
 import {
   onAttributedWindowInserted,
+  deleteTimeWindowWithSideEffects,
   onTaskCompletionAttribution,
 } from "./_helpers/trackableLifetime";
 
@@ -222,7 +223,9 @@ export const updateRule = mutation({
             .query("timeWindows")
             .withIndex("by_task", (q) => q.eq("taskId", t._id))
             .collect();
-          for (const w of windows) await ctx.db.delete(w._id);
+          for (const w of windows) {
+            await deleteTimeWindowWithSideEffects(ctx, w);
+          }
           await ctx.db.delete(t._id);
         }
       }
@@ -272,7 +275,9 @@ export const stop = mutation({
           .query("timeWindows")
           .withIndex("by_task", (q) => q.eq("taskId", t._id))
           .collect();
-        for (const w of windows) await ctx.db.delete(w._id);
+        for (const w of windows) {
+          await deleteTimeWindowWithSideEffects(ctx, w);
+        }
         await ctx.db.delete(t._id);
       }
     }
@@ -342,7 +347,9 @@ export const deleteInstance = mutation({
       .query("timeWindows")
       .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
       .collect();
-    for (const w of windows) await ctx.db.delete(w._id);
+    for (const w of windows) {
+      await deleteTimeWindowWithSideEffects(ctx, w);
+    }
 
     if (task.dateCompleted) {
       await onTaskCompletionAttribution(
@@ -398,7 +405,9 @@ export const remove = mutation({
           .query("timeWindows")
           .withIndex("by_task", (q) => q.eq("taskId", t._id))
           .collect();
-        for (const w of windows) await ctx.db.delete(w._id);
+        for (const w of windows) {
+          await deleteTimeWindowWithSideEffects(ctx, w);
+        }
         if (t.dateCompleted) {
           await onTaskCompletionAttribution(
             ctx,
@@ -589,14 +598,16 @@ export const generateInstances = mutation({
               budgetType: "ACTUAL" as const,
               durationSeconds: dur,
             });
-            // Trackable totals for `getGoalDetails` (fix #1).
-            if (rule.trackableId) {
-              await onAttributedWindowInserted(ctx, {
-                trackableId: rule.trackableId,
-                durationSeconds: dur,
-                startDayYYYYMMDD: date,
-              });
-            }
+            await onAttributedWindowInserted(ctx, {
+              userId: user._id,
+              trackableId: rule.trackableId,
+              taskId,
+              listId: undefined,
+              budgetType: "ACTUAL",
+              durationSeconds: dur,
+              startDayYYYYMMDD: date,
+              activityType: "TASK",
+            });
           }
         }
       }

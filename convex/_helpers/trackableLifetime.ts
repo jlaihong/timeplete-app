@@ -10,7 +10,8 @@
  *
  *   trackable.lifetimeTotalSeconds
  *     === Σ timeWindows.durationSeconds
- *         WHERE timeWindows.trackableId === trackable._id
+ *         WHERE resolveAttributedTrackableId(window, task, list links)
+ *               === trackable._id
  *           AND timeWindows.budgetType   === "ACTUAL"
  *       + Σ trackerEntries.durationSeconds   (TRACKER trackables only)
  *         WHERE trackerEntries.trackableId === trackable._id
@@ -41,11 +42,44 @@
  *   trackable.firstActivityDayYYYYMMDD
  *     === min day across all attributed windows / days / entries; falls
  *         back to `startDayYYYYMMDD` when no activity recorded.
+ *
+ * Additionally maintains the `trackableDaySeconds` table (after
+ * `_admin/backfillTrackableDaySeconds` has run):
+ *
+ *   trackableDaySeconds[trackableId, day].attributedSeconds
+ *     === Σ timeWindows.durationSeconds
+ *         WHERE resolveAttributedTrackableId(...) === trackableId
+ *           AND budgetType === "ACTUAL"
+ *           AND toCompactYYYYMMDD(startDayYYYYMMDD) === day
+ *
+ * These rows let `getGoalDetails` compute per-week attributed seconds
+ * (the `MINUTES_A_WEEK` overall-progress loop) without re-reading the
+ * raw window history.
  */
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { buildListIdToTrackableId } from "./trackableAttribution";
+import {
+  buildListIdToTrackableId,
+  resolveAttributedTrackableId,
+  resolveSnapshotTrackableIdForTask,
+  type TaskInfo,
+} from "./trackableAttribution";
 import { isYYYYMMDDCompact, toCompactYYYYMMDD } from "./compactYYYYMMDD";
+import {
+  onTimeWindowDeleted,
+} from "./taskTimeSpent";
+
+export type WindowLifetimeRow = Pick<
+  Doc<"timeWindows">,
+  | "userId"
+  | "trackableId"
+  | "taskId"
+  | "listId"
+  | "budgetType"
+  | "durationSeconds"
+  | "startDayYYYYMMDD"
+  | "activityType"
+>;
 
 type LifetimePatch = {
   totalSeconds?: number;
@@ -119,99 +153,268 @@ async function applyDelta(
   }
 }
 
-/** Call after inserting an ACTUAL `timeWindows` row with a resolved `trackableId`. */
-export async function onAttributedWindowInserted(
+/**
+ * Applies a signed seconds delta to the `(trackableId, dayYYYYMMDD)`
+ * bucket in `trackableDaySeconds`. Mirrors the `lifetimeTotalSeconds`
+ * window deltas so `getGoalDetails` can compute weekly sums (the
+ * `MINUTES_A_WEEK` overall-progress loop) without scanning historical
+ * `timeWindows` rows. Rows are created on demand and deleted when the
+ * sum returns to zero. `dayYYYYMMDD` must be compact (validated by the
+ * callers).
+ */
+async function bumpTrackableDaySeconds(
   ctx: MutationCtx,
-  args: {
-    trackableId: Id<"trackables">;
-    durationSeconds: number;
-    startDayYYYYMMDD: string;
-  },
+  trackableId: Id<"trackables">,
+  userId: Id<"users">,
+  dayYYYYMMDD: string,
+  deltaSeconds: number,
 ): Promise<void> {
-  if (args.durationSeconds <= 0 && args.startDayYYYYMMDD === "") return;
+  if (deltaSeconds === 0) return;
+  const existing = await ctx.db
+    .query("trackableDaySeconds")
+    .withIndex("by_trackable_day", (q) =>
+      q.eq("trackableId", trackableId).eq("dayYYYYMMDD", dayYYYYMMDD),
+    )
+    .unique();
+
+  if (!existing) {
+    if (deltaSeconds > 0) {
+      await ctx.db.insert("trackableDaySeconds", {
+        trackableId,
+        userId,
+        dayYYYYMMDD,
+        attributedSeconds: deltaSeconds,
+      });
+    }
+    return;
+  }
+
+  const next = Math.max(0, existing.attributedSeconds + deltaSeconds);
+  if (next === 0) {
+    await ctx.db.delete(existing._id);
+    return;
+  }
+  if (next === existing.attributedSeconds) return;
+  await ctx.db.patch(existing._id, { attributedSeconds: next });
+}
+
+async function loadListIdToTrackableIdForUser(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+): Promise<Map<string, Id<"trackables">>> {
+  const links = await ctx.db
+    .query("listTrackableLinks")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+  return buildListIdToTrackableId(links);
+}
+
+async function loadTaskInfoForWindow(
+  ctx: MutationCtx,
+  taskId: Id<"tasks"> | undefined,
+): Promise<TaskInfo | null> {
+  if (!taskId) return null;
+  const task = await ctx.db.get(taskId);
+  if (!task) return null;
+  return {
+    trackableId: task.trackableId ?? null,
+    listId: task.listId ?? null,
+  };
+}
+
+function taskInfoMapForWindow(
+  taskId: Id<"tasks"> | undefined,
+  taskInfo: TaskInfo | null,
+): Map<string, TaskInfo> {
+  const m = new Map<string, TaskInfo>();
+  if (taskId && taskInfo) {
+    m.set(String(taskId), taskInfo);
+  }
+  return m;
+}
+
+/** Single-bucket attribution — matches P1 coalesce / `get_time_track_sums`. */
+function resolveLifetimeTrackableId(
+  tw: Pick<
+    Doc<"timeWindows">,
+    "trackableId" | "taskId" | "listId" | "budgetType"
+  >,
+  taskInfo: TaskInfo | null,
+  listIdToTrackableId: Map<string, Id<"trackables">>,
+): Id<"trackables"> | undefined {
+  if (tw.budgetType !== "ACTUAL") return undefined;
+  return (
+    resolveAttributedTrackableId(
+      tw,
+      taskInfoMapForWindow(tw.taskId, taskInfo),
+      listIdToTrackableId,
+    ) ?? undefined
+  );
+}
+
+async function resolveLifetimeTrackableIdForWindow(
+  ctx: MutationCtx,
+  tw: WindowLifetimeRow,
+  listIdToTrackableId?: Map<string, Id<"trackables">>,
+  taskInfo?: TaskInfo | null,
+): Promise<Id<"trackables"> | undefined> {
+  const map =
+    listIdToTrackableId ??
+    (await loadListIdToTrackableIdForUser(ctx, tw.userId));
+  const info =
+    taskInfo !== undefined
+      ? taskInfo
+      : await loadTaskInfoForWindow(ctx, tw.taskId);
+  return resolveLifetimeTrackableId(tw, info, map);
+}
+
+async function applyCoalesceLifetimeDelta(
+  ctx: MutationCtx,
+  tw: WindowLifetimeRow,
+  sign: 1 | -1,
+  listIdToTrackableId?: Map<string, Id<"trackables">>,
+  taskInfo?: TaskInfo | null,
+): Promise<void> {
+  if (tw.budgetType !== "ACTUAL") return;
+  const dur = tw.durationSeconds ?? 0;
+  if (dur <= 0) return;
+  const day = toCompactYYYYMMDD(tw.startDayYYYYMMDD);
+  const activityDay = isYYYYMMDDCompact(day) ? day : undefined;
+  const trackableId = await resolveLifetimeTrackableIdForWindow(
+    ctx,
+    tw,
+    listIdToTrackableId,
+    taskInfo,
+  );
+  if (!trackableId) return;
   await applyDelta(
     ctx,
-    args.trackableId,
+    trackableId,
     {
-      totalSeconds: args.durationSeconds,
-      calendarCount: 1,
+      totalSeconds: sign * dur,
+      calendarCount: sign,
     },
-    args.startDayYYYYMMDD,
+    sign > 0 ? activityDay : undefined,
   );
+  if (activityDay) {
+    await bumpTrackableDaySeconds(
+      ctx,
+      trackableId,
+      tw.userId,
+      activityDay,
+      sign * dur,
+    );
+  }
+}
+
+/** Call after inserting an ACTUAL `timeWindows` row. */
+export async function onAttributedWindowInserted(
+  ctx: MutationCtx,
+  tw: WindowLifetimeRow,
+): Promise<void> {
+  await applyCoalesceLifetimeDelta(ctx, tw, 1);
 }
 
 /** Call after patching an ACTUAL `timeWindows` row. */
 export async function onAttributedWindowPatched(
   ctx: MutationCtx,
-  before: {
-    trackableId?: Id<"trackables">;
-    budgetType: "ACTUAL" | "BUDGETED";
-    durationSeconds: number;
-    startDayYYYYMMDD: string;
-  },
-  after: {
-    trackableId?: Id<"trackables">;
-    budgetType: "ACTUAL" | "BUDGETED";
-    durationSeconds: number;
-    startDayYYYYMMDD: string;
-  },
+  before: WindowLifetimeRow,
+  after: WindowLifetimeRow,
 ): Promise<void> {
-  const beforeCounts =
-    before.budgetType === "ACTUAL" && before.trackableId !== undefined;
-  const afterCounts =
-    after.budgetType === "ACTUAL" && after.trackableId !== undefined;
+  const userId = after.userId ?? before.userId;
+  const listMap = await loadListIdToTrackableIdForUser(ctx, userId);
+  const [beforeTask, afterTask] = await Promise.all([
+    loadTaskInfoForWindow(ctx, before.taskId),
+    loadTaskInfoForWindow(ctx, after.taskId),
+  ]);
 
-  if (
-    beforeCounts &&
-    afterCounts &&
-    before.trackableId === after.trackableId
-  ) {
-    // Same trackable — just adjust the delta. `calendarCount` is
-    // unchanged because the row count didn't change.
-    await applyDelta(
-      ctx,
-      after.trackableId as Id<"trackables">,
-      { totalSeconds: after.durationSeconds - before.durationSeconds },
-      after.startDayYYYYMMDD,
-    );
-    return;
-  }
-
-  // Different trackable — fully reverse the old contribution and apply
-  // the new one. Handles flips into/out of ACTUAL and trackable swaps.
-  if (beforeCounts) {
-    await applyDelta(ctx, before.trackableId as Id<"trackables">, {
-      totalSeconds: -before.durationSeconds,
-      calendarCount: -1,
-    });
-  }
-  if (afterCounts) {
-    await applyDelta(
-      ctx,
-      after.trackableId as Id<"trackables">,
-      {
-        totalSeconds: after.durationSeconds,
-        calendarCount: 1,
-      },
-      after.startDayYYYYMMDD,
-    );
-  }
+  await applyCoalesceLifetimeDelta(ctx, before, -1, listMap, beforeTask);
+  await applyCoalesceLifetimeDelta(ctx, after, 1, listMap, afterTask);
 }
 
 /** Call after deleting an ACTUAL `timeWindows` row. */
 export async function onAttributedWindowDeleted(
   ctx: MutationCtx,
-  args: {
-    trackableId?: Id<"trackables">;
-    budgetType: "ACTUAL" | "BUDGETED";
-    durationSeconds: number;
-  },
+  tw: WindowLifetimeRow,
 ): Promise<void> {
-  if (args.budgetType !== "ACTUAL" || args.trackableId === undefined) return;
-  await applyDelta(ctx, args.trackableId, {
-    totalSeconds: -args.durationSeconds,
-    calendarCount: -1,
+  await applyCoalesceLifetimeDelta(ctx, tw, -1);
+}
+
+/**
+ * Delete a time window and keep task totals + trackable lifetime in sync.
+ * Use this instead of bare `ctx.db.delete` everywhere.
+ */
+export async function deleteTimeWindowWithSideEffects(
+  ctx: MutationCtx,
+  tw: Doc<"timeWindows">,
+): Promise<void> {
+  await ctx.db.delete(tw._id);
+  await onTimeWindowDeleted(ctx, {
+    taskId: tw.taskId,
+    activityType: tw.activityType,
+    budgetType: tw.budgetType,
+    durationSeconds: tw.durationSeconds,
   });
+  await onAttributedWindowDeleted(ctx, tw);
+}
+
+/**
+ * Re-snapshot task windows and move lifetime credit when attribution changes.
+ */
+async function resyncTaskWindowsOnAttributionChange(
+  ctx: MutationCtx,
+  windows: Doc<"timeWindows">[],
+  beforeTaskInfo: TaskInfo,
+  afterTaskInfo: TaskInfo,
+  beforeListMap: Map<string, Id<"trackables">>,
+  afterListMap: Map<string, Id<"trackables">>,
+  newSnapshot: Id<"trackables"> | undefined,
+): Promise<void> {
+  for (const w of windows) {
+    if (w.budgetType !== "ACTUAL" || w.activityType !== "TASK") continue;
+    const dur = w.durationSeconds ?? 0;
+    if (dur <= 0) continue;
+    const day = toCompactYYYYMMDD(w.startDayYYYYMMDD);
+    if (!isYYYYMMDDCompact(day)) continue;
+
+    const beforeId = resolveLifetimeTrackableId(
+      w,
+      beforeTaskInfo,
+      beforeListMap,
+    );
+    const afterWindow: WindowLifetimeRow = {
+      ...w,
+      trackableId: newSnapshot,
+    };
+    const afterId = resolveLifetimeTrackableId(
+      afterWindow,
+      afterTaskInfo,
+      afterListMap,
+    );
+
+    if (w.trackableId !== newSnapshot) {
+      await ctx.db.patch(w._id, { trackableId: newSnapshot });
+    }
+
+    if (beforeId === afterId) continue;
+
+    if (beforeId) {
+      await applyDelta(ctx, beforeId, {
+        totalSeconds: -dur,
+        calendarCount: -1,
+      });
+      await bumpTrackableDaySeconds(ctx, beforeId, w.userId, day, -dur);
+    }
+    if (afterId) {
+      await applyDelta(
+        ctx,
+        afterId,
+        { totalSeconds: dur, calendarCount: 1 },
+        day,
+      );
+      await bumpTrackableDaySeconds(ctx, afterId, w.userId, day, dur);
+    }
+  }
 }
 
 /** Call after patching `trackableDays.numCompleted` (or inserting/deleting). */
@@ -394,6 +597,157 @@ export async function onTaskCompletionAttribution(
         validDay,
         1,
       );
+    }
+  }
+}
+
+/**
+ * When a task's `trackableId` or `listId` changes, re-snapshot its ACTUAL
+ * task windows and move lifetime credit so totals follow the task.
+ */
+export async function onTaskTimeAttributionChange(
+  ctx: MutationCtx,
+  taskId: Id<"tasks">,
+  before: Pick<Doc<"tasks">, "userId" | "trackableId" | "listId">,
+  after: Pick<Doc<"tasks">, "userId" | "trackableId" | "listId">,
+): Promise<void> {
+  if (
+    before.trackableId === after.trackableId &&
+    before.listId === after.listId
+  ) {
+    return;
+  }
+
+  const listMap = await loadListIdToTrackableIdForUser(ctx, after.userId);
+  const beforeTaskInfo: TaskInfo = {
+    trackableId: before.trackableId ?? null,
+    listId: before.listId ?? null,
+  };
+  const afterTaskInfo: TaskInfo = {
+    trackableId: after.trackableId ?? null,
+    listId: after.listId ?? null,
+  };
+  const newSnapshot = resolveSnapshotTrackableIdForTask({
+    task: afterTaskInfo,
+    listIdToTrackableId: listMap,
+  });
+
+  const windows = await ctx.db
+    .query("timeWindows")
+    .withIndex("by_task", (q) => q.eq("taskId", taskId))
+    .collect();
+
+  await resyncTaskWindowsOnAttributionChange(
+    ctx,
+    windows,
+    beforeTaskInfo,
+    afterTaskInfo,
+    listMap,
+    listMap,
+    newSnapshot,
+  );
+}
+
+/**
+ * When a list's linked trackable changes, resync lifetime for tasks that
+ * attribute via that list (no direct `task.trackableId`):
+ *
+ *   - time credit: re-snapshot each task's ACTUAL windows and move
+ *     `lifetimeTotalSeconds` / `lifetimeCalendarCount` /
+ *     `trackableDaySeconds` buckets (via
+ *     `resyncTaskWindowsOnAttributionChange`).
+ *   - completed-task day credit: move `lifetimeAttributedTaskDayCount`
+ *     and `trackableDays.attributedTaskCount` for each completed task,
+ *     mirroring `onTaskCompletionAttribution`. Without this, re-linking
+ *     a list moved the seconds but left DAYS_A_WEEK / count-style
+ *     progress on the old trackable.
+ */
+export async function onListTrackableLinkChange(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  listId: Id<"lists">,
+  beforeTrackableId: Id<"trackables"> | undefined,
+  afterTrackableId: Id<"trackables"> | undefined,
+): Promise<void> {
+  if (beforeTrackableId === afterTrackableId) return;
+
+  const afterListMap = await loadListIdToTrackableIdForUser(ctx, userId);
+  const beforeListMap = new Map(afterListMap);
+  if (beforeTrackableId) {
+    beforeListMap.set(listId, beforeTrackableId);
+  } else {
+    beforeListMap.delete(listId);
+  }
+
+  const tasks = await ctx.db
+    .query("tasks")
+    .withIndex("by_list", (q) => q.eq("listId", listId))
+    .collect();
+
+  for (const task of tasks) {
+    if (task.userId !== userId) continue;
+    const taskInfo: TaskInfo = {
+      trackableId: task.trackableId ?? null,
+      listId: task.listId ?? null,
+    };
+    const newSnapshot = resolveSnapshotTrackableIdForTask({
+      task: taskInfo,
+      listIdToTrackableId: afterListMap,
+    });
+    const windows = await ctx.db
+      .query("timeWindows")
+      .withIndex("by_task", (q) => q.eq("taskId", task._id))
+      .collect();
+    await resyncTaskWindowsOnAttributionChange(
+      ctx,
+      windows,
+      taskInfo,
+      taskInfo,
+      beforeListMap,
+      afterListMap,
+      newSnapshot,
+    );
+
+    // Completed-task day credit follows the link too. Only tasks whose
+    // attribution flows THROUGH the list qualify — a direct
+    // `task.trackableId` overrides the list link on both sides, so the
+    // resolved trackable didn't change for those. Deltas mirror
+    // `onTaskCompletionAttribution` (unconditional lifetime counter,
+    // per-day row only for a valid compact day).
+    if (task.dateCompleted && !task.trackableId) {
+      const day = toCompactYYYYMMDD(task.dateCompleted);
+      const validDay = isYYYYMMDDCompact(day) ? day : undefined;
+      if (beforeTrackableId) {
+        await applyDelta(ctx, beforeTrackableId, {
+          attributedTaskDayCount: -1,
+        });
+        if (validDay) {
+          await bumpTrackableDayAttributedTaskCount(
+            ctx,
+            beforeTrackableId,
+            userId,
+            validDay,
+            -1,
+          );
+        }
+      }
+      if (afterTrackableId) {
+        await applyDelta(
+          ctx,
+          afterTrackableId,
+          { attributedTaskDayCount: 1 },
+          validDay,
+        );
+        if (validDay) {
+          await bumpTrackableDayAttributedTaskCount(
+            ctx,
+            afterTrackableId,
+            userId,
+            validDay,
+            1,
+          );
+        }
+      }
     }
   }
 }

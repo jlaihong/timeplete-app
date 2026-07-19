@@ -9,7 +9,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
 import { useQuery, useConvexAuth } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Platform } from "react-native";
 import {
   DrawerContentScrollView,
   DrawerItem,
@@ -496,7 +496,9 @@ export default function AppLayout() {
   // layout mounted and show an overlay until Convex identity + users.store are ready.
 
   if (!convexLoading && !convexAuthenticated) {
-    return <Redirect href="/(auth)/login" />;
+    return (
+      <Redirect href={Platform.OS === "web" ? "/landing" : "/(auth)/login"} />
+    );
   }
 
   const sessionBootstrapBlocked =

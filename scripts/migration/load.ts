@@ -19,23 +19,105 @@
  * for the project-local anonymous deployment).
  */
 import { ConvexHttpClient } from "convex/browser";
+import { makeFunctionReference } from "convex/server";
+import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { internal } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const IN_DIR = join(__dirname, "migration-out");
+const ROOT = join(__dirname, "..", "..");
 
 /**
- * Number of rows per `importBatch` HTTP call. Convex caps mutation arg
- * size around ~8 MB; 200 rows of typical task/timeWindow shape fits
- * comfortably under that with plenty of headroom.
+ * Number of rows per `importBatch` call. Convex caps mutation arg size
+ * around ~8 MB; the CLI path (`--dev`) additionally passes args on the
+ * command line, where macOS caps total argv around 1 MB — 100 rows of
+ * typical task/timeWindow shape stays far below both limits.
  */
-const BATCH_SIZE = 200;
+const BATCH_SIZE = 100;
+
+/**
+ * Uniform "call an internal function on the target deployment" surface.
+ * Local + prod targets go over `ConvexHttpClient` with an admin key; the
+ * cloud dev target has no stored admin key, so it shells out to
+ * `npx convex run`, which authenticates via the logged-in Convex CLI and
+ * the `CONVEX_DEPLOYMENT` in `.env.local`.
+ */
+type Runner = {
+  label: string;
+  isCloud: boolean;
+  run(fn: string, args: Record<string, unknown>): Promise<unknown>;
+};
+
+function makeHttpRunner(
+  url: string,
+  adminKey: string,
+  label: string,
+  isCloud: boolean,
+): Runner {
+  const client = new ConvexHttpClient(url);
+  // setAdminAuth is technically @internal but is the only way to call
+  // internalMutations from a Node script.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (client as any).setAdminAuth(adminKey);
+  return {
+    label,
+    isCloud,
+    async run(fn, args) {
+      return await client.mutation(
+        makeFunctionReference<"mutation">(fn),
+        args,
+      );
+    },
+  };
+}
+
+function makeCliRunner(target: "dev" | "prod"): Runner {
+  return {
+    label:
+      target === "prod"
+        ? "CLOUD prod (via `npx convex run --prod`)"
+        : "CLOUD dev (via `npx convex run`, CONVEX_DEPLOYMENT in .env.local)",
+    isCloud: true,
+    async run(fn, args) {
+      const cliArgs = [
+        "convex",
+        "run",
+        fn,
+        JSON.stringify(args),
+        "--typecheck",
+        "disable",
+        "--codegen",
+        "disable",
+      ];
+      if (target === "prod") cliArgs.push("--prod");
+      const out = execFileSync("npx", cliArgs, {
+        cwd: ROOT,
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+      });
+      // `convex run` may print CLI banners before the JSON result; the
+      // result itself is the last thing on stdout (possibly pretty-printed
+      // across multiple lines, possibly a bare string/number). Scan forward
+      // line by line until the remainder parses as JSON.
+      const lines = out.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const candidate = lines.slice(i).join("\n").trim();
+        if (!candidate) break;
+        try {
+          return JSON.parse(candidate);
+        } catch {
+          // keep scanning
+        }
+      }
+      return null;
+    },
+  };
+}
 
 /**
  * Load the local-deployment admin key and URL from the well-known
@@ -74,30 +156,42 @@ function loadLocalDeploymentConfig(): { url: string; adminKey: string } {
  * Default = local (anonymous `npx convex dev` backend), preserving the
  * original behaviour for routine migration iteration.
  *
- * `--prod` switches to a hosted deployment. The deployment URL is derived
- * from `CONVEX_DEPLOY_KEY`'s `prod:<deployment-name>|...` prefix, so we
- * cannot accidentally point at the wrong cloud project. The deploy key
- * itself doubles as the admin auth used by `setAdminAuth`. An explicit
+ * `--dev` targets the cloud dev deployment configured in `.env.local`
+ * (`CONVEX_DEPLOYMENT`). There is no stored admin key for cloud dev, so
+ * every call goes through `npx convex run`, which authenticates via the
+ * logged-in Convex CLI.
+ *
+ * `--prod` switches to the hosted prod deployment. If `CONVEX_DEPLOY_KEY`
+ * is set, its `prod:<deployment-name>|...` prefix pins the URL and the key
+ * doubles as the admin auth used by `setAdminAuth`; otherwise we fall back
+ * to `npx convex run --prod` via the logged-in CLI. An explicit
  * confirmation prompt protects against fat-fingering the flag against a
  * production deployment that already has real users.
  */
-async function resolveDeploymentTarget(): Promise<{
-  url: string;
-  adminKey: string;
-  label: string;
-  isCloud: boolean;
-}> {
+async function resolveDeploymentTarget(): Promise<Runner> {
   const wantsProd = process.argv.includes("--prod");
+  const wantsDev = process.argv.includes("--dev");
+  if (wantsProd && wantsDev) {
+    throw new Error("Pass at most one of --dev / --prod.");
+  }
+  if (wantsDev) {
+    return makeCliRunner("dev");
+  }
   if (!wantsProd) {
     const local = loadLocalDeploymentConfig();
-    return { ...local, label: `local (${local.url})`, isCloud: false };
+    return makeHttpRunner(
+      local.url,
+      local.adminKey,
+      `local (${local.url})`,
+      false,
+    );
   }
 
   const key = process.env.CONVEX_DEPLOY_KEY?.trim();
   if (!key) {
-    throw new Error(
-      "--prod requires CONVEX_DEPLOY_KEY in the environment (use direnv or `export CONVEX_DEPLOY_KEY=prod:<name>|<token>`).",
-    );
+    // No deploy key: fall back to the logged-in Convex CLI, same as --dev
+    // but with --prod appended to every `npx convex run`.
+    return makeCliRunner("prod");
   }
   const m = key.match(/^(prod|dev|preview):([\w-]+)\|/);
   if (!m) {
@@ -113,18 +207,10 @@ async function resolveDeploymentTarget(): Promise<{
   }
   const explicitUrl = process.env.CONVEX_URL?.trim();
   const url = explicitUrl ?? `https://${name}.convex.cloud`;
-  return {
-    url,
-    adminKey: key,
-    label: `CLOUD prod (${name})`,
-    isCloud: true,
-  };
+  return makeHttpRunner(url, key, `CLOUD prod (${name})`, true);
 }
 
-async function confirmCloudWrite(target: {
-  url: string;
-  label: string;
-}): Promise<void> {
+async function confirmCloudWrite(target: { label: string }): Promise<void> {
   if (process.env.MIGRATION_CONFIRM === "yes") return;
 
   const totals: Record<string, number> = {};
@@ -149,7 +235,6 @@ async function confirmCloudWrite(target: {
   console.log("");
   console.log("================================================================");
   console.log(`  ABOUT TO WRITE TO ${target.label}`);
-  console.log(`  ${target.url}`);
   console.log("");
   console.log("  Sample row counts from migration-out/:");
   console.log(summary);
@@ -252,7 +337,7 @@ function resolveFks<T extends Record<string, unknown>>(
 }
 
 async function loadTable<T extends { legacyId: string }>(
-  client: ConvexHttpClient,
+  runner: Runner,
   table: string,
   rows: T[],
 ): Promise<IdMap<string>> {
@@ -265,10 +350,14 @@ async function loadTable<T extends { legacyId: string }>(
   let skipped = 0;
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     const batch = rows.slice(i, i + BATCH_SIZE);
-    const res = await client.mutation(internal._admin.import.importBatch, {
+    const res = (await runner.run("_admin/import:importBatch", {
       table,
       rows: batch,
-    });
+    })) as {
+      inserted: number;
+      skipped: number;
+      mapping: Array<{ legacyId: string; id: string }>;
+    };
     inserted += res.inserted;
     skipped += res.skipped;
     for (const m of res.mapping) {
@@ -289,12 +378,15 @@ type UserRow = {
 };
 
 async function loadUsers(
-  client: ConvexHttpClient,
+  runner: Runner,
   rows: UserRow[],
 ): Promise<IdMap<"users">> {
   const map: IdMap<"users"> = new Map();
   for (const r of rows) {
-    const id = await client.mutation(internal._admin.import.importUser, r);
+    const id = (await runner.run(
+      "_admin/import:importUser",
+      r,
+    )) as Id<"users">;
     map.set(r.legacyId, id);
   }
   console.log(`  users: ${rows.length} rows imported (idempotent by legacyId)`);
@@ -302,18 +394,11 @@ async function loadUsers(
 }
 
 async function main() {
-  const target = await resolveDeploymentTarget();
-  console.log(`Connecting to ${target.label}`);
-  if (target.isCloud) {
-    await confirmCloudWrite(target);
+  const client = await resolveDeploymentTarget();
+  console.log(`Connecting to ${client.label}`);
+  if (client.isCloud) {
+    await confirmCloudWrite(client);
   }
-  const client = new ConvexHttpClient(target.url);
-  // setAdminAuth is technically @internal but is the only way to call
-  // internalMutations from a Node script. The admin key is either the
-  // local deployment's from `.convex/local/default/config.json` or the
-  // production deploy key from `CONVEX_DEPLOY_KEY` (when --prod is used).
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (client as any).setAdminAuth(target.adminKey);
 
   // ---- Users (must be first; everything else FK-references users) ----
   const userRows = readJsonl<UserRow>("users.jsonl");
@@ -508,10 +593,9 @@ async function main() {
   let missing = 0;
   for (let i = 0; i < tasksPass2.length; i += BATCH_SIZE) {
     const batch = tasksPass2.slice(i, i + BATCH_SIZE);
-    const res = await client.mutation(
-      internal._admin.import.patchTaskParents,
-      { rows: batch },
-    );
+    const res = (await client.run("_admin/import:patchTaskParents", {
+      rows: batch,
+    })) as { patched: number; missing: number };
     patched += res.patched;
     missing += res.missing;
   }

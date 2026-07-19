@@ -4,15 +4,20 @@
  * `_admin/import:rehashCognitoPassword` on the timeplete cloud deployment to
  * overwrite the `MIGRATE:cognito:<email>` sentinel.
  *
- * Usage:
- *   node /tmp/reset-timeplete-password.mjs <email>
- * Prompts for the new password twice (input hidden).
+ * Usage (from the timeplete-app dir):
+ *   node scripts/reset-password.mjs <email>
+ * Prompts for the new password twice (input hidden). Runs against whatever
+ * deployment CONVEX_DEPLOYMENT in .env.local points at.
  */
 import { hashPassword } from "better-auth/crypto";
 import readline from "node:readline";
 import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const APP_DIR = "/Users/jlaihong/Development/timeplete/timeplete-app";
+// Resolve the app dir from this script's own location (scripts/ -> ..) so the
+// script is portable across machines/checkouts instead of a hardcoded path.
+const APP_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 function promptHidden(question) {
   return new Promise((resolve, reject) => {
@@ -51,7 +56,7 @@ function promptHidden(question) {
 async function main() {
   const email = (process.argv[2] || "").trim().toLowerCase();
   if (!email) {
-    console.error("Usage: node /tmp/reset-timeplete-password.mjs <email>");
+    console.error("Usage: node scripts/reset-password.mjs <email>");
     process.exit(1);
   }
 

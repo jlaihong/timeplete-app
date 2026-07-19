@@ -13,15 +13,15 @@ import {
 } from "./_helpers/trackableAttribution";
 import { wallClockInTimeZone } from "./_helpers/wallClockTimeZone";
 import {
-  onTimeWindowDeleted,
   onTimeWindowInserted,
   onTimeWindowPatched,
 } from "./_helpers/taskTimeSpent";
 import {
-  onAttributedWindowDeleted,
   onAttributedWindowInserted,
   onAttributedWindowPatched,
+  deleteTimeWindowWithSideEffects,
   onTaskCompletionAttribution,
+  onTaskTimeAttributionChange,
 } from "./_helpers/trackableLifetime";
 
 /**
@@ -593,22 +593,30 @@ export const upsert = mutation({
       const completionChanged = args.dateCompleted !== undefined;
       const trackableChanged = args.trackableId !== undefined;
       const listChanged = args.listId !== undefined;
+      const afterAttribution = {
+        userId: existing.userId,
+        dateCompleted:
+          args.dateCompleted !== undefined
+            ? (args.dateCompleted ?? undefined)
+            : existing.dateCompleted,
+        trackableId:
+          args.trackableId !== undefined
+            ? (args.trackableId ?? undefined)
+            : existing.trackableId,
+        listId: args.listId !== undefined ? args.listId : existing.listId,
+      };
       if (completionChanged || trackableChanged || listChanged) {
-        const afterAttribution = {
-          userId: existing.userId,
-          dateCompleted:
-            args.dateCompleted !== undefined
-              ? (args.dateCompleted ?? undefined)
-              : existing.dateCompleted,
-          trackableId:
-            args.trackableId !== undefined
-              ? (args.trackableId ?? undefined)
-              : existing.trackableId,
-          listId:
-            args.listId !== undefined ? args.listId : existing.listId,
-        };
         await onTaskCompletionAttribution(
           ctx,
+          beforeAttribution,
+          afterAttribution,
+        );
+      }
+
+      if (trackableChanged || listChanged) {
+        await onTaskTimeAttributionChange(
+          ctx,
+          args.id!,
           beforeAttribution,
           afterAttribution,
         );
@@ -688,7 +696,9 @@ export const remove = mutation({
           .query("timeWindows")
           .withIndex("by_task", (q) => q.eq("taskId", child._id))
           .collect();
-        for (const w of childWindows) await ctx.db.delete(w._id);
+        for (const w of childWindows) {
+          await deleteTimeWindowWithSideEffects(ctx, w);
+        }
         if (child.dateCompleted) {
           await onTaskCompletionAttribution(
             ctx,
@@ -721,7 +731,9 @@ export const remove = mutation({
       .query("timeWindows")
       .withIndex("by_task", (q) => q.eq("taskId", args.id))
       .collect();
-    for (const w of windows) await ctx.db.delete(w._id);
+    for (const w of windows) {
+      await deleteTimeWindowWithSideEffects(ctx, w);
+    }
 
     if (task.dateCompleted) {
       await onTaskCompletionAttribution(
@@ -1027,18 +1039,7 @@ export const setTimeSpent = mutation({
         if (toTrim <= 0) break;
         const dur = Math.max(0, w.durationSeconds ?? 0);
         if (dur <= toTrim) {
-          await ctx.db.delete(w._id);
-          await onTimeWindowDeleted(ctx, {
-            taskId: w.taskId,
-            activityType: w.activityType,
-            budgetType: w.budgetType,
-            durationSeconds: dur,
-          });
-          await onAttributedWindowDeleted(ctx, {
-            trackableId: w.trackableId,
-            budgetType: w.budgetType,
-            durationSeconds: dur,
-          });
+          await deleteTimeWindowWithSideEffects(ctx, w);
           toTrim -= dur;
         } else {
           const nextDur = dur - toTrim;
@@ -1063,16 +1064,24 @@ export const setTimeSpent = mutation({
           await onAttributedWindowPatched(
             ctx,
             {
+              userId: w.userId,
               trackableId: w.trackableId,
+              taskId: w.taskId,
+              listId: w.listId,
               budgetType: w.budgetType,
               durationSeconds: dur,
               startDayYYYYMMDD: w.startDayYYYYMMDD,
+              activityType: w.activityType,
             },
             {
+              userId: w.userId,
               trackableId: w.trackableId,
+              taskId: w.taskId,
+              listId: w.listId,
               budgetType: w.budgetType,
               durationSeconds: nextDur,
               startDayYYYYMMDD: w.startDayYYYYMMDD,
+              activityType: w.activityType,
             },
           );
           toTrim = 0;
@@ -1133,13 +1142,16 @@ export const setTimeSpent = mutation({
       budgetType: "ACTUAL" as const,
       durationSeconds: deltaSec,
     });
-    if (snapshotTrackableId) {
-      await onAttributedWindowInserted(ctx, {
-        trackableId: snapshotTrackableId,
-        durationSeconds: deltaSec,
-        startDayYYYYMMDD: day,
-      });
-    }
+    await onAttributedWindowInserted(ctx, {
+      userId: user._id,
+      trackableId: snapshotTrackableId,
+      taskId: args.taskId,
+      listId: task.listId,
+      budgetType: "ACTUAL",
+      durationSeconds: deltaSec,
+      startDayYYYYMMDD: day,
+      activityType: "TASK",
+    });
   },
 });
 

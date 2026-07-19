@@ -57,17 +57,16 @@ export function buildTaskInfoMap(
 }
 
 /**
- * Returns the trackable a time window should be attributed to (or `null`
- * if it isn't attributable to any trackable).
+ * Returns the trackable a time window should be grouped under for display
+ * (single-bucket resolution). Matches productivity-one's
+ * `TrackableTimeWindowGrouper.resolveEffectiveTrackableId`:
+ * coalesce(window.trackableId, task.trackableId, list link).
  *
- * IMPORTANT: this is the canonical resolver. Do not re-implement this logic
- * inline anywhere — call this function. The order matters because:
- *
- *  - We snapshot trackableId on the window at log time so historical time
- *    stays with the trackable the user was working on (productivity-one
- *    parity, see Scenario 2 in the user spec).
- *  - For windows that lack a snapshot (legacy / external imports / manual
- *    entries) we fall back to the task's CURRENT trackable / list link.
+ * For filtering whether a window counts toward a *specific* trackable's
+ * totals, use `timeWindowAttributedToTrackable` instead — that mirrors
+ * productivity-one's union attribution predicate and also counts windows
+ * whose task is currently assigned to the trackable even when the window
+ * snapshot points elsewhere.
  */
 export function resolveAttributedTrackableId(
   tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId" | "listId">,
@@ -92,6 +91,13 @@ export function resolveAttributedTrackableId(
 
 /**
  * Predicate: does this window count toward `trackableId`'s totals?
+ *
+ * Matches productivity-one `time-window-attribution.utils.ts` and the
+ * backend `get_time_track_sums` OR filter: a window counts when ANY of
+ * these hold:
+ *   1. window.trackableId === trackableId (write-time snapshot)
+ *   2. task.trackableId === trackableId (current direct assignment)
+ *   3. task.listId → listTrackableLinks === trackableId
  */
 export function timeWindowAttributedToTrackable(
   tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId" | "listId">,
@@ -99,10 +105,45 @@ export function timeWindowAttributedToTrackable(
   taskInfoMap: Map<string, TaskInfo>,
   listIdToTrackableId: Map<string, Id<"trackables">>
 ): boolean {
-  return (
-    resolveAttributedTrackableId(tw, taskInfoMap, listIdToTrackableId) ===
-    trackableId
-  );
+  const tid = String(trackableId);
+  if (tw.trackableId && String(tw.trackableId) === tid) return true;
+  if (!tw.taskId) return false;
+  const taskInfo = taskInfoMap.get(String(tw.taskId));
+  if (!taskInfo) return false;
+  if (taskInfo.trackableId && String(taskInfo.trackableId) === tid) {
+    return true;
+  }
+  if (taskInfo.listId) {
+    const linked = listIdToTrackableId.get(String(taskInfo.listId));
+    if (linked && String(linked) === tid) return true;
+  }
+  return false;
+}
+
+/**
+ * All trackable IDs that should receive lifetime credit for an ACTUAL window.
+ * Matches the union of paths checked by `timeWindowAttributedToTrackable`:
+ * window snapshot, task direct assignment, and task list link.
+ */
+export function unionLifetimeTrackableIds(
+  tw: Pick<
+    Doc<"timeWindows">,
+    "trackableId" | "taskId" | "budgetType"
+  >,
+  taskInfo: TaskInfo | null | undefined,
+  listIdToTrackableId: Map<string, Id<"trackables">>,
+): Id<"trackables">[] {
+  if (tw.budgetType !== "ACTUAL") return [];
+  const ids = new Set<string>();
+  if (tw.trackableId) ids.add(String(tw.trackableId));
+  if (tw.taskId && taskInfo) {
+    if (taskInfo.trackableId) ids.add(String(taskInfo.trackableId));
+    if (taskInfo.listId) {
+      const linked = listIdToTrackableId.get(String(taskInfo.listId));
+      if (linked) ids.add(String(linked));
+    }
+  }
+  return Array.from(ids) as Id<"trackables">[];
 }
 
 /**

@@ -11,14 +11,13 @@ import {
 import { enrichTimeWindowsWithDisplayFields } from "./_helpers/timeWindowDisplayEnrichment";
 import { wallClockGridToEpochMs } from "./_helpers/wallClockTimeZone";
 import {
-  onTimeWindowDeleted,
   onTimeWindowInserted,
   onTimeWindowPatched,
 } from "./_helpers/taskTimeSpent";
 import {
-  onAttributedWindowDeleted,
   onAttributedWindowInserted,
   onAttributedWindowPatched,
+  deleteTimeWindowWithSideEffects,
 } from "./_helpers/trackableLifetime";
 
 function minutesFromHHMM(hhmm: string): number {
@@ -349,16 +348,24 @@ export const upsert = mutation({
       await onAttributedWindowPatched(
         ctx,
         {
+          userId: existing.userId,
           trackableId: existing.trackableId,
+          taskId: existing.taskId,
+          listId: existing.listId,
           budgetType: existing.budgetType,
           durationSeconds: existing.durationSeconds,
           startDayYYYYMMDD: existing.startDayYYYYMMDD,
+          activityType: existing.activityType,
         },
         {
+          userId: existing.userId,
           trackableId: resolvedTrackableId,
+          taskId: args.taskId,
+          listId: args.listId,
           budgetType: args.budgetType,
           durationSeconds: args.durationSeconds,
           startDayYYYYMMDD: args.startDayYYYYMMDD,
+          activityType: args.activityType,
         },
       );
       return args.id;
@@ -389,13 +396,16 @@ export const upsert = mutation({
       budgetType: args.budgetType,
       durationSeconds: args.durationSeconds,
     });
-    if (resolvedTrackableId && args.budgetType === "ACTUAL") {
-      await onAttributedWindowInserted(ctx, {
-        trackableId: resolvedTrackableId,
-        durationSeconds: args.durationSeconds,
-        startDayYYYYMMDD: args.startDayYYYYMMDD,
-      });
-    }
+    await onAttributedWindowInserted(ctx, {
+      userId: user._id,
+      trackableId: resolvedTrackableId,
+      taskId: args.taskId,
+      listId: args.listId,
+      budgetType: args.budgetType,
+      durationSeconds: args.durationSeconds,
+      startDayYYYYMMDD: args.startDayYYYYMMDD,
+      activityType: args.activityType,
+    });
     return insertedId;
   },
 });
@@ -406,17 +416,6 @@ export const remove = mutation({
     const user = await requireApprovedUser(ctx);
     const tw = await ctx.db.get(args.id);
     if (!tw) throw new Error("Time window not found");
-    await ctx.db.delete(args.id);
-    await onTimeWindowDeleted(ctx, {
-      taskId: tw.taskId,
-      activityType: tw.activityType,
-      budgetType: tw.budgetType,
-      durationSeconds: tw.durationSeconds,
-    });
-    await onAttributedWindowDeleted(ctx, {
-      trackableId: tw.trackableId,
-      budgetType: tw.budgetType,
-      durationSeconds: tw.durationSeconds,
-    });
+    await deleteTimeWindowWithSideEffects(ctx, tw);
   },
 });

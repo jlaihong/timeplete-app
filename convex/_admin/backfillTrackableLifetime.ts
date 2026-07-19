@@ -10,6 +10,11 @@
  *
  * Idempotent — running it twice converges to the same final state.
  * Invoked via `npx convex run _admin/backfillTrackableLifetime:runAll`.
+ *
+ * If totals look wrong after reassigning tasks, run the full repair first:
+ *   `npx convex run _admin/repairTrackableLifetime:repairAll`
+ * That re-stamps stale window snapshots, then recomputes lifetime totals
+ * using coalesce attribution (matching runtime writers).
  */
 import {
   internalMutation,
@@ -18,7 +23,12 @@ import {
   type QueryCtx,
 } from "../_generated/server";
 import { v } from "convex/values";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
+import {
+  buildListIdToTrackableId,
+  resolveAttributedTrackableId,
+  type TaskInfo,
+} from "../_helpers/trackableAttribution";
 
 interface ComputedTotals {
   lifetimeTotalSeconds: number;
@@ -42,19 +52,54 @@ function liftMinDay(
 async function computeTotals(
   ctx: QueryCtx | MutationCtx,
   trackable: Doc<"trackables">,
+  linkCache: Map<string, Map<string, Id<"trackables">>>,
+  taskCache: Map<string, TaskInfo | null>,
 ): Promise<ComputedTotals> {
-  // Trackable-attributed timer/calendar windows (the snapshot
-  // `trackableId` is what writers maintain).
-  const windows = await ctx.db
+  let listMap = linkCache.get(trackable.userId);
+  if (!listMap) {
+    const links = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_user", (q) => q.eq("userId", trackable.userId))
+      .collect();
+    listMap = buildListIdToTrackableId(links);
+    linkCache.set(trackable.userId, listMap);
+  }
+
+  // Coalesce attribution across all ACTUAL windows for this user.
+  const userWindows = await ctx.db
     .query("timeWindows")
-    .withIndex("by_trackable", (q) => q.eq("trackableId", trackable._id))
+    .withIndex("by_user", (q) => q.eq("userId", trackable.userId))
     .collect();
-  const actualWindows = windows.filter((w) => w.budgetType === "ACTUAL");
 
   let lifetimeCalendarSeconds = 0;
+  let lifetimeCalendarCount = 0;
   let firstActivity: string | undefined;
-  for (const w of actualWindows) {
+  for (const w of userWindows) {
+    if (w.budgetType !== "ACTUAL") continue;
+    let taskInfo: TaskInfo | null = null;
+    if (w.taskId) {
+      const key = String(w.taskId);
+      if (!taskCache.has(key)) {
+        const task = await ctx.db.get(w.taskId);
+        taskCache.set(
+          key,
+          task
+            ? {
+                trackableId: task.trackableId ?? null,
+                listId: task.listId ?? null,
+              }
+            : null,
+        );
+      }
+      taskInfo = taskCache.get(key) ?? null;
+    }
+    const taskInfoMap = new Map<string, TaskInfo>();
+    if (w.taskId && taskInfo) taskInfoMap.set(String(w.taskId), taskInfo);
+    const attributed =
+      resolveAttributedTrackableId(w, taskInfoMap, listMap) ?? undefined;
+    if (attributed !== trackable._id) continue;
     lifetimeCalendarSeconds += w.durationSeconds ?? 0;
+    lifetimeCalendarCount += 1;
     firstActivity = liftMinDay(firstActivity, w.startDayYYYYMMDD);
   }
 
@@ -95,13 +140,133 @@ async function computeTotals(
 
   return {
     lifetimeTotalSeconds,
-    lifetimeCalendarCount: actualWindows.length,
+    lifetimeCalendarCount,
     lifetimeStoredDayCount,
     lifetimeTrackerEntryCount,
     lifetimeTrackerEntrySeconds,
     lifetimeTrackerEntryRowCount,
     firstActivityDayYYYYMMDD: firstActivity,
   };
+}
+
+/**
+ * Compute totals for ALL of one user's trackables in a single pass over
+ * that user's `timeWindows`. The per-trackable `computeTotals` re-collects
+ * the user's full window history once per trackable, which multiplies to
+ * `trackables × windows` document reads and blows the 32k per-execution
+ * read limit on real post-migration data (48 × ~2,450). One pass keeps
+ * reads at `windows + tasks + small per-trackable tables`.
+ */
+async function computeTotalsForUser(
+  ctx: QueryCtx | MutationCtx,
+  userId: Id<"users">,
+  trackables: Doc<"trackables">[],
+  taskCache: Map<string, TaskInfo | null>,
+): Promise<Map<string, ComputedTotals>> {
+  const links = await ctx.db
+    .query("listTrackableLinks")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+  const listMap = buildListIdToTrackableId(links);
+
+  const userWindows = await ctx.db
+    .query("timeWindows")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+
+  const calendarSeconds = new Map<string, number>();
+  const calendarCount = new Map<string, number>();
+  const firstActivity = new Map<string, string>();
+  const liftActivity = (trackableId: string, day: string | undefined) => {
+    if (!day) return;
+    const current = firstActivity.get(trackableId);
+    if (!current || day < current) firstActivity.set(trackableId, day);
+  };
+
+  for (const w of userWindows) {
+    if (w.budgetType !== "ACTUAL") continue;
+    let taskInfo: TaskInfo | null = null;
+    if (w.taskId) {
+      const key = String(w.taskId);
+      if (!taskCache.has(key)) {
+        const task = await ctx.db.get(w.taskId);
+        taskCache.set(
+          key,
+          task
+            ? {
+                trackableId: task.trackableId ?? null,
+                listId: task.listId ?? null,
+              }
+            : null,
+        );
+      }
+      taskInfo = taskCache.get(key) ?? null;
+    }
+    const taskInfoMap = new Map<string, TaskInfo>();
+    if (w.taskId && taskInfo) taskInfoMap.set(String(w.taskId), taskInfo);
+    const attributed = resolveAttributedTrackableId(w, taskInfoMap, listMap);
+    if (!attributed) continue;
+    const key = String(attributed);
+    calendarSeconds.set(
+      key,
+      (calendarSeconds.get(key) ?? 0) + (w.durationSeconds ?? 0),
+    );
+    calendarCount.set(key, (calendarCount.get(key) ?? 0) + 1);
+    liftActivity(key, w.startDayYYYYMMDD);
+  }
+
+  const out = new Map<string, ComputedTotals>();
+  for (const trackable of trackables) {
+    const key = String(trackable._id);
+
+    const trackableDays = await ctx.db
+      .query("trackableDays")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", trackable._id))
+      .collect();
+    let lifetimeStoredDayCount = 0;
+    for (const d of trackableDays) {
+      lifetimeStoredDayCount += d.numCompleted ?? 0;
+      if ((d.numCompleted ?? 0) > 0) liftActivity(key, d.dayYYYYMMDD);
+    }
+
+    const entries = await ctx.db
+      .query("trackerEntries")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", trackable._id))
+      .collect();
+    let lifetimeTrackerEntryCount = 0;
+    let lifetimeTrackerEntrySeconds = 0;
+    for (const e of entries) {
+      lifetimeTrackerEntryCount += e.countValue ?? 0;
+      lifetimeTrackerEntrySeconds += e.durationSeconds ?? 0;
+      liftActivity(key, e.dayYYYYMMDD);
+    }
+
+    const isTracker = trackable.trackableType === "TRACKER";
+    out.set(key, {
+      lifetimeTotalSeconds:
+        (calendarSeconds.get(key) ?? 0) +
+        (isTracker ? lifetimeTrackerEntrySeconds : 0),
+      lifetimeCalendarCount: calendarCount.get(key) ?? 0,
+      lifetimeStoredDayCount,
+      lifetimeTrackerEntryCount,
+      lifetimeTrackerEntrySeconds,
+      lifetimeTrackerEntryRowCount: entries.length,
+      firstActivityDayYYYYMMDD: firstActivity.get(key),
+    });
+  }
+  return out;
+}
+
+function groupByUser(
+  trackables: Doc<"trackables">[],
+): Map<Id<"users">, Doc<"trackables">[]> {
+  const byUser = new Map<Id<"users">, Doc<"trackables">[]>();
+  for (const t of trackables) {
+    const bucket = byUser.get(t.userId);
+    if (bucket) bucket.push(t);
+    else byUser.set(t.userId, [t]);
+  }
+  return byUser;
 }
 
 function differs(
@@ -123,17 +288,36 @@ function differs(
 }
 
 export const runAll = internalMutation({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    /** Restrict to one user (for chunked runs on large datasets). */
+    userId: v.optional(v.id("users")),
+  },
+  handler: async (ctx, args) => {
     const trackables = await ctx.db.query("trackables").collect();
+    const byUser = groupByUser(
+      args.userId
+        ? trackables.filter((t) => t.userId === args.userId)
+        : trackables,
+    );
+    const taskCache = new Map<string, TaskInfo | null>();
+    let total = 0;
     let patched = 0;
-    for (const trackable of trackables) {
-      const next = await computeTotals(ctx, trackable);
-      if (!differs(trackable, next)) continue;
-      await ctx.db.patch(trackable._id, next);
-      patched++;
+    for (const [userId, userTrackables] of byUser) {
+      const totals = await computeTotalsForUser(
+        ctx,
+        userId,
+        userTrackables,
+        taskCache,
+      );
+      for (const trackable of userTrackables) {
+        total++;
+        const next = totals.get(String(trackable._id));
+        if (!next || !differs(trackable, next)) continue;
+        await ctx.db.patch(trackable._id, next);
+        patched++;
+      }
     }
-    return { total: trackables.length, patched };
+    return { total, patched };
   },
 });
 
@@ -142,12 +326,22 @@ export const auditPending = internalQuery({
   args: {},
   handler: async (ctx) => {
     const trackables = await ctx.db.query("trackables").collect();
+    const byUser = groupByUser(trackables);
+    const taskCache = new Map<string, TaskInfo | null>();
     let pending = 0;
     let upToDate = 0;
-    for (const trackable of trackables) {
-      const next = await computeTotals(ctx, trackable);
-      if (differs(trackable, next)) pending++;
-      else upToDate++;
+    for (const [userId, userTrackables] of byUser) {
+      const totals = await computeTotalsForUser(
+        ctx,
+        userId,
+        userTrackables,
+        taskCache,
+      );
+      for (const trackable of userTrackables) {
+        const next = totals.get(String(trackable._id));
+        if (next && differs(trackable, next)) pending++;
+        else upToDate++;
+      }
     }
     return { totalTrackables: trackables.length, upToDate, pending };
   },
@@ -163,7 +357,12 @@ export const debugSingle = internalQuery({
   handler: async (ctx, args) => {
     const trackable = await ctx.db.get(args.id);
     if (!trackable) return null;
-    const recomputed = await computeTotals(ctx, trackable);
+    const recomputed = await computeTotals(
+      ctx,
+      trackable,
+      new Map(),
+      new Map(),
+    );
     return {
       stored: {
         lifetimeTotalSeconds: trackable.lifetimeTotalSeconds ?? null,

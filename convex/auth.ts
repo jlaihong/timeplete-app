@@ -19,7 +19,12 @@ function stripTrailingSlash(s: string): string {
   return s.replace(/\/+$/, "") || s;
 }
 
-/** Same dev server as `localhost` vs `127.0.0.1` — browsers send different `Origin`; CORS must allow both. */
+/**
+ * Same dev server as `localhost` vs `127.0.0.1` — browsers send different
+ * `Origin`; CORS must allow both. For hosted HTTPS origins the analogous
+ * split is apex vs `www.` (we serve the app on both `timeplete.com` and
+ * `www.timeplete.com`), so trust that sibling too.
+ */
 function localWebOriginVariants(primary: string): string[] {
   const normalized = stripTrailingSlash(primary.trim());
   const variants = new Set<string>([normalized]);
@@ -34,6 +39,14 @@ function localWebOriginVariants(primary: string): string[] {
     if (altHost) {
       u.hostname = altHost;
       variants.add(stripTrailingSlash(`${u.origin}${u.pathname}`));
+    }
+    if (u.protocol === "https:") {
+      const wwwSibling = u.hostname.startsWith("www.")
+        ? u.hostname.slice(4)
+        : `www.${u.hostname}`;
+      const sibling = new URL(normalized);
+      sibling.hostname = wwwSibling;
+      variants.add(stripTrailingSlash(`${sibling.origin}${sibling.pathname}`));
     }
   } catch {
     /* keep primary only */
@@ -121,6 +134,9 @@ try {
 }
 const staticTrustedOrigins = [
   ...localWebOriginVariants(siteUrl),
+  // Rehearsal/staging domain serves the same bundle against this deployment;
+  // keep it working after SITE_URL moves to the production domain.
+  "https://beta.timeplete.com",
   "timeplete://",
 ];
 

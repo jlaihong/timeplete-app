@@ -3,7 +3,10 @@ import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { generateOccurrences } from "./_helpers/recurrence";
-import { onAttributedWindowInserted } from "./_helpers/trackableLifetime";
+import {
+  onAttributedWindowInserted,
+  deleteTimeWindowWithSideEffects,
+} from "./_helpers/trackableLifetime";
 
 const recurrenceFrequency = v.union(
   v.literal("DAILY"),
@@ -144,7 +147,7 @@ export const updateRule = mutation({
           w.startDayYYYYMMDD &&
           w.startDayYYYYMMDD >= floor
         ) {
-          await ctx.db.delete(w._id);
+          await deleteTimeWindowWithSideEffects(ctx, w);
         }
       }
     }
@@ -168,7 +171,7 @@ export const stop = mutation({
         w.startDayYYYYMMDD &&
         w.startDayYYYYMMDD >= args.effectiveFromYYYYMMDD
       ) {
-        await ctx.db.delete(w._id);
+        await deleteTimeWindowWithSideEffects(ctx, w);
       }
     }
 
@@ -230,7 +233,7 @@ export const remove = mutation({
       .collect();
     for (const w of windows) {
       if (w.isRecurringInstance) {
-        await ctx.db.delete(w._id);
+        await deleteTimeWindowWithSideEffects(ctx, w);
       } else {
         await ctx.db.patch(w._id, { recurringEventId: undefined });
       }
@@ -319,15 +322,16 @@ export const generateInstances = mutation({
           isRecurringInstance: true,
           source: "calendar",
         });
-        // Mirror trackable lifetime totals so `getGoalDetails` can serve
-        // all-time numbers off the row (fix #1).
-        if (rule.trackableId && rule.budgetType === "ACTUAL") {
-          await onAttributedWindowInserted(ctx, {
-            trackableId: rule.trackableId,
-            durationSeconds: rule.durationSeconds,
-            startDayYYYYMMDD: date,
-          });
-        }
+        await onAttributedWindowInserted(ctx, {
+          userId: user._id,
+          trackableId: rule.trackableId,
+          taskId: undefined,
+          listId: undefined,
+          budgetType: rule.budgetType,
+          durationSeconds: rule.durationSeconds,
+          startDayYYYYMMDD: date,
+          activityType: rule.activityType,
+        });
         created++;
       }
     }

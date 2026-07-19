@@ -224,13 +224,16 @@ async function insertTimerWindow(
   });
   // Mirror the lifetime totals on the trackable so `getGoalDetails`
   // can serve all-time numbers off the row (fix #1).
-  if (snapshotTrackableId) {
-    await onAttributedWindowInserted(ctx, {
-      trackableId: snapshotTrackableId,
-      durationSeconds,
-      startDayYYYYMMDD: day,
-    });
-  }
+  await onAttributedWindowInserted(ctx, {
+    userId: source.userId,
+    trackableId: snapshotTrackableId,
+    taskId: source.taskId,
+    listId: undefined,
+    budgetType: "ACTUAL",
+    durationSeconds,
+    startDayYYYYMMDD: day,
+    activityType: source.taskId ? "TASK" : "TRACKABLE",
+  });
 
   const inserted = await ctx.db.get(twId);
   console.log(

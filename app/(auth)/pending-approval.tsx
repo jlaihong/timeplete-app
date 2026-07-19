@@ -1,9 +1,9 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { Link, router } from "expo-router";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Colors } from "../../constants/colors";
-import { router } from "expo-router";
 
 export default function PendingApprovalScreen() {
   return (
@@ -22,6 +22,9 @@ export default function PendingApprovalScreen() {
           style={styles.button}
         />
       </Card>
+      <Link href="/landing" style={styles.landingLink}>
+        Return to landing page
+      </Link>
     </View>
   );
 }
@@ -55,4 +58,10 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   button: { width: "100%" },
+  landingLink: {
+    marginTop: 20,
+    fontSize: 15,
+    color: Colors.primary,
+    textDecorationLine: "underline",
+  },
 });

@@ -2,6 +2,7 @@ import { query, mutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
+import { onListTrackableLinkChange } from "./_helpers/trackableLifetime";
 
 /**
  * Set/clear the bidirectional link between a list and a trackable.
@@ -26,6 +27,8 @@ async function setListTrackableLink(
 
   // No-op fast path: link already matches the requested state.
   if ((existingByList?.trackableId ?? null) === newTrackableId) return;
+
+  const beforeTrackableId = existingByList?.trackableId;
 
   if (existingByList) {
     const oldTrackable = await ctx.db.get(existingByList.trackableId);
@@ -59,6 +62,14 @@ async function setListTrackableLink(
     });
     await ctx.db.patch(newTrackableId, { listId });
   }
+
+  await onListTrackableLinkChange(
+    ctx,
+    userId,
+    listId,
+    beforeTrackableId,
+    newTrackableId ?? undefined,
+  );
 }
 
 export const search = query({
