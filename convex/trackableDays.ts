@@ -1,7 +1,10 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
-import { onTrackableDayDelta } from "./_helpers/trackableLifetime";
+import {
+  onTrackableDayDelta,
+  setTrackableWeekDayActive,
+} from "./_helpers/trackableLifetime";
 
 export const search = query({
   args: {
@@ -66,6 +69,18 @@ export const upsert = mutation({
         deltaNumCompleted: args.numCompleted - existing.numCompleted,
         dayYYYYMMDD: args.dayYYYYMMDD,
       });
+      const attributed = existing.attributedTaskCount ?? 0;
+      const totalBefore = existing.numCompleted + attributed;
+      const totalAfter = args.numCompleted + attributed;
+      if (totalBefore > 0 !== totalAfter > 0) {
+        await setTrackableWeekDayActive(
+          ctx,
+          args.trackableId,
+          user._id,
+          args.dayYYYYMMDD,
+          totalAfter > 0,
+        );
+      }
       return existing._id;
     }
 
@@ -81,6 +96,15 @@ export const upsert = mutation({
       deltaNumCompleted: args.numCompleted,
       dayYYYYMMDD: args.dayYYYYMMDD,
     });
+    if (args.numCompleted > 0) {
+      await setTrackableWeekDayActive(
+        ctx,
+        args.trackableId,
+        user._id,
+        args.dayYYYYMMDD,
+        true,
+      );
+    }
     return insertedId;
   },
 });

@@ -1,7 +1,8 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
-import { onTrackerEntryDelta } from "./_helpers/trackableLifetime";
+import { onTrackerEntryWrite } from "./_helpers/trackableLifetime";
+import { toCompactYYYYMMDD } from "./_helpers/compactYYYYMMDD";
 
 export const search = query({
   args: {
@@ -67,55 +68,58 @@ export const upsert = mutation({
     const nextDurationSeconds = trackable.trackTime
       ? args.durationSeconds
       : undefined;
+    // Store compact so the `by_trackable_day` index reads (bounded query
+    // reads + lifetime maintenance) can use exact/range day keys.
+    const nextDay = toCompactYYYYMMDD(args.dayYYYYMMDD);
 
     if (args.id) {
       const existing = await ctx.db.get(args.id);
       if (!existing) throw new Error("Entry not found");
       await ctx.db.patch(args.id, {
-        dayYYYYMMDD: args.dayYYYYMMDD,
+        dayYYYYMMDD: nextDay,
         countValue: nextCountValue,
         durationSeconds: nextDurationSeconds,
         startTimeHHMM: args.startTimeHHMM,
         comments: args.comments,
       });
-      // Adjust the denormalized trackable totals by the diff (fix #1).
-      // Row count is unchanged on a patch, but the day may shift earlier
-      // so we still pass it through for the `firstActivityDayYYYYMMDD`
-      // pull-down.
-      const dCount =
-        (nextCountValue ?? 0) - (existing.countValue ?? 0);
-      const dSeconds =
-        (nextDurationSeconds ?? 0) - (existing.durationSeconds ?? 0);
-      if (dCount !== 0 || dSeconds !== 0) {
-        await onTrackerEntryDelta(ctx, {
-          trackableId: existing.trackableId,
-          deltaCountValue: dCount,
-          deltaDurationSeconds: dSeconds,
-          // Patch — row already exists, so the counter doesn't move.
-          // The helper still re-evaluates `firstActivityDayYYYYMMDD`
-          // when the day moved earlier.
-          deltaRowCount: 0,
-          dayYYYYMMDD: args.dayYYYYMMDD,
-        });
-      }
+      // Sync the denormalized trackable totals + daily-average
+      // aggregates from the before/after snapshots (handles value
+      // diffs, day moves, and `firstActivityDayYYYYMMDD` pull-down).
+      await onTrackerEntryWrite(ctx, {
+        trackableId: existing.trackableId,
+        entryId: args.id,
+        before: {
+          dayYYYYMMDD: existing.dayYYYYMMDD,
+          countValue: existing.countValue,
+          durationSeconds: existing.durationSeconds,
+        },
+        after: {
+          dayYYYYMMDD: nextDay,
+          countValue: nextCountValue,
+          durationSeconds: nextDurationSeconds,
+        },
+      });
       return args.id;
     }
 
     const insertedId = await ctx.db.insert("trackerEntries", {
       trackableId: args.trackableId,
       userId: user._id,
-      dayYYYYMMDD: args.dayYYYYMMDD,
+      dayYYYYMMDD: nextDay,
       countValue: nextCountValue,
       durationSeconds: nextDurationSeconds,
       startTimeHHMM: args.startTimeHHMM,
       comments: args.comments,
     });
-    await onTrackerEntryDelta(ctx, {
+    await onTrackerEntryWrite(ctx, {
       trackableId: args.trackableId,
-      deltaCountValue: nextCountValue ?? 0,
-      deltaDurationSeconds: nextDurationSeconds ?? 0,
-      deltaRowCount: 1,
-      dayYYYYMMDD: args.dayYYYYMMDD,
+      entryId: insertedId,
+      before: null,
+      after: {
+        dayYYYYMMDD: nextDay,
+        countValue: nextCountValue,
+        durationSeconds: nextDurationSeconds,
+      },
     });
     return insertedId;
   },
@@ -128,12 +132,15 @@ export const remove = mutation({
     const entry = await ctx.db.get(args.id);
     if (!entry) throw new Error("Entry not found");
     await ctx.db.delete(args.id);
-    await onTrackerEntryDelta(ctx, {
+    await onTrackerEntryWrite(ctx, {
       trackableId: entry.trackableId,
-      deltaCountValue: -(entry.countValue ?? 0),
-      deltaDurationSeconds: -(entry.durationSeconds ?? 0),
-      deltaRowCount: -1,
-      dayYYYYMMDD: entry.dayYYYYMMDD,
+      entryId: args.id,
+      before: {
+        dayYYYYMMDD: entry.dayYYYYMMDD,
+        countValue: entry.countValue,
+        durationSeconds: entry.durationSeconds,
+      },
+      after: null,
     });
   },
 });

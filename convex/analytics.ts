@@ -59,9 +59,14 @@ export const getTimeBreakdown = query({
             .lte("startDayYYYYMMDD", args.endDay)
         )
         .collect();
-      for (const w of windows) {
-        if (w.budgetType === "ACTUAL") allWindows.push(w);
-      }
+      // Include BOTH budget types — productivity-one parity. P1's
+      // `/analytics/time-breakdown` returned every window in range, so
+      // PLANNED (→ "BUDGETED") windows materialized for recurring tasks
+      // scheduled on the calendar showed up in Time Breakdown / Time
+      // Spend. Filtering to ACTUAL here made those recurring blocks
+      // (e.g. daily workouts logged only by task completion, never a
+      // timer) vanish from analytics entirely. #bugfix
+      allWindows.push(...windows);
     }
 
     // Collect referenced ids from the bounded windows.

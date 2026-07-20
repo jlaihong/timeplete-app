@@ -89,6 +89,18 @@ type LifetimePatch = {
   trackerEntrySeconds?: number;
   trackerEntryRowCount?: number;
   attributedTaskDayCount?: number;
+  /**
+   * Daily-average aggregate deltas (see schema doc on
+   * `lifetimeActiveTimeDayCount` and friends). Only applied when the
+   * trackable has been seeded by `_admin/backfillTrackerAverages`
+   * (`lifetimeActiveTimeDayCount !== undefined` is the sentinel for all
+   * four fields) — until then the readers use the legacy full scan and
+   * partial increments would only corrupt the eventual seed.
+   */
+  activeTimeDayCount?: number;
+  countActiveDayCount?: number;
+  countDaySumTotal?: number;
+  countDayMeanTotal?: number;
 };
 
 async function applyDelta(
@@ -142,6 +154,38 @@ async function applyDelta(
       (t.lifetimeAttributedTaskDayCount ?? 0) + delta.attributedTaskDayCount,
     );
   }
+  if (t.lifetimeActiveTimeDayCount !== undefined) {
+    if (delta.activeTimeDayCount !== undefined && delta.activeTimeDayCount !== 0) {
+      patch.lifetimeActiveTimeDayCount = Math.max(
+        0,
+        t.lifetimeActiveTimeDayCount + delta.activeTimeDayCount,
+      );
+    }
+    if (
+      delta.countActiveDayCount !== undefined &&
+      delta.countActiveDayCount !== 0
+    ) {
+      patch.lifetimeCountActiveDayCount = Math.max(
+        0,
+        (t.lifetimeCountActiveDayCount ?? 0) + delta.countActiveDayCount,
+      );
+    }
+    if (delta.countDaySumTotal !== undefined && delta.countDaySumTotal !== 0) {
+      patch.lifetimeCountDaySumTotal = Math.max(
+        0,
+        (t.lifetimeCountDaySumTotal ?? 0) + delta.countDaySumTotal,
+      );
+    }
+    if (
+      delta.countDayMeanTotal !== undefined &&
+      delta.countDayMeanTotal !== 0
+    ) {
+      patch.lifetimeCountDayMeanTotal = Math.max(
+        0,
+        (t.lifetimeCountDayMeanTotal ?? 0) + delta.countDayMeanTotal,
+      );
+    }
+  }
   if (activityDay) {
     const current = t.firstActivityDayYYYYMMDD;
     if (!current || activityDay < current) {
@@ -154,6 +198,145 @@ async function applyDelta(
 }
 
 /**
+ * True when the trackable has at least one entry with logged time on
+ * `dayYYYYMMDD` (compact). Used to decide whether a
+ * `trackableDaySeconds` row appearing/disappearing changes the day's
+ * membership in the `lifetimeActiveTimeDayCount` set — a day stays
+ * "time-active" as long as EITHER source still has time on it.
+ */
+async function dayHasTimedEntry(
+  ctx: MutationCtx,
+  trackableId: Id<"trackables">,
+  dayYYYYMMDD: string,
+): Promise<boolean> {
+  const entries = await ctx.db
+    .query("trackerEntries")
+    .withIndex("by_trackable_day", (q) =>
+      q.eq("trackableId", trackableId).eq("dayYYYYMMDD", dayYYYYMMDD),
+    )
+    .collect();
+  return entries.some((e) => (e.durationSeconds ?? 0) > 0);
+}
+
+/**
+ * Monday (compact YYYYMMDD) of the week containing `dayCompact`, plus
+ * the day's index within that week (Monday = 0 … Sunday = 6). Matches
+ * `startOfWeekYYYYMMDD` in `trackables.ts` (productivity-one weeks).
+ */
+export function weekPositionYYYYMMDD(dayCompact: string): {
+  monday: string;
+  dayIndex: number;
+} {
+  const y = Number(dayCompact.slice(0, 4));
+  const m = Number(dayCompact.slice(4, 6));
+  const d = Number(dayCompact.slice(6, 8));
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const dayIndex = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - dayIndex);
+  const monday = `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
+  return { monday, dayIndex };
+}
+
+async function getWeekStatsRow(
+  ctx: MutationCtx,
+  trackableId: Id<"trackables">,
+  monday: string,
+): Promise<Doc<"trackableWeekStats"> | null> {
+  return await ctx.db
+    .query("trackableWeekStats")
+    .withIndex("by_trackable_week", (q) =>
+      q.eq("trackableId", trackableId).eq("weekMondayYYYYMMDD", monday),
+    )
+    .unique();
+}
+
+/**
+ * Records a day's activity flip (totalCount 0 ↔ positive) in the
+ * week-level `activeDayMask`. Call from every writer that changes a
+ * `trackableDays` row's `numCompleted + attributedTaskCount` across
+ * zero. Empty rows (mask 0, no seconds) are garbage-collected.
+ */
+export async function setTrackableWeekDayActive(
+  ctx: MutationCtx,
+  trackableId: Id<"trackables">,
+  userId: Id<"users">,
+  dayYYYYMMDD: string,
+  active: boolean,
+): Promise<void> {
+  const day = toCompactYYYYMMDD(dayYYYYMMDD);
+  if (!isYYYYMMDDCompact(day)) return;
+  const { monday, dayIndex } = weekPositionYYYYMMDD(day);
+  const bit = 1 << dayIndex;
+  const row = await getWeekStatsRow(ctx, trackableId, monday);
+
+  if (active) {
+    if (!row) {
+      await ctx.db.insert("trackableWeekStats", {
+        trackableId,
+        userId,
+        weekMondayYYYYMMDD: monday,
+        activeDayMask: bit,
+      });
+      return;
+    }
+    if ((row.activeDayMask & bit) === 0) {
+      await ctx.db.patch(row._id, { activeDayMask: row.activeDayMask | bit });
+    }
+    return;
+  }
+
+  if (!row || (row.activeDayMask & bit) === 0) return;
+  const nextMask = row.activeDayMask & ~bit;
+  const hasSeconds = (row.secondsByDay ?? []).some((s) => s > 0);
+  if (nextMask === 0 && !hasSeconds) {
+    await ctx.db.delete(row._id);
+  } else {
+    await ctx.db.patch(row._id, { activeDayMask: nextMask });
+  }
+}
+
+/**
+ * Applies a signed attributed-seconds delta to the week row's
+ * `secondsByDay` bucket. Called from `bumpTrackableDaySeconds` so the
+ * week rollup mirrors `trackableDaySeconds` exactly.
+ */
+async function bumpTrackableWeekSeconds(
+  ctx: MutationCtx,
+  trackableId: Id<"trackables">,
+  userId: Id<"users">,
+  dayYYYYMMDD: string,
+  deltaSeconds: number,
+): Promise<void> {
+  if (deltaSeconds === 0) return;
+  const day = toCompactYYYYMMDD(dayYYYYMMDD);
+  if (!isYYYYMMDDCompact(day)) return;
+  const { monday, dayIndex } = weekPositionYYYYMMDD(day);
+  const row = await getWeekStatsRow(ctx, trackableId, monday);
+
+  if (!row) {
+    if (deltaSeconds <= 0) return;
+    const secondsByDay = [0, 0, 0, 0, 0, 0, 0];
+    secondsByDay[dayIndex] = deltaSeconds;
+    await ctx.db.insert("trackableWeekStats", {
+      trackableId,
+      userId,
+      weekMondayYYYYMMDD: monday,
+      activeDayMask: 0,
+      secondsByDay,
+    });
+    return;
+  }
+
+  const secondsByDay = [...(row.secondsByDay ?? [0, 0, 0, 0, 0, 0, 0])];
+  secondsByDay[dayIndex] = Math.max(0, secondsByDay[dayIndex] + deltaSeconds);
+  if (row.activeDayMask === 0 && secondsByDay.every((s) => s === 0)) {
+    await ctx.db.delete(row._id);
+    return;
+  }
+  await ctx.db.patch(row._id, { secondsByDay });
+}
+
+/**
  * Applies a signed seconds delta to the `(trackableId, dayYYYYMMDD)`
  * bucket in `trackableDaySeconds`. Mirrors the `lifetimeTotalSeconds`
  * window deltas so `getGoalDetails` can compute weekly sums (the
@@ -161,6 +344,11 @@ async function applyDelta(
  * `timeWindows` rows. Rows are created on demand and deleted when the
  * sum returns to zero. `dayYYYYMMDD` must be compact (validated by the
  * callers).
+ *
+ * A row appearing (0 → +) or disappearing (+ → 0) may flip the day's
+ * time-active state, so those transitions also adjust
+ * `trackable.lifetimeActiveTimeDayCount` (unless a timed entry keeps
+ * the day active independently).
  */
 async function bumpTrackableDaySeconds(
   ctx: MutationCtx,
@@ -185,16 +373,38 @@ async function bumpTrackableDaySeconds(
         dayYYYYMMDD,
         attributedSeconds: deltaSeconds,
       });
+      await bumpTrackableWeekSeconds(
+        ctx,
+        trackableId,
+        userId,
+        dayYYYYMMDD,
+        deltaSeconds,
+      );
+      if (!(await dayHasTimedEntry(ctx, trackableId, dayYYYYMMDD))) {
+        await applyDelta(ctx, trackableId, { activeTimeDayCount: 1 });
+      }
     }
     return;
   }
 
   const next = Math.max(0, existing.attributedSeconds + deltaSeconds);
+  if (next === existing.attributedSeconds) return;
+  // Keep the week rollup in lockstep with the APPLIED delta (the raw
+  // delta may be clamped when it would take the bucket below zero).
+  await bumpTrackableWeekSeconds(
+    ctx,
+    trackableId,
+    userId,
+    dayYYYYMMDD,
+    next - existing.attributedSeconds,
+  );
   if (next === 0) {
     await ctx.db.delete(existing._id);
+    if (!(await dayHasTimedEntry(ctx, trackableId, dayYYYYMMDD))) {
+      await applyDelta(ctx, trackableId, { activeTimeDayCount: -1 });
+    }
     return;
   }
-  if (next === existing.attributedSeconds) return;
   await ctx.db.patch(existing._id, { attributedSeconds: next });
 }
 
@@ -467,11 +677,24 @@ async function bumpTrackableDayAttributedTaskCount(
         attributedTaskCount: 1,
         comments: "",
       });
+      // totalCount went 0 → 1: the day became active for the week rollup.
+      await setTrackableWeekDayActive(ctx, trackableId, userId, dayYYYYMMDD, true);
     }
     return;
   }
 
   const next = Math.max(0, (existing.attributedTaskCount ?? 0) + delta);
+  const totalBefore = existing.numCompleted + (existing.attributedTaskCount ?? 0);
+  const totalAfter = existing.numCompleted + next;
+  if (totalBefore > 0 !== totalAfter > 0) {
+    await setTrackableWeekDayActive(
+      ctx,
+      trackableId,
+      userId,
+      dayYYYYMMDD,
+      totalAfter > 0,
+    );
+  }
 
   // Garbage-collect when the row has nothing left to say. We only
   // delete rows we wouldn't have created in the manual-entry path
@@ -752,34 +975,154 @@ export async function onListTrackableLinkChange(
   }
 }
 
+export type TrackerEntrySnapshot = {
+  dayYYYYMMDD: string;
+  countValue?: number | null;
+  durationSeconds?: number | null;
+};
+
 /**
- * Call after inserting / removing / patching a `trackerEntries` row.
- *
- * `deltaRowCount` is +1 on insert, -1 on delete, and 0 on patch (the
- * row already exists). All other deltas are signed.
+ * Per-day aggregate of one trackable's entries on one compact day,
+ * with the written entry itself excluded (so before/after states can
+ * be reconstructed by adding the entry's before/after contribution).
  */
-export async function onTrackerEntryDelta(
+async function loadDayEntryBase(
+  ctx: MutationCtx,
+  trackableId: Id<"trackables">,
+  dayYYYYMMDD: string,
+  excludeEntryId: Id<"trackerEntries">,
+): Promise<{ countSum: number; countN: number; hasTimed: boolean }> {
+  const entries = await ctx.db
+    .query("trackerEntries")
+    .withIndex("by_trackable_day", (q) =>
+      q.eq("trackableId", trackableId).eq("dayYYYYMMDD", dayYYYYMMDD),
+    )
+    .collect();
+  let countSum = 0;
+  let countN = 0;
+  let hasTimed = false;
+  for (const e of entries) {
+    if (e._id === excludeEntryId) continue;
+    if (e.countValue !== undefined && e.countValue !== null) {
+      countSum += e.countValue;
+      countN += 1;
+    }
+    if ((e.durationSeconds ?? 0) > 0) hasTimed = true;
+  }
+  return { countSum, countN, hasTimed };
+}
+
+/**
+ * Call after inserting / patching / deleting a `trackerEntries` row —
+ * AFTER the row write itself has been applied to the database.
+ *
+ * Pass `before: null` on insert and `after: null` on delete. Keeps the
+ * legacy `lifetime*` entry totals in sync (derived from the snapshot
+ * diff) and maintains the daily-average aggregates
+ * (`lifetimeActiveTimeDayCount`, `lifetimeCountActiveDayCount`,
+ * `lifetimeCountDaySumTotal`, `lifetimeCountDayMeanTotal`) by
+ * recomputing the affected day's before/after state from the day's
+ * other entries plus this entry's snapshots. Handles entries moving
+ * between days (both days are re-evaluated).
+ */
+export async function onTrackerEntryWrite(
   ctx: MutationCtx,
   args: {
     trackableId: Id<"trackables">;
-    deltaCountValue: number;
-    deltaDurationSeconds: number;
-    deltaRowCount: number;
-    dayYYYYMMDD: string;
+    entryId: Id<"trackerEntries">;
+    before: TrackerEntrySnapshot | null;
+    after: TrackerEntrySnapshot | null;
   },
 ): Promise<void> {
-  await applyDelta(
-    ctx,
-    args.trackableId,
-    {
-      trackerEntryCount: args.deltaCountValue,
-      trackerEntrySeconds: args.deltaDurationSeconds,
-      trackerEntryRowCount: args.deltaRowCount,
-      // For TRACKER trackables, the entry duration also feeds the
-      // overall lifetimeTotalSeconds (mirrors `getGoalDetails`'s
-      // `secondsAttributed + (isTracker ? trackerSeconds : 0)`).
-      totalSeconds: args.deltaDurationSeconds,
-    },
-    args.dayYYYYMMDD,
-  );
+  const { trackableId, entryId, before, after } = args;
+  const deltaCountValue = (after?.countValue ?? 0) - (before?.countValue ?? 0);
+  const deltaDurationSeconds =
+    (after?.durationSeconds ?? 0) - (before?.durationSeconds ?? 0);
+  const deltaRowCount = (after ? 1 : 0) - (before ? 1 : 0);
+
+  if (
+    deltaCountValue !== 0 ||
+    deltaDurationSeconds !== 0 ||
+    deltaRowCount !== 0 ||
+    after?.dayYYYYMMDD !== before?.dayYYYYMMDD
+  ) {
+    await applyDelta(
+      ctx,
+      trackableId,
+      {
+        trackerEntryCount: deltaCountValue,
+        trackerEntrySeconds: deltaDurationSeconds,
+        trackerEntryRowCount: deltaRowCount,
+        // For TRACKER trackables, the entry duration also feeds the
+        // overall lifetimeTotalSeconds (mirrors `getGoalDetails`'s
+        // `secondsAttributed + (isTracker ? trackerSeconds : 0)`).
+        totalSeconds: deltaDurationSeconds,
+      },
+      after ? toCompactYYYYMMDD(after.dayYYYYMMDD) : undefined,
+    );
+  }
+
+  // Daily-average aggregates — evaluate each affected day's transition.
+  const beforeDay = before ? toCompactYYYYMMDD(before.dayYYYYMMDD) : undefined;
+  const afterDay = after ? toCompactYYYYMMDD(after.dayYYYYMMDD) : undefined;
+  const days = new Set<string>();
+  if (beforeDay && isYYYYMMDDCompact(beforeDay)) days.add(beforeDay);
+  if (afterDay && isYYYYMMDDCompact(afterDay)) days.add(afterDay);
+
+  for (const day of days) {
+    const base = await loadDayEntryBase(ctx, trackableId, day, entryId);
+
+    const beforeContrib = beforeDay === day ? before : null;
+    const afterContrib = afterDay === day ? after : null;
+
+    const beforeHasCount =
+      beforeContrib?.countValue !== undefined &&
+      beforeContrib?.countValue !== null;
+    const afterHasCount =
+      afterContrib?.countValue !== undefined &&
+      afterContrib?.countValue !== null;
+
+    const beforeSum = base.countSum + (beforeHasCount ? beforeContrib!.countValue! : 0);
+    const beforeN = base.countN + (beforeHasCount ? 1 : 0);
+    const afterSum = base.countSum + (afterHasCount ? afterContrib!.countValue! : 0);
+    const afterN = base.countN + (afterHasCount ? 1 : 0);
+
+    const delta: LifetimePatch = {};
+
+    const beforeActive = beforeN > 0 && beforeSum > 0;
+    const afterActive = afterN > 0 && afterSum > 0;
+    if (beforeActive || afterActive) {
+      delta.countActiveDayCount =
+        (afterActive ? 1 : 0) - (beforeActive ? 1 : 0);
+      delta.countDaySumTotal =
+        (afterActive ? afterSum : 0) - (beforeActive ? beforeSum : 0);
+      delta.countDayMeanTotal =
+        (afterActive ? afterSum / afterN : 0) -
+        (beforeActive ? beforeSum / beforeN : 0);
+    }
+
+    // Time-active membership: the day counts when any timed entry OR a
+    // positive `trackableDaySeconds` bucket exists. Window seconds are
+    // unaffected by an entry write, so only check the bucket when the
+    // entry side flipped.
+    const beforeTimed =
+      base.hasTimed || (beforeContrib?.durationSeconds ?? 0) > 0;
+    const afterTimed =
+      base.hasTimed || (afterContrib?.durationSeconds ?? 0) > 0;
+    if (beforeTimed !== afterTimed) {
+      const windowRow = await ctx.db
+        .query("trackableDaySeconds")
+        .withIndex("by_trackable_day", (q) =>
+          q.eq("trackableId", trackableId).eq("dayYYYYMMDD", day),
+        )
+        .unique();
+      if (!windowRow) {
+        delta.activeTimeDayCount = afterTimed ? 1 : -1;
+      }
+    }
+
+    if (Object.keys(delta).length > 0) {
+      await applyDelta(ctx, trackableId, delta);
+    }
+  }
 }

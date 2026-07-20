@@ -345,7 +345,9 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     };
 
     if ((form.taskDay || "") !== (task.taskDay ?? "")) {
-      if (form.taskDay) patch.taskDay = form.taskDay;
+      // `null` clears the field (same contract as trackableId). Do not skip
+      // when empty — that left the previous scheduled day stuck on save.
+      patch.taskDay = form.taskDay || null;
     }
 
     const persistedTrackable =
@@ -677,6 +679,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
         <DateField
           label="Scheduled date"
           value={form.taskDay}
+          clearable
           onChange={(yyyymmdd) =>
             setForm((f) => (f ? { ...f, taskDay: yyyymmdd } : f))
           }

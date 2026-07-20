@@ -14,6 +14,8 @@ import type * as _admin_backfillTaskTimeSpent from "../_admin/backfillTaskTimeSp
 import type * as _admin_backfillTrackableDayAttributedTaskCount from "../_admin/backfillTrackableDayAttributedTaskCount.js";
 import type * as _admin_backfillTrackableDaySeconds from "../_admin/backfillTrackableDaySeconds.js";
 import type * as _admin_backfillTrackableLifetime from "../_admin/backfillTrackableLifetime.js";
+import type * as _admin_backfillTrackableWeekStats from "../_admin/backfillTrackableWeekStats.js";
+import type * as _admin_backfillTrackerAverages from "../_admin/backfillTrackerAverages.js";
 import type * as _admin_backfillWindowTrackableSnapshot from "../_admin/backfillWindowTrackableSnapshot.js";
 import type * as _admin_cleanup from "../_admin/cleanup.js";
 import type * as _admin_cognitoBridge from "../_admin/cognitoBridge.js";
@@ -71,6 +73,8 @@ declare const fullApi: ApiFromModules<{
   "_admin/backfillTrackableDayAttributedTaskCount": typeof _admin_backfillTrackableDayAttributedTaskCount;
   "_admin/backfillTrackableDaySeconds": typeof _admin_backfillTrackableDaySeconds;
   "_admin/backfillTrackableLifetime": typeof _admin_backfillTrackableLifetime;
+  "_admin/backfillTrackableWeekStats": typeof _admin_backfillTrackableWeekStats;
+  "_admin/backfillTrackerAverages": typeof _admin_backfillTrackerAverages;
   "_admin/backfillWindowTrackableSnapshot": typeof _admin_backfillWindowTrackableSnapshot;
   "_admin/cleanup": typeof _admin_cleanup;
   "_admin/cognitoBridge": typeof _admin_cognitoBridge;

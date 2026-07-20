@@ -420,3 +420,46 @@ export const getListMembers = query({
     };
   },
 });
+
+/**
+ * Batched replacement for the home screen's per-list `getListMembers`
+ * subscriptions. The desktop task list needs the deduped set of
+ * assignable members (OWNER + EDITOR) across ALL of the viewer's lists;
+ * subscribing to `getListMembers` once per list meant ~1 query
+ * execution per list on every reactive fire / auth refresh. One
+ * subscription returning the deduped set replaces all of them, and the
+ * user docs (mostly the same owner) are read once instead of per list.
+ */
+export const getAssignableMembers = query({
+  args: { listIds: v.array(v.id("lists")) },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return { members: [] };
+
+    // Same population as `getListMembers` filtered to OWNER/EDITOR:
+    // each list's owner plus its EDITOR shares.
+    const memberUserIds = new Set<Id<"users">>();
+    for (const listId of args.listIds) {
+      const list = await ctx.db.get(listId);
+      if (!list) continue;
+      memberUserIds.add(list.userId);
+      const shares = await ctx.db
+        .query("listShares")
+        .withIndex("by_list", (q) => q.eq("listId", listId))
+        .collect();
+      for (const share of shares) {
+        if (share.permission === "EDITOR") {
+          memberUserIds.add(share.sharedWithUserId);
+        }
+      }
+    }
+
+    const members = [];
+    for (const uid of memberUserIds) {
+      const u = await ctx.db.get(uid);
+      if (u) members.push({ userId: u._id, name: u.name });
+    }
+    members.sort((a, b) => a.name.localeCompare(b.name));
+    return { members };
+  },
+});

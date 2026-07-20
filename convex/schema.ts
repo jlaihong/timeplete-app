@@ -246,6 +246,13 @@ export default defineSchema({
     legacyId: v.optional(v.string()),
   })
     .index("by_user_day", ["userId", "startDayYYYYMMDD"])
+    /**
+     * ACTUAL-only readers (`getGoalDetails`,
+     * `getTrackableAnalyticsSeries`) filter at the index instead of
+     * reading the (~50 %) BUDGETED calendar-planned rows and dropping
+     * them in JS.
+     */
+    .index("by_user_budget_day", ["userId", "budgetType", "startDayYYYYMMDD"])
     .index("by_task", ["taskId"])
     .index("by_trackable", ["trackableId"])
     .index("by_list", ["listId"])
@@ -396,6 +403,40 @@ export default defineSchema({
      * undefined the reader falls back to `startDayYYYYMMDD`.
      */
     firstActivityDayYYYYMMDD: v.optional(v.string()),
+    /**
+     * Denormalized inputs for the TRACKER daily averages in
+     * `getGoalDetails`. Previously computed by scanning the trackable's
+     * FULL `trackerEntries` history plus every `trackableDaySeconds` row
+     * on each reactive fire (~150-200 KB/execution on migrated data);
+     * with these four fields the averages are read straight off the
+     * trackable doc.
+     *
+     * All four are seeded together by
+     * `_admin/backfillTrackerAverages:runAll`;
+     * `lifetimeActiveTimeDayCount === undefined` means the backfill has
+     * not run yet, in which case the reader falls back to the legacy
+     * scan and the incremental writers leave all four untouched.
+     *
+     * Maintained by `_helpers/trackableLifetime` (`onTrackerEntryWrite`
+     * for entry writes, `bumpTrackableDaySeconds` for window-day
+     * transitions).
+     */
+    /** Distinct days with attributed window seconds OR a timed entry. */
+    lifetimeActiveTimeDayCount: v.optional(v.number()),
+    /** Days whose entry countValue sum is > 0. */
+    lifetimeCountActiveDayCount: v.optional(v.number()),
+    /** Σ per-day countValue sums over those active days. */
+    lifetimeCountDaySumTotal: v.optional(v.number()),
+    /** Σ per-day countValue means over those active days. */
+    lifetimeCountDayMeanTotal: v.optional(v.number()),
+    /**
+     * `true` once `trackableWeekStats` rows have been seeded for this
+     * trackable (by `_admin/backfillTrackableWeekStats` for pre-existing
+     * rows; set at insert time for trackables created after the table
+     * shipped). Until then `getGoalDetails` computes
+     * `periodicOverallProgress` from the legacy per-day scans.
+     */
+    weekStatsSeeded: v.optional(v.boolean()),
     legacyId: v.optional(v.string()),
   })
     .index("by_user", ["userId"])
@@ -460,6 +501,39 @@ export default defineSchema({
     attributedSeconds: v.number(),
   })
     .index("by_trackable_day", ["trackableId", "dayYYYYMMDD"])
+    .index("by_user", ["userId"]),
+
+  /**
+   * Per-(trackable, week) rollup of the day-level activity that
+   * `getGoalDetails.periodicOverallProgress` consumes. One compact row
+   * per week replaces the per-day history scans that previously grew
+   * without bound (measured 55 KB / 206 `trackableDays` docs per
+   * execution for the heaviest prod user):
+   *
+   *   activeDayMask — bit i (Monday = bit 0 … Sunday = bit 6) is set
+   *     when that day's `trackableDays` totalCount
+   *     (`numCompleted + attributedTaskCount`) is > 0. Drives the
+   *     DAYS_A_WEEK weekly-success loop.
+   *   secondsByDay — attributed ACTUAL seconds per weekday (same
+   *     source as `trackableDaySeconds`). Drives the MINUTES_A_WEEK
+   *     weekly-success loop. Omitted (undefined) until the week first
+   *     accrues time.
+   *
+   * Maintained by `_helpers/trackableLifetime`
+   * (`setTrackableWeekDayActive` on totalCount 0↔positive flips,
+   * `bumpTrackableWeekSeconds` alongside every `trackableDaySeconds`
+   * delta). Readers gate on `trackable.weekStatsSeeded`; backfill:
+   * `_admin/backfillTrackableWeekStats:runAll`.
+   */
+  trackableWeekStats: defineTable({
+    trackableId: v.id("trackables"),
+    userId: v.id("users"),
+    /** Compact YYYYMMDD of the week's Monday. */
+    weekMondayYYYYMMDD: v.string(),
+    activeDayMask: v.number(),
+    secondsByDay: v.optional(v.array(v.number())),
+  })
+    .index("by_trackable_week", ["trackableId", "weekMondayYYYYMMDD"])
     .index("by_user", ["userId"]),
 
   trackerEntries: defineTable({

@@ -98,10 +98,17 @@ export function TrackableList({
 
   const [activePageLimit, setActivePageLimit] = useState(20);
   const [archivedPageLimit, setArchivedPageLimit] = useState(20);
+  // ALWAYS pass an explicit limit (server default is 20) so the home
+  // list and the Trackables page produce IDENTICAL query args. With
+  // different arg shapes Convex treats them as two separate
+  // subscriptions and re-executes `getGoalDetails` twice on every
+  // invalidation / token refresh — confirmed in prod logs as paired
+  // executions. Identical args collapse them into one shared
+  // subscription (and share the server-side result cache).
   const trackablesPageFetchLimit =
     variant === "trackables-page"
       ? Math.max(activePageLimit, archivedPageLimit)
-      : undefined;
+      : 20;
 
   const goalDetails = useQuery(
     api.trackables.getGoalDetails,
@@ -109,9 +116,7 @@ export function TrackableList({
       ? {
           today,
           weekStart,
-          ...(trackablesPageFetchLimit != null
-            ? { limit: trackablesPageFetchLimit }
-            : {}),
+          limit: trackablesPageFetchLimit,
         }
       : "skip",
   );

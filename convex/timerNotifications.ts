@@ -12,10 +12,13 @@
  * in-app popup keeps showing until the user responds.
  *
  * Delivery notes:
- *  - Native devices also schedule LOCAL notifications for the same
- *    boundaries (components/timer/TimerNotifications.tsx), which work
- *    without any push credentials. Remote push covers timers started on
- *    the web when the phone app was never opened during the run.
+ *  - Native devices schedule ONLY the next 2h LOCAL notification
+ *    (components/timer/TimerNotifications.tsx) and claim that boundary
+ *    via `claimLocalNotificationDelivery({ boundaryMs })`, so this cron
+ *    still covers later boundaries when the phone stays closed. Local
+ *    scheduling works without push credentials. Remote push also covers
+ *    timers started on the web when the phone app was never opened
+ *    during the run.
  *  - Web browsers can't receive Expo pushes; the web client fires
  *    Notification-API notifications itself while a tab is open.
  */

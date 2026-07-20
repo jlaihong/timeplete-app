@@ -36,7 +36,8 @@ export type UpsertTaskOptimisticArgs = {
   timeEstimatedInSecondsUnallocated?: number;
   dueDateYYYYMMDD?: string;
   listId?: Id<"lists">;
-  taskDay?: string;
+  /** `null` clears the scheduled day (same as `tasks.upsert`). */
+  taskDay?: string | null;
   taskDayOrderIndex?: number;
   sectionId?: Id<"listSections">;
   sectionOrderIndex?: number;
@@ -223,7 +224,12 @@ function patchTaskRow(
   if (args.dateCompleted !== undefined) {
     patched.dateCompleted = args.dateCompleted ?? undefined;
   }
-  if (args.taskDay !== undefined) patched.taskDay = args.taskDay;
+  if (args.taskDay !== undefined) {
+    patched.taskDay = args.taskDay || undefined;
+    if (!patched.taskDay && args.taskDayOrderIndex === undefined) {
+      patched.taskDayOrderIndex = 0;
+    }
+  }
   if (args.taskDayOrderIndex !== undefined) {
     patched.taskDayOrderIndex = args.taskDayOrderIndex;
   }
@@ -357,8 +363,16 @@ function applyUpsertPatches(
     if (!value) continue;
     const idx = value.findIndex((t) => t._id === rowId);
     if (idx === -1) continue;
-    const next = [...value];
-    next[idx] = patchTaskRow(value[idx], args) as HomeTaskRow;
+    const patched = patchTaskRow(value[idx], args) as HomeTaskRow;
+    // Cleared scheduled day → drop from the home day list immediately.
+    const next =
+      args.taskDay !== undefined && !patched.taskDay
+        ? value.filter((t) => t._id !== rowId)
+        : (() => {
+            const copy = [...value];
+            copy[idx] = patched;
+            return copy;
+          })();
     localStore.setQuery(
       api.tasks.getHomeTasks,
       q.args,

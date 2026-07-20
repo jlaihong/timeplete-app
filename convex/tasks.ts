@@ -509,7 +509,8 @@ export const upsert = mutation({
     timeEstimatedInSecondsUnallocated: v.optional(v.number()),
     dueDateYYYYMMDD: v.optional(v.string()),
     listId: v.optional(v.id("lists")),
-    taskDay: v.optional(v.string()),
+    // `undefined` (omitted) → leave unchanged; `null` → clear; string → set.
+    taskDay: v.optional(v.union(v.string(), v.null())),
     taskDayOrderIndex: v.optional(v.number()),
     sectionId: v.optional(v.id("listSections")),
     sectionOrderIndex: v.optional(v.number()),
@@ -559,7 +560,14 @@ export const upsert = mutation({
         patch.timeEstimatedInSecondsUnallocated = args.timeEstimatedInSecondsUnallocated;
       if (args.dueDateYYYYMMDD !== undefined) patch.dueDateYYYYMMDD = args.dueDateYYYYMMDD;
       if (args.listId !== undefined) patch.listId = args.listId;
-      if (args.taskDay !== undefined) patch.taskDay = args.taskDay;
+      if (args.taskDay !== undefined) {
+        // `null` / "" → clear scheduled day (matches removeFromDay).
+        const nextDay = args.taskDay || undefined;
+        patch.taskDay = nextDay;
+        if (!nextDay && args.taskDayOrderIndex === undefined) {
+          patch.taskDayOrderIndex = 0;
+        }
+      }
       if (args.taskDayOrderIndex !== undefined) patch.taskDayOrderIndex = args.taskDayOrderIndex;
       if (args.sectionId !== undefined) patch.sectionId = args.sectionId;
       if (args.sectionOrderIndex !== undefined) patch.sectionOrderIndex = args.sectionOrderIndex;
@@ -638,7 +646,7 @@ export const upsert = mutation({
       timeEstimatedInSecondsUnallocated: args.timeEstimatedInSecondsUnallocated ?? 0,
       dueDateYYYYMMDD: args.dueDateYYYYMMDD,
       listId: args.listId,
-      taskDay: args.taskDay,
+      taskDay: args.taskDay || undefined,
       taskDayOrderIndex: args.taskDayOrderIndex ?? 0,
       sectionId: resolvedSectionId,
       sectionOrderIndex: args.sectionOrderIndex ?? 0,

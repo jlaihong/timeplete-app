@@ -132,7 +132,8 @@ export const adjust = mutation({
       // Elapsed time changed, so confirmed check-in checkpoints no longer
       // line up — recalibrate against the new start. Clearing notifiedUpToMs
       // also re-arms reminders; devices observing the new startTime cancel
-      // and reschedule their local notifications, then re-claim delivery.
+      // and reschedule their next local notification, then re-claim that
+      // boundary.
       acknowledgedUpToMs: undefined,
       notifiedUpToMs: undefined,
       calendarStartDayYYYYMMDD: undefined,
@@ -155,6 +156,7 @@ export const adjust = mutation({
 
 /** Elapsed-time cap: timers running this long are auto-stopped for review. */
 export const TIMER_AUTO_STOP_MS = 24 * 60 * 60 * 1000;
+const CHECK_IN_INTERVAL_MS = 2 * 60 * 60 * 1000;
 
 /**
  * Insert the ACTUAL time window (+ derived counters) for a finished timer
@@ -290,22 +292,36 @@ export const acknowledgeCheckpoint = mutation({
 });
 
 /**
- * A native device scheduled LOCAL notifications for every remaining
- * check-in boundary of the running timer (plus the 24h auto-stop one),
- * so remote pushes for this run would be duplicates. Marks the timer
- * fully notified; `timers.adjust` clears the flag when boundaries move.
+ * A native device scheduled a LOCAL notification for a single upcoming
+ * check-in boundary (`boundaryMs`), so the server cron should skip THAT
+ * boundary (avoids a duplicate push) but still cover later ones if the
+ * device stays closed. Native clients only arm the next boundary — not
+ * the full 2h…22h set — so a cross-device stop can leave at most one
+ * stale local reminder. `timers.adjust` clears `notifiedUpToMs` when
+ * boundaries move.
  */
 export const claimLocalNotificationDelivery = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { boundaryMs: v.number() },
+  handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
     const timer = await ctx.db
       .query("taskTimers")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .first();
     if (!timer) return null;
-    if ((timer.notifiedUpToMs ?? 0) < TIMER_AUTO_STOP_MS) {
-      await ctx.db.patch(timer._id, { notifiedUpToMs: TIMER_AUTO_STOP_MS });
+    // Only accept a positive 2h-aligned boundary below the auto-stop
+    // cutoff. Auto-stop messaging stays on the server cron.
+    const boundary = args.boundaryMs;
+    if (
+      !Number.isFinite(boundary) ||
+      boundary < CHECK_IN_INTERVAL_MS ||
+      boundary >= TIMER_AUTO_STOP_MS ||
+      boundary % CHECK_IN_INTERVAL_MS !== 0
+    ) {
+      return null;
+    }
+    if (boundary > (timer.notifiedUpToMs ?? 0)) {
+      await ctx.db.patch(timer._id, { notifiedUpToMs: boundary });
     }
     return null;
   },

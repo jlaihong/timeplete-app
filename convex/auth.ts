@@ -184,7 +184,19 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     },
     plugins: [
       expo(),
-      convex({ authConfig }),
+      convex({
+        authConfig,
+        // Default is 15 minutes. Every token refresh makes the Convex
+        // client re-execute EVERY subscribed query (auth is part of the
+        // subscription environment). Prod logs showed idle overnight
+        // clients re-running the entire home/analytics query set
+        // (~25 queries) on every refresh — the dominant execution-count
+        // driver for `getGoalDetails`. Twelve hours covers an idle
+        // overnight tab with at most one refresh. Sessions are still
+        // validated server-side on every refresh, so the security delta
+        // is only the revocation latency of an already-issued token.
+        jwt: { expirationSeconds: 60 * 60 * 12 },
+      }),
       crossDomain({ siteUrl }),
       emailOTP({
         overrideDefaultEmailVerification: true,
