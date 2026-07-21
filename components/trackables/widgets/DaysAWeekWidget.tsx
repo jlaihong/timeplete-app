@@ -2,6 +2,7 @@ import React from "react";
 import { View } from "react-native";
 import { ProgressBarWithText } from "./atoms/ProgressBarWithText";
 import { DayOfWeekCompletion } from "./atoms/DayOfWeekCompletion";
+import { CompletedBadge } from "./atoms/CompletedBadge";
 import { getPeriodicCommittedWeekCount } from "../../../lib/requiredProgress";
 import type { WidgetBodyProps } from "./types";
 
@@ -14,7 +15,11 @@ import type { WidgetBodyProps } from "./types";
  * weeks succeeded vs `targetNumberOfWeeks` (P1 `currentValue / targetValue`).
  * Tapping a day opens `TrackPeriodicDialog` for that day.
  */
-export function DaysAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
+export function DaysAWeekWidget({
+  goal,
+  onRequestLog,
+  completed,
+}: WidgetBodyProps) {
   const target = goal.targetNumberOfDaysAWeek ?? 0;
   /** Same as P1 `GoalWidgetPeriodic.countWeeklyTotal` — sum of `numCompleted` across the week. */
   const weeklyCompletionSum = goal.weeklyDayCompletion.reduce(
@@ -39,6 +44,7 @@ export function DaysAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
       <DayOfWeekCompletion
         days={goal.weeklyDayCompletion}
         colour={goal.colour}
+        disabled={completed}
         onDayPress={(day) => {
           const entry = goal.weeklyDayCompletion.find(
             (d) => d.dayYYYYMMDD === day
@@ -64,6 +70,14 @@ export function DaysAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
           numerator={overallWeeksNumerator}
           denominator={overallWeeksDenom}
           colour={goal.colour}
+        />
+      )}
+      {completed && (
+        <CompletedBadge
+          colour={goal.colour}
+          current={Math.min(overallWeeksNumerator, overallWeeksDenom)}
+          target={overallWeeksDenom}
+          unitSuffix=" wks"
         />
       )}
     </View>

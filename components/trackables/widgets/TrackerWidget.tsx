@@ -15,7 +15,13 @@ import type { WidgetBodyProps } from "./types";
  * Stats rows are conditional on `trackCount` / `trackTime` flags — same as
  * productivity-one. NO main `currentValue` progress bar.
  */
-export function TrackerWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
+export function TrackerWidget({
+  goal,
+  today,
+  onRequestLog,
+}: WidgetBodyProps) {
+  // `completed` is always false for TRACKER (open-ended, no lifetime
+  // target) — accepted via `WidgetBodyProps` but intentionally unused here.
   const trackTime = goal.trackTime !== false;
   const trackCount = goal.trackCount !== false;
 

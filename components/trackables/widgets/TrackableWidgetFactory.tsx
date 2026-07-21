@@ -5,6 +5,7 @@ import { MinutesAWeekWidget } from "./MinutesAWeekWidget";
 import { TimeTrackWidget } from "./TimeTrackWidget";
 import { NumberWidget } from "./NumberWidget";
 import { TrackerWidget } from "./TrackerWidget";
+import { computeGoalCompletion } from "./widgetMath";
 import type { LogRequest, WidgetGoal } from "./types";
 
 interface TrackableWidgetFactoryProps {
@@ -33,12 +34,14 @@ export function TrackableWidgetFactory({
   onRequestLog,
   onRequestEditTrackable,
 }: TrackableWidgetFactoryProps) {
+  const completed = computeGoalCompletion(goal);
   return (
     <TrackableWidgetCard
       goal={goal}
+      completed={completed}
       onRequestEditTrackable={onRequestEditTrackable}
     >
-      {renderBody(goal, today, onRequestLog)}
+      {renderBody(goal, today, onRequestLog, completed)}
     </TrackableWidgetCard>
   );
 }
@@ -46,12 +49,18 @@ export function TrackableWidgetFactory({
 function renderBody(
   goal: WidgetGoal,
   today: string,
-  onRequestLog: (req: LogRequest) => void
+  onRequestLog: (req: LogRequest) => void,
+  completed: boolean
 ) {
   switch (goal.trackableType) {
     case "DAYS_A_WEEK":
       return (
-        <DaysAWeekWidget goal={goal} today={today} onRequestLog={onRequestLog} />
+        <DaysAWeekWidget
+          goal={goal}
+          today={today}
+          onRequestLog={onRequestLog}
+          completed={completed}
+        />
       );
     case "MINUTES_A_WEEK":
       return (
@@ -59,19 +68,35 @@ function renderBody(
           goal={goal}
           today={today}
           onRequestLog={onRequestLog}
+          completed={completed}
         />
       );
     case "TIME_TRACK":
       return (
-        <TimeTrackWidget goal={goal} today={today} onRequestLog={onRequestLog} />
+        <TimeTrackWidget
+          goal={goal}
+          today={today}
+          onRequestLog={onRequestLog}
+          completed={completed}
+        />
       );
     case "NUMBER":
       return (
-        <NumberWidget goal={goal} today={today} onRequestLog={onRequestLog} />
+        <NumberWidget
+          goal={goal}
+          today={today}
+          onRequestLog={onRequestLog}
+          completed={completed}
+        />
       );
     case "TRACKER":
       return (
-        <TrackerWidget goal={goal} today={today} onRequestLog={onRequestLog} />
+        <TrackerWidget
+          goal={goal}
+          today={today}
+          onRequestLog={onRequestLog}
+          completed={completed}
+        />
       );
     default:
       return null;

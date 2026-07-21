@@ -375,6 +375,14 @@ export const getGoalDetails = query({
     today: v.optional(v.string()),
     /** YYYYMMDD of Monday this week. Required for weekly stats. */
     weekStart: v.optional(v.string()),
+    /**
+     * When set, the enriched row for this trackable is guaranteed to be
+     * computed and returned as `focused` — even if it falls outside the
+     * `active`/`archived` pagination window. Lets a single-trackable caller
+     * (e.g. `EditTrackableDialog`) get the same enriched fields as the list
+     * without duplicating this function's aggregation logic.
+     */
+    focusTrackableId: v.optional(v.id("trackables")),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUserOrEmpty(ctx);
@@ -384,6 +392,7 @@ export const getGoalDetails = query({
         archived: [],
         activeCount: 0,
         archivedCount: 0,
+        focused: null,
       };
     }
 
@@ -403,6 +412,12 @@ export const getGoalDetails = query({
       .filter((t) => t.archived)
       .sort((a, b) => a.orderIndex - b.orderIndex)
       .slice(args.archivedOffset ?? 0, (args.archivedOffset ?? 0) + lim);
+
+    const paginatedIds = new Set([...active, ...archived].map((t) => t._id));
+    const focusTrackable =
+      args.focusTrackableId && !paginatedIds.has(args.focusTrackableId)
+        ? (all.find((t) => t._id === args.focusTrackableId) ?? null)
+        : null;
 
     /*
      * Read-bandwidth strategy (fifth pass, Jul 2026):
@@ -470,7 +485,10 @@ export const getGoalDetails = query({
     const weekEnd = weekDays.length === 7 ? weekDays[6] : undefined;
 
     const result = [];
-    for (const trackable of [...active, ...archived]) {
+    const loopInput = focusTrackable
+      ? [...active, ...archived, focusTrackable]
+      : [...active, ...archived];
+    for (const trackable of loopInput) {
       const startDay = toCompactYYYYMMDD(trackable.startDayYYYYMMDD);
       const endDay = toCompactYYYYMMDD(trackable.endDayYYYYMMDD);
 
@@ -976,11 +994,18 @@ export const getGoalDetails = query({
       });
     }
 
+    const paginatedResult = focusTrackable
+      ? result.filter((r) => r._id !== args.focusTrackableId)
+      : result;
+
     return {
-      active: result.filter((r) => !r.archived),
-      archived: result.filter((r) => r.archived),
+      active: paginatedResult.filter((r) => !r.archived),
+      archived: paginatedResult.filter((r) => r.archived),
       activeCount: all.filter((t) => !t.archived).length,
       archivedCount: all.filter((t) => t.archived).length,
+      focused: args.focusTrackableId
+        ? (result.find((r) => r._id === args.focusTrackableId) ?? null)
+        : null,
     };
   },
 });

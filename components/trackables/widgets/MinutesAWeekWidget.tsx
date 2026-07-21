@@ -3,6 +3,7 @@ import { View } from "react-native";
 import { ProgressBarWithText } from "./atoms/ProgressBarWithText";
 import { DayOfWeekCompletion } from "./atoms/DayOfWeekCompletion";
 import { WidgetTimerRow } from "./atoms/WidgetTimerRow";
+import { CompletedBadge } from "./atoms/CompletedBadge";
 import { getPeriodicCommittedWeekCount } from "../../../lib/requiredProgress";
 import type { WidgetBodyProps } from "./types";
 
@@ -17,7 +18,11 @@ const minutesFormat = (n: number) => `${Math.round(n)}m`;
  * The weekly bar still uses `Xm`; overall uses the default numeric formatter.
  * Tapping a day opens `TrackTimeDialog` for that day.
  */
-export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
+export function MinutesAWeekWidget({
+  goal,
+  onRequestLog,
+  completed,
+}: WidgetBodyProps) {
   const targetMinutes = goal.targetNumberOfMinutesAWeek ?? 0;
   const weekMinutes = Math.floor(goal.weeklySeconds / 60);
   const overallWeeksDenom = getPeriodicCommittedWeekCount({
@@ -36,10 +41,11 @@ export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
 
   return (
     <View style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}>
-      <WidgetTimerRow trackableId={goal._id} />
+      {!completed && <WidgetTimerRow trackableId={goal._id} />}
       <DayOfWeekCompletion
         days={goal.weeklyDayCompletion}
         colour={goal.colour}
+        disabled={completed}
         onDayPress={(day) =>
           onRequestLog({ kind: "time", goal, dayYYYYMMDD: day })
         }
@@ -57,6 +63,14 @@ export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
           numerator={overallWeeksNumerator}
           denominator={overallWeeksDenom}
           colour={goal.colour}
+        />
+      )}
+      {completed && (
+        <CompletedBadge
+          colour={goal.colour}
+          current={Math.min(overallWeeksNumerator, overallWeeksDenom)}
+          target={overallWeeksDenom}
+          unitSuffix=" wks"
         />
       )}
     </View>

@@ -20,6 +20,8 @@ interface DayOfWeekCompletionProps {
   colour: string;
   /** Called when the user taps a single day segment. */
   onDayPress: (dayYYYYMMDD: string) => void;
+  /** When true, segments become a read-only display — no tap, dimmed. */
+  disabled?: boolean;
 }
 
 /**
@@ -27,16 +29,21 @@ interface DayOfWeekCompletionProps {
  * Renders a 7-segment pill (Mon..Sun) with the day-letter, applying a filled
  * style when the day is completed (`numCompleted > 0`).
  *
- * Tapping a segment opens the per-type quick-log dialog for that day.
+ * Tapping a segment opens the per-type quick-log dialog for that day, unless
+ * `disabled` (the goal already hit its lifetime target).
  */
 export function DayOfWeekCompletion({
   days,
   colour,
   onDayPress,
+  disabled = false,
 }: DayOfWeekCompletionProps) {
   const today = todayYYYYMMDD();
   return (
-    <View style={styles.pill} accessibilityLabel="Week completion">
+    <View
+      style={[styles.pill, disabled && styles.pillDisabled]}
+      accessibilityLabel="Week completion"
+    >
       {days.map((d) => {
         const isComplete = d.numCompleted > 0;
         const isToday = d.dayYYYYMMDD === today;
@@ -52,6 +59,7 @@ export function DayOfWeekCompletion({
               isToday && !isComplete && styles.segmentToday,
             ]}
             onPress={() => onDayPress(d.dayYYYYMMDD)}
+            disabled={disabled}
             accessibilityLabel={`${getDayOfWeekLetter(d.dayYYYYMMDD)} ${
               isComplete ? "completed" : "not completed"
             }`}
@@ -86,6 +94,7 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  pillDisabled: { opacity: 0.6 },
   segment: {
     flex: 1,
     minHeight: 32,

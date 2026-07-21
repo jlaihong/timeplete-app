@@ -62,6 +62,8 @@ interface DateFieldProps {
    * genuinely optional dates — native pickers have no built-in clear.
    */
   clearable?: boolean;
+  /** Read-only: the picker never opens and the field is dimmed. */
+  disabled?: boolean;
 }
 
 const FIELD_HORIZONTAL_PADDING = 12;
@@ -105,7 +107,13 @@ interface WebDateInputEl {
   showPicker?: () => void;
 }
 
-function WebDateField({ value, onChange, label, clearable }: DateFieldProps) {
+function WebDateField({
+  value,
+  onChange,
+  label,
+  clearable,
+  disabled = false,
+}: DateFieldProps) {
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<WebDateInputEl | null>(null);
 
@@ -125,6 +133,7 @@ function WebDateField({ value, onChange, label, clearable }: DateFieldProps) {
   const showNativeText = label ? isFloating : true;
 
   const openPicker = () => {
+    if (disabled) return;
     const el = inputRef.current;
     if (!el) return;
     // showPicker() throws when unsupported (older Safari) or when not
@@ -139,7 +148,7 @@ function WebDateField({ value, onChange, label, clearable }: DateFieldProps) {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, disabled && styles.containerDisabled]}>
       <Pressable style={styles.field} onPress={openPicker}>
         {label ? (
           <Text
@@ -173,6 +182,7 @@ function WebDateField({ value, onChange, label, clearable }: DateFieldProps) {
             className: "tp-date-input",
             type: "date",
             value: isoValue,
+            disabled,
             onChange: (e: { target: { value: string } }) =>
               onChange(isoDateToYyyymmdd(e.target.value)),
             onFocus: () => setFocused(true),
@@ -180,9 +190,10 @@ function WebDateField({ value, onChange, label, clearable }: DateFieldProps) {
             style: {
               ...webDateInputStyle,
               color: showNativeText ? Colors.text : "transparent",
+              cursor: disabled ? "default" : webDateInputStyle.cursor,
             },
           })}
-          {clearable && hasValue ? (
+          {clearable && hasValue && !disabled ? (
             <ClearButton onPress={() => onChange("")} />
           ) : (
             <MaterialIcons
@@ -212,6 +223,7 @@ function NativeDateField({
   label,
   placeholder = "Pick a date",
   clearable,
+  disabled = false,
 }: DateFieldProps) {
   // iOS renders the picker inline inside a modal sheet; Android uses
   // the imperative Material dialog API (no mounted component at all).
@@ -225,6 +237,7 @@ function NativeDateField({
   const isFloating = hasValue;
 
   const openPicker = () => {
+    if (disabled) return;
     if (Platform.OS === "android") {
       DateTimePickerAndroid.open({
         value: currentDate,
@@ -240,10 +253,11 @@ function NativeDateField({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, disabled && styles.containerDisabled]}>
       <Pressable
         style={styles.field}
         onPress={openPicker}
+        disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={label ? `${label}, pick a date` : "Pick a date"}
       >
@@ -271,7 +285,7 @@ function NativeDateField({
           >
             {hasValue ? formatForDisplay(value) : label ? "" : placeholder}
           </Text>
-          {clearable && hasValue ? (
+          {clearable && hasValue && !disabled ? (
             <ClearButton onPress={() => onChange("")} />
           ) : (
             <MaterialIcons
@@ -361,6 +375,7 @@ const webDateInputStyle = {
 
 const styles = StyleSheet.create({
   container: { marginBottom: 16 },
+  containerDisabled: { opacity: 0.6 },
   field: {
     backgroundColor: Colors.surfaceContainerHighest,
     borderTopLeftRadius: 8,

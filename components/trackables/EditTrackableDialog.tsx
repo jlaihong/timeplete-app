@@ -33,9 +33,11 @@ import {
 } from "./goal/GoalAccountabilityForm";
 import { EditTrackableHistoryTab } from "./EditTrackableHistoryTab";
 import { EditTrackableProgressTab } from "./EditTrackableProgressTab";
+import { computeGoalCompletion } from "./widgets/widgetMath";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
+import { startOfWeek, todayYYYYMMDD } from "../../lib/dates";
 
 interface EditTrackableDialogProps {
   trackableId: Id<"trackables">;
@@ -95,6 +97,23 @@ export function EditTrackableDialog({
   const upsertTrackable = useMutation(api.trackables.upsert);
   const archiveTrackable = useMutation(api.trackables.archive);
   const deleteTrackable = useMutation(api.trackables.remove);
+
+  // Enriched fields (lifetime totals, periodic overall progress) needed to
+  // determine completion aren't on the raw `trackables.search` doc above —
+  // they only exist on rows `getGoalDetails` computes. `focusTrackableId`
+  // guarantees this trackable's enriched row comes back even if it's
+  // outside the (unused here) active/archived page.
+  const today = todayYYYYMMDD();
+  const weekStart = startOfWeek(today);
+  const goalDetails = useQuery(
+    api.trackables.getGoalDetails,
+    profileReady
+      ? { today, weekStart, limit: 1, focusTrackableId: trackableId }
+      : "skip",
+  );
+  const readOnly = goalDetails?.focused
+    ? computeGoalCompletion(goalDetails.focused)
+    : false;
 
   const [goalTab, setGoalTab] = useState<GoalEditTab>("progress");
   const [trackerTab, setTrackerTab] = useState<TrackerEditTab>("details");
@@ -175,9 +194,10 @@ export function EditTrackableDialog({
 
   /** Save on commitment/details and on motivations so reasons and order persist without switching tabs. */
   const showSaveFooter =
-    isGoal
+    !readOnly &&
+    (isGoal
       ? goalTab === "commitment" || goalTab === "motivations"
-      : trackerTab === "details";
+      : trackerTab === "details");
 
   const cardFlexStyle: ViewStyle[] = [
     Platform.OS === "web"
@@ -313,19 +333,40 @@ export function EditTrackableDialog({
   /** `my-commitment-form-*` parity — trackers never show numeric targets/dates here. */
   const renderMyCommitmentBody = () => (
     <>
-      <Input label="Name" value={name} onChangeText={setName} placeholder="Name" />
+      <Input
+        label="Name"
+        value={name}
+        onChangeText={setName}
+        placeholder="Name"
+        editable={!readOnly}
+      />
 
       <View style={styles.fieldBlock}>
-        <ColourSwatchPicker value={colour} onChange={setColour} label="Color" />
+        <ColourSwatchPicker
+          value={colour}
+          onChange={setColour}
+          label="Color"
+          disabled={readOnly}
+        />
       </View>
 
       {isGoal ? (
         <View style={styles.row}>
           <View style={styles.flex1}>
-            <DateField label="Start Date" value={startDay} onChange={setStartDay} />
+            <DateField
+              label="Start Date"
+              value={startDay}
+              onChange={setStartDay}
+              disabled={readOnly}
+            />
           </View>
           <View style={styles.flex1}>
-            <DateField label="End Date" value={endDay} onChange={setEndDay} />
+            <DateField
+              label="End Date"
+              value={endDay}
+              onChange={setEndDay}
+              disabled={readOnly}
+            />
           </View>
         </View>
       ) : null}
@@ -337,6 +378,7 @@ export function EditTrackableDialog({
           onChangeText={setTargetCount}
           keyboardType="numeric"
           placeholder="e.g. 100"
+          editable={!readOnly}
         />
       ) : null}
 
@@ -347,6 +389,7 @@ export function EditTrackableDialog({
           onChangeText={setTargetHours}
           keyboardType="numeric"
           placeholder="e.g. 50"
+          editable={!readOnly}
         />
       ) : null}
 
@@ -358,6 +401,7 @@ export function EditTrackableDialog({
             onChangeText={setTargetDaysAWeek}
             keyboardType="numeric"
             placeholder="e.g. 5"
+            editable={!readOnly}
           />
           <Input
             label="Target Number of Weeks"
@@ -365,6 +409,7 @@ export function EditTrackableDialog({
             onChangeText={setTargetWeeks}
             keyboardType="numeric"
             placeholder="e.g. 8"
+            editable={!readOnly}
           />
         </>
       ) : null}
@@ -376,6 +421,7 @@ export function EditTrackableDialog({
           onChangeText={setTargetMinutesAWeek}
           keyboardType="numeric"
           placeholder="e.g. 300"
+          editable={!readOnly}
         />
       ) : null}
 
@@ -385,11 +431,13 @@ export function EditTrackableDialog({
             label="Track time"
             checked={trackTime}
             onToggle={() => setTrackTime((v) => !v)}
+            disabled={readOnly}
           />
           <CheckboxRow
             label="Track value"
             checked={trackCount}
             onToggle={() => setTrackCount((v) => !v)}
+            disabled={readOnly}
           />
           {trackCount ? (
             <View style={styles.indent}>
@@ -397,6 +445,7 @@ export function EditTrackableDialog({
                 label="Increase value by 1 for each calendar occurrence"
                 checked={autoCountFromCalendar}
                 onToggle={() => setAutoCountFromCalendar((v) => !v)}
+                disabled={readOnly}
               />
               <Text style={styles.groupLabel}>Value tracking type</Text>
               <View style={styles.choiceRow}>
@@ -404,6 +453,7 @@ export function EditTrackableDialog({
                   title="Cumulative"
                   subtitle="Values add up over time"
                   selected={isCumulative === true}
+                  disabled={readOnly}
                   onPress={() => {
                     setIsCumulative(true);
                     setIsRatingTracker(false);
@@ -413,6 +463,7 @@ export function EditTrackableDialog({
                   title="Rating"
                   subtitle="Values recorded at a point in time"
                   selected={isCumulative === false}
+                  disabled={readOnly}
                   onPress={() => {
                     setIsCumulative(false);
                     setIsRatingTracker(true);
@@ -472,6 +523,7 @@ export function EditTrackableDialog({
           trackTime: trackable.trackTime ?? undefined,
           isRatingTracker: trackable.isRatingTracker ?? undefined,
         }}
+        readOnly={readOnly}
       />
     </ScrollView>
   );
@@ -488,6 +540,7 @@ export function EditTrackableDialog({
               trackTime={trackTime}
               trackCount={trackCount}
               autoCountFromCalendar={autoCountFromCalendar}
+              readOnly={readOnly}
             />
           </View>
         );
@@ -520,6 +573,7 @@ export function EditTrackableDialog({
             <GoalReasonsForm
               value={{ reasons: goalReasons }}
               onChange={(v) => setGoalReasons(v.reasons)}
+              disabled={readOnly}
             />
           </KeyboardAwareScrollView>
         );
@@ -535,6 +589,7 @@ export function EditTrackableDialog({
             <GoalAccountabilityForm
               value={accountability}
               onChange={setAccountability}
+              disabled={readOnly}
             />
           </KeyboardAwareScrollView>
         );
@@ -569,6 +624,7 @@ export function EditTrackableDialog({
           trackTime={trackTime}
           trackCount={trackCount}
           autoCountFromCalendar={autoCountFromCalendar}
+          readOnly={readOnly}
         />
       </View>
     );
@@ -608,6 +664,19 @@ export function EditTrackableDialog({
             onClose={onClose}
             headerActions={headerActions}
           />
+
+          {readOnly && (
+            <View style={styles.readOnlyBanner}>
+              <Ionicons
+                name="checkmark-circle"
+                size={16}
+                color={Colors.tertiary}
+              />
+              <Text style={styles.readOnlyBannerText}>
+                This goal is complete — nothing more can be changed here.
+              </Text>
+            </View>
+          )}
 
           <ScrollView
             horizontal
@@ -703,13 +772,19 @@ function CheckboxRow({
   label,
   checked,
   onToggle,
+  disabled = false,
 }: {
   label: string;
   checked: boolean;
   onToggle: () => void;
+  disabled?: boolean;
 }) {
   return (
-    <Pressable onPress={onToggle} style={styles.checkboxRow}>
+    <Pressable
+      onPress={onToggle}
+      disabled={disabled}
+      style={[styles.checkboxRow, disabled && styles.checkboxRowDisabled]}
+    >
       <Ionicons
         name={checked ? "checkbox" : "square-outline"}
         size={20}
@@ -725,16 +800,23 @@ function ChoiceChip({
   subtitle,
   selected,
   onPress,
+  disabled = false,
 }: {
   title: string;
   subtitle: string;
   selected: boolean;
   onPress: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
-      style={[styles.choiceChip, selected && styles.choiceChipSelected]}
+      style={[
+        styles.choiceChip,
+        selected && styles.choiceChipSelected,
+        disabled && styles.choiceChipDisabled,
+      ]}
       onPress={onPress}
+      disabled={disabled}
     >
       <Text
         style={[
@@ -787,6 +869,21 @@ const styles = StyleSheet.create({
       web: { cursor: "pointer" } as object,
       default: {},
     }),
+  },
+  readOnlyBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.tertiaryContainer,
+  },
+  readOnlyBannerText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.onTertiaryContainer,
+    textAlign: "center",
   },
   tabBarScroll: {
     flexGrow: 0,
@@ -849,6 +946,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   checkboxRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  checkboxRowDisabled: { opacity: 0.5 },
   checkboxLabel: { color: Colors.text, fontSize: 14, flex: 1 },
   indent: { marginLeft: 28, gap: 10 },
   groupLabel: { color: Colors.textSecondary, fontSize: 13, fontWeight: "600" },
@@ -866,6 +964,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
     backgroundColor: Colors.primaryContainer,
   },
+  choiceChipDisabled: { opacity: 0.5 },
   choiceChipTitle: { color: Colors.text, fontWeight: "600", fontSize: 13 },
   choiceChipTitleSelected: { color: Colors.onPrimaryContainer },
   choiceChipSubtitle: { color: Colors.textSecondary, fontSize: 12 },

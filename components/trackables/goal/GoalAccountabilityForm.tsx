@@ -33,12 +33,16 @@ export function isAccountabilityValid(v: GoalAccountabilityValue): boolean {
 export function GoalAccountabilityForm({
   value,
   onChange,
+  disabled = false,
 }: {
   value: GoalAccountabilityValue;
   onChange: (next: GoalAccountabilityValue) => void;
+  disabled?: boolean;
 }) {
-  const set = (patch: Partial<GoalAccountabilityValue>) =>
+  const set = (patch: Partial<GoalAccountabilityValue>) => {
+    if (disabled) return;
     onChange({ ...value, ...patch });
+  };
 
   return (
     <View style={styles.container}>
@@ -49,9 +53,11 @@ export function GoalAccountabilityForm({
 
       <Pressable
         onPress={() => set({ willAcceptPenalty: false })}
+        disabled={disabled}
         style={[
           styles.stanceButton,
           value.willAcceptPenalty === false && styles.stanceButtonNo,
+          disabled && styles.stanceButtonDisabled,
         ]}
       >
         <Text
@@ -66,9 +72,11 @@ export function GoalAccountabilityForm({
 
       <Pressable
         onPress={() => set({ willAcceptPenalty: true })}
+        disabled={disabled}
         style={[
           styles.stanceButton,
           value.willAcceptPenalty === true && styles.stanceButtonYes,
+          disabled && styles.stanceButtonDisabled,
         ]}
       >
         <Text
@@ -89,6 +97,7 @@ export function GoalAccountabilityForm({
             onToggle={() =>
               set({ willDonateToCharity: !value.willDonateToCharity })
             }
+            disabled={disabled}
           />
           {value.willDonateToCharity && (
             <View style={styles.indented}>
@@ -99,6 +108,7 @@ export function GoalAccountabilityForm({
                     ? ""
                     : String(value.donateMoneyCharityAmount)
                 }
+                editable={!disabled}
                 onChangeText={(s) => {
                   const n = parseInt(s.replace(/[^\d]/g, ""), 10);
                   set({
@@ -118,6 +128,7 @@ export function GoalAccountabilityForm({
             onToggle={() =>
               set({ willSendMoneyToAFriend: !value.willSendMoneyToAFriend })
             }
+            disabled={disabled}
           />
           {value.willSendMoneyToAFriend && (
             <>
@@ -129,6 +140,7 @@ export function GoalAccountabilityForm({
                       ? ""
                       : String(value.sendMoneyFriendAmount)
                   }
+                  editable={!disabled}
                   onChangeText={(s) => {
                     const n = parseInt(s.replace(/[^\d]/g, ""), 10);
                     set({
@@ -144,6 +156,7 @@ export function GoalAccountabilityForm({
                 <Text style={styles.inlineLabel}>The friend's name is:</Text>
                 <TextInput
                   value={value.sendMoneyFriendName ?? ""}
+                  editable={!disabled}
                   onChangeText={(s) => set({ sendMoneyFriendName: s })}
                   style={[styles.smallInput, { width: 160 }]}
                 />
@@ -157,11 +170,13 @@ export function GoalAccountabilityForm({
             onToggle={() =>
               set({ willPostOnSocialMedia: !value.willPostOnSocialMedia })
             }
+            disabled={disabled}
           />
           <CheckboxRow
             label="Shave my head"
             checked={!!value.willShaveHead}
             onToggle={() => set({ willShaveHead: !value.willShaveHead })}
+            disabled={disabled}
           />
           <CheckboxRow
             label="Something else..."
@@ -169,6 +184,7 @@ export function GoalAccountabilityForm({
             onToggle={() =>
               set({ otherPenaltySelected: !value.otherPenaltySelected })
             }
+            disabled={disabled}
           />
 
           {value.otherPenaltySelected && (
@@ -183,6 +199,7 @@ export function GoalAccountabilityForm({
                 }
                 addLabel="Add penalty"
                 placeholder="Penalty"
+                disabled={disabled}
               />
             </View>
           )}
@@ -209,6 +226,7 @@ const styles = StyleSheet.create({
   },
   stanceButtonNo: { borderColor: "#EF5350" },
   stanceButtonYes: { borderColor: "#66BB6A" },
+  stanceButtonDisabled: { opacity: 0.6 },
   stanceButtonText: { fontSize: 14, color: Colors.text, textAlign: "center" },
   penaltyGroup: { gap: 4, marginTop: 4 },
   indented: {

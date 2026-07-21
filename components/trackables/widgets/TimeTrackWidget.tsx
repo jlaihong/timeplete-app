@@ -7,12 +7,7 @@ import { GoalStatItem } from "./atoms/GoalStatItem";
 import { CompletedBadge } from "./atoms/CompletedBadge";
 import { Button } from "../../ui/Button";
 import { Colors } from "../../../constants/colors";
-import {
-  computeRequiredRate,
-  formatRate,
-  isGoalCompleted,
-  rateLabel,
-} from "./widgetMath";
+import { computeRequiredRate, formatRate, rateLabel } from "./widgetMath";
 import type { WidgetBodyProps } from "./types";
 
 /**
@@ -28,12 +23,12 @@ export function TimeTrackWidget({
   goal,
   today,
   onRequestLog,
+  completed,
 }: WidgetBodyProps) {
   const targetHours = goal.targetNumberOfHours ?? 0;
   const totalHours = goal.totalTimeSeconds / 3600;
   const todayHours = goal.todaySeconds / 3600;
   const avgHours = goal.dailyTimeAverageSeconds / 3600;
-  const completed = isGoalCompleted(totalHours, targetHours);
   const required = completed
     ? null
     : computeRequiredRate(goal, totalHours, targetHours, "h", today);
@@ -42,18 +37,20 @@ export function TimeTrackWidget({
     <View
       style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}
     >
-      <View style={styles.actionsRow}>
-        <WidgetTimerRow trackableId={goal._id} />
-        <Button
-          title="Add progress"
-          variant="secondary"
-          onPress={() =>
-            onRequestLog({ kind: "time", goal, dayYYYYMMDD: today })
-          }
-          icon={<Ionicons name="add" size={20} color={Colors.primary} />}
-          style={styles.addBtn}
-        />
-      </View>
+      {!completed && (
+        <View style={styles.actionsRow}>
+          <WidgetTimerRow trackableId={goal._id} />
+          <Button
+            title="Add progress"
+            variant="secondary"
+            onPress={() =>
+              onRequestLog({ kind: "time", goal, dayYYYYMMDD: today })
+            }
+            icon={<Ionicons name="add" size={20} color={Colors.primary} />}
+            style={styles.addBtn}
+          />
+        </View>
+      )}
 
       {targetHours > 0 && (
         <ProgressBarWithText

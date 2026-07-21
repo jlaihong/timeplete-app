@@ -6,12 +6,7 @@ import { GoalStatItem } from "./atoms/GoalStatItem";
 import { CompletedBadge } from "./atoms/CompletedBadge";
 import { Button } from "../../ui/Button";
 import { Colors } from "../../../constants/colors";
-import {
-  computeRequiredRate,
-  formatRate,
-  isGoalCompleted,
-  rateLabel,
-} from "./widgetMath";
+import { computeRequiredRate, formatRate, rateLabel } from "./widgetMath";
 import type { WidgetBodyProps } from "./types";
 
 /**
@@ -26,12 +21,16 @@ import type { WidgetBodyProps } from "./types";
  * swapped for a `CompletedBadge`, mirroring P1's `@if (isCompleted())`
  * branch in `goal-widget.html`.
  */
-export function NumberWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
+export function NumberWidget({
+  goal,
+  today,
+  onRequestLog,
+  completed,
+}: WidgetBodyProps) {
   const target = goal.targetCount ?? 0;
   const todayEntry = goal.weeklyDayCompletion.find(
     (d) => d.dayYYYYMMDD === today
   );
-  const completed = isGoalCompleted(goal.totalDayCount, target);
   const required = completed
     ? null
     : computeRequiredRate(goal, goal.totalDayCount, target, "", today);
@@ -40,21 +39,23 @@ export function NumberWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
     <View
       style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}
     >
-      <Button
-        title="Add progress"
-        variant="secondary"
-        onPress={() =>
-          onRequestLog({
-            kind: "count",
-            goal,
-            dayYYYYMMDD: today,
-            initialCount: todayEntry?.numCompleted ?? 0,
-            initialComments: todayEntry?.comments ?? "",
-          })
-        }
-        icon={<Ionicons name="add" size={20} color={Colors.primary} />}
-        style={styles.addBtn}
-      />
+      {!completed && (
+        <Button
+          title="Add progress"
+          variant="secondary"
+          onPress={() =>
+            onRequestLog({
+              kind: "count",
+              goal,
+              dayYYYYMMDD: today,
+              initialCount: todayEntry?.numCompleted ?? 0,
+              initialComments: todayEntry?.comments ?? "",
+            })
+          }
+          icon={<Ionicons name="add" size={20} color={Colors.primary} />}
+          style={styles.addBtn}
+        />
+      )}
 
       {target > 0 && (
         <ProgressBarWithText

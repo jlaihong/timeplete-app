@@ -54,13 +54,19 @@ export function CheckboxRow({
   label,
   checked,
   onToggle,
+  disabled = false,
 }: {
   label: string;
   checked: boolean;
   onToggle: () => void;
+  disabled?: boolean;
 }) {
   return (
-    <Pressable onPress={onToggle} style={styles.checkboxRow}>
+    <Pressable
+      onPress={onToggle}
+      disabled={disabled}
+      style={[styles.checkboxRow, disabled && styles.checkboxRowDisabled]}
+    >
       <View style={[styles.checkboxBox, checked && styles.checkboxBoxChecked]}>
         {checked && (
           <MaterialIcons name="check" size={16} color={Colors.onPrimary} />
@@ -266,6 +272,7 @@ function WebSortableRow({
   placeholder,
   addLabel,
   inputRef,
+  disabled = false,
 }: {
   id: string;
   value: string;
@@ -276,6 +283,7 @@ function WebSortableRow({
   placeholder: string;
   addLabel: string;
   inputRef: (instance: TextInput | null) => void;
+  disabled?: boolean;
 }) {
   const {
     attributes,
@@ -284,7 +292,7 @@ function WebSortableRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id });
+  } = useSortable({ id, disabled });
 
   const rowStyle: React.CSSProperties = {
     display: "flex",
@@ -311,8 +319,9 @@ function WebSortableRow({
           alignItems: "center",
           justifyContent: "center",
           touchAction: "none",
-          cursor: isDragging ? "grabbing" : "grab",
+          cursor: disabled ? "default" : isDragging ? "grabbing" : "grab",
           borderRadius: 6,
+          opacity: disabled ? 0.35 : 1,
         }}
       >
         <MaterialIcons
@@ -331,6 +340,7 @@ function WebSortableRow({
         <TextInput
           ref={inputRef}
           value={value}
+          editable={!disabled}
           onChangeText={(s) => {
             const next = [...items];
             next[index] = s;
@@ -342,13 +352,15 @@ function WebSortableRow({
           style={[styles.listInput, styles.listInputWebFlex]}
         />
       </div>
-      <Pressable
-        onPress={onDeleteRow}
-        style={styles.iconBtn}
-        accessibilityLabel={`Delete ${addLabel.toLowerCase()}`}
-      >
-        <MaterialIcons name="delete" size={20} color={Colors.textSecondary} />
-      </Pressable>
+      {!disabled && (
+        <Pressable
+          onPress={onDeleteRow}
+          style={styles.iconBtn}
+          accessibilityLabel={`Delete ${addLabel.toLowerCase()}`}
+        >
+          <MaterialIcons name="delete" size={20} color={Colors.textSecondary} />
+        </Pressable>
+      )}
     </div>
   );
 }
@@ -359,12 +371,14 @@ export function DraggableTextList({
   onAdd,
   addLabel,
   placeholder,
+  disabled = false,
 }: {
   items: string[];
   onChange: (next: string[]) => void;
   onAdd: () => void;
   addLabel: string;
   placeholder: string;
+  disabled?: boolean;
 }) {
   const [sortIds, setSortIds] = useState<string[]>(() =>
     items.map(() => generateRowId())
@@ -434,7 +448,7 @@ export function DraggableTextList({
     [items, onChange, sortIds]
   );
 
-  const listFooter = (
+  const listFooter = !disabled && (
     <Pressable onPress={handleAdd} style={styles.addBtn}>
       <Ionicons name="add" size={20} color={Colors.primary} />
       <Text style={styles.addBtnText}>{addLabel}</Text>
@@ -461,6 +475,7 @@ export function DraggableTextList({
                 onDeleteRow={() => handleDeleteRow(i)}
                 placeholder={placeholder}
                 addLabel={addLabel}
+                disabled={disabled}
                 inputRef={(el) => {
                   inputRefs.current[i] = el;
                 }}
@@ -477,53 +492,56 @@ export function DraggableTextList({
     <View style={styles.list}>
       {items.map((item, i) => (
         <View key={sortIds[i] ?? String(i)} style={styles.listRow}>
-          <View style={styles.nativeReorderCol}>
-            <Pressable
-              onPress={() => moveRow(i, i - 1)}
-              disabled={i === 0}
-              style={[
-                styles.reorderNudge,
-                i === 0 && styles.reorderNudgeDisabled,
-              ]}
-              accessibilityLabel="Move row up"
-            >
+          {!disabled && (
+            <View style={styles.nativeReorderCol}>
+              <Pressable
+                onPress={() => moveRow(i, i - 1)}
+                disabled={i === 0}
+                style={[
+                  styles.reorderNudge,
+                  i === 0 && styles.reorderNudgeDisabled,
+                ]}
+                accessibilityLabel="Move row up"
+              >
+                <MaterialIcons
+                  name="keyboard-arrow-up"
+                  size={22}
+                  color={i === 0 ? Colors.textTertiary : Colors.textSecondary}
+                />
+              </Pressable>
               <MaterialIcons
-                name="keyboard-arrow-up"
-                size={22}
-                color={i === 0 ? Colors.textTertiary : Colors.textSecondary}
+                name="drag-indicator"
+                size={20}
+                color={Colors.textTertiary}
+                style={{ opacity: 0.35 }}
               />
-            </Pressable>
-            <MaterialIcons
-              name="drag-indicator"
-              size={20}
-              color={Colors.textTertiary}
-              style={{ opacity: 0.35 }}
-            />
-            <Pressable
-              onPress={() => moveRow(i, i + 1)}
-              disabled={i >= items.length - 1}
-              style={[
-                styles.reorderNudge,
-                i >= items.length - 1 && styles.reorderNudgeDisabled,
-              ]}
-              accessibilityLabel="Move row down"
-            >
-              <MaterialIcons
-                name="keyboard-arrow-down"
-                size={22}
-                color={
-                  i >= items.length - 1
-                    ? Colors.textTertiary
-                    : Colors.textSecondary
-                }
-              />
-            </Pressable>
-          </View>
+              <Pressable
+                onPress={() => moveRow(i, i + 1)}
+                disabled={i >= items.length - 1}
+                style={[
+                  styles.reorderNudge,
+                  i >= items.length - 1 && styles.reorderNudgeDisabled,
+                ]}
+                accessibilityLabel="Move row down"
+              >
+                <MaterialIcons
+                  name="keyboard-arrow-down"
+                  size={22}
+                  color={
+                    i >= items.length - 1
+                      ? Colors.textTertiary
+                      : Colors.textSecondary
+                  }
+                />
+              </Pressable>
+            </View>
+          )}
           <TextInput
             ref={(el) => {
               inputRefs.current[i] = el;
             }}
             value={item}
+            editable={!disabled}
             onChangeText={(s) => {
               const next = [...items];
               next[i] = s;
@@ -534,17 +552,19 @@ export function DraggableTextList({
             multiline
             style={styles.listInput}
           />
-          <Pressable
-            onPress={() => handleDeleteRow(i)}
-            style={styles.iconBtn}
-            accessibilityLabel={`Delete ${addLabel.toLowerCase()}`}
-          >
-            <MaterialIcons
-              name="delete"
-              size={20}
-              color={Colors.textSecondary}
-            />
-          </Pressable>
+          {!disabled && (
+            <Pressable
+              onPress={() => handleDeleteRow(i)}
+              style={styles.iconBtn}
+              accessibilityLabel={`Delete ${addLabel.toLowerCase()}`}
+            >
+              <MaterialIcons
+                name="delete"
+                size={20}
+                color={Colors.textSecondary}
+              />
+            </Pressable>
+          )}
         </View>
       ))}
       {listFooter}
@@ -566,6 +586,7 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  checkboxRowDisabled: { opacity: 0.5 },
   checkboxBox: {
     width: 20,
     height: 20,

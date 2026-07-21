@@ -55,4 +55,11 @@ export interface WidgetBodyProps {
   today: string;
   /** Bubble up a request to open a quick-log dialog. */
   onRequestLog: (req: LogRequest) => void;
+  /**
+   * Whether this goal has hit its lifetime target
+   * (`computeGoalCompletion` in `widgetMath.ts`). Widgets that let a user
+   * add progress must hide/disable that affordance once true. Always
+   * `false` for `TRACKER` (no target, never completes).
+   */
+  completed: boolean;
 }

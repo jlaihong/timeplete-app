@@ -1,4 +1,5 @@
 import { daysBetweenYYYYMMDD, todayYYYYMMDD } from "../../../lib/dates";
+import { getPeriodicCommittedWeekCount } from "../../../lib/requiredProgress";
 import type { WidgetGoal } from "./types";
 
 /**
@@ -68,4 +69,39 @@ export function isGoalCompleted(
 ): boolean {
   if (!targetValue || targetValue <= 0) return false;
   return currentValue >= targetValue;
+}
+
+/**
+ * Whether a goal has hit its lifetime target, for every trackable type that
+ * has one. `TRACKER` is open-ended (no target — see `TrackerWidget`'s "NO
+ * main currentValue progress bar" comment) so it never completes.
+ *
+ * Single source of truth for "completed" — widgets should read this instead
+ * of recomputing the underlying math inline so the widget chrome
+ * (`TrackableWidgetCard`), the per-type bodies, and `EditTrackableDialog`'s
+ * read-only gating never drift out of sync.
+ */
+export function computeGoalCompletion(goal: WidgetGoal): boolean {
+  switch (goal.trackableType) {
+    case "TIME_TRACK":
+      return isGoalCompleted(
+        goal.totalTimeSeconds / 3600,
+        goal.targetNumberOfHours ?? 0
+      );
+    case "NUMBER":
+      return isGoalCompleted(goal.totalDayCount, goal.targetCount ?? 0);
+    case "DAYS_A_WEEK":
+    case "MINUTES_A_WEEK": {
+      const target =
+        goal.trackableType === "DAYS_A_WEEK"
+          ? goal.targetNumberOfDaysAWeek
+          : goal.targetNumberOfMinutesAWeek;
+      const denom = getPeriodicCommittedWeekCount(goal);
+      if (!target || denom <= 0) return false;
+      const numerator = (goal.periodicOverallProgress ?? 0) / target;
+      return isGoalCompleted(numerator, denom);
+    }
+    default:
+      return false;
+  }
 }

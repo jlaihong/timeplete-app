@@ -22,8 +22,11 @@ export interface TrackingHistoryTableProps {
   rows: TrackerDetailsHistoryRow[];
   showValueColumn: boolean;
   showTimeColumns: boolean;
-  /** Called after user confirms deletion in `TrackingHistoryTable`. */
-  onDeleteRow: (row: TrackerDetailsHistoryRow) => void;
+  /**
+   * Called after user confirms deletion in `TrackingHistoryTable`. Omit to
+   * render read-only (no delete affordance) — e.g. a completed goal.
+   */
+  onDeleteRow?: (row: TrackerDetailsHistoryRow) => void;
   footer?: React.ReactNode;
 }
 
@@ -186,18 +189,20 @@ export function TrackingHistoryTable({
                 </View>
 
                 <View style={styles.trackerDeleteCol}>
-                  <Pressable
-                    hitSlop={10}
-                    accessibilityRole="button"
-                    accessibilityLabel="Delete tracking row"
-                    onPress={() => onDeleteRow(row)}
-                  >
-                    <Ionicons
-                      name="trash-outline"
-                      size={20}
-                      color={Colors.text}
-                    />
-                  </Pressable>
+                  {onDeleteRow && (
+                    <Pressable
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete tracking row"
+                      onPress={() => onDeleteRow(row)}
+                    >
+                      <Ionicons
+                        name="trash-outline"
+                        size={20}
+                        color={Colors.text}
+                      />
+                    </Pressable>
+                  )}
                 </View>
               </View>
             ))}
@@ -231,7 +236,7 @@ function MobileTrackingRow({
   row: TrackerDetailsHistoryRow;
   showValueColumn: boolean;
   showTimeColumns: boolean;
-  onDeleteRow: (row: TrackerDetailsHistoryRow) => void;
+  onDeleteRow?: (row: TrackerDetailsHistoryRow) => void;
 }) {
   const dateLabel =
     row.source === "tracker_entry"
@@ -310,15 +315,17 @@ function MobileTrackingRow({
             </View>
           ) : null}
         </View>
-        <Pressable
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="Delete tracking row"
-          onPress={() => onDeleteRow(row)}
-          style={styles.mobileDeleteBtn}
-        >
-          <Ionicons name="trash-outline" size={18} color={Colors.text} />
-        </Pressable>
+        {onDeleteRow && (
+          <Pressable
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Delete tracking row"
+            onPress={() => onDeleteRow(row)}
+            style={styles.mobileDeleteBtn}
+          >
+            <Ionicons name="trash-outline" size={18} color={Colors.text} />
+          </Pressable>
+        )}
       </View>
       {commentsText ? (
         <Text style={styles.mobileComments} numberOfLines={3}>

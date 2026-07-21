@@ -132,7 +132,14 @@ const MAX_TASK_LINES = 2;
 /** Calendar grid gap between cells. */
 const GAP = 4;
 
-export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTabTrackable }) {
+export function EditTrackableProgressTab({
+  trackable,
+  readOnly = false,
+}: {
+  trackable: ProgressTabTrackable;
+  /** Hides the "Add progress" action — the goal already hit its target. */
+  readOnly?: boolean;
+}) {
   const { profileReady } = useAuth();
   const type = trackable.trackableType;
   const caption = progressCaption(trackable);
@@ -648,20 +655,22 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                     />
                   ) : null}
                 </ScrollView>
-                <View style={styles.dayDetailFooter}>
-                  <Button
-                    title="Add progress"
-                    size="small"
-                    icon={
-                      <Ionicons name="add" size={18} color={Colors.onPrimary} />
-                    }
-                    onPress={() => {
-                      if (expandedDayYYYYMMDD != null) {
-                        openLogDialogForDay(expandedDayYYYYMMDD);
+                {!readOnly && (
+                  <View style={styles.dayDetailFooter}>
+                    <Button
+                      title="Add progress"
+                      size="small"
+                      icon={
+                        <Ionicons name="add" size={18} color={Colors.onPrimary} />
                       }
-                    }}
-                  />
-                </View>
+                      onPress={() => {
+                        if (expandedDayYYYYMMDD != null) {
+                          openLogDialogForDay(expandedDayYYYYMMDD);
+                        }
+                      }}
+                    />
+                  </View>
+                )}
               </DialogCard>
             </Pressable>
           </Pressable>

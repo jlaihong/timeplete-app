@@ -15,6 +15,8 @@ interface TrackableWidgetCardProps {
   goal: WidgetGoal;
   children: React.ReactNode;
   onRequestEditTrackable?: (trackableId: string) => void;
+  /** Whether this goal has hit its lifetime target — see `computeGoalCompletion`. */
+  completed?: boolean;
 }
 
 /**
@@ -32,11 +34,12 @@ export function TrackableWidgetCard({
   goal,
   children,
   onRequestEditTrackable,
+  completed = false,
 }: TrackableWidgetCardProps) {
   const timer = useTimer();
   const isTicking = timer.isRunning && timer.trackableId === goal._id;
 
-  const showDueCopy = goal.trackableType !== "TRACKER";
+  const showDueCopy = goal.trackableType !== "TRACKER" && !completed;
   const dueCopy = showDueCopy ? formatDueCopy(goal.endDayYYYYMMDD) : null;
 
   const openEdit = () => {
@@ -48,12 +51,18 @@ export function TrackableWidgetCard({
   };
 
   return (
-    <Card style={[styles.card, isTicking && styles.cardTicking]}>
+    <Card
+      style={[
+        styles.card,
+        isTicking && styles.cardTicking,
+        completed && styles.cardCompleted,
+      ]}
+    >
       <View style={styles.header}>
         <Ionicons
-          name="locate"
+          name={completed ? "checkmark-circle" : "locate"}
           size={18}
-          color={goal.colour}
+          color={completed ? Colors.tertiary : goal.colour}
           style={{ marginRight: 6 }}
         />
         <Pressable
@@ -63,16 +72,20 @@ export function TrackableWidgetCard({
           accessibilityLabel="Open trackable details"
         >
           <Text style={styles.title}>{goal.name}</Text>
-          {dueCopy && (
-            <Text
-              style={[
-                styles.dueCopy,
-                dueCopy.tone === "overdue" && styles.dueCopyOverdue,
-                dueCopy.tone === "due-today" && styles.dueCopyDueToday,
-              ]}
-            >
-              {dueCopy.label}
-            </Text>
+          {completed ? (
+            <Text style={styles.dueCopyCompleted}>Completed</Text>
+          ) : (
+            dueCopy && (
+              <Text
+                style={[
+                  styles.dueCopy,
+                  dueCopy.tone === "overdue" && styles.dueCopyOverdue,
+                  dueCopy.tone === "due-today" && styles.dueCopyDueToday,
+                ]}
+              >
+                {dueCopy.label}
+              </Text>
+            )
           )}
         </Pressable>
 
@@ -122,6 +135,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.success,
   },
+  cardCompleted: {
+    borderWidth: 1,
+    borderColor: Colors.tertiary,
+    backgroundColor: Colors.tertiaryContainer,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -142,6 +160,13 @@ const styles = StyleSheet.create({
   },
   dueCopyDueToday: { color: Colors.warning },
   dueCopyOverdue: { color: Colors.error },
+  dueCopyCompleted: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: Colors.tertiary,
+    marginTop: 1,
+    textAlign: "center",
+  },
   headerBtn: { padding: 4, marginLeft: 4 },
   body: { gap: 10, alignItems: "center" },
 });

@@ -20,9 +20,11 @@ export interface GoalReasonsValue {
 export function GoalReasonsForm({
   value,
   onChange,
+  disabled = false,
 }: {
   value: GoalReasonsValue;
   onChange: (next: GoalReasonsValue) => void;
+  disabled?: boolean;
 }) {
   return (
     <View style={styles.container}>
@@ -41,6 +43,7 @@ export function GoalReasonsForm({
         onAdd={() => onChange({ reasons: [...value.reasons, ""] })}
         addLabel="Add reason"
         placeholder="Reason"
+        disabled={disabled}
       />
     </View>
   );

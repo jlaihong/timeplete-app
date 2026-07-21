@@ -27,6 +27,8 @@ interface EditTrackableHistoryTabProps {
   trackTime: boolean;
   trackCount: boolean;
   autoCountFromCalendar: boolean;
+  /** Hides the per-row delete affordance — the goal already hit its target. */
+  readOnly?: boolean;
 }
 
 const TRACKER_PAGE = 20;
@@ -46,6 +48,7 @@ export function EditTrackableHistoryTab({
   trackTime,
   trackCount,
   autoCountFromCalendar,
+  readOnly = false,
 }: EditTrackableHistoryTabProps) {
   const { profileReady } = useAuth();
   const [trackerMergeLimit, setTrackerMergeLimit] = useState(TRACKER_PAGE);
@@ -194,7 +197,7 @@ export function EditTrackableHistoryTab({
       rows={trackerRows}
       showValueColumn={trackerShowValueCol}
       showTimeColumns={trackerShowTimeCols}
-      onDeleteRow={handleDeleteRow}
+      onDeleteRow={readOnly ? undefined : handleDeleteRow}
       footer={loadMoreFooter}
     />
   );
