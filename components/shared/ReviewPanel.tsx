@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   Alert,
   Pressable,
@@ -17,6 +16,7 @@ import { Colors } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
+import { AutoGrowTextInput } from "../ui/AutoGrowTextInput";
 import {
   todayYYYYMMDD,
   addDays,
@@ -285,7 +285,7 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
                       )}
                     </Pressable>
                   ) : (
-                    <TextInput
+                    <AutoGrowTextInput
                       style={styles.answerInput}
                       value={answer}
                       onChangeText={(text) => {
@@ -294,8 +294,6 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
                       }}
                       placeholder="Your answer..."
                       placeholderTextColor={Colors.textTertiary}
-                      multiline
-                      textAlignVertical="top"
                     />
                   )}
                 </Card>

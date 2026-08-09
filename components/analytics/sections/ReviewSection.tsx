@@ -9,7 +9,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   Alert,
   Platform,
   Pressable,
@@ -19,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../../convex/_generated/api";
 import { Colors } from "../../../constants/colors";
 import { Button } from "../../ui/Button";
+import { AutoGrowTextInput } from "../../ui/AutoGrowTextInput";
 import { useAnalyticsState } from "../AnalyticsState";
 import { ReviewReflectModal } from "../ReviewReflectModal";
 import { ReviewQuestionsSettingsModal } from "../../reviews/ReviewQuestionsSettingsModal";
@@ -181,7 +181,7 @@ export function ReviewSection() {
             {displayQs.map((q) => (
               <View key={q._id} style={styles.questionBlock}>
                 <Text style={styles.questionText}>{q.questionText}</Text>
-                <TextInput
+                <AutoGrowTextInput
                   style={styles.answerInput}
                   value={answers[q._id] ?? ""}
                   onChangeText={(text) => {
@@ -189,8 +189,6 @@ export function ReviewSection() {
                   }}
                   placeholder="Your answer..."
                   placeholderTextColor={Colors.textTertiary}
-                  multiline
-                  textAlignVertical="top"
                 />
               </View>
             ))}

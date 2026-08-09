@@ -10,7 +10,6 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TextInput,
   Platform,
   Alert,
   Pressable,
@@ -21,6 +20,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
+import { AutoGrowTextInput } from "../ui/AutoGrowTextInput";
 import {
   DialogCard,
   DialogFooter,
@@ -358,7 +358,7 @@ export function ReviewReflectModal({
                   )}
                 </Pressable>
               ) : (
-                <TextInput
+                <AutoGrowTextInput
                   style={styles.currentTextarea}
                   value={answer}
                   onChangeText={(t) =>
@@ -366,8 +366,6 @@ export function ReviewReflectModal({
                   }
                   placeholder="Your answer..."
                   placeholderTextColor={Colors.textTertiary}
-                  multiline
-                  textAlignVertical="top"
                 />
               )}
             </View>
