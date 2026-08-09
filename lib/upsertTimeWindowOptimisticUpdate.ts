@@ -35,6 +35,7 @@ export type UpsertTimeWindowOptimisticArgs = {
   comments?: string;
   tagIds?: Id<"tags">[];
   timeZone: string;
+  useTimeZone?: boolean;
   source?: "timer" | "manual" | "calendar" | "tracker_entry";
 };
 
@@ -92,6 +93,10 @@ function patchTimeWindowRow(
     comments: args.comments,
     tagIds: args.tagIds,
     timeZone: args.timeZone,
+    useTimeZone:
+      args.useTimeZone !== undefined
+        ? args.useTimeZone
+        : existing.useTimeZone === true,
     source: args.source ?? existing.source,
   };
 }

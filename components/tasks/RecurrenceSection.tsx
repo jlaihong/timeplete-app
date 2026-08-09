@@ -41,6 +41,7 @@ import { Colors } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { DateField } from "../ui/DateField";
 import { TimeField } from "../ui/TimeField";
+import { deviceTimeZone, listTimeZones } from "../../lib/timeZones";
 
 export type RecurrencePatternType =
   | "COUPLE_DAYS_A_WEEK"
@@ -83,6 +84,10 @@ export interface RecurrenceFormValue {
   startTimeHHMM: string; // "" when hasTimeWindow=false
   endTimeHHMM: string;
   hasTimeWindow: boolean;
+  /** Meetings only — personal recurring tasks stay wall-clock (false). */
+  useTimeZone: boolean;
+  /** IANA zone when useTimeZone is true. */
+  timeZone: string;
 }
 
 /**
@@ -112,6 +117,8 @@ export function defaultRecurrence(
     startTimeHHMM: "",
     endTimeHHMM: "",
     hasTimeWindow: false,
+    useTimeZone: false,
+    timeZone: deviceTimeZone(),
   };
 }
 
@@ -405,24 +412,58 @@ export function RecurrenceSection({
               {/* Time labels "Start Time" / "End Time" copied verbatim
                   from P1 task-details.html lines 394, 403. */}
               {value.hasTimeWindow && (
-                <View style={styles.row}>
-                  <View style={[styles.field, styles.flex1]}>
-                    <TimeField
-                      label="Start Time"
-                      value={value.startTimeHHMM}
-                      onChange={(s) =>
-                        onChange({ ...value, startTimeHHMM: s })
+                <>
+                  <View style={styles.row}>
+                    <View style={[styles.field, styles.flex1]}>
+                      <TimeField
+                        label="Start Time"
+                        value={value.startTimeHHMM}
+                        onChange={(s) =>
+                          onChange({ ...value, startTimeHHMM: s })
+                        }
+                      />
+                    </View>
+                    <View style={[styles.field, styles.flex1]}>
+                      <TimeField
+                        label="End Time"
+                        value={value.endTimeHHMM}
+                        onChange={(s) =>
+                          onChange({ ...value, endTimeHHMM: s })
+                        }
+                      />
+                    </View>
+                  </View>
+                  <Pressable
+                    style={styles.toggleRow}
+                    onPress={() => {
+                      const next = !value.useTimeZone;
+                      onChange({
+                        ...value,
+                        useTimeZone: next,
+                        timeZone:
+                          value.timeZone || deviceTimeZone(),
+                      });
+                    }}
+                  >
+                    <Ionicons
+                      name={value.useTimeZone ? "checkbox" : "square-outline"}
+                      size={20}
+                      color={
+                        value.useTimeZone ? Colors.primary : Colors.textSecondary
                       }
                     />
-                  </View>
-                  <View style={[styles.field, styles.flex1]}>
-                    <TimeField
-                      label="End Time"
-                      value={value.endTimeHHMM}
-                      onChange={(s) => onChange({ ...value, endTimeHHMM: s })}
-                    />
-                  </View>
-                </View>
+                    <Text style={styles.toggleLabel}>Use Time Zone</Text>
+                  </Pressable>
+                  {value.useTimeZone ? (
+                    <View style={styles.field}>
+                      <FieldLabel>Time Zone</FieldLabel>
+                      <TimeZoneDropdown
+                        value={value.timeZone || deviceTimeZone()}
+                        onChange={(tz) => onChange({ ...value, timeZone: tz })}
+                      />
+                    </View>
+                  ) : null}
+                </>
               )}
             </>
           )}
@@ -464,6 +505,8 @@ export function ruleToRecurrenceForm(rule: {
   endDateYYYYMMDD?: string;
   startTimeHHMM?: string;
   endTimeHHMM?: string;
+  useTimeZone?: boolean;
+  timeZone?: string;
 }): RecurrenceFormValue {
   const interval = rule.interval ?? 1;
   let patternType: RecurrencePatternType = "COUPLE_DAYS_A_WEEK";
@@ -495,6 +538,8 @@ export function ruleToRecurrenceForm(rule: {
     startTimeHHMM: rule.startTimeHHMM ?? "",
     endTimeHHMM: rule.endTimeHHMM ?? "",
     hasTimeWindow: !!rule.startTimeHHMM && !!rule.endTimeHHMM,
+    useTimeZone: rule.useTimeZone === true,
+    timeZone: rule.timeZone?.trim() || deviceTimeZone(),
   };
 }
 
@@ -629,6 +674,20 @@ function Dropdown({
       })}
     </View>
   );
+}
+
+function TimeZoneDropdown({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const options = listTimeZones(value).map((tz) => ({
+    value: tz,
+    label: tz.replace(/_/g, " "),
+  }));
+  return <Dropdown value={value} onChange={onChange} options={options} />;
 }
 
 /**

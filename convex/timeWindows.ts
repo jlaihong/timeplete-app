@@ -256,6 +256,12 @@ export const upsert = mutation({
     comments: v.optional(v.string()),
     tagIds: v.optional(v.array(v.id("tags"))),
     timeZone: v.string(),
+    /**
+     * When true, interpret HHMM in `timeZone` (meetings). When false/
+     * omitted, HHMM is floating wall-clock. On patch, omitted keeps the
+     * existing value (defaulting missing legacy rows to false).
+     */
+    useTimeZone: v.optional(v.boolean()),
     source: v.optional(
       v.union(
         v.literal("timer"),
@@ -309,6 +315,10 @@ export const upsert = mutation({
     if (args.id) {
       const existing = await ctx.db.get(args.id);
       if (!existing) throw new Error("Time window not found");
+      const useTimeZone =
+        args.useTimeZone !== undefined
+          ? args.useTimeZone
+          : existing.useTimeZone === true;
       await ctx.db.patch(args.id, {
         startTimeHHMM: args.startTimeHHMM,
         startDayYYYYMMDD: args.startDayYYYYMMDD,
@@ -323,6 +333,7 @@ export const upsert = mutation({
         comments: args.comments,
         tagIds: args.tagIds,
         timeZone: args.timeZone,
+        useTimeZone,
         source: args.source ?? existing.source,
       });
       // Keep `task.timeSpentInSecondsUnallocated` in lock-step so the
@@ -386,6 +397,7 @@ export const upsert = mutation({
       comments: args.comments,
       tagIds: args.tagIds,
       timeZone: args.timeZone,
+      useTimeZone: args.useTimeZone === true,
       recurringEventId: args.recurringEventId,
       isRecurringInstance: args.isRecurringInstance ?? false,
       source: args.source,

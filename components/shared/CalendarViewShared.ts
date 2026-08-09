@@ -126,7 +126,12 @@ export interface TimeWindowDoc {
   comments?: string;
   tagIds?: string[];
   timeZone: string;
-  /** Canonical UTC start instant when present (authoritative positioning). */
+  /**
+   * When true, future events convert into the grid zone; past events
+   * freeze at scheduled HHMM. Missing/false = floating wall-clock.
+   */
+  useTimeZone?: boolean;
+  /** Canonical UTC start instant when present (used for TZ-aware future layout). */
   startTimeEpochMs?: number;
   recurringEventId?: string;
   isRecurringInstance?: boolean;
@@ -170,6 +175,7 @@ export function undoUpsertPayloadFromCalendarRow(tw: TimeWindowDoc) {
         ? (tw.tagIds as Id<"tags">[])
         : undefined,
     timeZone: tw.timeZone,
+    useTimeZone: tw.useTimeZone === true,
     source: tw.source,
     recurringEventId: tw.recurringEventId
       ? (tw.recurringEventId as Id<"recurringEvents">)
@@ -189,45 +195,72 @@ export function hhmmToMinutes(hhmm: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
-/** Calendar column Y position: derive minutes on the GRID timezone axis from UTC instant when possible. */
+/**
+ * Calendar column Y position.
+ *
+ * - Wall-clock (`useTimeZone` false/missing): always use stored HHMM.
+ * - TZ-aware past (now after event end in the event's zone): freeze at HHMM.
+ * - TZ-aware future: convert the canonical instant into the grid zone.
+ */
 export function eventGridStartMinutes(
   w: {
     startTimeHHMM: string;
     startTimeEpochMs?: number;
     startDayYYYYMMDD: string;
     timeZone: string;
+    useTimeZone?: boolean;
+    durationSeconds?: number;
   },
   gridTimeZone: string,
+  nowMs: number = Date.now(),
 ): number {
+  const wallMinutes = hhmmToMinutes(w.startTimeHHMM);
+  if (w.useTimeZone !== true) {
+    return wallMinutes;
+  }
+
   const gridTz = gridTimeZone.trim() || "UTC";
   const rowTz = (typeof w.timeZone === "string" ? w.timeZone : "").trim() || "UTC";
+  const durationSec =
+    typeof w.durationSeconds === "number" && Number.isFinite(w.durationSeconds)
+      ? Math.max(0, w.durationSeconds)
+      : 0;
 
-  if (
-    typeof w.startTimeEpochMs === "number" &&
-    Number.isFinite(w.startTimeEpochMs)
-  ) {
-    const wall = wallClockInTimeZone(w.startTimeEpochMs, gridTz);
-    return hhmmToMinutes(wall.startTimeHHMM);
+  let startEpochMs: number | undefined =
+    typeof w.startTimeEpochMs === "number" && Number.isFinite(w.startTimeEpochMs)
+      ? w.startTimeEpochMs
+      : undefined;
+
+  if (startEpochMs === undefined) {
+    if (!/^\d{8}$/.test(w.startDayYYYYMMDD)) {
+      return wallMinutes;
+    }
+    try {
+      startEpochMs = cachedWallClockGridToEpochMs(
+        w.startDayYYYYMMDD,
+        wallMinutes,
+        rowTz,
+      );
+    } catch {
+      return wallMinutes;
+    }
+  }
+
+  // Past meetings stay pinned to the scheduled wall clock so travel
+  // does not move history on the calendar.
+  if (nowMs > startEpochMs + durationSec * 1000) {
+    return wallMinutes;
   }
 
   if (rowTz === gridTz) {
-    return hhmmToMinutes(w.startTimeHHMM);
-  }
-
-  if (!/^\d{8}$/.test(w.startDayYYYYMMDD)) {
-    return hhmmToMinutes(w.startTimeHHMM);
+    return wallMinutes;
   }
 
   try {
-    const epochMs = cachedWallClockGridToEpochMs(
-      w.startDayYYYYMMDD,
-      hhmmToMinutes(w.startTimeHHMM),
-      rowTz,
-    );
-    const wall = wallClockInTimeZone(epochMs, gridTz);
+    const wall = wallClockInTimeZone(startEpochMs, gridTz);
     return hhmmToMinutes(wall.startTimeHHMM);
   } catch {
-    return hhmmToMinutes(w.startTimeHHMM);
+    return wallMinutes;
   }
 }
 
@@ -421,9 +454,10 @@ export interface EventLayout {
 export function packOverlappingEvents(
   windows: TimeWindowDoc[],
   gridTimeZone: string,
+  nowMs: number = Date.now(),
 ): Map<string, EventLayout> {
   const items = windows.map((w) => {
-    const start = eventGridStartMinutes(w, gridTimeZone);
+    const start = eventGridStartMinutes(w, gridTimeZone, nowMs);
     const end =
       start +
       Math.max(MIN_DURATION_MINUTES, Math.round(w.durationSeconds / 60));

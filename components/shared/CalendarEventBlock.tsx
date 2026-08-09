@@ -100,6 +100,8 @@ export function CalendarEventBlock({
       tw.startTimeHHMM,
       tw.startDayYYYYMMDD,
       tw.timeZone,
+      tw.useTimeZone,
+      tw.durationSeconds,
     ],
   );
   const baseDuration = useMemo(

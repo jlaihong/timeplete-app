@@ -53,6 +53,7 @@ import {
   DialogHeader,
   DialogFooter,
 } from "../ui/DialogScaffold";
+import { deviceTimeZone, listTimeZones } from "../../lib/timeZones";
 
 interface EventDialogProps {
   day: string;
@@ -79,6 +80,8 @@ interface EventDialogProps {
     taskId?: string | null;
     recurringEventId?: string | null;
     isRecurringInstance?: boolean;
+    timeZone?: string;
+    useTimeZone?: boolean;
   };
   /**
    * Pre-fill values when opening for a brand-new event (e.g. populated
@@ -133,6 +136,18 @@ export function EventDialog({
     (existingEvent?.trackableId as Id<"trackables"> | null | undefined) ?? null
   );
   const [comments, setComments] = useState(existingEvent?.comments ?? "");
+  // Empty-slot calendar create defaults to timezone-aware (meetings).
+  // Editing an existing row / personal history defaults to wall-clock.
+  const [useTimeZone, setUseTimeZone] = useState(
+    existingEvent ? existingEvent.useTimeZone === true : true
+  );
+  const [selectedTimeZone, setSelectedTimeZone] = useState(
+    existingEvent?.timeZone?.trim() || deviceTimeZone()
+  );
+  const timeZoneOptions = useMemo(
+    () => listTimeZones(selectedTimeZone),
+    [selectedTimeZone]
+  );
   const [titleError, setTitleError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -211,6 +226,15 @@ export function EventDialog({
   useEffect(() => {
     if (existingRule) {
       setRecurrence(ruleToRecurrenceForm(existingRule));
+      if (typeof existingRule.useTimeZone === "boolean") {
+        setUseTimeZone(existingRule.useTimeZone === true);
+      }
+      if (
+        typeof existingRule.timeZone === "string" &&
+        existingRule.timeZone.trim() !== ""
+      ) {
+        setSelectedTimeZone(existingRule.timeZone.trim());
+      }
       return;
     }
     setRecurrence(null);
@@ -235,7 +259,7 @@ export function EventDialog({
     },
     sourceTimeWindowId?: Id<"timeWindows">
   ) => {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tz = useTimeZone ? selectedTimeZone || deviceTimeZone() : deviceTimeZone();
     if (!recurrence) {
       if (existingRule) {
         if (scope === "THIS_AND_FUTURE") {
@@ -270,6 +294,7 @@ export function EventDialog({
       trackableId: trackableId ?? undefined,
       tagIds: undefined as Id<"tags">[] | undefined,
       timeZone: tz,
+      useTimeZone,
       budgetType: "ACTUAL" as const,
       activityType: payload.activityType,
       startDateYYYYMMDD: recurrence.startDateYYYYMMDD || eventDay,
@@ -325,7 +350,7 @@ export function EventDialog({
       activityType: "TASK" | "EVENT" | "TRACKABLE";
     }
   ) => {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tz = useTimeZone ? selectedTimeZone || deviceTimeZone() : deviceTimeZone();
     const upsertedId = (await upsertTimeWindow({
       id: existingEvent?._id as Id<"timeWindows"> | undefined,
       startTimeHHMM: startTime,
@@ -341,6 +366,7 @@ export function EventDialog({
       title: payload.titleToPersist,
       comments: comments || undefined,
       timeZone: tz,
+      useTimeZone,
     })) as Id<"timeWindows">;
 
     const dateMoved =
@@ -418,7 +444,10 @@ export function EventDialog({
           Math.round(existingEvent.durationSeconds / 60) !== parseInt(durationMinutes, 10) ||
           (existingEvent.title ?? "") !== (titleToPersist ?? "") ||
           (existingEvent.comments ?? "") !== (comments || "") ||
-          (existingEvent.trackableId ?? null) !== (trackableId ?? null));
+          (existingEvent.trackableId ?? null) !== (trackableId ?? null) ||
+          (existingEvent.useTimeZone === true) !== useTimeZone ||
+          (useTimeZone &&
+            (existingEvent.timeZone ?? "") !== selectedTimeZone));
       if (isRecurringInstance && (fieldsChanged || recurrenceChanged)) {
         setPendingScopeSave({ titleToPersist, activityType });
         setShowRecurringScopeModal(true);
@@ -535,6 +564,58 @@ export function EventDialog({
               />
             </View>
           </View>
+
+          <View style={styles.recurringToggleRow}>
+            <Text style={styles.recurringToggleLabel}>Use Time Zone</Text>
+            <Switch
+              value={useTimeZone}
+              onValueChange={(enabled) => {
+                setUseTimeZone(enabled);
+                if (enabled && !selectedTimeZone) {
+                  setSelectedTimeZone(deviceTimeZone());
+                }
+              }}
+            />
+          </View>
+          {useTimeZone ? (
+            Platform.OS === "web" ? (
+              <View style={styles.tzField}>
+                <Text style={styles.tzLabel}>Time Zone</Text>
+                {React.createElement(
+                  "select",
+                  {
+                    value: selectedTimeZone,
+                    onChange: (e: { target: { value: string } }) =>
+                      setSelectedTimeZone(e.target.value),
+                    style: {
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: 8,
+                      border: `1px solid ${Colors.border}`,
+                      backgroundColor: Colors.surface,
+                      color: Colors.text,
+                      fontSize: 14,
+                    },
+                  },
+                  timeZoneOptions.map((tz) =>
+                    React.createElement(
+                      "option",
+                      { key: tz, value: tz },
+                      tz.replace(/_/g, " ")
+                    )
+                  )
+                )}
+              </View>
+            ) : (
+              <Input
+                label="Time Zone (IANA)"
+                value={selectedTimeZone}
+                onChangeText={setSelectedTimeZone}
+                placeholder="America/Vancouver"
+                autoCapitalize="none"
+              />
+            )
+          ) : null}
 
           <TrackablePicker
             label="Trackable"
@@ -734,6 +815,13 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 14,
     fontWeight: "600",
+  },
+  tzField: { marginBottom: 16 },
+  tzLabel: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: 6,
   },
   recurringBadge: {
     backgroundColor: Colors.primaryContainer,

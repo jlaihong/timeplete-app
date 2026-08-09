@@ -185,9 +185,9 @@ export default defineSchema({
     startTimeHHMM: v.string(),
     startDayYYYYMMDD: v.string(),
     /**
-     * Canonical UTC instant for the window start. Layout / rendering should
-     * derive wall-clock position from this + `timeZone`; `startTimeHHMM` is
-     * for search/sort and legacy rows without this field.
+     * Canonical UTC instant for the window start. Used when
+     * `useTimeZone` is true for future events; wall-clock layout uses
+     * `startTimeHHMM` when `useTimeZone` is false or the event has ended.
      */
     startTimeEpochMs: v.optional(v.number()),
     durationSeconds: v.number(),
@@ -221,6 +221,13 @@ export default defineSchema({
     comments: v.optional(v.string()),
     tagIds: v.optional(v.array(v.id("tags"))),
     timeZone: v.string(),
+    /**
+     * When false/undefined (default), `startTimeHHMM` is floating wall
+     * clock — calendar layout never converts through `timeZone`. When
+     * true (meetings), future events convert into the viewer's grid
+     * zone; past events freeze at the scheduled HHMM.
+     */
+    useTimeZone: v.optional(v.boolean()),
     recurringEventId: v.optional(v.id("recurringEvents")),
     isRecurringInstance: v.boolean(),
     /**
@@ -629,6 +636,13 @@ export default defineSchema({
     endDateYYYYMMDD: v.optional(v.string()),
     startTimeHHMM: v.optional(v.string()),
     endTimeHHMM: v.optional(v.string()),
+    /**
+     * Optional IANA zone when `useTimeZone` is true. Wall-clock rules
+     * (the default) omit this and keep HHMM floating.
+     */
+    timeZone: v.optional(v.string()),
+    /** See `timeWindows.useTimeZone`. Missing/false = wall-clock. */
+    useTimeZone: v.optional(v.boolean()),
     name: v.string(),
     listId: v.optional(v.id("lists")),
     sectionId: v.optional(v.id("listSections")),
@@ -691,6 +705,8 @@ export default defineSchema({
     trackableId: v.optional(v.id("trackables")),
     tagIds: v.optional(v.array(v.id("tags"))),
     timeZone: v.string(),
+    /** See `timeWindows.useTimeZone`. Missing/false = wall-clock. */
+    useTimeZone: v.optional(v.boolean()),
     budgetType: v.union(v.literal("ACTUAL"), v.literal("BUDGETED")),
     activityType: v.union(
       v.literal("TASK"),

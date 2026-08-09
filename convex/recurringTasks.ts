@@ -22,12 +22,35 @@ import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { generateOccurrences } from "./_helpers/recurrence";
+import { wallClockGridToEpochMs } from "./_helpers/wallClockTimeZone";
 import { onTimeWindowInserted } from "./_helpers/taskTimeSpent";
 import {
   onAttributedWindowInserted,
   deleteTimeWindowWithSideEffects,
   onTaskCompletionAttribution,
 } from "./_helpers/trackableLifetime";
+
+function minutesFromHHMM(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
+}
+
+function computeStartEpochMs(
+  day: string,
+  hhmm: string,
+  timeZone: string,
+): number | undefined {
+  const tz =
+    typeof timeZone === "string" && timeZone.trim() !== ""
+      ? timeZone.trim()
+      : "UTC";
+  try {
+    return wallClockGridToEpochMs(day, minutesFromHHMM(hhmm), tz);
+  } catch {
+    return undefined;
+  }
+}
 
 const recurrenceFrequency = v.union(
   v.literal("DAILY"),
@@ -66,6 +89,8 @@ export const create = mutation({
     endDateYYYYMMDD: v.optional(v.string()),
     startTimeHHMM: v.optional(v.string()),
     endTimeHHMM: v.optional(v.string()),
+    timeZone: v.optional(v.string()),
+    useTimeZone: v.optional(v.boolean()),
     name: v.string(),
     listId: v.optional(v.id("lists")),
     sectionId: v.optional(v.id("listSections")),
@@ -97,6 +122,8 @@ export const create = mutation({
       endDateYYYYMMDD: args.endDateYYYYMMDD,
       startTimeHHMM: args.startTimeHHMM,
       endTimeHHMM: args.endTimeHHMM,
+      timeZone: args.useTimeZone === true ? args.timeZone : undefined,
+      useTimeZone: args.useTimeZone === true,
       name: args.name,
       listId: args.listId,
       sectionId: args.sectionId,
@@ -140,6 +167,8 @@ export const updateRule = mutation({
     endDateYYYYMMDD: v.optional(v.union(v.string(), v.null())),
     startTimeHHMM: v.optional(v.union(v.string(), v.null())),
     endTimeHHMM: v.optional(v.union(v.string(), v.null())),
+    timeZone: v.optional(v.union(v.string(), v.null())),
+    useTimeZone: v.optional(v.boolean()),
     listId: v.optional(v.union(v.id("lists"), v.null())),
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
     tagIds: v.optional(v.array(v.id("tags"))),
@@ -178,6 +207,10 @@ export const updateRule = mutation({
       patch.startTimeHHMM = args.startTimeHHMM ?? undefined;
     if (args.endTimeHHMM !== undefined)
       patch.endTimeHHMM = args.endTimeHHMM ?? undefined;
+    if (args.useTimeZone !== undefined) patch.useTimeZone = args.useTimeZone;
+    if (args.timeZone !== undefined)
+      patch.timeZone = args.timeZone ?? undefined;
+    if (args.useTimeZone === false) patch.timeZone = undefined;
     if (args.listId !== undefined) patch.listId = args.listId ?? undefined;
     if (args.trackableId !== undefined)
       patch.trackableId = args.trackableId ?? undefined;
@@ -574,16 +607,30 @@ export const generateInstances = mutation({
             // `taskListDoc`. Mirrors the regular task-scheduling
             // path in `convex/tasks.ts` (which also omits listId on
             // its time window insert).
+            // Wall-clock by default: keep HHMM floating. Only stamp a
+            // real IANA zone + epoch when the rule opted into useTimeZone
+            // (meetings). Never hardcode UTC — that made personal routines
+            // shift on the calendar.
+            const useTimeZone = rule.useTimeZone === true;
+            const rowTimeZone =
+              useTimeZone && rule.timeZone && rule.timeZone.trim() !== ""
+                ? rule.timeZone.trim()
+                : "UTC";
+            const startTimeEpochMs = useTimeZone
+              ? computeStartEpochMs(date, rule.startTimeHHMM, rowTimeZone)
+              : undefined;
             await ctx.db.insert("timeWindows", {
               startTimeHHMM: rule.startTimeHHMM,
               startDayYYYYMMDD: date,
+              startTimeEpochMs,
               durationSeconds: dur,
               userId: user._id,
               budgetType: "ACTUAL",
               activityType: "TASK",
               taskId,
               trackableId: rule.trackableId,
-              timeZone: "UTC",
+              timeZone: rowTimeZone,
+              useTimeZone,
               isRecurringInstance: false,
               source: "calendar",
             });

@@ -388,6 +388,11 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
       ...recurrenceFormToRuleFields(r),
       startTimeHHMM: r.hasTimeWindow ? r.startTimeHHMM : undefined,
       endTimeHHMM: r.hasTimeWindow ? r.endTimeHHMM : undefined,
+      useTimeZone: r.hasTimeWindow && r.useTimeZone === true,
+      timeZone:
+        r.hasTimeWindow && r.useTimeZone === true
+          ? r.timeZone || undefined
+          : undefined,
     });
     const currentTaskDay = task.taskDay ?? todayYYYYMMDD();
     const nextTaskDay = form.taskDay || currentTaskDay;

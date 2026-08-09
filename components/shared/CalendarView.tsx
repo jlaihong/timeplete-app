@@ -112,6 +112,8 @@ export interface EditEventPayload {
   taskId?: string | null;
   recurringEventId?: string | null;
   isRecurringInstance?: boolean;
+  timeZone?: string;
+  useTimeZone?: boolean;
 }
 
 interface CalendarViewProps {
@@ -455,6 +457,8 @@ export function CalendarView({
         // No `title` → server derives it from the task name on every
         // read.
         timeZone: tz,
+        // Personal task scheduling is floating wall-clock by default.
+        useTimeZone: false,
         source: "calendar",
       }).catch(() => {
         reportEventSaveError("Couldn't add the event — please try again.");
@@ -656,6 +660,7 @@ export function CalendarView({
     (id: string, startMinutes: number, durationMinutes: number) => {
       const tw = sortedWindows.find((w) => String(w._id) === id);
       if (!tw) return;
+      const useTimeZone = tw.useTimeZone === true;
       return upsertTimeWindow({
         id: tw._id as Id<"timeWindows">,
         startTimeHHMM: minutesToHHMM(startMinutes),
@@ -672,7 +677,10 @@ export function CalendarView({
         title: tw.title,
         comments: tw.comments,
         tagIds: tw.tagIds as Id<"tags">[] | undefined,
-        timeZone: gridTimeZone,
+        // Wall-clock rows keep HHMM as truth in the grid zone. TZ-aware
+        // rows re-anchor to the viewer's grid zone on drag (same as before).
+        timeZone: useTimeZone ? gridTimeZone : tw.timeZone || gridTimeZone,
+        useTimeZone,
         source: tw.source,
       }).then(
         () => undefined,
@@ -1157,6 +1165,8 @@ export function CalendarView({
                               taskId: tw.taskId,
                               recurringEventId: tw.recurringEventId,
                               isRecurringInstance: !!tw.isRecurringInstance,
+                              timeZone: tw.timeZone,
+                              useTimeZone: tw.useTimeZone === true,
                             })
                         : undefined
                     }
@@ -1317,6 +1327,8 @@ export function CalendarView({
                 taskId: tw.taskId,
                 recurringEventId: tw.recurringEventId,
                 isRecurringInstance: !!tw.isRecurringInstance,
+                timeZone: tw.timeZone,
+                useTimeZone: tw.useTimeZone === true,
               });
             }
           }}

@@ -1141,6 +1141,7 @@ export const setTimeSpent = mutation({
       taskId: args.taskId,
       trackableId: snapshotTrackableId,
       timeZone: tz,
+      useTimeZone: false,
       isRecurringInstance: false,
       source: "manual" as const,
     });

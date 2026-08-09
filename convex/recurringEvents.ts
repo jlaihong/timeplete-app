@@ -3,10 +3,33 @@ import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { generateOccurrences } from "./_helpers/recurrence";
+import { wallClockGridToEpochMs } from "./_helpers/wallClockTimeZone";
 import {
   onAttributedWindowInserted,
   deleteTimeWindowWithSideEffects,
 } from "./_helpers/trackableLifetime";
+
+function minutesFromHHMM(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
+}
+
+function computeStartEpochMs(
+  day: string,
+  hhmm: string,
+  timeZone: string,
+): number | undefined {
+  const tz =
+    typeof timeZone === "string" && timeZone.trim() !== ""
+      ? timeZone.trim()
+      : "UTC";
+  try {
+    return wallClockGridToEpochMs(day, minutesFromHHMM(hhmm), tz);
+  } catch {
+    return undefined;
+  }
+}
 
 const recurrenceFrequency = v.union(
   v.literal("DAILY"),
@@ -48,6 +71,7 @@ export const create = mutation({
     trackableId: v.optional(v.id("trackables")),
     tagIds: v.optional(v.array(v.id("tags"))),
     timeZone: v.string(),
+    useTimeZone: v.optional(v.boolean()),
     budgetType: v.union(v.literal("ACTUAL"), v.literal("BUDGETED")),
     activityType: v.union(
       v.literal("TASK"),
@@ -58,9 +82,11 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
-    const { sourceTimeWindowId, ...ruleFields } = args;
+    const { sourceTimeWindowId, useTimeZone, ...ruleFields } = args;
+    const resolvedUseTimeZone = useTimeZone === true;
     const ruleId = await ctx.db.insert("recurringEvents", {
       ...ruleFields,
+      useTimeZone: resolvedUseTimeZone,
       userId: user._id,
     });
     if (sourceTimeWindowId) {
@@ -69,6 +95,8 @@ export const create = mutation({
         await ctx.db.patch(sourceTimeWindowId, {
           recurringEventId: ruleId,
           isRecurringInstance: true,
+          useTimeZone: resolvedUseTimeZone,
+          timeZone: ruleFields.timeZone,
         });
       }
     }
@@ -98,6 +126,7 @@ export const updateRule = mutation({
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
     tagIds: v.optional(v.array(v.id("tags"))),
     timeZone: v.optional(v.string()),
+    useTimeZone: v.optional(v.boolean()),
     budgetType: v.optional(v.union(v.literal("ACTUAL"), v.literal("BUDGETED"))),
     activityType: v.optional(
       v.union(v.literal("TASK"), v.literal("EVENT"), v.literal("TRACKABLE"))
@@ -131,6 +160,7 @@ export const updateRule = mutation({
     if (args.trackableId !== undefined) patch.trackableId = args.trackableId ?? undefined;
     if (args.tagIds !== undefined) patch.tagIds = args.tagIds;
     if (args.timeZone !== undefined) patch.timeZone = args.timeZone;
+    if (args.useTimeZone !== undefined) patch.useTimeZone = args.useTimeZone;
     if (args.budgetType !== undefined) patch.budgetType = args.budgetType;
     if (args.activityType !== undefined) patch.activityType = args.activityType;
     await ctx.db.patch(args.id, patch as any);
@@ -306,9 +336,14 @@ export const generateInstances = mutation({
 
       for (const date of occs) {
         if (existingDates.has(date)) continue;
+        const useTimeZone = rule.useTimeZone === true;
+        const startTimeEpochMs = useTimeZone
+          ? computeStartEpochMs(date, rule.startTimeHHMM, rule.timeZone)
+          : undefined;
         await ctx.db.insert("timeWindows", {
           startTimeHHMM: rule.startTimeHHMM,
           startDayYYYYMMDD: date,
+          startTimeEpochMs,
           durationSeconds: rule.durationSeconds,
           userId: user._id,
           budgetType: rule.budgetType,
@@ -318,6 +353,7 @@ export const generateInstances = mutation({
           comments: rule.comments,
           tagIds: rule.tagIds,
           timeZone: rule.timeZone,
+          useTimeZone,
           recurringEventId: rule._id,
           isRecurringInstance: true,
           source: "calendar",
