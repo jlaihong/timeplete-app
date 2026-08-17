@@ -3,6 +3,10 @@
  *
  * Mirrors `tasks.getHomeTasks` / `tasks.search*` / `lists.getPaginated` shapes so UI
  * updates immediately while mutations round-trip.
+ *
+ * List detail: when `dateCompleted` flips, rows are re-sorted incomplete→complete
+ * (same stacking as `lists.getPaginated` / productivity-one) so check-off feels
+ * instant even on slow mobile networks.
  */
 import type { OptimisticLocalStore } from "convex/browser";
 import type { FunctionReturnType } from "convex/server";
@@ -412,15 +416,33 @@ function applyUpsertPatches(
     const page = q.value;
     if (!page) continue;
     let touched = false;
+    const taskLim = q.args.taskLimit ?? 2500;
+    const completionTouchesOrder = args.dateCompleted !== undefined;
     const sections = page.sections.map((s) => {
       const idx = s.tasks.findIndex((t) => t._id === rowId);
       if (idx === -1) return s;
       touched = true;
-      const tasks = [...s.tasks];
-      tasks[idx] = patchTaskRow(
-        tasks[idx] as unknown as TaskWorkRow,
+      const patched = patchTaskRow(
+        s.tasks[idx] as unknown as TaskWorkRow,
         args,
-      ) as (typeof tasks)[number];
+      ) as (typeof s.tasks)[number];
+      const beforeDone = isTaskCompletedForListViewRow(s.tasks[idx]);
+      const afterDone = isTaskCompletedForListViewRow(patched);
+      // Completion flips incomplete↔complete (and productivity-one re-sorts
+      // locally). Keep other field edits in place to avoid list jumps.
+      if (completionTouchesOrder && beforeDone !== afterDone) {
+        const without = s.tasks.filter((t) => t._id !== rowId);
+        return {
+          ...s,
+          tasks: insertRowIntoListViewSectionTasks(
+            without as unknown as (typeof s.tasks)[number][],
+            patched,
+            taskLim,
+          ),
+        };
+      }
+      const tasks = [...s.tasks];
+      tasks[idx] = patched;
       return { ...s, tasks };
     });
     if (touched) {

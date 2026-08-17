@@ -289,6 +289,38 @@ function fingerprintTaskOrder(groups: LocalGroup[]): string {
     .join("|");
 }
 
+/**
+ * While a drag-reorder is awaiting Convex, keep local order but still apply
+ * row field patches (e.g. optimistic `dateCompleted`) so checkboxes update
+ * immediately instead of waiting up to the pending-reorder deadline.
+ */
+function mergeIncomingTaskFields(
+  local: LocalGroup[],
+  incoming: LocalGroup[],
+): LocalGroup[] {
+  const byId = new Map<string, TaskRowTask>();
+  const headerById = new Map<
+    string,
+    { headerCompletedCount: number; headerTotalCount: number }
+  >();
+  for (const g of incoming) {
+    headerById.set(g.id, {
+      headerCompletedCount: g.headerCompletedCount,
+      headerTotalCount: g.headerTotalCount,
+    });
+    for (const t of g.tasks) byId.set(String(t._id), t);
+  }
+  return local.map((g) => {
+    const header = headerById.get(g.id);
+    return {
+      ...g,
+      headerCompletedCount: header?.headerCompletedCount ?? g.headerCompletedCount,
+      headerTotalCount: header?.headerTotalCount ?? g.headerTotalCount,
+      tasks: g.tasks.map((t) => byId.get(String(t._id)) ?? t),
+    };
+  });
+}
+
 export function ListDetailWebDnd({
   sections,
   buildMeta,
@@ -351,6 +383,7 @@ export function ListDetailWebDnd({
       incomingFp !== pending &&
       incomingTaskCount === pendingReorderTaskCountRef.current
     ) {
+      setLocalGroups((prev) => mergeIncomingTaskFields(prev, incoming));
       return;
     }
     if (pending !== null) {
