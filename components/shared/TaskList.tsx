@@ -285,7 +285,8 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       await upsertTask({
         id: taskId,
         name: taskName,
-        dateCompleted: isCompleted ? undefined : todayYYYYMMDD(),
+        // `null` clears the field server-side; omitted/`undefined` leaves it unchanged.
+        dateCompleted: isCompleted ? null : todayYYYYMMDD(),
       });
     },
     [upsertTask, timer]
