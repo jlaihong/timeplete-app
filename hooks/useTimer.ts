@@ -1,10 +1,15 @@
-import { useQuery, useMutation } from "convex/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { useState, useEffect, useMemo, useCallback } from "react";
 import { Id } from "../convex/_generated/dataModel";
 import { useAuth } from "./useAuth";
 import { deriveEventColors } from "../lib/eventColors";
+import {
+  applyStartTaskTimerOptimisticUpdate,
+  applyStartTrackableTimerOptimisticUpdate,
+} from "../lib/startTimerOptimisticUpdate";
 import { applyStopTimerOptimisticUpdate } from "../lib/stopTimerOptimisticUpdate";
+import { runWithOutbox } from "../lib/runWithOutbox";
 
 /**
  * Seconds elapsed since `startTime` (epoch ms), re-rendering the caller
@@ -50,14 +55,39 @@ export function useTimerElapsed(
 export function useTimer() {
   const { profileReady } = useAuth();
   const timerData = useQuery(api.timers.get, profileReady ? {} : "skip");
-  const startTaskTimer = useMutation(api.timers.startTaskTimer);
-  const startTrackableTimer = useMutation(api.timers.startTrackableTimer);
-  const stopTimer = useMutation(api.timers.stop).withOptimisticUpdate(
+  const startTaskTimerRaw = useMutation(
+    api.timers.startTaskTimer,
+  ).withOptimisticUpdate((localStore, args) => {
+    applyStartTaskTimerOptimisticUpdate(localStore, args);
+  });
+  const startTrackableTimerRaw = useMutation(
+    api.timers.startTrackableTimer,
+  ).withOptimisticUpdate((localStore, args) => {
+    applyStartTrackableTimerOptimisticUpdate(localStore, args);
+  });
+  const stopTimerRaw = useMutation(api.timers.stop).withOptimisticUpdate(
     (localStore) => {
       applyStopTimerOptimisticUpdate(localStore);
     },
   );
   const adjustTimer = useMutation(api.timers.adjust);
+
+  const startTaskTimer = useCallback(
+    (args: { taskId: Id<"tasks">; timeZone: string }) =>
+      runWithOutbox("timers.startTaskTimer", args, (a) => startTaskTimerRaw(a)),
+    [startTaskTimerRaw],
+  );
+  const startTrackableTimer = useCallback(
+    (args: { trackableId: Id<"trackables">; timeZone: string }) =>
+      runWithOutbox("timers.startTrackableTimer", args, (a) =>
+        startTrackableTimerRaw(a),
+      ),
+    [startTrackableTimerRaw],
+  );
+  const stopTimer = useCallback(
+    () => runWithOutbox("timers.stop", {}, (a) => stopTimerRaw(a)),
+    [stopTimerRaw],
+  );
 
   const commitLiveTimerResize = useCallback(
     async (startTimeEpochMs: number) => {
@@ -137,7 +167,7 @@ export function useTimer() {
       startTaskTimer({ taskId, timeZone }),
     startForTrackable: (trackableId: Id<"trackables">, timeZone: string) =>
       startTrackableTimer({ trackableId, timeZone }),
-    stop: () => stopTimer({}),
+    stop: () => stopTimer(),
     commitLiveTimerResize,
     /** IANA zone stored on the active `taskTimers` row — never a device fallback. */
     canonicalTimeZone: rowTz,

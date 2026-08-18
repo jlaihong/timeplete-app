@@ -15,12 +15,14 @@
  *    `pendingTimerReviews`; when one exists the review dialog is shown
  *    with a "Log nothing" escape hatch.
  */
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { AppState, StyleSheet, Text, View } from "react-native";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { useAuth } from "../../hooks/useAuth";
+import { applyStopTimerOptimisticUpdate } from "../../lib/stopTimerOptimisticUpdate";
+import { runWithOutbox } from "../../lib/runWithOutbox";
 import { Button } from "../ui/Button";
 import {
   DialogCard,
@@ -50,7 +52,21 @@ export function TimerCheckInGate() {
     profileReady ? {} : "skip",
   );
   const acknowledgeCheckpoint = useMutation(api.timers.acknowledgeCheckpoint);
-  const stopWithDuration = useMutation(api.timers.stopWithDuration);
+  const stopWithDurationRaw = useMutation(
+    api.timers.stopWithDuration,
+  ).withOptimisticUpdate((localStore, args) => {
+    applyStopTimerOptimisticUpdate(localStore, {
+      elapsedSeconds: args.durationSeconds,
+      startTimeEpochMs: args.startTimeEpochMs,
+    });
+  });
+  const stopWithDuration = useCallback(
+    (args: { startTimeEpochMs: number; durationSeconds: number }) =>
+      runWithOutbox("timers.stopWithDuration", args, (a) =>
+        stopWithDurationRaw(a),
+      ),
+    [stopWithDurationRaw],
+  );
   const resolvePendingReview = useMutation(api.timers.resolvePendingReview);
 
   /** Elapsed-ms boundary awaiting a Yes/No, or null when nothing is due. */

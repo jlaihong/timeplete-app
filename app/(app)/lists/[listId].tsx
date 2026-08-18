@@ -42,6 +42,7 @@ import { normalizeListMembersQuery } from "../../../lib/listMembersQuery";
 import type { Id, Doc } from "../../../convex/_generated/dataModel";
 import { useAuth } from "../../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../../hooks/useTaskUpsertMutation";
+import { useTaskMoveMutations } from "../../../hooks/useTaskMoveMutations";
 import { Card } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
 import { Button } from "../../../components/ui/Button";
@@ -259,7 +260,7 @@ export default function ListDetailScreen() {
   const { openTimeSpentEditor, closeTimeSpentEditor, saveTimeSpent, timeSpentDialog } =
     useTaskTimeSpentEditor();
   const upsertSection = useMutation(api.listSections.upsert);
-  const moveBetweenSections = useMutation(api.tasks.moveBetweenSections);
+  const { moveBetweenSections } = useTaskMoveMutations();
 
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);

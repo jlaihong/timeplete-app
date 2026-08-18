@@ -33,6 +33,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
+import { useTaskMoveMutations } from "../../hooks/useTaskMoveMutations";
 import { SwipeableTaskRow } from "../tasks/SwipeableTaskRow";
 import { TaskTimeSpentButton } from "../tasks/TaskTimeSpentButton";
 import { useTaskTimeSpentEditor } from "../tasks/useTaskTimeSpentEditor";
@@ -148,8 +149,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   ]);
   const upsertTask = useTaskUpsertMutation();
   const deleteTask = useTaskDeleteMutation();
-  const moveOnDay = useMutation(api.tasks.moveOnDay);
-  const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
+  const { moveOnDay, moveBetweenDays } = useTaskMoveMutations();
   // Tap-to-edit time spent — ALL task surfaces share this hook so the
   // mutation, optimistic update, and dialog behave identically.
   const { openTimeSpentEditor, timeSpentDialog } = useTaskTimeSpentEditor();

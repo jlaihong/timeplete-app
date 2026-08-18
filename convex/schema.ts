@@ -786,4 +786,14 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_token", ["token"]),
+
+  /**
+   * Idempotency keys for client outbox replay. Claimed inside the mutation
+   * transaction so a retried `clientMutationId` is a no-op after success.
+   */
+  clientMutations: defineTable({
+    userId: v.id("users"),
+    clientMutationId: v.string(),
+    createdAt: v.number(),
+  }).index("by_user_and_id", ["userId", "clientMutationId"]),
 });

@@ -10,6 +10,7 @@ import { resolveActiveTimerCalendarDisplay } from "./_helpers/activeTimerCalenda
 import { wallClockInTimeZone } from "./_helpers/wallClockTimeZone";
 import { onTimeWindowInserted } from "./_helpers/taskTimeSpent";
 import { onAttributedWindowInserted } from "./_helpers/trackableLifetime";
+import { claimClientMutationId } from "./_helpers/clientMutationId";
 
 export const get = query({
   args: {},
@@ -43,9 +44,13 @@ export const startTaskTimer = mutation({
   args: {
     taskId: v.id("tasks"),
     timeZone: v.string(),
+    clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    if (!(await claimClientMutationId(ctx, user._id, args.clientMutationId))) {
+      return;
+    }
 
     const existing = await ctx.db
       .query("taskTimers")
@@ -69,9 +74,13 @@ export const startTrackableTimer = mutation({
   args: {
     trackableId: v.id("trackables"),
     timeZone: v.string(),
+    clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    if (!(await claimClientMutationId(ctx, user._id, args.clientMutationId))) {
+      return;
+    }
 
     const existing = await ctx.db
       .query("taskTimers")
@@ -92,9 +101,14 @@ export const startTrackableTimer = mutation({
 });
 
 export const stop = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    clientMutationId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    if (!(await claimClientMutationId(ctx, user._id, args.clientMutationId))) {
+      return { elapsedSeconds: 0 };
+    }
     const timer = await ctx.db
       .query("taskTimers")
       .withIndex("by_user", (q) => q.eq("userId", user._id))
@@ -336,9 +350,13 @@ export const stopWithDuration = mutation({
   args: {
     startTimeEpochMs: v.number(),
     durationSeconds: v.number(),
+    clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    if (!(await claimClientMutationId(ctx, user._id, args.clientMutationId))) {
+      return { loggedSeconds: 0 };
+    }
     const timer = await ctx.db
       .query("taskTimers")
       .withIndex("by_user", (q) => q.eq("userId", user._id))

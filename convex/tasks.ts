@@ -23,6 +23,7 @@ import {
   onTaskCompletionAttribution,
   onTaskTimeAttributionChange,
 } from "./_helpers/trackableLifetime";
+import { claimClientMutationId } from "./_helpers/clientMutationId";
 
 /**
  * productivity-backend `upsert_task` sets `section_id` from `list_id` when the
@@ -524,9 +525,13 @@ export const upsert = mutation({
      * until the mutation ack returns.
      */
     clientViewerUserId: v.optional(v.id("users")),
+    clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    if (!(await claimClientMutationId(ctx, user._id, args.clientMutationId))) {
+      return args.id;
+    }
     if (
       args.clientViewerUserId !== undefined &&
       args.clientViewerUserId !== user._id
@@ -765,9 +770,13 @@ export const moveOnDay = mutation({
     taskId: v.id("tasks"),
     day: v.string(),
     newOrderIndex: v.number(),
+    clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    if (!(await claimClientMutationId(ctx, user._id, args.clientMutationId))) {
+      return;
+    }
     const task = await ctx.db.get(args.taskId);
     if (!task) throw new Error("Task not found");
 
@@ -798,9 +807,13 @@ export const moveBetweenDays = mutation({
     fromDay: v.string(),
     toDay: v.string(),
     newOrderIndex: v.number(),
+    clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    if (!(await claimClientMutationId(ctx, user._id, args.clientMutationId))) {
+      return;
+    }
 
     const fromTasks = await ctx.db
       .query("tasks")
@@ -847,9 +860,13 @@ export const moveBetweenSections = mutation({
     taskId: v.id("tasks"),
     toSectionId: v.id("listSections"),
     newOrderIndex: v.number(),
+    clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    if (!(await claimClientMutationId(ctx, user._id, args.clientMutationId))) {
+      return;
+    }
     const task = await ctx.db.get(args.taskId);
     if (!task?.listId) throw new Error("Task not found");
     if (task.userId !== user._id) throw new Error("Not authorized");

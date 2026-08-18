@@ -59,6 +59,7 @@ function patchTimeWindowsSearchForCalendar(
 
 export function applyStopTimerOptimisticUpdate(
   localStore: OptimisticLocalStore,
+  opts?: { elapsedSeconds?: number; startTimeEpochMs?: number },
 ): void {
   let snapshot: TimerSnapshot | null = null;
   for (const q of localStore.getAllQueries(api.timers.get)) {
@@ -69,10 +70,14 @@ export function applyStopTimerOptimisticUpdate(
   }
   if (!snapshot) return;
 
-  const elapsed = Math.max(
-    0,
-    Math.floor((Date.now() - snapshot.startTime) / 1000),
-  );
+  const startEpoch =
+    opts?.startTimeEpochMs != null && Number.isFinite(opts.startTimeEpochMs)
+      ? opts.startTimeEpochMs
+      : snapshot.startTime;
+  const elapsed =
+    opts?.elapsedSeconds != null && Number.isFinite(opts.elapsedSeconds)
+      ? Math.max(0, Math.floor(opts.elapsedSeconds))
+      : Math.max(0, Math.floor((Date.now() - startEpoch) / 1000));
   if (elapsed > 0) {
     if (snapshot.taskId) {
       applyTimeSpentDeltaOptimisticUpdate(
@@ -88,7 +93,7 @@ export function applyStopTimerOptimisticUpdate(
         : null;
     if (tz) {
       const { startDayYYYYMMDD: day, startTimeHHMM } = wallClockInTimeZone(
-        snapshot.startTime,
+        startEpoch,
         tz,
       );
       const activityType = snapshot.taskId
@@ -102,7 +107,7 @@ export function applyStopTimerOptimisticUpdate(
         _creationTime: Date.now(),
         startTimeHHMM,
         startDayYYYYMMDD: day,
-        startTimeEpochMs: snapshot.startTime,
+        startTimeEpochMs: startEpoch,
         durationSeconds: elapsed,
         userId: snapshot.userId,
         budgetType: "ACTUAL" as const,

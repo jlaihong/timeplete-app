@@ -43,6 +43,7 @@ import {
 import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
+import { useTaskMoveMutations } from "../../hooks/useTaskMoveMutations";
 import { EmptyState } from "../ui/EmptyState";
 import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import {
@@ -433,8 +434,7 @@ export function DesktopTaskList({
   // hook (`useTaskDeleteMutation`) so desktop / mobile / detail-sheet all
   // apply the same skip-set-aware `deleteInstance` for recurring rows.
   const deleteTaskMutation = useTaskDeleteMutation();
-  const moveOnDay = useMutation(api.tasks.moveOnDay);
-  const moveBetweenDays = useMutation(api.tasks.moveBetweenDays);
+  const { moveOnDay, moveBetweenDays } = useTaskMoveMutations();
   const timer = useTimer();
   // Tap-to-edit time spent — ALL task surfaces share this hook so the
   // mutation, optimistic update, and dialog behave identically.

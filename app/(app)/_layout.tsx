@@ -20,6 +20,7 @@ import { authClient } from "../../lib/auth-client";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useDrawerSelection } from "../../hooks/useDrawerSelection";
+import { useOutboxReplay } from "../../hooks/useOutboxReplay";
 import { TimerDisplay } from "../../components/timer/TimerDisplay";
 import { TimerCheckInGate } from "../../components/timer/TimerCheckInGate";
 import { TimerNotifications } from "../../components/timer/TimerNotifications";
@@ -460,6 +461,11 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
   );
 }
 
+function OutboxReplayHost() {
+  useOutboxReplay();
+  return null;
+}
+
 export default function AppLayout() {
   const isDesktop = useIsDesktop();
   const { isLoading: convexLoading, isAuthenticated: convexAuthenticated } =
@@ -560,6 +566,8 @@ export default function AppLayout() {
         </View>
       </DesktopAppChromeProvider>
       </SafeAreaInsetsContext.Provider>
+      {/* Durable mutation outbox replay after auth (renders nothing). */}
+      {profile != null && isApproved ? <OutboxReplayHost /> : null}
       {/* Long-running-timer check-ins — overlays every screen. */}
       <TimerCheckInGate />
       {/* Reminder notifications for the check-ins (renders nothing). */}
