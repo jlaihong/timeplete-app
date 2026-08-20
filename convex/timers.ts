@@ -11,6 +11,7 @@ import { wallClockInTimeZone } from "./_helpers/wallClockTimeZone";
 import { onTimeWindowInserted } from "./_helpers/taskTimeSpent";
 import { onAttributedWindowInserted } from "./_helpers/trackableLifetime";
 import { claimClientMutationId } from "./_helpers/clientMutationId";
+import { moveOverdueTaskToTodayIfNeeded } from "./_helpers/taskDayMove";
 
 export const get = query({
   args: {},
@@ -60,6 +61,13 @@ export const startTaskTimer = mutation({
     if (existing) {
       await finalizeTimer(ctx, existing);
     }
+
+    const tz =
+      typeof args.timeZone === "string" && args.timeZone.trim() !== ""
+        ? args.timeZone.trim()
+        : "UTC";
+    const today = wallClockInTimeZone(Date.now(), tz).startDayYYYYMMDD;
+    await moveOverdueTaskToTodayIfNeeded(ctx, user._id, args.taskId, today);
 
     await ctx.db.insert("taskTimers", {
       userId: user._id,

@@ -24,6 +24,7 @@ import {
   onTaskTimeAttributionChange,
 } from "./_helpers/trackableLifetime";
 import { claimClientMutationId } from "./_helpers/clientMutationId";
+import { moveTaskBetweenDays } from "./_helpers/taskDayMove";
 
 /**
  * productivity-backend `upsert_task` sets `section_id` from `list_id` when the
@@ -815,43 +816,12 @@ export const moveBetweenDays = mutation({
       return;
     }
 
-    const fromTasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_user_day", (q) =>
-        q.eq("userId", user._id).eq("taskDay", args.fromDay)
-      )
-      .collect();
-    const fromSorted = fromTasks
-      .filter((t) => t._id !== args.taskId)
-      .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex);
-    for (let i = 0; i < fromSorted.length; i++) {
-      if (fromSorted[i].taskDayOrderIndex !== i) {
-        await ctx.db.patch(fromSorted[i]._id, { taskDayOrderIndex: i });
-      }
-    }
-
-    const toTasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_user_day", (q) =>
-        q.eq("userId", user._id).eq("taskDay", args.toDay)
-      )
-      .collect();
-    const toSorted = toTasks
-      .filter((t) => t._id !== args.taskId)
-      .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex);
-    const task = await ctx.db.get(args.taskId);
-    if (!task) throw new Error("Task not found");
-    toSorted.splice(args.newOrderIndex, 0, task);
-
-    await ctx.db.patch(args.taskId, {
-      taskDay: args.toDay,
-      taskDayOrderIndex: args.newOrderIndex,
+    await moveTaskBetweenDays(ctx, user._id, {
+      taskId: args.taskId,
+      fromDay: args.fromDay,
+      toDay: args.toDay,
+      newOrderIndex: args.newOrderIndex,
     });
-    for (let i = 0; i < toSorted.length; i++) {
-      if (toSorted[i]._id !== args.taskId && toSorted[i].taskDayOrderIndex !== i) {
-        await ctx.db.patch(toSorted[i]._id, { taskDayOrderIndex: i });
-      }
-    }
   },
 });
 

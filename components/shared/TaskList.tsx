@@ -28,6 +28,7 @@ import {
   isToday,
   getDaysInRange,
 } from "../../lib/dates";
+import { moveOverdueTaskToTodayOnTimerStart } from "../../lib/moveOverdueTaskToTodayOnTimerStart";
 import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
@@ -297,11 +298,18 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       if (timer.isRunning && timer.taskId === taskId) {
         timer.stop();
       } else {
+        const task = tasks?.find((t) => t._id === taskId);
+        moveOverdueTaskToTodayOnTimerStart(
+          moveBetweenDays,
+          task,
+          tasks ?? [],
+          today,
+        );
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         timer.startForTask(taskId, tz);
       }
     },
-    [timer]
+    [timer, tasks, moveBetweenDays, today]
   );
 
   const handleLoadMore = useCallback(() => {

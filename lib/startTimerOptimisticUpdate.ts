@@ -6,6 +6,8 @@ import type { Id } from "../convex/_generated/dataModel";
 import type { OptimisticLocalStore } from "convex/browser";
 import type { FunctionReturnType } from "convex/server";
 import { applyStopTimerOptimisticUpdate } from "./stopTimerOptimisticUpdate";
+import { applyMoveBetweenDaysOptimisticUpdate } from "./taskMoveOptimisticUpdate";
+import { wallClockInTimeZone } from "./wallClockTimeZone";
 
 type TimerRow = NonNullable<FunctionReturnType<typeof api.timers.get>>;
 
@@ -55,10 +57,126 @@ function viewerUserId(localStore: OptimisticLocalStore): Id<"users"> | null {
   return null;
 }
 
+type CachedTaskRow = {
+  _id: Id<"tasks">;
+  taskDay?: string;
+  taskDayOrderIndex?: number;
+  dateCompleted?: string;
+  isRecurringInstance?: boolean;
+};
+
+function findCachedTask(
+  localStore: OptimisticLocalStore,
+  taskId: Id<"tasks">,
+): CachedTaskRow | null {
+  for (const q of localStore.getAllQueries(api.tasks.getHomeTasks)) {
+    const row = q.value?.find((t) => t._id === taskId);
+    if (row) return row;
+  }
+  for (const q of localStore.getAllQueries(api.tasks.searchWithCriteria)) {
+    const row = q.value?.find((t) => t._id === taskId);
+    if (row) return row;
+  }
+  for (const q of localStore.getAllQueries(api.tasks.search)) {
+    const row = q.value?.find((t) => t._id === taskId);
+    if (row) return row;
+  }
+  for (const q of localStore.getAllQueries(api.lists.getPaginated)) {
+    for (const sec of q.value?.sections ?? []) {
+      const row = sec.tasks.find((t) => t._id === taskId);
+      if (row) return row;
+    }
+  }
+  return null;
+}
+
+function nextOrderIndexForDay(
+  localStore: OptimisticLocalStore,
+  day: string,
+  excludeTaskId: Id<"tasks">,
+): number {
+  const ids = new Set<Id<"tasks">>();
+  const consider = (rows: CachedTaskRow[] | undefined) => {
+    for (const t of rows ?? []) {
+      if (t._id === excludeTaskId) continue;
+      if (t.taskDay === day) ids.add(t._id);
+    }
+  };
+  for (const q of localStore.getAllQueries(api.tasks.getHomeTasks)) {
+    consider(q.value);
+  }
+  for (const q of localStore.getAllQueries(api.tasks.searchWithCriteria)) {
+    consider(q.value);
+  }
+  for (const q of localStore.getAllQueries(api.tasks.search)) {
+    consider(q.value);
+  }
+  return ids.size;
+}
+
+function patchListTaskDay(
+  localStore: OptimisticLocalStore,
+  taskId: Id<"tasks">,
+  toDay: string,
+  newOrderIndex: number,
+): void {
+  for (const q of localStore.getAllQueries(api.lists.getPaginated)) {
+    const page = q.value;
+    if (!page) continue;
+    let found = false;
+    const sections = page.sections.map((sec) => {
+      let sectionFound = false;
+      const tasks = sec.tasks.map((t) => {
+        if (t._id !== taskId) return t;
+        sectionFound = true;
+        found = true;
+        return { ...t, taskDay: toDay, taskDayOrderIndex: newOrderIndex };
+      });
+      return sectionFound ? { ...sec, tasks } : sec;
+    });
+    if (found) {
+      localStore.setQuery(api.lists.getPaginated, q.args, {
+        ...page,
+        sections,
+      });
+    }
+  }
+}
+
+/**
+ * Mirror `moveOverdueTaskToTodayIfNeeded`: incomplete, non-recurring,
+ * `taskDay < today` → append onto today so Overdue doesn't flash.
+ */
+function moveOverdueTaskToTodayOptimistic(
+  localStore: OptimisticLocalStore,
+  taskId: Id<"tasks">,
+  timeZone: string,
+): void {
+  const task = findCachedTask(localStore, taskId);
+  const fromDay = task?.taskDay;
+  if (!task || !fromDay) return;
+  if (task.dateCompleted) return;
+  if (task.isRecurringInstance) return;
+
+  const today = wallClockInTimeZone(Date.now(), timeZone).startDayYYYYMMDD;
+  if (fromDay >= today) return;
+
+  const newOrderIndex = nextOrderIndexForDay(localStore, today, taskId);
+  applyMoveBetweenDaysOptimisticUpdate(localStore, {
+    taskId,
+    fromDay,
+    toDay: today,
+    newOrderIndex,
+  });
+  patchListTaskDay(localStore, taskId, today, newOrderIndex);
+}
+
 export function applyStartTaskTimerOptimisticUpdate(
   localStore: OptimisticLocalStore,
   args: { taskId: Id<"tasks">; timeZone: string },
 ): void {
+  moveOverdueTaskToTodayOptimistic(localStore, args.taskId, args.timeZone);
+
   // Starting replaces any running timer — finalize the old one locally first.
   let hadRunning = false;
   for (const q of localStore.getAllQueries(api.timers.get)) {

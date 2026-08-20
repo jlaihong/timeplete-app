@@ -43,6 +43,7 @@ import type { Id, Doc } from "../../../convex/_generated/dataModel";
 import { useAuth } from "../../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../../hooks/useTaskUpsertMutation";
 import { useTaskMoveMutations } from "../../../hooks/useTaskMoveMutations";
+import { moveOverdueTaskToTodayOnTimerStart } from "../../../lib/moveOverdueTaskToTodayOnTimerStart";
 import { Card } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
 import { Button } from "../../../components/ui/Button";
@@ -260,7 +261,7 @@ export default function ListDetailScreen() {
   const { openTimeSpentEditor, closeTimeSpentEditor, saveTimeSpent, timeSpentDialog } =
     useTaskTimeSpentEditor();
   const upsertSection = useMutation(api.listSections.upsert);
-  const { moveBetweenSections } = useTaskMoveMutations();
+  const { moveBetweenSections, moveBetweenDays } = useTaskMoveMutations();
 
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
@@ -527,11 +528,18 @@ export default function ListDetailScreen() {
       if (timer.isRunning && timer.taskId === taskId) {
         timer.stop();
       } else {
+        const task = allTasksInPage.find((t) => t._id === taskId);
+        moveOverdueTaskToTodayOnTimerStart(
+          moveBetweenDays,
+          task,
+          allTasksInPage,
+          todayYYYYMMDD(),
+        );
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         timer.startForTask(taskId, tz);
       }
     },
-    [timer],
+    [timer, allTasksInPage, moveBetweenDays],
   );
 
   const handleDelete = useCallback(

@@ -44,6 +44,7 @@ import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { useTaskMoveMutations } from "../../hooks/useTaskMoveMutations";
+import { moveOverdueTaskToTodayOnTimerStart } from "../../lib/moveOverdueTaskToTodayOnTimerStart";
 import { EmptyState } from "../ui/EmptyState";
 import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import {
@@ -702,11 +703,18 @@ export function DesktopTaskList({
       if (timer.isRunning && timer.taskId === taskId) {
         timer.stop();
       } else {
+        const task = tasks?.find((t) => t._id === taskId);
+        moveOverdueTaskToTodayOnTimerStart(
+          moveBetweenDays,
+          task,
+          tasks ?? [],
+          clockToday,
+        );
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         timer.startForTask(taskId, tz);
       }
     },
-    [timer]
+    [timer, tasks, moveBetweenDays, clockToday]
   );
 
   const handleDelete = useCallback(

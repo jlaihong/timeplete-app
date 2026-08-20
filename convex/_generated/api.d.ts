@@ -34,6 +34,7 @@ import type * as _helpers_eventColors from "../_helpers/eventColors.js";
 import type * as _helpers_ordering from "../_helpers/ordering.js";
 import type * as _helpers_permissions from "../_helpers/permissions.js";
 import type * as _helpers_recurrence from "../_helpers/recurrence.js";
+import type * as _helpers_taskDayMove from "../_helpers/taskDayMove.js";
 import type * as _helpers_taskTimeSpent from "../_helpers/taskTimeSpent.js";
 import type * as _helpers_timeWindowDisplayEnrichment from "../_helpers/timeWindowDisplayEnrichment.js";
 import type * as _helpers_trackableAttribution from "../_helpers/trackableAttribution.js";
@@ -95,6 +96,7 @@ declare const fullApi: ApiFromModules<{
   "_helpers/ordering": typeof _helpers_ordering;
   "_helpers/permissions": typeof _helpers_permissions;
   "_helpers/recurrence": typeof _helpers_recurrence;
+  "_helpers/taskDayMove": typeof _helpers_taskDayMove;
   "_helpers/taskTimeSpent": typeof _helpers_taskTimeSpent;
   "_helpers/timeWindowDisplayEnrichment": typeof _helpers_timeWindowDisplayEnrichment;
   "_helpers/trackableAttribution": typeof _helpers_trackableAttribution;
