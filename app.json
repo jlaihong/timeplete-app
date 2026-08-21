@@ -11,16 +11,20 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0D1516"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.timeplete.app"
+      "bundleIdentifier": "com.timeplete.app",
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0D1516"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.timeplete.app"

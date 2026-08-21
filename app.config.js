@@ -258,11 +258,30 @@ module.exports = () => {
   ).trim();
 
   const ports = convexPortsFallbackOnly();
+  const isEasBuild = process.env.EAS_BUILD === "true";
 
-  const pickedLoopback = pickResolvedLoopbackConvexUrls(
-    mergedCloud || undefined,
-    mergedSite || undefined,
-  );
+  // EAS store/TestFlight binaries must talk to hosted Convex, never loopback.
+  if (isEasBuild) {
+    const loopback =
+      !mergedCloud ||
+      !mergedSite ||
+      /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[?::1\]?)/i.test(
+        mergedCloud,
+      ) ||
+      /^(https?:\/\/)?(127\.0\.0\.1|localhost|\[?::1\]?)/i.test(mergedSite);
+    if (loopback) {
+      throw new Error(
+        "EAS builds require hosted EXPO_PUBLIC_CONVEX_URL and EXPO_PUBLIC_CONVEX_SITE_URL (see eas.json env).",
+      );
+    }
+  }
+
+  const pickedLoopback = isEasBuild
+    ? null
+    : pickResolvedLoopbackConvexUrls(
+        mergedCloud || undefined,
+        mergedSite || undefined,
+      );
 
   const convexUrl =
     pickedLoopback?.convexUrl ||
@@ -273,9 +292,24 @@ module.exports = () => {
     mergedSite ||
     `http://127.0.0.1:${ports.site}`;
 
+  const notificationMode =
+    process.env.EAS_BUILD_PROFILE === "production"
+      ? "production"
+      : "development";
+
   return {
     expo: {
       ...appJson.expo,
+      plugins: [
+        ...(appJson.expo.plugins || []),
+        [
+          "expo-notifications",
+          {
+            mode: notificationMode,
+            enableBackgroundRemoteNotifications: true,
+          },
+        ],
+      ],
       extra: {
         ...(appJson.expo.extra || {}),
         EXPO_PUBLIC_CONVEX_URL: convexUrl,

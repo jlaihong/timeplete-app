@@ -1,5 +1,8 @@
 {
-  "cli": { "version": ">= 16.0.0" },
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
   "build": {
     "development": {
       "developmentClient": true,
@@ -9,11 +12,33 @@
     "preview": {
       "distribution": "internal",
       "ios": { "simulator": false },
-      "android": { "buildType": "apk" }
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_CONVEX_URL": "https://earnest-herring-755.convex.cloud",
+        "EXPO_PUBLIC_CONVEX_SITE_URL": "https://earnest-herring-755.convex.site",
+        "EXPO_PUBLIC_COGNITO_REGION": "us-west-2",
+        "EXPO_PUBLIC_COGNITO_USER_POOL_ID": "us-west-2_uS1u2w0bq",
+        "EXPO_PUBLIC_COGNITO_APP_CLIENT_ID": "2dmso7hji3et3pq2s6q8vs90in"
+      }
     },
     "production": {
+      "autoIncrement": true,
       "ios": { "simulator": false },
-      "android": { "buildType": "app-bundle" }
+      "android": { "buildType": "app-bundle" },
+      "env": {
+        "EXPO_PUBLIC_CONVEX_URL": "https://earnest-herring-755.convex.cloud",
+        "EXPO_PUBLIC_CONVEX_SITE_URL": "https://earnest-herring-755.convex.site",
+        "EXPO_PUBLIC_COGNITO_REGION": "us-west-2",
+        "EXPO_PUBLIC_COGNITO_USER_POOL_ID": "us-west-2_uS1u2w0bq",
+        "EXPO_PUBLIC_COGNITO_APP_CLIENT_ID": "2dmso7hji3et3pq2s6q8vs90in"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6759335273"
+      }
     }
   }
 }
