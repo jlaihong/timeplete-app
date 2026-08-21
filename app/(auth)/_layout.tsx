@@ -1,30 +1,72 @@
 import React from "react";
 import { Redirect, Stack, usePathname } from "expo-router";
-import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { useAuth } from "../../hooks/useAuth";
-import { Colors } from "../../constants/colors";
+
+/**
+ * Expo Router's initial screen for this group when the URL doesn't name one.
+ * Individual routes (`/signup`, `/forgot-password`, …) still win from the URL.
+ */
+export const unstable_settings = {
+  initialRouteName: "login",
+};
+
+function isAuthPath(pathname: string, slug: string): boolean {
+  return pathname === `/${slug}` || pathname.endsWith(`/${slug}`);
+}
+
+function isUnverifiedUser(user: object): boolean {
+  return (
+    "emailVerified" in user &&
+    (user as { emailVerified?: unknown }).emailVerified === false
+  );
+}
+
+function emailFromUser(user: object): string {
+  if (!("email" in user)) return "";
+  return typeof user.email === "string" ? user.email : "";
+}
 
 export default function AuthLayout() {
   const pathname = usePathname();
-  const { isAuthenticated, isLoading, isApproved } = useAuth();
+  const { isAuthenticated, isLoading, isApproved, user } = useAuth();
 
-  if (isLoading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </View>
-    );
-  }
+  const isPendingApproval = isAuthPath(pathname, "pending-approval");
+  const isVerifyEmail = isAuthPath(pathname, "verify-email");
 
-  const isPendingApproval =
-    pathname === "/pending-approval" ||
-    pathname.endsWith("/pending-approval");
+  // Keep this Stack mounted through Convex/session bootstrap and tab
+  // reconnects. Replacing it with a spinner remounts the navigator, and
+  // Expo Router then falls back to Sign In — wiping Forgot Password,
+  // Create Account, and the post-signup access-code screen.
+  // The (app) layout uses the same rule for deep-linked tab URLs.
 
-  if (isAuthenticated && !isPendingApproval) {
-    if (!isApproved) {
-      return <Redirect href="/(auth)/pending-approval" />;
+  if (!isLoading && isAuthenticated) {
+    // Session cookie can appear before useSession hydrates `user`. Don't
+    // send the user into the app (or bounce them to Sign In) in that gap.
+    if (user != null) {
+      if (isUnverifiedUser(user)) {
+        if (!isVerifyEmail) {
+          const email = emailFromUser(user);
+          return (
+            <Redirect
+              href={
+                email
+                  ? {
+                      pathname: "/(auth)/verify-email",
+                      params: { email },
+                    }
+                  : "/(auth)/verify-email"
+              }
+            />
+          );
+        }
+      } else if (!isApproved) {
+        if (!isPendingApproval) {
+          return <Redirect href="/(auth)/pending-approval" />;
+        }
+      } else {
+        return <Redirect href="/(app)/(tabs)" />;
+      }
     }
-    return <Redirect href="/(app)/(tabs)" />;
   }
 
   return (
@@ -36,12 +78,3 @@ export default function AuthLayout() {
     />
   );
 }
-
-const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: Colors.background,
-  },
-});
