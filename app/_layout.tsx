@@ -24,6 +24,7 @@ import { installWebScrollbarStyles } from "@/lib/webScrollbarStyles";
 LogBox.ignoreLogs([
   /findNodeHandle is deprecated in StrictMode/,
   /findHostInstance_DEPRECATED is deprecated in StrictMode/,
+  /two children with the same key/,
 ]);
 
 const convexUrl = convexPublicUrlForClient(getExpoPublicConvexUrl());

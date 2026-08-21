@@ -18,14 +18,23 @@ function effectiveViewportWidthForBreakpoints(rnWidth: number): number {
 
 export function useIsDesktop(): boolean {
   const { width } = useWindowDimensions();
+  // Native (iPhone, iPad, Android) always uses the mobile navigator.
+  // "Desktop" chrome — permanent drawer, DesktopHome, dnd-kit `<div>`
+  // rows — is DOM-only. On RN it crashes with:
+  // "View config getter callback for component `div`" and the process
+  // dies, which looks like an instant sign-out on iPad (width ≥ 768).
+  if (Platform.OS !== "web") {
+    return false;
+  }
   return effectiveViewportWidthForBreakpoints(width) >= DESKTOP_BREAKPOINT;
 }
 
 export function useResponsiveBreakpoints() {
   const { width } = useWindowDimensions();
   const w = effectiveViewportWidthForBreakpoints(width);
+  const isDesktop = Platform.OS === "web" && w >= DESKTOP_BREAKPOINT;
   return {
-    isDesktop: w >= DESKTOP_BREAKPOINT,
+    isDesktop,
     isWide: w >= WIDE_BREAKPOINT,
     width,
   };
