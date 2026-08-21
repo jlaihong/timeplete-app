@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import { Link, router } from "expo-router";
+import { Link, router, useLocalSearchParams } from "expo-router";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Card } from "../../components/ui/Card";
@@ -18,10 +18,15 @@ import { authClient } from "../../lib/auth-client";
 type Step = "email" | "reset";
 
 export default function ForgotPasswordScreen() {
-  const [email, setEmail] = useState("");
+  const params = useLocalSearchParams<{ email?: string; step?: string }>();
+  const initialEmail =
+    typeof params.email === "string" ? params.email.trim().toLowerCase() : "";
+  const [email, setEmail] = useState(initialEmail);
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
-  const [step, setStep] = useState<Step>("email");
+  const [step, setStep] = useState<Step>(
+    params.step === "reset" && initialEmail ? "reset" : "email",
+  );
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -43,6 +48,7 @@ export default function ForgotPasswordScreen() {
       }
       setEmail(normalizedEmail);
       setStep("reset");
+      router.setParams({ email: normalizedEmail, step: "reset" });
     } catch (e: unknown) {
       const message =
         e instanceof Error ? e.message : "Failed to send reset code";
