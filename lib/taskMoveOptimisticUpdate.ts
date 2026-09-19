@@ -1,76 +1,45 @@
 /**
  * Optimistic cache patches for home/list task reorder mutations.
+ * Uses the same gap-shift as productivity-one: `toIndex` is a persisted
+ * order field, not a filtered frontend slot.
  */
 import type { OptimisticLocalStore } from "convex/browser";
 import type { FunctionReturnType } from "convex/server";
 import type { Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
+import { applyTillEndShift } from "../convex/_helpers/orderShift";
 
 type HomeRow = FunctionReturnType<typeof api.tasks.getHomeTasks>[number];
 
-function reorderWithinDay<
-  T extends { _id: Id<"tasks">; taskDay?: string; taskDayOrderIndex?: number },
->(rows: T[], taskId: Id<"tasks">, day: string, newOrderIndex: number): T[] {
-  const dayRows = rows
-    .filter((t) => t.taskDay === day)
-    .sort((a, b) => (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0));
-  const moving = dayRows.find((t) => t._id === taskId);
-  if (!moving) return rows;
-  const without = dayRows.filter((t) => t._id !== taskId);
-  const idx = Math.max(0, Math.min(newOrderIndex, without.length));
-  without.splice(idx, 0, moving);
-  const reindexed = new Map(
-    without.map((t, i) => [
-      t._id,
-      { ...t, taskDay: day, taskDayOrderIndex: i } as T,
-    ]),
-  );
-  return rows.map((t) => reindexed.get(t._id) ?? t);
-}
-
-function moveAcrossDays<
+function shiftDayOrders<
   T extends { _id: Id<"tasks">; taskDay?: string; taskDayOrderIndex?: number },
 >(
   rows: T[],
   taskId: Id<"tasks">,
   fromDay: string,
   toDay: string,
-  newOrderIndex: number,
+  toIndex: number,
 ): T[] {
   const moving = rows.find((t) => t._id === taskId);
   if (!moving) return rows;
+  const fromIndex = moving.taskDayOrderIndex ?? 0;
+  if (fromDay === toDay && fromIndex === toIndex) return rows;
 
-  const fromRows = rows
-    .filter((t) => t.taskDay === fromDay && t._id !== taskId)
-    .sort((a, b) => (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0));
-  const fromReindexed = new Map(
-    fromRows.map((t, i) => [
-      t._id,
-      { ...t, taskDayOrderIndex: i } as T,
-    ]),
+  const shifted = applyTillEndShift(
+    rows,
+    (t) => t.taskDayOrderIndex ?? 0,
+    (t, order) => ({ ...t, taskDayOrderIndex: order }),
+    fromIndex,
+    toIndex,
+    (t) => t._id === taskId,
+    (t) => t.taskDay === fromDay,
+    (t) => t.taskDay === toDay,
   );
-
-  const toRows = rows
-    .filter((t) => t.taskDay === toDay && t._id !== taskId)
-    .sort((a, b) => (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0));
-  const moved = {
-    ...moving,
-    taskDay: toDay,
-    taskDayOrderIndex: newOrderIndex,
-  } as T;
-  const idx = Math.max(0, Math.min(newOrderIndex, toRows.length));
-  toRows.splice(idx, 0, moved);
-  const toReindexed = new Map(
-    toRows.map((t, i) => [
-      t._id,
-      { ...t, taskDay: toDay, taskDayOrderIndex: i } as T,
-    ]),
+  return shifted.map((t) =>
+    t._id === taskId
+      ? ({ ...t, taskDay: toDay, taskDayOrderIndex: toIndex } as T)
+      : t,
   );
-
-  return rows.map((t) => {
-    if (t._id === taskId) return toReindexed.get(t._id) ?? moved;
-    return fromReindexed.get(t._id) ?? toReindexed.get(t._id) ?? t;
-  });
 }
 
 function patchHomeAndSearchDayOrders(
@@ -105,10 +74,10 @@ function patchHomeAndSearchDayOrders(
 
 export function applyMoveOnDayOptimisticUpdate(
   localStore: OptimisticLocalStore,
-  args: { taskId: Id<"tasks">; day: string; newOrderIndex: number },
+  args: { taskId: Id<"tasks">; day: string; toIndex: number },
 ): void {
   patchHomeAndSearchDayOrders(localStore, (rows) =>
-    reorderWithinDay(rows, args.taskId, args.day, args.newOrderIndex),
+    shiftDayOrders(rows, args.taskId, args.day, args.day, args.toIndex),
   );
 }
 
@@ -118,17 +87,11 @@ export function applyMoveBetweenDaysOptimisticUpdate(
     taskId: Id<"tasks">;
     fromDay: string;
     toDay: string;
-    newOrderIndex: number;
+    toIndex: number;
   },
 ): void {
   patchHomeAndSearchDayOrders(localStore, (rows) =>
-    moveAcrossDays(
-      rows,
-      args.taskId,
-      args.fromDay,
-      args.toDay,
-      args.newOrderIndex,
-    ),
+    shiftDayOrders(rows, args.taskId, args.fromDay, args.toDay, args.toIndex),
   );
 }
 
@@ -137,7 +100,7 @@ export function applyMoveBetweenSectionsOptimisticUpdate(
   args: {
     taskId: Id<"tasks">;
     toSectionId: Id<"listSections">;
-    newOrderIndex: number;
+    toIndex: number;
   },
 ): void {
   for (const q of localStore.getAllQueries(api.lists.getPaginated)) {
@@ -156,37 +119,51 @@ export function applyMoveBetweenSectionsOptimisticUpdate(
     }
     if (!moving || !fromSectionId) continue;
 
+    const fromIndex = moving.sectionOrderIndex ?? 0;
+    const flat = page.sections.flatMap((sec) =>
+      sec.tasks.map((t) => ({
+        ...t,
+        _sectionId: sec.section._id as Id<"listSections">,
+      })),
+    );
+    const shifted = applyTillEndShift(
+      flat,
+      (t) => t.sectionOrderIndex ?? 0,
+      (t, order) => ({ ...t, sectionOrderIndex: order }),
+      fromIndex,
+      args.toIndex,
+      (t) => t._id === args.taskId,
+      (t) => t._sectionId === fromSectionId,
+      (t) => t._sectionId === args.toSectionId,
+    );
+    const byId = new Map(shifted.map((t) => [t._id, t]));
+
     const sections = page.sections.map((sec) => {
       const isFrom = sec.section._id === fromSectionId;
       const isTo = sec.section._id === args.toSectionId;
-      if (!isFrom && !isTo) return sec;
-
-      let tasks = sec.tasks.filter((t) => t._id !== args.taskId);
+      const tasks = sec.tasks
+        .filter((t) => t._id !== args.taskId)
+        .map((t) => {
+          const next = byId.get(t._id);
+          return next
+            ? { ...t, sectionOrderIndex: next.sectionOrderIndex }
+            : t;
+        });
       if (isTo) {
-        const incomplete = tasks.filter((t) => !t.dateCompleted);
-        const complete = tasks.filter((t) => !!t.dateCompleted);
-        const moved = {
+        tasks.push({
           ...moving!,
           sectionId: args.toSectionId,
-          sectionOrderIndex: args.newOrderIndex,
-        };
-        const target = incomplete;
-        const idx = Math.max(0, Math.min(args.newOrderIndex, target.length));
-        target.splice(idx, 0, moved);
-        const reindexedIncomplete = target.map((t, i) => ({
-          ...t,
-          sectionId: args.toSectionId,
-          sectionOrderIndex: i,
-        }));
-        tasks = [...reindexedIncomplete, ...complete];
+          sectionOrderIndex: args.toIndex,
+        });
       } else if (isFrom) {
-        const incomplete = tasks.filter((t) => !t.dateCompleted);
-        const complete = tasks.filter((t) => !!t.dateCompleted);
-        tasks = [
-          ...incomplete.map((t, i) => ({ ...t, sectionOrderIndex: i })),
-          ...complete,
-        ];
+        // moved row already removed
       }
+      tasks.sort((a, b) => {
+        const aDone = a.dateCompleted ? 1 : 0;
+        const bDone = b.dateCompleted ? 1 : 0;
+        if (aDone !== bDone) return aDone - bDone;
+        return (a.sectionOrderIndex ?? 0) - (b.sectionOrderIndex ?? 0);
+      });
       return { ...sec, tasks };
     });
 

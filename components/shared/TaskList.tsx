@@ -29,6 +29,8 @@ import {
   getDaysInRange,
 } from "../../lib/dates";
 import { moveOverdueTaskToTodayOnTimerStart } from "../../lib/moveOverdueTaskToTodayOnTimerStart";
+import { compareTasksForDay } from "../../convex/_helpers/compareTasksForDay";
+import { maxOrderPlusOne, toIndexAfterFlatMove } from "../../convex/_helpers/orderShift";
 import { useTimer } from "../../hooks/useTimer";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
@@ -164,14 +166,21 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const [dragOverTarget, setDragOverTarget] = useState<{
     day: string;
     index: number;
+    orderIndex: number;
   } | null>(null);
 
   const dragDataRef = useRef<{
     taskId: string;
     sourceDay: string;
-    sourceIndex: number;
+    sourceOrderIndex: number;
+  } | null>(null);
+  const dragOverTargetRef = useRef<{
+    day: string;
+    index: number;
+    orderIndex: number;
   } | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  dragOverTargetRef.current = dragOverTarget;
 
   const tagMap = useMemo(() => {
     const m = new Map<string, { name: string; colour: string }>();
@@ -251,11 +260,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
     });
 
     return entries.map(([day, dayTasks]) => {
-      const allTasks = dayTasks.sort((a, b) => {
-        if (!a.dateCompleted && b.dateCompleted) return -1;
-        if (a.dateCompleted && !b.dateCompleted) return 1;
-        return (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0);
-      });
+      const allTasks = dayTasks.sort(compareTasksForDay);
       const completedCount = allTasks.filter((t) => !!t.dateCompleted).length;
       const visibleTasks = showCompleted
         ? allTasks
@@ -263,6 +268,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
 
       return {
         day,
+        nextOrderIndex: maxOrderPlusOne(allTasks.map((t) => t.taskDayOrderIndex)),
         label:
           day === "overdue"
             ? "Overdue"
@@ -380,31 +386,36 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   }, []);
 
   const handleDrop = useCallback(
-    async (targetDay: string, targetIndex: number) => {
+    async (targetDay: string, toIndex: number) => {
       const drag = dragDataRef.current;
       if (!drag) return;
       dragDataRef.current = null;
       setDragOverTarget(null);
 
       const taskId = drag.taskId as Id<"tasks">;
-      if (drag.sourceDay === targetDay) {
-        if (drag.sourceIndex !== targetIndex) {
+      const sourceTask = tasks?.find((t) => t._id === taskId);
+      const fromDay =
+        drag.sourceDay === "overdue" || drag.sourceDay === "unscheduled"
+          ? (sourceTask?.taskDay ?? drag.sourceDay)
+          : drag.sourceDay;
+      if (fromDay === targetDay) {
+        if (drag.sourceOrderIndex !== toIndex) {
           await moveOnDay({
             taskId,
             day: targetDay,
-            newOrderIndex: targetIndex,
+            toIndex,
           });
         }
       } else {
         await moveBetweenDays({
           taskId,
-          fromDay: drag.sourceDay,
+          fromDay,
           toDay: targetDay,
-          newOrderIndex: targetIndex,
+          toIndex,
         });
       }
     },
-    [moveOnDay, moveBetweenDays]
+    [moveOnDay, moveBetweenDays, tasks]
   );
 
   useEffect(() => {
@@ -420,7 +431,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       dragDataRef.current = {
         taskId: card.dataset.dragTaskId!,
         sourceDay: card.dataset.dragDay!,
-        sourceIndex: parseInt(card.dataset.dragIndex!, 10),
+        sourceOrderIndex: parseInt(card.dataset.dragOrder!, 10),
       };
       if (e.dataTransfer) {
         e.dataTransfer.effectAllowed = "move";
@@ -455,15 +466,17 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
 
-      if (card) {
+      if (card && card.dataset.dragTaskId !== dragDataRef.current?.taskId) {
         setDragOverTarget({
           day: card.dataset.dragDay!,
           index: parseInt(card.dataset.dragIndex!, 10),
+          orderIndex: parseInt(card.dataset.dragOrder!, 10),
         });
       } else {
         setDragOverTarget({
           day: group.dataset.dropDay!,
-          index: parseInt(group.dataset.dropCount!, 10),
+          index: parseInt(group.dataset.dropCount ?? "0", 10),
+          orderIndex: parseInt(group.dataset.dropNextOrder ?? "0", 10),
         });
       }
     };
@@ -477,18 +490,36 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
 
     const onDropHandler = (e: DragEvent) => {
       e.preventDefault();
-      const card = (e.target as HTMLElement).closest?.(
-        "[data-drag-task-id]"
-      ) as HTMLElement | null;
       const group = (e.target as HTMLElement).closest?.(
         "[data-drop-day]"
       ) as HTMLElement | null;
       if (!group) return;
 
+      const draggedId = dragDataRef.current?.taskId;
       const targetDay = group.dataset.dropDay!;
+      const isDestCard = (el: HTMLElement | null): el is HTMLElement =>
+        !!el &&
+        el.dataset.dragTaskId !== draggedId &&
+        el.dataset.dragDay === targetDay;
+      const cardFromTarget = (e.target as HTMLElement).closest?.(
+        "[data-drag-task-id]"
+      ) as HTMLElement | null;
+      const cardFromPoint = document
+        .elementsFromPoint(e.clientX, e.clientY)
+        .map((node) =>
+          (node as HTMLElement).closest?.("[data-drag-task-id]"),
+        )
+        .find((el): el is HTMLElement => isDestCard(el as HTMLElement | null));
+      const card = isDestCard(cardFromTarget)
+        ? cardFromTarget
+        : (cardFromPoint ?? null);
+
+      const hovered = dragOverTargetRef.current;
       const targetIndex = card
-        ? parseInt(card.dataset.dragIndex!, 10)
-        : parseInt(group.dataset.dropCount!, 10);
+        ? parseInt(card.dataset.dragOrder!, 10)
+        : hovered && hovered.day === targetDay
+          ? hovered.orderIndex
+          : parseInt(group.dataset.dropNextOrder!, 10);
 
       handleDrop(targetDay, targetIndex);
     };
@@ -509,23 +540,31 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   }, [handleDrop]);
 
   const setDragAttrs = useCallback(
-    (node: any, taskId: string, day: string, index: number) => {
+    (
+      node: any,
+      taskId: string,
+      day: string,
+      visualIndex: number,
+      orderIndex: number,
+    ) => {
       if (!isWeb || !node) return;
       const el = node as HTMLElement;
       el.draggable = true;
       el.dataset.dragTaskId = taskId;
       el.dataset.dragDay = day;
-      el.dataset.dragIndex = String(index);
+      el.dataset.dragIndex = String(visualIndex);
+      el.dataset.dragOrder = String(orderIndex);
     },
     []
   );
 
   const setDropGroupAttrs = useCallback(
-    (node: any, day: string, taskCount: number) => {
+    (node: any, day: string, visualCount: number, nextOrder: number) => {
       if (!isWeb || !node) return;
       const el = node as HTMLElement;
       el.dataset.dropDay = day;
-      el.dataset.dropCount = String(taskCount);
+      el.dataset.dropCount = String(visualCount);
+      el.dataset.dropNextOrder = String(nextOrder);
     },
     []
   );
@@ -709,7 +748,13 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
           ref={
             isWeb && isValidDropDay
               ? (node: any) =>
-                  setDragAttrs(node, task._id, group.day, taskIndex)
+                  setDragAttrs(
+                    node,
+                    task._id,
+                    group.day,
+                    taskIndex,
+                    task.taskDayOrderIndex ?? 0,
+                  )
               : undefined
           }
           style={isActive ? styles.taskCardDragging : undefined}
@@ -763,8 +808,8 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
    *      because we don't wire `drag` for them in `renderItem`.)
    *   2. Walk backwards from `to - 1` to find the most recent `header` row —
    *      that's the destination day.
-   *   3. Count `task` rows between the header and `to` to derive
-   *      `newOrderIndex` within the destination day.
+   *   3. Read the drop-target task's persisted `taskDayOrderIndex`
+   *      (or max+1 when dropping onto an empty day).
    *   4. Compare the moved row's original `day` (set when we built `flatRows`)
    *      with the destination day. Same day -> `moveOnDay`; cross-day ->
    *      `moveBetweenDays`. Drops onto `overdue`/`unscheduled` are no-ops
@@ -779,7 +824,6 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
 
       const sourceDay = moved.day;
       let targetDay: string | null = null;
-      let indexInTargetDay = 0;
       for (let i = to - 1; i >= 0; i--) {
         const row = data[i];
         if (!row) continue;
@@ -787,24 +831,52 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
           targetDay = row.day;
           break;
         }
-        if (row.kind === "task") indexInTargetDay++;
       }
       if (!targetDay) return;
       if (targetDay === "overdue" || targetDay === "unscheduled") return;
 
+      const destTaskAt = (row: FlatRow | undefined) =>
+        row?.kind === "task" &&
+        row.day === targetDay &&
+        row.task._id !== moved.task._id
+          ? row
+          : null;
+      // After a downward cross-section drop, the hovered dest row sits at
+      // `to + 1`. `to - 1` is often the Today header, which used to fall
+      // through to max+1 and append.
+      const landedOn = destTaskAt(data[to + 1]) ?? destTaskAt(data[to - 1]);
+      const toIndex = toIndexAfterFlatMove({
+        from,
+        to,
+        neighborOrder: landedOn?.task.taskDayOrderIndex,
+        neighborInSameGroup: landedOn != null,
+        fallbackOrders: data
+          .filter(
+            (row): row is Extract<FlatRow, { kind: "task" }> =>
+              row.kind === "task" &&
+              row.day === targetDay &&
+              row.task._id !== moved.task._id,
+          )
+          .map((row) => row.task.taskDayOrderIndex),
+      });
+
       const taskId = moved.task._id as Id<"tasks">;
-      if (sourceDay === targetDay) {
+      const fromDay =
+        sourceDay === "overdue" || sourceDay === "unscheduled"
+          ? (moved.task.taskDay ?? sourceDay)
+          : sourceDay;
+      if (fromDay === targetDay) {
         void moveOnDay({
           taskId,
           day: targetDay,
-          newOrderIndex: indexInTargetDay,
+          toIndex,
         });
       } else {
         void moveBetweenDays({
           taskId,
-          fromDay: sourceDay,
+          fromDay,
           toDay: targetDay,
-          newOrderIndex: indexInTargetDay,
+          toIndex,
         });
       }
     },
@@ -1005,7 +1077,8 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                         setDropGroupAttrs(
                           node,
                           group.day,
-                          group.tasks.length
+                          group.tasks.length,
+                          group.nextOrderIndex
                         )
                     : undefined
                 }
@@ -1091,11 +1164,12 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                         onDragEnd={({ from, to }: { from: number; to: number }) => {
                           if (from === to) return;
                           const moved = group.tasks[from];
+                          const dropTarget = group.tasks[to];
                           if (!moved) return;
                           void moveOnDay({
                             taskId: moved._id as Id<"tasks">,
                             day: group.day,
-                            newOrderIndex: to,
+                            toIndex: dropTarget?.taskDayOrderIndex ?? to,
                           });
                         }}
                         renderItem={({

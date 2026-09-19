@@ -24,6 +24,7 @@ import {
   onTaskTimeAttributionChange,
 } from "./_helpers/trackableLifetime";
 import { claimClientMutationId } from "./_helpers/clientMutationId";
+import { applyTillEndShift } from "./_helpers/orderShift";
 import { moveTaskBetweenDays } from "./_helpers/taskDayMove";
 
 /**
@@ -43,26 +44,6 @@ async function defaultSectionIdForList(
   const sorted = sections.sort((a, b) => a.orderIndex - b.orderIndex);
   const def = sorted.find((s) => s.isDefaultSection);
   return (def ?? sorted[0])?._id;
-}
-
-/** Same completion rule as `lists.getPaginated` (`compareTasksForListView`). */
-function isTaskCompletedForListReorder(t: { dateCompleted?: string }): boolean {
-  const d = t.dateCompleted;
-  return typeof d === "string" && d.trim().length > 0;
-}
-
-/**
- * Must match `lists.getPaginated`: incomplete tasks first, then `sectionOrderIndex`.
- * Otherwise list DnD passes indices that do not match `moveBetweenSections` ordering.
- */
-function compareTasksForListReorder(
-  a: { dateCompleted?: string; sectionOrderIndex: number },
-  b: { dateCompleted?: string; sectionOrderIndex: number },
-): number {
-  const aDone = isTaskCompletedForListReorder(a);
-  const bDone = isTaskCompletedForListReorder(b);
-  if (aDone !== bDone) return Number(aDone) - Number(bDone);
-  return a.sectionOrderIndex - b.sectionOrderIndex;
 }
 
 function windowEndEpochMs(w: Doc<"timeWindows">): number | null {
@@ -766,11 +747,24 @@ export const remove = mutation({
   },
 });
 
+function resolveMoveToIndex(args: {
+  toIndex?: number;
+  newOrderIndex?: number;
+}): number {
+  const toIndex = args.toIndex ?? args.newOrderIndex;
+  if (toIndex === undefined) {
+    throw new Error("toIndex is required");
+  }
+  return toIndex;
+}
+
 export const moveOnDay = mutation({
   args: {
     taskId: v.id("tasks"),
     day: v.string(),
-    newOrderIndex: v.number(),
+    toIndex: v.optional(v.number()),
+    /** @deprecated Use `toIndex`. Kept so a stale client or function can still talk. */
+    newOrderIndex: v.optional(v.number()),
     clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -781,24 +775,12 @@ export const moveOnDay = mutation({
     const task = await ctx.db.get(args.taskId);
     if (!task) throw new Error("Task not found");
 
-    const dayTasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_user_day", (q) =>
-        q.eq("userId", user._id).eq("taskDay", args.day)
-      )
-      .collect();
-
-    const sorted = dayTasks.sort(
-      (a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex
-    );
-    const without = sorted.filter((t) => t._id !== args.taskId);
-    without.splice(args.newOrderIndex, 0, task);
-
-    for (let i = 0; i < without.length; i++) {
-      if (without[i].taskDayOrderIndex !== i) {
-        await ctx.db.patch(without[i]._id, { taskDayOrderIndex: i });
-      }
-    }
+    await moveTaskBetweenDays(ctx, user._id, {
+      taskId: args.taskId,
+      fromDay: args.day,
+      toDay: args.day,
+      toIndex: resolveMoveToIndex(args),
+    });
   },
 });
 
@@ -807,7 +789,9 @@ export const moveBetweenDays = mutation({
     taskId: v.id("tasks"),
     fromDay: v.string(),
     toDay: v.string(),
-    newOrderIndex: v.number(),
+    toIndex: v.optional(v.number()),
+    /** @deprecated Use `toIndex`. Kept so a stale client or function can still talk. */
+    newOrderIndex: v.optional(v.number()),
     clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -820,7 +804,7 @@ export const moveBetweenDays = mutation({
       taskId: args.taskId,
       fromDay: args.fromDay,
       toDay: args.toDay,
-      newOrderIndex: args.newOrderIndex,
+      toIndex: resolveMoveToIndex(args),
     });
   },
 });
@@ -829,7 +813,9 @@ export const moveBetweenSections = mutation({
   args: {
     taskId: v.id("tasks"),
     toSectionId: v.id("listSections"),
-    newOrderIndex: v.number(),
+    toIndex: v.optional(v.number()),
+    /** @deprecated Use `toIndex`. Kept so a stale client or function can still talk. */
+    newOrderIndex: v.optional(v.number()),
     clientMutationId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -867,58 +853,40 @@ export const moveBetweenSections = mutation({
       if (sid && sectionIdSet.has(sid)) return sid;
       return canonicalDefault._id;
     };
-    const bySec = new Map<
-      (typeof sections)[number]["_id"],
-      typeof allOnList
-    >();
-    for (const s of sections) {
-      bySec.set(s._id, []);
-    }
-    for (const t of allOnList) {
-      const lid = logicalSectionId(t);
-      const arr = bySec.get(lid);
-      if (arr) arr.push(t);
-    }
-    for (const [, arr] of bySec) {
-      arr.sort(compareTasksForListReorder);
-    }
 
     const fromSectionId = logicalSectionId(task);
-    const fromArr = [...(bySec.get(fromSectionId) ?? [])];
-    const fromIdx = fromArr.findIndex((t) => t._id === args.taskId);
-    if (fromIdx === -1) throw new Error("Task not in list");
+    const fromIndex = task.sectionOrderIndex ?? 0;
+    const toIndex = resolveMoveToIndex(args);
+    if (fromSectionId === args.toSectionId && fromIndex === toIndex) {
+      return;
+    }
 
-    const [moved] = fromArr.splice(fromIdx, 1);
+    const shifted = applyTillEndShift(
+      allOnList,
+      (t) => t.sectionOrderIndex ?? 0,
+      (t, order) => ({ ...t, sectionOrderIndex: order }),
+      fromIndex,
+      toIndex,
+      (t) => t._id === args.taskId,
+      (t) => logicalSectionId(t) === fromSectionId,
+      (t) => logicalSectionId(t) === args.toSectionId,
+    );
 
-    if (fromSectionId !== args.toSectionId) {
-      for (let i = 0; i < fromArr.length; i++) {
-        await ctx.db.patch(fromArr[i]._id, {
-          sectionOrderIndex: i,
-          sectionId: fromSectionId,
+    for (const next of shifted) {
+      if (next._id === args.taskId) continue;
+      const prev = allOnList.find((t) => t._id === next._id);
+      if (prev && next.sectionOrderIndex !== prev.sectionOrderIndex) {
+        await ctx.db.patch(next._id, {
+          sectionOrderIndex: next.sectionOrderIndex,
+          sectionId: logicalSectionId(prev),
         });
       }
     }
 
-    const toArr =
-      fromSectionId === args.toSectionId
-        ? fromArr
-        : [...(bySec.get(args.toSectionId) ?? [])].filter(
-            (t) => t._id !== args.taskId,
-          );
-
-    const insertAt = Math.min(
-      Math.max(0, args.newOrderIndex),
-      toArr.length,
-    );
-    toArr.splice(insertAt, 0, moved);
-
-    for (let i = 0; i < toArr.length; i++) {
-      const t = toArr[i];
-      await ctx.db.patch(t._id, {
-        sectionOrderIndex: i,
-        sectionId: args.toSectionId,
-      });
-    }
+    await ctx.db.patch(args.taskId, {
+      sectionOrderIndex: toIndex,
+      sectionId: args.toSectionId,
+    });
   },
 });
 

@@ -2,6 +2,7 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
+import { persistBoundedOrderMove } from "./_helpers/orderShift";
 import {
   buildListIdToTrackableId,
   buildTaskInfoMap,
@@ -203,7 +204,7 @@ export const archive = mutation({
 });
 
 export const move = mutation({
-  args: { id: v.id("trackables"), newOrderIndex: v.number() },
+  args: { id: v.id("trackables"), toIndex: v.number() },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
     const trackable = await ctx.db.get(args.id);
@@ -215,15 +216,7 @@ export const move = mutation({
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .collect();
 
-    const sorted = all.sort((a, b) => a.orderIndex - b.orderIndex);
-    const without = sorted.filter((t) => t._id !== args.id);
-    without.splice(args.newOrderIndex, 0, trackable);
-
-    for (let i = 0; i < without.length; i++) {
-      if (without[i].orderIndex !== i) {
-        await ctx.db.patch(without[i]._id, { orderIndex: i });
-      }
-    }
+    await persistBoundedOrderMove(ctx, all, args.id, args.toIndex);
   },
 });
 

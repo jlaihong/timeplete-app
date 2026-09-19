@@ -31,7 +31,7 @@ export function useTaskMoveMutations() {
     (args: {
       taskId: Id<"tasks">;
       day: string;
-      newOrderIndex: number;
+      toIndex: number;
       clientMutationId?: string;
     }) => runWithOutbox("tasks.moveOnDay", args, (a) => moveOnDayRaw(a)),
     [moveOnDayRaw],
@@ -42,7 +42,7 @@ export function useTaskMoveMutations() {
       taskId: Id<"tasks">;
       fromDay: string;
       toDay: string;
-      newOrderIndex: number;
+      toIndex: number;
       clientMutationId?: string;
     }) =>
       runWithOutbox("tasks.moveBetweenDays", args, (a) =>
@@ -55,7 +55,7 @@ export function useTaskMoveMutations() {
     (args: {
       taskId: Id<"tasks">;
       toSectionId: Id<"listSections">;
-      newOrderIndex: number;
+      toIndex: number;
       clientMutationId?: string;
     }) =>
       runWithOutbox("tasks.moveBetweenSections", args, (a) =>

@@ -1,11 +1,97 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
+import { applyTillEndShift, maxOrderPlusOne } from "./orderShift";
+
+/** Minimum shape the day-move math needs. Keeps the plan unit-testable. */
+export type DayOrderedTask = {
+  _id: string;
+  taskDay?: string;
+  taskDayOrderIndex?: number;
+};
+
+export type TaskDayMovePlan = {
+  /** New `taskDayOrderIndex` for rows displaced by the gap shift. */
+  shifts: Array<{ _id: string; taskDayOrderIndex: number }>;
+  /** Final placement of the moved task; `null` when the move is a no-op. */
+  moved: { _id: string; taskDay: string; taskDayOrderIndex: number } | null;
+};
 
 /**
- * Reindex `fromDay`, splice the task into `toDay` at `newOrderIndex`, and
- * persist `taskDay` / `taskDayOrderIndex`. Shared by drag-move and
- * start-timer (overdue → today).
+ * The home list sends the UI group id, and "overdue" / "unscheduled" are
+ * buckets rather than days. The row's own `taskDay` is the real source day.
  */
+export function resolveMoveFromDay(
+  requestedFromDay: string,
+  taskDay: string | undefined,
+): string {
+  if (requestedFromDay === "overdue" || requestedFromDay === "unscheduled") {
+    return taskDay ?? requestedFromDay;
+  }
+  return requestedFromDay;
+}
+
+/**
+ * Gap-shift `taskDayOrderIndex` using the drop target's persisted index.
+ * Matches productivity-backend `move_task_between_days`:
+ *   decrement everyone on fromDay with order >= fromIndex
+ *   increment everyone on toDay with order >= toIndex
+ *   set the moved task to (toDay, toIndex)
+ *
+ * `tasks` must hold every row on `fromDay` and `toDay`, moved row included.
+ */
+export function planTaskDayMove<T extends DayOrderedTask>(args: {
+  tasks: T[];
+  taskId: string;
+  /** Already resolved via `resolveMoveFromDay`. */
+  fromDay: string;
+  toDay: string;
+  toIndex: number;
+}): TaskDayMovePlan {
+  const byId = new Map<string, T>();
+  for (const task of args.tasks) byId.set(task._id, task);
+
+  const moved = byId.get(args.taskId);
+  if (!moved) throw new Error("Task not found");
+
+  const fromIndex = moved.taskDayOrderIndex ?? 0;
+  if (args.fromDay === args.toDay && fromIndex === args.toIndex) {
+    return { shifts: [], moved: null };
+  }
+
+  const shifted = applyTillEndShift(
+    [...byId.values()],
+    (t) => t.taskDayOrderIndex ?? 0,
+    (t, taskDayOrderIndex) => ({ ...t, taskDayOrderIndex }),
+    fromIndex,
+    args.toIndex,
+    (t) => t._id === args.taskId,
+    (t) => t.taskDay === args.fromDay,
+    (t) => t.taskDay === args.toDay,
+  );
+
+  const shifts: TaskDayMovePlan["shifts"] = [];
+  for (const next of shifted) {
+    if (next._id === args.taskId) continue;
+    const prev = byId.get(next._id);
+    if (!prev) continue;
+    if (next.taskDayOrderIndex !== prev.taskDayOrderIndex) {
+      shifts.push({
+        _id: next._id,
+        taskDayOrderIndex: next.taskDayOrderIndex ?? 0,
+      });
+    }
+  }
+
+  return {
+    shifts,
+    moved: {
+      _id: args.taskId,
+      taskDay: args.toDay,
+      taskDayOrderIndex: args.toIndex,
+    },
+  };
+}
+
 export async function moveTaskBetweenDays(
   ctx: MutationCtx,
   userId: Id<"users">,
@@ -13,46 +99,49 @@ export async function moveTaskBetweenDays(
     taskId: Id<"tasks">;
     fromDay: string;
     toDay: string;
-    newOrderIndex: number;
+    toIndex: number;
   },
 ): Promise<void> {
+  const task = await ctx.db.get(args.taskId);
+  if (!task) throw new Error("Task not found");
+
+  const fromDay = resolveMoveFromDay(args.fromDay, task.taskDay);
+
   const fromTasks = await ctx.db
     .query("tasks")
     .withIndex("by_user_day", (q) =>
-      q.eq("userId", userId).eq("taskDay", args.fromDay),
+      q.eq("userId", userId).eq("taskDay", fromDay),
     )
     .collect();
-  const fromSorted = fromTasks
-    .filter((t) => t._id !== args.taskId)
-    .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex);
-  for (let i = 0; i < fromSorted.length; i++) {
-    if (fromSorted[i].taskDayOrderIndex !== i) {
-      await ctx.db.patch(fromSorted[i]._id, { taskDayOrderIndex: i });
-    }
-  }
+  const toTasks =
+    fromDay === args.toDay
+      ? fromTasks
+      : await ctx.db
+          .query("tasks")
+          .withIndex("by_user_day", (q) =>
+            q.eq("userId", userId).eq("taskDay", args.toDay),
+          )
+          .collect();
 
-  const toTasks = await ctx.db
-    .query("tasks")
-    .withIndex("by_user_day", (q) =>
-      q.eq("userId", userId).eq("taskDay", args.toDay),
-    )
-    .collect();
-  const toSorted = toTasks
-    .filter((t) => t._id !== args.taskId)
-    .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex);
-  const task = await ctx.db.get(args.taskId);
-  if (!task) throw new Error("Task not found");
-  toSorted.splice(args.newOrderIndex, 0, task);
+  const plan = planTaskDayMove({
+    tasks: [...fromTasks, ...toTasks],
+    taskId: args.taskId,
+    fromDay,
+    toDay: args.toDay,
+    toIndex: args.toIndex,
+  });
+  if (!plan.moved) return;
+
+  for (const shift of plan.shifts) {
+    await ctx.db.patch(shift._id as Id<"tasks">, {
+      taskDayOrderIndex: shift.taskDayOrderIndex,
+    });
+  }
 
   await ctx.db.patch(args.taskId, {
-    taskDay: args.toDay,
-    taskDayOrderIndex: args.newOrderIndex,
+    taskDay: plan.moved.taskDay,
+    taskDayOrderIndex: plan.moved.taskDayOrderIndex,
   });
-  for (let i = 0; i < toSorted.length; i++) {
-    if (toSorted[i]._id !== args.taskId && toSorted[i].taskDayOrderIndex !== i) {
-      await ctx.db.patch(toSorted[i]._id, { taskDayOrderIndex: i });
-    }
-  }
 }
 
 /**
@@ -83,12 +172,16 @@ export async function moveOverdueTaskToTodayIfNeeded(
       q.eq("userId", userId).eq("taskDay", todayYYYYMMDD),
     )
     .collect();
-  const newOrderIndex = todayTasks.filter((t) => t._id !== taskId).length;
+  const toIndex = maxOrderPlusOne(
+    todayTasks
+      .filter((t) => t._id !== taskId)
+      .map((t) => t.taskDayOrderIndex),
+  );
 
   await moveTaskBetweenDays(ctx, userId, {
     taskId,
     fromDay,
     toDay: todayYYYYMMDD,
-    newOrderIndex,
+    toIndex,
   });
 }

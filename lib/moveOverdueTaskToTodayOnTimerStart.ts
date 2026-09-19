@@ -1,4 +1,5 @@
 import type { Id } from "../convex/_generated/dataModel";
+import { maxOrderPlusOne } from "../convex/_helpers/orderShift";
 
 type TaskForTimerMove = {
   _id: Id<"tasks">;
@@ -17,10 +18,10 @@ export function moveOverdueTaskToTodayOnTimerStart(
     taskId: Id<"tasks">;
     fromDay: string;
     toDay: string;
-    newOrderIndex: number;
+    toIndex: number;
   }) => unknown,
   task: TaskForTimerMove | undefined,
-  allTasks: { _id: Id<"tasks">; taskDay?: string }[],
+  allTasks: { _id: Id<"tasks">; taskDay?: string; taskDayOrderIndex?: number }[],
   todayYYYYMMDD: string,
 ): void {
   if (!task) return;
@@ -29,14 +30,16 @@ export function moveOverdueTaskToTodayOnTimerStart(
   if (task.dateCompleted) return;
   if (task.isRecurringInstance) return;
 
-  const newOrderIndex = allTasks.filter(
-    (t) => t.taskDay === todayYYYYMMDD && t._id !== task._id,
-  ).length;
+  const toIndex = maxOrderPlusOne(
+    allTasks
+      .filter((t) => t.taskDay === todayYYYYMMDD && t._id !== task._id)
+      .map((t) => t.taskDayOrderIndex),
+  );
 
   void moveBetweenDays({
     taskId: task._id,
     fromDay,
     toDay: todayYYYYMMDD,
-    newOrderIndex,
+    toIndex,
   });
 }

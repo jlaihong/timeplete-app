@@ -1,6 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
+import { persistBoundedOrderMove } from "./_helpers/orderShift";
 
 export const searchQuestions = query({
   args: {
@@ -77,7 +78,7 @@ export const upsertQuestion = mutation({
 });
 
 export const moveQuestion = mutation({
-  args: { id: v.id("reviewQuestions"), newOrderIndex: v.number() },
+  args: { id: v.id("reviewQuestions"), toIndex: v.number() },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
     const question = await ctx.db.get(args.id);
@@ -90,15 +91,7 @@ export const moveQuestion = mutation({
       )
       .collect();
 
-    const sorted = all.sort((a, b) => a.orderIndex - b.orderIndex);
-    const without = sorted.filter((q) => q._id !== args.id);
-    without.splice(args.newOrderIndex, 0, question);
-
-    for (let i = 0; i < without.length; i++) {
-      if (without[i].orderIndex !== i) {
-        await ctx.db.patch(without[i]._id, { orderIndex: i });
-      }
-    }
+    await persistBoundedOrderMove(ctx, all, args.id, args.toIndex);
   },
 });
 

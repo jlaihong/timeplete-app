@@ -45,6 +45,12 @@ import { useAuth } from "../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { useTaskMoveMutations } from "../../hooks/useTaskMoveMutations";
 import { moveOverdueTaskToTodayOnTimerStart } from "../../lib/moveOverdueTaskToTodayOnTimerStart";
+import { compareTasksForDay } from "../../convex/_helpers/compareTasksForDay";
+import { resolveDragDropTargetId } from "../../lib/resolveDragDropTarget";
+import {
+  applyHoverTransfer,
+  resolveTaskDropIndex,
+} from "../../lib/taskDragReorder";
 import { EmptyState } from "../ui/EmptyState";
 import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import {
@@ -215,7 +221,9 @@ function DroppableGroupBody({
   const { setNodeRef, isOver } = useDroppable({
     id: `group:${groupId}`,
     data: { type: "group", groupId },
-    disabled,
+    // Same as list detail: a non-empty group rect contains every task, so
+    // pointerWithin would pick `group:*` and treat the drop as "move to end".
+    disabled: disabled || !isEmpty,
   });
 
   return (
@@ -575,18 +583,13 @@ export function DesktopTaskList({
     });
 
     /**
-     * Match productivity-one's `compareTasksForDay`:
-     * incomplete tasks (0) sort before completed tasks (1); within each
-     * partition we preserve the server's `taskDayOrderIndex`.
+     * Match productivity-one's `compareTasksForDay` (shared helper):
+     * incomplete first, then `taskDayOrderIndex`. Persistence uses the
+     * drop target's backend index, not this visual slot.
      */
     return sortedKeys.map((id) => ({
       id,
-      tasks: (groups.get(id) ?? []).sort((a, b) => {
-        const aCompleted = a.dateCompleted ? 1 : 0;
-        const bCompleted = b.dateCompleted ? 1 : 0;
-        if (aCompleted !== bCompleted) return aCompleted - bCompleted;
-        return (a.taskDayOrderIndex ?? 0) - (b.taskDayOrderIndex ?? 0);
-      }),
+      tasks: (groups.get(id) ?? []).sort(compareTasksForDay),
     }));
   }, [tasks, retainedEarliestDay, retainedRangeEndDay]);
 
@@ -788,35 +791,31 @@ export function DesktopTaskList({
       const activeId = String(active.id);
       const overId = String(over.id);
       if (activeId === overId) return;
-      // Hovering the calendar — do nothing here; CalendarView paints the
-      // preview and the cross-group optimistic logic below would only
-      // confuse the user (task would jump out of its current day).
       if (isCalendarDrop(overId)) return;
 
       const activeLoc = findTaskLocation(activeId);
       if (!activeLoc) return;
 
-      // Determine target group + insertion index based on what we're over.
-      let targetGroupId: string;
-      let targetIndex: number;
-
+      const overTaskId = resolveDragDropTargetId(event, activeId, (id) =>
+        findTaskLocation(id) != null,
+      );
       const overData = over.data.current as
         | { type?: string; groupId?: string }
         | undefined;
 
-      if (overData?.type === "group" && overData.groupId) {
+      let targetGroupId: string;
+      if (overTaskId) {
+        const overLoc = findTaskLocation(overTaskId);
+        if (!overLoc) return;
+        targetGroupId = overLoc.groupId;
+      } else if (overData?.type === "group" && overData.groupId) {
         targetGroupId = overData.groupId;
-        const targetGroup = localGroups.find((g) => g.id === targetGroupId);
-        targetIndex = targetGroup ? targetGroup.tasks.length : 0;
       } else {
-        // We're over another sortable task.
         const overLoc = findTaskLocation(overId);
         if (!overLoc) return;
         targetGroupId = overLoc.groupId;
-        targetIndex = overLoc.index;
       }
 
-      // Block dropping into Overdue or Unscheduled.
       if (
         targetGroupId === OVERDUE_GROUP_ID ||
         targetGroupId === UNSCHEDULED_GROUP_ID
@@ -824,160 +823,192 @@ export function DesktopTaskList({
         return;
       }
 
-      // CRITICAL: only mutate local state on cross-container moves. Same-group
-      // reordering is handled visually by `SortableContext` + the vertical
-      // sorting strategy (CSS transforms) and committed in `onDragEnd`.
-      // Otherwise we get a swap-with-neighbour ping-pong: the cursor stays on
-      // the item we just displaced, which retriggers the same arrayMove and
-      // bounces forever — manifesting as "Maximum update depth exceeded".
       if (activeLoc.groupId === targetGroupId) return;
 
-      setLocalGroups((prev) => {
-        const next = prev.map((g) => ({ ...g, tasks: g.tasks.slice() }));
-        const fromGroup = next.find((g) => g.id === activeLoc.groupId)!;
-        const toGroup = next.find((g) => g.id === targetGroupId)!;
-        const [moved] = fromGroup.tasks.splice(activeLoc.index, 1);
-        // Clamp target index in case the source removal shifted things.
-        const insertAt = Math.min(targetIndex, toGroup.tasks.length);
-        toGroup.tasks.splice(insertAt, 0, moved);
-        return next;
-      });
+      const draggedTop = active.rect.current.translated?.top;
+      const insertAfterOver =
+        overTaskId != null &&
+        draggedTop != null &&
+        draggedTop > over.rect.top + over.rect.height / 2;
+
+      setLocalGroups((prev) =>
+        applyHoverTransfer(prev, {
+          draggedId: activeId,
+          toGroupId: targetGroupId,
+          overTaskId,
+          insertAfterOver,
+        }),
+      );
     },
-    [findTaskLocation, localGroups]
+    [findTaskLocation]
   );
 
   const onDragEnd = useCallback(
     async (event: DragEndEvent) => {
       const startInfo = activeDrag;
       setActiveDrag(null);
-      isDraggingRef.current = false;
-      if (!startInfo) return;
-
-      const { active, over } = event;
-      const overId = over ? String(over.id) : undefined;
-
-      // Calendar owns this drop. The CalendarView has already (or is about
-      // to) call `timeWindows.upsert` from its own useDndMonitor handler.
-      // Revert any optimistic cross-group moves we made during onDragOver
-      // by re-syncing from the server.
-      if (isCalendarDrop(overId)) {
-        setLocalGroups(serverGroups);
-        return;
-      }
-
-      const taskId = String(active.id) as Id<"tasks">;
-
-      // Find where the task currently lives in optimistic state (cross-group
-      // moves were already applied during onDragOver).
-      const currentLoc = findTaskLocation(taskId);
-      if (!currentLoc) return;
-
-      // Same-group reordering is committed here via arrayMove — onDragOver
-      // intentionally skipped same-group moves to avoid an infinite swap
-      // ping-pong with the SortableContext's transform-based animations.
-      let toDay = currentLoc.groupId;
-      let newOrderIndex = currentLoc.index;
-
-      if (over) {
-        const overId = String(over.id);
-        const overData = over.data.current as
-          | { type?: string; groupId?: string }
-          | undefined;
-
-        if (overData?.type === "group" && overData.groupId) {
-          toDay = overData.groupId;
-          if (toDay === currentLoc.groupId) {
-            // Drop into the empty area of the same group → move to the end.
-            const groupLen =
-              localGroups.find((g) => g.id === toDay)?.tasks.length ?? 0;
-            newOrderIndex = Math.max(0, groupLen - 1);
-          } else {
-            const groupLen =
-              localGroups.find((g) => g.id === toDay)?.tasks.length ?? 0;
-            newOrderIndex = groupLen;
-          }
-        } else if (overId !== taskId) {
-          // Hovering over another sortable task.
-          const overLoc = findTaskLocation(overId);
-          if (overLoc && overLoc.groupId === currentLoc.groupId) {
-            toDay = overLoc.groupId;
-            newOrderIndex = overLoc.index;
-          }
-        }
-      }
-
-      // Apply the same-group reorder optimistically before persisting.
-      if (
-        toDay === currentLoc.groupId &&
-        currentLoc.index !== newOrderIndex
-      ) {
-        setLocalGroups((prev) =>
-          prev.map((g) =>
-            g.id !== toDay
-              ? g
-              : {
-                  ...g,
-                  tasks: arrayMove(g.tasks, currentLoc.index, newOrderIndex),
-                }
-          )
-        );
-      }
-
-      const draggedTask = startInfo.task;
-      const persistenceFromDay =
-        startInfo.fromGroupId === OVERDUE_GROUP_ID
-          ? draggedTask.taskDay!
-          : draggedTask.dateCompleted && draggedTask.taskDay
-            ? draggedTask.taskDay
-            : startInfo.fromGroupId;
-
-      const persistenceToDay =
-        draggedTask.dateCompleted &&
-        toDay === draggedTask.dateCompleted
-          ? (draggedTask.taskDay ?? toDay)
-          : toDay;
-
-      // No-op
-      if (
-        persistenceFromDay === persistenceToDay &&
-        startInfo.fromIndex === newOrderIndex
-      ) {
-        return;
-      }
-      // Disallow drop targets
-      if (
-        persistenceToDay === OVERDUE_GROUP_ID ||
-        persistenceToDay === UNSCHEDULED_GROUP_ID
-      ) {
-        // Revert local state by re-syncing on next query update.
-        setLocalGroups(serverGroups);
+      if (!startInfo) {
+        isDraggingRef.current = false;
         return;
       }
 
       try {
-        if (persistenceFromDay === persistenceToDay) {
-          await moveOnDay({
-            taskId,
-            day: persistenceFromDay,
-            newOrderIndex,
-          });
+        const { active, over } = event;
+        const overId = over ? String(over.id) : undefined;
+
+        // Calendar owns this drop. The CalendarView has already (or is about
+        // to) call `timeWindows.upsert` from its own useDndMonitor handler.
+        // Revert any optimistic cross-group moves we made during onDragOver
+        // by re-syncing from the server.
+        if (isCalendarDrop(overId)) {
+          setLocalGroups(serverGroups);
+          return;
+        }
+
+        const taskId = String(active.id) as Id<"tasks">;
+
+        // Find where the task currently lives in optimistic state (cross-group
+        // moves were already applied during onDragOver).
+        const currentLoc = findTaskLocation(taskId);
+        if (!currentLoc) return;
+
+        const overTaskId = resolveDragDropTargetId(event, taskId, (id) =>
+          findTaskLocation(id) != null,
+        );
+        const overData = over?.data.current as
+          | { type?: string; groupId?: string }
+          | undefined;
+        const overContainerGroupId =
+          !overTaskId && overData?.type === "group"
+            ? overData.groupId
+            : undefined;
+
+        let toDay = currentLoc.groupId;
+        let overLocalIndex: number | null = null;
+        if (overTaskId) {
+          const overLoc = findTaskLocation(overTaskId);
+          if (overLoc) {
+            toDay = overLoc.groupId;
+            overLocalIndex = overLoc.index;
+          }
+        } else if (overContainerGroupId) {
+          toDay = overContainerGroupId;
+        }
+
+        if (
+          toDay === OVERDUE_GROUP_ID ||
+          toDay === UNSCHEDULED_GROUP_ID
+        ) {
+          setLocalGroups(serverGroups);
+          return;
+        }
+
+        const { toIndex, insertAboveId } = resolveTaskDropIndex({
+          draggedId: taskId,
+          fromGroupId: startInfo.fromGroupId,
+          toGroupId: toDay,
+          destRows: displayGroups.find((g) => g.id === toDay)?.tasks ?? [],
+          overTaskId,
+          overContainer: overContainerGroupId != null,
+        });
+
+        if (startInfo.fromGroupId === toDay) {
+          // Same day: commit the order the sortable transforms were showing.
+          const destLength =
+            localGroups.find((g) => g.id === toDay)?.tasks.length ?? 0;
+          const target =
+            overLocalIndex ??
+            (overContainerGroupId != null
+              ? Math.max(0, destLength - 1)
+              : currentLoc.index);
+          if (target !== currentLoc.index) {
+            setLocalGroups((prev) =>
+              prev.map((g) =>
+                g.id !== toDay
+                  ? g
+                  : { ...g, tasks: arrayMove(g.tasks, currentLoc.index, target) },
+              ),
+            );
+          }
         } else {
-          await moveBetweenDays({
-            taskId,
-            fromDay: persistenceFromDay,
-            toDay: persistenceToDay,
-            newOrderIndex,
+          setLocalGroups((prev) => {
+            const next = prev.map((g) => ({
+              ...g,
+              tasks: g.tasks.filter((t) => t._id !== taskId),
+            }));
+            const dest = next.find((g) => g.id === toDay);
+            if (!dest) return prev;
+            const at = insertAboveId
+              ? dest.tasks.findIndex((t) => t._id === insertAboveId)
+              : -1;
+            dest.tasks.splice(at >= 0 ? at : dest.tasks.length, 0, {
+              ...startInfo.task,
+              taskDay: toDay,
+              taskDayOrderIndex: toIndex,
+            });
+            return next;
           });
         }
-      } catch (err) {
-        // Revert by resyncing
-        setLocalGroups(serverGroups);
-        // eslint-disable-next-line no-console
-        console.error("Task move failed", err);
+
+        const draggedTask = startInfo.task;
+        const persistenceFromDay =
+          startInfo.fromGroupId === OVERDUE_GROUP_ID
+            ? draggedTask.taskDay!
+            : draggedTask.dateCompleted && draggedTask.taskDay
+              ? draggedTask.taskDay
+              : startInfo.fromGroupId;
+
+        const persistenceToDay =
+          draggedTask.dateCompleted &&
+          toDay === draggedTask.dateCompleted
+            ? (draggedTask.taskDay ?? toDay)
+            : toDay;
+
+        // No-op
+        if (
+          persistenceFromDay === persistenceToDay &&
+          (startInfo.task.taskDayOrderIndex ?? 0) === toIndex
+        ) {
+          return;
+        }
+        // Disallow drop targets
+        if (
+          persistenceToDay === OVERDUE_GROUP_ID ||
+          persistenceToDay === UNSCHEDULED_GROUP_ID
+        ) {
+          // Revert local state by re-syncing on next query update.
+          setLocalGroups(serverGroups);
+          return;
+        }
+
+        try {
+          if (persistenceFromDay === persistenceToDay) {
+            await moveOnDay({
+              taskId,
+              day: persistenceFromDay,
+              toIndex,
+            });
+          } else {
+            await moveBetweenDays({
+              taskId,
+              fromDay: persistenceFromDay,
+              toDay: persistenceToDay,
+              toIndex,
+            });
+          }
+        } catch (err) {
+          // Revert by resyncing
+          setLocalGroups(serverGroups);
+          // eslint-disable-next-line no-console
+          console.error("Task move failed", err);
+        }
+      } finally {
+        isDraggingRef.current = false;
       }
     },
     [
       activeDrag,
+      displayGroups,
       findTaskLocation,
       localGroups,
       moveBetweenDays,

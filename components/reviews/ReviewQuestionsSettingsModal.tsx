@@ -117,7 +117,11 @@ export function ReviewQuestionsSettingsModal({
       if (oldIndex < 0 || newIndex < 0) return;
       const moved = activeQuestions[oldIndex];
       if (!moved) return;
-      await moveQuestion({ id: moved._id, newOrderIndex: newIndex });
+      const overQuestion = activeQuestions[newIndex];
+      await moveQuestion({
+        id: moved._id,
+        toIndex: overQuestion?.orderIndex ?? newIndex,
+      });
     },
     [activeQuestions, moveQuestion]
   );
@@ -127,7 +131,11 @@ export function ReviewQuestionsSettingsModal({
       if (to < 0 || to >= activeCols.length) return;
       const moved = activeCols[from];
       if (!moved) return;
-      await moveQuestion({ id: moved._id, newOrderIndex: to });
+      const overQuestion = activeCols[to];
+      await moveQuestion({
+        id: moved._id,
+        toIndex: overQuestion?.orderIndex ?? to,
+      });
     },
     [activeCols, moveQuestion]
   );

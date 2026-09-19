@@ -95,11 +95,13 @@ function nextOrderIndexForDay(
   day: string,
   excludeTaskId: Id<"tasks">,
 ): number {
-  const ids = new Set<Id<"tasks">>();
+  let max = -1;
   const consider = (rows: CachedTaskRow[] | undefined) => {
     for (const t of rows ?? []) {
       if (t._id === excludeTaskId) continue;
-      if (t.taskDay === day) ids.add(t._id);
+      if (t.taskDay !== day) continue;
+      const order = t.taskDayOrderIndex ?? 0;
+      if (order > max) max = order;
     }
   };
   for (const q of localStore.getAllQueries(api.tasks.getHomeTasks)) {
@@ -111,7 +113,7 @@ function nextOrderIndexForDay(
   for (const q of localStore.getAllQueries(api.tasks.search)) {
     consider(q.value);
   }
-  return ids.size;
+  return max + 1;
 }
 
 function patchListTaskDay(
@@ -161,14 +163,14 @@ function moveOverdueTaskToTodayOptimistic(
   const today = wallClockInTimeZone(Date.now(), timeZone).startDayYYYYMMDD;
   if (fromDay >= today) return;
 
-  const newOrderIndex = nextOrderIndexForDay(localStore, today, taskId);
+  const toIndex = nextOrderIndexForDay(localStore, today, taskId);
   applyMoveBetweenDaysOptimisticUpdate(localStore, {
     taskId,
     fromDay,
     toDay: today,
-    newOrderIndex,
+    toIndex,
   });
-  patchListTaskDay(localStore, taskId, today, newOrderIndex);
+  patchListTaskDay(localStore, taskId, today, toIndex);
 }
 
 export function applyStartTaskTimerOptimisticUpdate(

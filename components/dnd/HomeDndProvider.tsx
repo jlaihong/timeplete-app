@@ -25,6 +25,7 @@ import {
   DragStartEvent,
   DragOverEvent,
   DragMoveEvent,
+  MeasuringStrategy,
   UniqueIdentifier,
 } from "@dnd-kit/core";
 import {
@@ -32,6 +33,10 @@ import {
   TaskRowTask,
   TaskRowMeta,
 } from "../tasks/TaskRowDesktop";
+import {
+  pickPointerTaskCollisions,
+  pointerWithinCalendar,
+} from "../../lib/resolveDragDropTarget";
 
 interface ActiveDragState {
   id: UniqueIdentifier;
@@ -64,16 +69,24 @@ function HomeDndProviderWeb({ children }: Props) {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
-  // Same custom collision detection as the previous list-only DndContext:
-  // pointerWithin > rectIntersection > closestCenter. Calendar hour cells
-  // are full-width drop zones and rely on pointerWithin to win against
-  // task-row droppables when the cursor is over the timeline.
+  // pointerWithin first. Calendar hours win only when the pointer is
+  // actually inside a cell. rectIntersection / closestCenter must not
+  // promote hours: those algorithms see the tall calendar column even
+  // when the cursor is still over the task list.
   const customCollisionDetection: CollisionDetection = useCallback((args) => {
     const pw = pointerWithin(args);
-    if (pw.length > 0) return pw;
-    const ri = rectIntersection(args);
-    if (ri.length > 0) return ri;
-    return closestCenter(args);
+    const pwCal = pointerWithinCalendar(pw);
+    if (pwCal.length > 0) return pwCal;
+
+    const pwTasks = pickPointerTaskCollisions(args, pw);
+    // Active-only is valid: that is the original slot's placeholder.
+    // Skipping it made the start position untargetable.
+    if (pwTasks.length > 0) return pwTasks;
+
+    const riTasks = pickPointerTaskCollisions(args, rectIntersection(args));
+    if (riTasks.length > 0) return riTasks;
+
+    return pickPointerTaskCollisions(args, closestCenter(args));
   }, []);
 
   // We need to know which task is being dragged so the DragOverlay can
@@ -130,6 +143,9 @@ function HomeDndProviderWeb({ children }: Props) {
     <DndContext
       sensors={sensors}
       collisionDetection={customCollisionDetection}
+      // Rows move between day groups mid-drag; rects measured once at drag
+      // start would leave collisions pointing at the old layout.
+      measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
       onDragStart={onDragStart}
       onDragOver={updateOverCalendar}
       onDragMove={updateOverCalendar}

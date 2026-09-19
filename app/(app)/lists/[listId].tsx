@@ -44,6 +44,7 @@ import { useAuth } from "../../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../../hooks/useTaskUpsertMutation";
 import { useTaskMoveMutations } from "../../../hooks/useTaskMoveMutations";
 import { moveOverdueTaskToTodayOnTimerStart } from "../../../lib/moveOverdueTaskToTodayOnTimerStart";
+import { toIndexAfterFlatMove } from "../../../convex/_helpers/orderShift";
 import { Card } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
 import { Button } from "../../../components/ui/Button";
@@ -442,9 +443,9 @@ export default function ListDetailScreen() {
    * rows.
    *
    * On drop, `handleNativeSectionDragEnd` walks backwards from the drop
-   * index to find the nearest preceding `header` row — that's the
-   * destination section. Task rows in between contribute to the new order
-   * index within the destination.
+   * index to find the nearest preceding `header` row. That is the
+   * destination section. Persistence uses the drop-target task's
+   * `sectionOrderIndex`, not the filtered visual slot.
    */
   type FlatListRow =
     | {
@@ -767,7 +768,9 @@ export default function ListDetailScreen() {
    *   2. Walk backwards from `to - 1` to find the most recent `header`
    *      row — that's the destination section.
    *   3. Count `task` rows between the header and the drop index —
-   *      that's the `newOrderIndex` within the destination section.
+   *      that's the destination section.
+   *   3. Read the drop-target task's persisted `sectionOrderIndex`
+   *      (or max+1 when dropping onto an empty section).
    *   4. Dispatch `moveBetweenSections` (which handles both same- and
    *      cross-section moves).
    */
@@ -779,7 +782,6 @@ export default function ListDetailScreen() {
       if (!moved || moved.kind !== "task") return;
 
       let targetSectionId: Id<"listSections"> | null = null;
-      let indexInTargetSection = 0;
       for (let i = to - 1; i >= 0; i--) {
         const row = data[i];
         if (!row) continue;
@@ -787,14 +789,33 @@ export default function ListDetailScreen() {
           targetSectionId = row.sectionId;
           break;
         }
-        if (row.kind === "task") indexInTargetSection++;
       }
       if (!targetSectionId) return;
+
+      const neighbor = from < to ? data[to - 1] : data[to + 1];
+      const neighborIsTask = neighbor?.kind === "task";
+      const toIndex = toIndexAfterFlatMove({
+        from,
+        to,
+        neighborOrder: neighborIsTask
+          ? neighbor.task.sectionOrderIndex
+          : undefined,
+        neighborInSameGroup:
+          neighborIsTask && neighbor.sectionId === targetSectionId,
+        fallbackOrders: data
+          .filter(
+            (row): row is Extract<FlatListRow, { kind: "task" }> =>
+              row.kind === "task" &&
+              row.sectionId === targetSectionId &&
+              row.task._id !== moved.task._id,
+          )
+          .map((row) => row.task.sectionOrderIndex),
+      });
 
       void moveBetweenSections({
         taskId: moved.task._id as Id<"tasks">,
         toSectionId: targetSectionId,
-        newOrderIndex: indexInTargetSection,
+        toIndex,
       });
     },
     [moveBetweenSections],

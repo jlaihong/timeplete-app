@@ -33,6 +33,7 @@ export interface TaskRowTask {
   tagIds?: string[];
   assignedToUserName?: string;
   taskDayOrderIndex?: number;
+  sectionOrderIndex?: number;
   /**
    * True when this task is a materialized occurrence of a `recurringTasks`
    * series. Surfaced visually with a small "repeat" icon next to the

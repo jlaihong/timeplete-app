@@ -43,6 +43,11 @@ import {
   TaskDragPlaceholder,
 } from "../tasks/TaskRowDesktop";
 import type { Id } from "../../convex/_generated/dataModel";
+import { maxOrderPlusOne } from "../../convex/_helpers/orderShift";
+import {
+  preferNonContainerCollisions,
+  resolveDragDropTargetId,
+} from "../../lib/resolveDragDropTarget";
 
 const isWeb = Platform.OS === "web";
 
@@ -229,7 +234,7 @@ export interface ListDetailWebDndProps {
   moveBetweenSections: (args: {
     taskId: Id<"tasks">;
     toSectionId: Id<"listSections">;
-    newOrderIndex: number;
+    toIndex: number;
   }) => Promise<void>;
   /** Opens add-task UI for a specific section (productivity-one per-section +). */
   onAddTaskToSection?: (sectionId: Id<"listSections">) => void;
@@ -345,11 +350,11 @@ export function ListDetailWebDnd({
   /** Same layering as DesktopHome — pointer/box hits before centroid snap.
    * `closestCorners` behaves more predictably than `closestCenter` in tall scroll lists. */
   const listCollisionDetection = useCallback<CollisionDetection>((args) => {
-    const pw = pointerWithin(args);
+    const pw = preferNonContainerCollisions(pointerWithin(args));
     if (pw.length > 0) return pw;
-    const ri = rectIntersection(args);
+    const ri = preferNonContainerCollisions(rectIntersection(args));
     if (ri.length > 0) return ri;
-    return closestCorners(args);
+    return preferNonContainerCollisions(closestCorners(args));
   }, []);
 
   const [localGroups, setLocalGroups] = useState<LocalGroup[]>([]);
@@ -538,29 +543,40 @@ export function ListDetailWebDnd({
         if (!currentLoc) return;
 
         let toSectionKey = currentLoc.groupId;
-        let newOrderIndex = currentLoc.index;
+        let visualToIndex = currentLoc.index;
+        let toIndex = startInfo.task.sectionOrderIndex ?? 0;
 
-        if (over) {
-          const overId = String(over.id);
+        const overTaskId = resolveDragDropTargetId(event, taskId, (id) =>
+          findTaskLocation(id) != null,
+        );
+        if (overTaskId) {
+          const overLoc = findTaskLocation(overTaskId);
+          if (overLoc) {
+            toSectionKey = overLoc.groupId;
+            visualToIndex = overLoc.index;
+            const overTask = localGroups.find((g) => g.id === overLoc.groupId)
+              ?.tasks[overLoc.index];
+            if (overTask?.sectionOrderIndex != null) {
+              toIndex = overTask.sectionOrderIndex;
+            }
+          }
+        } else if (over) {
           const overData = over.data.current as
             | { type?: string; groupId?: string }
             | undefined;
-
           if (overData?.type === "group" && overData.groupId) {
             toSectionKey = overData.groupId;
-            const groupLen =
-              localGroups.find((g) => g.id === toSectionKey)?.tasks.length ?? 0;
-            if (toSectionKey === currentLoc.groupId) {
-              newOrderIndex = Math.max(0, groupLen - 1);
-            } else {
-              newOrderIndex = groupLen;
-            }
-          } else if (overId !== taskId) {
-            const overLoc = findTaskLocation(overId);
-            if (overLoc && overLoc.groupId === currentLoc.groupId) {
-              toSectionKey = overLoc.groupId;
-              newOrderIndex = overLoc.index;
-            }
+            const dest = localGroups.find((g) => g.id === toSectionKey);
+            const destTasks = dest?.tasks ?? [];
+            visualToIndex =
+              toSectionKey === currentLoc.groupId
+                ? Math.max(0, destTasks.length - 1)
+                : destTasks.length;
+            toIndex = maxOrderPlusOne(
+              destTasks
+                .filter((t) => t._id !== taskId)
+                .map((t) => t.sectionOrderIndex),
+            );
           }
         }
 
@@ -568,7 +584,7 @@ export function ListDetailWebDnd({
 
         if (
           fromGroupId === toSectionKey &&
-          startInfo.fromIndex === newOrderIndex
+          (startInfo.task.sectionOrderIndex ?? 0) === toIndex
         ) {
           return;
         }
@@ -576,7 +592,7 @@ export function ListDetailWebDnd({
         let modeledGroups = cloneLocalGroups(localGroups);
         if (
           toSectionKey === currentLoc.groupId &&
-          currentLoc.index !== newOrderIndex
+          currentLoc.index !== visualToIndex
         ) {
           modeledGroups = modeledGroups.map((g) =>
             g.id !== toSectionKey
@@ -586,7 +602,7 @@ export function ListDetailWebDnd({
                   tasks: arrayMove(
                     [...g.tasks],
                     currentLoc.index,
-                    newOrderIndex,
+                    visualToIndex,
                   ),
                 },
           );
@@ -607,7 +623,7 @@ export function ListDetailWebDnd({
           await moveBetweenSections({
             taskId,
             toSectionId,
-            newOrderIndex,
+            toIndex,
           });
         } catch (err) {
           pendingReorderFingerprintRef.current = null;
