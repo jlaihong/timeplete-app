@@ -18,6 +18,7 @@ export function moveOverdueTaskToTodayOnTimerStart(
     taskId: Id<"tasks">;
     fromDay: string;
     toDay: string;
+    insertAboveTaskId: Id<"tasks"> | null;
     toIndex: number;
   }) => unknown,
   task: TaskForTimerMove | undefined,
@@ -40,6 +41,8 @@ export function moveOverdueTaskToTodayOnTimerStart(
     taskId: task._id,
     fromDay,
     toDay: todayYYYYMMDD,
+    // Parks the task at the end of today.
+    insertAboveTaskId: null,
     toIndex,
   });
 }

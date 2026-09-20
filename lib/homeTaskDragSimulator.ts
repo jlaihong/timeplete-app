@@ -34,6 +34,8 @@ export type SimTask = {
   taskDay: string;
   taskDayOrderIndex: number;
   dateCompleted?: string;
+  /** Tiebreak when a day's order indices repeat, as in migrated data. */
+  _creationTime?: number;
 };
 
 export type SimGroups = ReorderGroup<SimTask>[];
@@ -89,8 +91,20 @@ export type DragResult = {
   order: Record<string, string[]>;
   /** Preview order the user saw while dragging, keyed by group id. */
   previewOrder: Record<string, string[]>;
+  /**
+   * Stored `taskDayOrderIndex` per group after the mutation. A day the move
+   * touched should read 0..n-1, since that is what stops the next drop on
+   * it from being ambiguous.
+   */
+  repairedOrderIndices: Record<string, number[]>;
   /** What the client sent to `moveOnDay` / `moveBetweenDays`. */
-  persisted: { fromDay: string; toDay: string; toIndex: number };
+  persisted: {
+    fromDay: string;
+    toDay: string;
+    insertAboveId: string | null;
+    toIndex: number;
+    isNoop: boolean;
+  };
 };
 
 function toOrderMap(groups: SimGroups): Record<string, string[]> {
@@ -101,7 +115,13 @@ function toOrderMap(groups: SimGroups): Record<string, string[]> {
 
 export function simulateDrag(
   options: SimOptions,
-  drag: { taskId: string; hover?: HoverStep[]; drop: DropStep },
+  drag: {
+    taskId: string;
+    hover?: HoverStep[];
+    drop: DropStep;
+    /** Replay the move as a client that predates `insertAboveId`. */
+    legacyClient?: boolean;
+  },
 ): DragResult {
   const dragged = options.tasks.find((t) => t._id === drag.taskId);
   if (!dragged) throw new Error(`Unknown task ${drag.taskId}`);
@@ -119,7 +139,7 @@ export function simulateDrag(
   }
   const previewOrder = toOrderMap(groups);
 
-  const { toIndex } = resolveTaskDropIndex({
+  const { toIndex, insertAboveId, isNoop } = resolveTaskDropIndex({
     draggedId: drag.taskId,
     fromGroupId,
     toGroupId: drag.drop.groupId,
@@ -131,6 +151,8 @@ export function simulateDrag(
   const fromDay = resolveMoveFromDay(fromGroupId, dragged.taskDay);
   const toDay = drag.drop.groupId;
 
+  // `legacyClient` replays a tab still on the pre-anchor bundle, which only
+  // knows how to send the numeric slot.
   const plan = planTaskDayMove({
     tasks: options.tasks.filter(
       (t) => t.taskDay === fromDay || t.taskDay === toDay,
@@ -138,7 +160,7 @@ export function simulateDrag(
     taskId: drag.taskId,
     fromDay,
     toDay,
-    toIndex,
+    ...(drag.legacyClient ? { toIndex } : { insertAboveId }),
   });
 
   const nextTasks = options.tasks.map((task) => {
@@ -154,10 +176,19 @@ export function simulateDrag(
     return task;
   });
 
+  const nextGroups = buildGroups({ ...options, tasks: nextTasks });
+  const repairedOrderIndices: Record<string, number[]> = {};
+  for (const group of nextGroups) {
+    repairedOrderIndices[group.id] = group.tasks.map(
+      (t) => t.taskDayOrderIndex,
+    );
+  }
+
   return {
-    order: toOrderMap(buildGroups({ ...options, tasks: nextTasks })),
+    order: toOrderMap(nextGroups),
     previewOrder,
-    persisted: { fromDay, toDay, toIndex },
+    repairedOrderIndices,
+    persisted: { fromDay, toDay, insertAboveId, toIndex, isNoop },
   };
 }
 

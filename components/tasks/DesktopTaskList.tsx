@@ -903,7 +903,7 @@ export function DesktopTaskList({
           return;
         }
 
-        const { toIndex, insertAboveId } = resolveTaskDropIndex({
+        const { toIndex, insertAboveId, isNoop } = resolveTaskDropIndex({
           draggedId: taskId,
           fromGroupId: startInfo.fromGroupId,
           toGroupId: toDay,
@@ -965,10 +965,7 @@ export function DesktopTaskList({
             : toDay;
 
         // No-op
-        if (
-          persistenceFromDay === persistenceToDay &&
-          (startInfo.task.taskDayOrderIndex ?? 0) === toIndex
-        ) {
+        if (persistenceFromDay === persistenceToDay && isNoop) {
           return;
         }
         // Disallow drop targets
@@ -982,10 +979,13 @@ export function DesktopTaskList({
         }
 
         try {
+          const insertAboveTaskId = (insertAboveId ??
+            null) as Id<"tasks"> | null;
           if (persistenceFromDay === persistenceToDay) {
             await moveOnDay({
               taskId,
               day: persistenceFromDay,
+              insertAboveTaskId,
               toIndex,
             });
           } else {
@@ -993,6 +993,7 @@ export function DesktopTaskList({
               taskId,
               fromDay: persistenceFromDay,
               toDay: persistenceToDay,
+              insertAboveTaskId,
               toIndex,
             });
           }

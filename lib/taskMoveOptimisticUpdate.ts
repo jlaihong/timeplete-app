@@ -1,45 +1,53 @@
 /**
  * Optimistic cache patches for home/list task reorder mutations.
- * Uses the same gap-shift as productivity-one: `toIndex` is a persisted
- * order field, not a filtered frontend slot.
+ *
+ * Day moves run the mutation's own `planTaskDayMove`, so the preview and
+ * the server land on the same order. Reimplementing the placement here is
+ * what used to make a row settle one slot away from where it was dropped.
  */
 import type { OptimisticLocalStore } from "convex/browser";
 import type { FunctionReturnType } from "convex/server";
 import type { Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
 import { applyTillEndShift } from "../convex/_helpers/orderShift";
+import { planTaskDayMove } from "../convex/_helpers/taskDayMove";
 
 type HomeRow = FunctionReturnType<typeof api.tasks.getHomeTasks>[number];
 
 function shiftDayOrders<
-  T extends { _id: Id<"tasks">; taskDay?: string; taskDayOrderIndex?: number },
+  T extends {
+    _id: Id<"tasks">;
+    taskDay?: string;
+    taskDayOrderIndex?: number;
+    dateCompleted?: string;
+    _creationTime?: number;
+  },
 >(
   rows: T[],
   taskId: Id<"tasks">,
   fromDay: string,
   toDay: string,
-  toIndex: number,
+  placement: { insertAboveId?: Id<"tasks"> | null; toIndex?: number },
 ): T[] {
-  const moving = rows.find((t) => t._id === taskId);
-  if (!moving) return rows;
-  const fromIndex = moving.taskDayOrderIndex ?? 0;
-  if (fromDay === toDay && fromIndex === toIndex) return rows;
+  if (!rows.some((t) => t._id === taskId)) return rows;
 
-  const shifted = applyTillEndShift(
-    rows,
-    (t) => t.taskDayOrderIndex ?? 0,
-    (t, order) => ({ ...t, taskDayOrderIndex: order }),
-    fromIndex,
-    toIndex,
-    (t) => t._id === taskId,
-    (t) => t.taskDay === fromDay,
-    (t) => t.taskDay === toDay,
-  );
-  return shifted.map((t) =>
-    t._id === taskId
-      ? ({ ...t, taskDay: toDay, taskDayOrderIndex: toIndex } as T)
-      : t,
-  );
+  const plan = planTaskDayMove({
+    tasks: rows.filter((t) => t.taskDay === fromDay || t.taskDay === toDay),
+    taskId,
+    fromDay,
+    toDay,
+    ...placement,
+  });
+  if (!plan.moved) return rows;
+
+  const shifts = new Map(plan.shifts.map((s) => [s._id, s.taskDayOrderIndex]));
+  return rows.map((t) => {
+    if (t._id === taskId) {
+      return { ...t, taskDay: toDay, taskDayOrderIndex: plan.moved!.taskDayOrderIndex };
+    }
+    const next = shifts.get(t._id);
+    return next === undefined ? t : { ...t, taskDayOrderIndex: next };
+  });
 }
 
 function patchHomeAndSearchDayOrders(
@@ -72,12 +80,26 @@ function patchHomeAndSearchDayOrders(
   }
 }
 
+type DayMovePlacement = {
+  insertAboveTaskId?: Id<"tasks"> | null;
+  toIndex?: number;
+};
+
+function placementFrom(args: DayMovePlacement): {
+  insertAboveId?: Id<"tasks"> | null;
+  toIndex?: number;
+} {
+  return args.insertAboveTaskId !== undefined
+    ? { insertAboveId: args.insertAboveTaskId }
+    : { toIndex: args.toIndex };
+}
+
 export function applyMoveOnDayOptimisticUpdate(
   localStore: OptimisticLocalStore,
-  args: { taskId: Id<"tasks">; day: string; toIndex: number },
+  args: { taskId: Id<"tasks">; day: string } & DayMovePlacement,
 ): void {
   patchHomeAndSearchDayOrders(localStore, (rows) =>
-    shiftDayOrders(rows, args.taskId, args.day, args.day, args.toIndex),
+    shiftDayOrders(rows, args.taskId, args.day, args.day, placementFrom(args)),
   );
 }
 
@@ -87,22 +109,36 @@ export function applyMoveBetweenDaysOptimisticUpdate(
     taskId: Id<"tasks">;
     fromDay: string;
     toDay: string;
-    toIndex: number;
-  },
+  } & DayMovePlacement,
 ): void {
   patchHomeAndSearchDayOrders(localStore, (rows) =>
-    shiftDayOrders(rows, args.taskId, args.fromDay, args.toDay, args.toIndex),
+    shiftDayOrders(
+      rows,
+      args.taskId,
+      args.fromDay,
+      args.toDay,
+      placementFrom(args),
+    ),
   );
 }
 
+/**
+ * Sections still address the slot by `sectionOrderIndex`, which has the same
+ * duplicate exposure days had before `insertAboveTaskId`. Left as-is for now;
+ * list reorder has not been reported wrong.
+ */
 export function applyMoveBetweenSectionsOptimisticUpdate(
   localStore: OptimisticLocalStore,
   args: {
     taskId: Id<"tasks">;
     toSectionId: Id<"listSections">;
-    toIndex: number;
+    toIndex?: number;
+    newOrderIndex?: number;
   },
 ): void {
+  const toIndex = args.toIndex ?? args.newOrderIndex;
+  if (toIndex === undefined) return;
+
   for (const q of localStore.getAllQueries(api.lists.getPaginated)) {
     const page = q.value;
     if (!page) continue;
@@ -131,7 +167,7 @@ export function applyMoveBetweenSectionsOptimisticUpdate(
       (t) => t.sectionOrderIndex ?? 0,
       (t, order) => ({ ...t, sectionOrderIndex: order }),
       fromIndex,
-      args.toIndex,
+      toIndex,
       (t) => t._id === args.taskId,
       (t) => t._sectionId === fromSectionId,
       (t) => t._sectionId === args.toSectionId,
@@ -153,7 +189,7 @@ export function applyMoveBetweenSectionsOptimisticUpdate(
         tasks.push({
           ...moving!,
           sectionId: args.toSectionId,
-          sectionOrderIndex: args.toIndex,
+          sectionOrderIndex: toIndex,
         });
       } else if (isFrom) {
         // moved row already removed

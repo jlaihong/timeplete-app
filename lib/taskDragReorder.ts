@@ -76,12 +76,18 @@ export function applyHoverTransfer<T extends ReorderTask>(
 }
 
 export type TaskDropResolution = {
-  /** Persisted order index to send to `moveOnDay` / `moveBetweenDays`. */
+  /**
+   * Row the task lands above, `null` to append. This is what gets
+   * persisted: order indices repeat within a day, so a numeric slot is
+   * ambiguous where a row identity is not. See `planTaskDayMove`.
+   */
+  insertAboveId: string | null;
+  /** Legacy numeric slot, still sent so an older deployment keeps working. */
   toIndex: number;
   /** productivity-one `event.currentIndex`, for a same-day `arrayMove`. */
   currentIndex: number;
-  /** Cross-day only: row the task lands above (`null` appends it last). */
-  insertAboveId: string | null;
+  /** Drop leaves the order untouched, so there is nothing to persist. */
+  isNoop: boolean;
 };
 
 export function resolveTaskDropIndex<T extends ReorderTask>(args: {
@@ -108,14 +114,26 @@ export function resolveTaskDropIndex<T extends ReorderTask>(args: {
     if (idx >= 0) currentIndex = idx;
   }
 
+  // The anchor is read from the list *without* the dragged task, for both
+  // cases. Cross-day that is already `items`; same-day it is the CDK
+  // `arrayMove(from, currentIndex)` target, which is the row that ends up
+  // at `currentIndex` once the dragged row is lifted out.
+  const withoutDragged = isSameGroup
+    ? args.destRows.filter((t) => t._id !== args.draggedId)
+    : items;
+  const anchor = withoutDragged[currentIndex] ?? null;
+
   const landsOn = items[currentIndex];
   return {
+    insertAboveId: anchor?._id ?? null,
     toIndex:
       landsOn?.taskDayOrderIndex ??
       // productivity-one falls back to `event.currentIndex`; our order
       // indices can be sparse after repeated moves, so append past the max.
       maxOrderPlusOne(items.map((t) => t.taskDayOrderIndex)),
     currentIndex,
-    insertAboveId: isSameGroup ? null : (landsOn?._id ?? null),
+    isNoop:
+      isSameGroup &&
+      currentIndex === args.destRows.findIndex((t) => t._id === args.draggedId),
   };
 }

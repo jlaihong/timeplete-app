@@ -31,6 +31,7 @@ export function useTaskMoveMutations() {
     (args: {
       taskId: Id<"tasks">;
       day: string;
+      insertAboveTaskId: Id<"tasks"> | null;
       toIndex: number;
       clientMutationId?: string;
     }) => runWithOutbox("tasks.moveOnDay", args, (a) => moveOnDayRaw(a)),
@@ -42,6 +43,7 @@ export function useTaskMoveMutations() {
       taskId: Id<"tasks">;
       fromDay: string;
       toDay: string;
+      insertAboveTaskId: Id<"tasks"> | null;
       toIndex: number;
       clientMutationId?: string;
     }) =>

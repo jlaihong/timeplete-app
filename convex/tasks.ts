@@ -758,12 +758,30 @@ function resolveMoveToIndex(args: {
   return toIndex;
 }
 
+/**
+ * `insertAboveTaskId` names the row the task lands above, so a day whose
+ * `taskDayOrderIndex` values repeat (see `planTaskDayMove`) still resolves
+ * to one slot. A client that predates it falls back to the index.
+ */
+function resolveDayMovePlacement(args: {
+  insertAboveTaskId?: Id<"tasks"> | null;
+  toIndex?: number;
+  newOrderIndex?: number;
+}): { insertAboveId?: Id<"tasks"> | null; toIndex?: number } {
+  if (args.insertAboveTaskId !== undefined) {
+    return { insertAboveId: args.insertAboveTaskId };
+  }
+  return { toIndex: resolveMoveToIndex(args) };
+}
+
 export const moveOnDay = mutation({
   args: {
     taskId: v.id("tasks"),
     day: v.string(),
+    /** Row to land above; `null` appends. Preferred over `toIndex`. */
+    insertAboveTaskId: v.optional(v.union(v.id("tasks"), v.null())),
     toIndex: v.optional(v.number()),
-    /** @deprecated Use `toIndex`. Kept so a stale client or function can still talk. */
+    /** @deprecated Use `insertAboveTaskId`. Kept for tabs on an older bundle. */
     newOrderIndex: v.optional(v.number()),
     clientMutationId: v.optional(v.string()),
   },
@@ -779,7 +797,7 @@ export const moveOnDay = mutation({
       taskId: args.taskId,
       fromDay: args.day,
       toDay: args.day,
-      toIndex: resolveMoveToIndex(args),
+      ...resolveDayMovePlacement(args),
     });
   },
 });
@@ -789,8 +807,10 @@ export const moveBetweenDays = mutation({
     taskId: v.id("tasks"),
     fromDay: v.string(),
     toDay: v.string(),
+    /** Row to land above; `null` appends. Preferred over `toIndex`. */
+    insertAboveTaskId: v.optional(v.union(v.id("tasks"), v.null())),
     toIndex: v.optional(v.number()),
-    /** @deprecated Use `toIndex`. Kept so a stale client or function can still talk. */
+    /** @deprecated Use `insertAboveTaskId`. Kept for tabs on an older bundle. */
     newOrderIndex: v.optional(v.number()),
     clientMutationId: v.optional(v.string()),
   },
@@ -804,7 +824,7 @@ export const moveBetweenDays = mutation({
       taskId: args.taskId,
       fromDay: args.fromDay,
       toDay: args.toDay,
-      toIndex: resolveMoveToIndex(args),
+      ...resolveDayMovePlacement(args),
     });
   },
 });

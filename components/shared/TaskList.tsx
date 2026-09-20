@@ -167,6 +167,8 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
     day: string;
     index: number;
     orderIndex: number;
+    /** Row the drop lands above; `null` appends to the day. */
+    taskId: string | null;
   } | null>(null);
 
   const dragDataRef = useRef<{
@@ -178,6 +180,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
     day: string;
     index: number;
     orderIndex: number;
+    taskId: string | null;
   } | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   dragOverTargetRef.current = dragOverTarget;
@@ -386,7 +389,11 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   }, []);
 
   const handleDrop = useCallback(
-    async (targetDay: string, toIndex: number) => {
+    async (
+      targetDay: string,
+      toIndex: number,
+      insertAboveId: string | null,
+    ) => {
       const drag = dragDataRef.current;
       if (!drag) return;
       dragDataRef.current = null;
@@ -398,11 +405,13 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         drag.sourceDay === "overdue" || drag.sourceDay === "unscheduled"
           ? (sourceTask?.taskDay ?? drag.sourceDay)
           : drag.sourceDay;
+      const insertAboveTaskId = (insertAboveId ?? null) as Id<"tasks"> | null;
       if (fromDay === targetDay) {
-        if (drag.sourceOrderIndex !== toIndex) {
+        if (insertAboveTaskId !== taskId) {
           await moveOnDay({
             taskId,
             day: targetDay,
+            insertAboveTaskId,
             toIndex,
           });
         }
@@ -411,6 +420,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
           taskId,
           fromDay,
           toDay: targetDay,
+          insertAboveTaskId,
           toIndex,
         });
       }
@@ -471,12 +481,14 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
           day: card.dataset.dragDay!,
           index: parseInt(card.dataset.dragIndex!, 10),
           orderIndex: parseInt(card.dataset.dragOrder!, 10),
+          taskId: card.dataset.dragTaskId ?? null,
         });
       } else {
         setDragOverTarget({
           day: group.dataset.dropDay!,
           index: parseInt(group.dataset.dropCount ?? "0", 10),
           orderIndex: parseInt(group.dataset.dropNextOrder ?? "0", 10),
+          taskId: null,
         });
       }
     };
@@ -515,13 +527,18 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         : (cardFromPoint ?? null);
 
       const hovered = dragOverTargetRef.current;
+      const onTargetDay = hovered?.day === targetDay ? hovered : null;
       const targetIndex = card
         ? parseInt(card.dataset.dragOrder!, 10)
-        : hovered && hovered.day === targetDay
-          ? hovered.orderIndex
-          : parseInt(group.dataset.dropNextOrder!, 10);
+        : (onTargetDay?.orderIndex ??
+          parseInt(group.dataset.dropNextOrder!, 10));
+      // The drop lands above this row. Named rather than numbered because a
+      // day's order indices repeat (see `planTaskDayMove`).
+      const insertAboveTaskId = card
+        ? (card.dataset.dragTaskId ?? null)
+        : (onTargetDay?.taskId ?? null);
 
-      handleDrop(targetDay, targetIndex);
+      handleDrop(targetDay, targetIndex, insertAboveTaskId);
     };
 
     el.addEventListener("dragstart", onDragStart);
@@ -860,6 +877,20 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
           .map((row) => row.task.taskDayOrderIndex),
       });
 
+      // Row the moved task now sits above, read straight off the post-drop
+      // array. Names the slot instead of numbering it, because a day's
+      // order indices repeat (see `planTaskDayMove`).
+      let insertAboveTaskId: Id<"tasks"> | null = null;
+      for (let i = to + 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row) continue;
+        if (row.kind === "header") break;
+        if (row.kind !== "task" || row.day !== targetDay) continue;
+        if (row.task._id === moved.task._id) continue;
+        insertAboveTaskId = row.task._id as Id<"tasks">;
+        break;
+      }
+
       const taskId = moved.task._id as Id<"tasks">;
       const fromDay =
         sourceDay === "overdue" || sourceDay === "unscheduled"
@@ -869,6 +900,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         void moveOnDay({
           taskId,
           day: targetDay,
+          insertAboveTaskId,
           toIndex,
         });
       } else {
@@ -876,6 +908,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
           taskId,
           fromDay,
           toDay: targetDay,
+          insertAboveTaskId,
           toIndex,
         });
       }
@@ -1166,9 +1199,17 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                           const moved = group.tasks[from];
                           const dropTarget = group.tasks[to];
                           if (!moved) return;
+                          // The row that ends up at `to` once the dragged one
+                          // is lifted out, named rather than indexed because
+                          // order indices repeat within a day.
+                          const anchor = group.tasks.filter(
+                            (t: any) => t._id !== moved._id,
+                          )[to];
                           void moveOnDay({
                             taskId: moved._id as Id<"tasks">,
                             day: group.day,
+                            insertAboveTaskId:
+                              (anchor?._id as Id<"tasks">) ?? null,
                             toIndex: dropTarget?.taskDayOrderIndex ?? to,
                           });
                         }}

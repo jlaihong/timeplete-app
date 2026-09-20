@@ -494,6 +494,43 @@ export const generateInstances = mutation({
 
     let createdCount = 0;
 
+    /**
+     * Highest `taskDayOrderIndex` already used on each day in the window, so
+     * a generated instance appends instead of claiming slot 0. Every
+     * instance taking 0 gave days several rows sharing an index, which a
+     * drop cannot then address unambiguously (see `planTaskDayMove`).
+     *
+     * One indexed range read for the whole window, rather than a lookup per
+     * occurrence, since this mutation runs on every home mount.
+     */
+    const maxOrderByDay = new Map<string, number>();
+    let scannedDayOrders = false;
+    const nextOrderOnDay = async (day: string): Promise<number> => {
+      if (!scannedDayOrders) {
+        scannedDayOrders = true;
+        const inWindow = await ctx.db
+          .query("tasks")
+          .withIndex("by_user_day", (q) =>
+            q
+              .eq("userId", user._id)
+              .gte("taskDay", args.rangeStartYYYYMMDD)
+              .lte("taskDay", args.rangeEndYYYYMMDD),
+          )
+          .collect();
+        for (const t of inWindow) {
+          if (!t.taskDay) continue;
+          const current = maxOrderByDay.get(t.taskDay);
+          const order = t.taskDayOrderIndex ?? 0;
+          if (current === undefined || order > current) {
+            maxOrderByDay.set(t.taskDay, order);
+          }
+        }
+      }
+      const next = (maxOrderByDay.get(day) ?? -1) + 1;
+      maxOrderByDay.set(day, next);
+      return next;
+    };
+
     for (const rule of rules) {
       // Skip rules that can't possibly produce occurrences in this
       // window — keeps the per-rule day-walk in `generateOccurrences`
@@ -564,7 +601,7 @@ export const generateInstances = mutation({
           timeSpentInSecondsUnallocated: 0,
           timeEstimatedInSecondsUnallocated:
             rule.timeEstimatedInSeconds ?? 0,
-          taskDayOrderIndex: 0,
+          taskDayOrderIndex: await nextOrderOnDay(date),
           userId: user._id,
           createdBy: user._id,
           // Denormalized tag list mirrored from the rule so the home + list

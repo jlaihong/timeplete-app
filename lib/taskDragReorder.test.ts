@@ -116,7 +116,7 @@ describe("dragging an overdue task into today", () => {
     assert.deepEqual(result.order[TODAY], ["A", "B", "X", "C"]);
   });
 
-  it("persists the destination row's order index, not the preview slot", () => {
+  it("persists the destination row it lands above, not the preview slot", () => {
     const result = simulateDrag(
       { today: TODAY, tasks: overdueAndToday() },
       {
@@ -126,11 +126,14 @@ describe("dragging an overdue task into today", () => {
       },
     );
 
-    // B's index, so the backend opens the gap at the second slot.
+    // Lands above B, i.e. the second slot. `toIndex` is B's stored index,
+    // sent only so a tab on the previous bundle still resolves the same way.
     assert.deepEqual(result.persisted, {
       fromDay: YESTERDAY,
       toDay: TODAY,
+      insertAboveId: "B",
       toIndex: 1,
+      isNoop: false,
     });
   });
 });
@@ -189,6 +192,188 @@ describe("reordering within a day", () => {
     );
 
     assert.deepEqual(result.order[TODAY], ["A", "C", "B", "done"]);
+  });
+});
+
+/**
+ * Production data does not hold the "dense unique 0..n-1 per day" invariant
+ * the index math assumed. The Supabase migration wrote
+ * `COALESCE(task_day_order_index, 0)`: of 195 migrated day buckets with more
+ * than one task, 131 have a repeated index and 44 are entirely zeros. Every
+ * drop then aimed at a slot several rows shared and landed on the first of
+ * them, which is why "drop on the second row" put the task first in prod
+ * while every test here passed on clean local data.
+ */
+describe("days whose stored order indices repeat", () => {
+  /** A day reading [0, 0, 2], the shape the migration produced. */
+  function duplicated(): SimTask[] {
+    return [
+      { _id: "A", taskDay: TODAY, taskDayOrderIndex: 0, _creationTime: 1 },
+      { _id: "B", taskDay: TODAY, taskDayOrderIndex: 0, _creationTime: 2 },
+      { _id: "C", taskDay: TODAY, taskDayOrderIndex: 2, _creationTime: 3 },
+    ];
+  }
+
+  it("moves the last task to second instead of first", () => {
+    const result = simulateDrag(
+      { today: TODAY, tasks: duplicated() },
+      { taskId: "C", hover: [], drop: { groupId: TODAY, overTaskId: "B" } },
+    );
+
+    assert.deepEqual(result.order[TODAY], ["A", "C", "B"]);
+  });
+
+  it("drops an overdue task into the second slot", () => {
+    const result = simulateDrag(
+      {
+        today: TODAY,
+        tasks: [
+          { _id: "X", taskDay: YESTERDAY, taskDayOrderIndex: 0 },
+          ...duplicated(),
+        ],
+      },
+      {
+        taskId: "X",
+        hover: [{ groupId: TODAY, overTaskId: "A" }],
+        drop: { groupId: TODAY, overTaskId: "A" },
+      },
+    );
+
+    assert.deepEqual(result.order[TODAY], ["A", "X", "B", "C"]);
+  });
+
+  it("drops into a day where every index is zero", () => {
+    const allZero: SimTask[] = [
+      { _id: "A", taskDay: TODAY, taskDayOrderIndex: 0, _creationTime: 1 },
+      { _id: "B", taskDay: TODAY, taskDayOrderIndex: 0, _creationTime: 2 },
+      { _id: "C", taskDay: TODAY, taskDayOrderIndex: 0, _creationTime: 3 },
+    ];
+
+    const result = simulateDrag(
+      { today: TODAY, tasks: allZero },
+      { taskId: "A", hover: [], drop: { groupId: TODAY, overTaskId: "C" } },
+    );
+
+    assert.deepEqual(result.order[TODAY], ["B", "C", "A"]);
+  });
+
+  it("leaves the day dense afterwards, so it only misbehaves once", () => {
+    const tasks = duplicated();
+    const first = simulateDrag(
+      { today: TODAY, tasks },
+      { taskId: "C", hover: [], drop: { groupId: TODAY, overTaskId: "B" } },
+    );
+    assert.deepEqual(first.order[TODAY], ["A", "C", "B"]);
+    assert.deepEqual(first.repairedOrderIndices[TODAY], [0, 1, 2]);
+  });
+
+  /**
+   * A real day, read off the deployment: five completed rows at 0-3 and 10,
+   * then incomplete rows at 11, 12, 14, 15, 16, 18, 18, 18, 19, 20, 23.
+   * Three tasks share index 18, which is the slot a drop could not address.
+   */
+  function realDay(): SimTask[] {
+    const rows: Array<[string, number, boolean]> = [
+      ["Amazon General", 0, true],
+      ["TL Spot Pricing", 1, true],
+      ["Nasip PCP", 2, true],
+      ["General", 3, true],
+      ["Planning", 10, true],
+      ["Deploy to live", 11, false],
+      ["List page", 12, false],
+      ["DB bandwidth", 14, false],
+      ["Upper body", 15, false],
+      ["Lugia flag", 16, false],
+      ["App Store", 18, false],
+      ["Review my day", 18, false],
+      ["Eggs", 18, false],
+      ["Landing page", 19, false],
+      ["Fix pipelines", 20, false],
+      ["Andes BI", 23, false],
+    ];
+    return rows.map(([_id, taskDayOrderIndex, done], i) => ({
+      _id,
+      taskDay: TODAY,
+      taskDayOrderIndex,
+      _creationTime: i,
+      ...(done ? { dateCompleted: TODAY } : {}),
+    }));
+  }
+
+  it("drops onto the middle of a three-way tie, on real data", () => {
+    const result = simulateDrag(
+      { today: TODAY, tasks: realDay() },
+      {
+        taskId: "DB bandwidth",
+        hover: [],
+        drop: { groupId: TODAY, overTaskId: "Review my day" },
+      },
+    );
+
+    assert.deepEqual(result.order[TODAY], [
+      "Deploy to live",
+      "List page",
+      "Upper body",
+      "Lugia flag",
+      "App Store",
+      "Review my day",
+      "DB bandwidth",
+      "Eggs",
+      "Landing page",
+      "Fix pipelines",
+      "Andes BI",
+      // Completed rows keep sorting last.
+      "Amazon General",
+      "TL Spot Pricing",
+      "Nasip PCP",
+      "General",
+      "Planning",
+    ]);
+  });
+
+  it("swaps two rows that share an index, which used to be a no-op", () => {
+    // Same stored index on both sides meant `fromIndex === toIndex`, so the
+    // mutation returned early and the row sprang back.
+    const result = simulateDrag(
+      { today: TODAY, tasks: realDay() },
+      {
+        taskId: "Eggs",
+        hover: [],
+        drop: { groupId: TODAY, overTaskId: "Review my day" },
+      },
+    );
+
+    const incomplete = result.order[TODAY].slice(0, 5);
+    assert.deepEqual(incomplete, [
+      "Deploy to live",
+      "List page",
+      "DB bandwidth",
+      "Upper body",
+      "Lugia flag",
+    ]);
+    // Eggs moves up one slot, past Review my day only.
+    assert.deepEqual(result.order[TODAY].slice(5, 8), [
+      "App Store",
+      "Eggs",
+      "Review my day",
+    ]);
+  });
+
+  it("still places a tab on the previous bundle, ambiguously", () => {
+    // Documents the fallback rather than endorsing it: a legacy client can
+    // only name the shared index, so it keeps landing first. A reload fixes
+    // it, and the day is repaired by the first move from a current tab.
+    const result = simulateDrag(
+      { today: TODAY, tasks: duplicated() },
+      {
+        taskId: "C",
+        hover: [],
+        drop: { groupId: TODAY, overTaskId: "B" },
+        legacyClient: true,
+      },
+    );
+
+    assert.deepEqual(result.order[TODAY], ["C", "A", "B"]);
   });
 });
 
