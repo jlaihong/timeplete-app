@@ -153,6 +153,23 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
       cb?.();
     };
 
+    /**
+     * dnd-kit PointerSensor lives on the whole card. A checkbox/timer tap
+     * that moves ~5px would otherwise start a drag, swallow the optimistic
+     * complete patch, and look like a multi-second network stall.
+     */
+    const stopDragActivation = (e?: { stopPropagation?: () => void; nativeEvent?: { stopPropagation?: () => void; stopImmediatePropagation?: () => void } }) => {
+      e?.stopPropagation?.();
+      e?.nativeEvent?.stopPropagation?.();
+      e?.nativeEvent?.stopImmediatePropagation?.();
+    };
+    const dragSafePressProps = isWeb
+      ? ({
+          onPointerDown: stopDragActivation,
+          onTouchStart: stopDragActivation,
+        } as Record<string, unknown>)
+      : null;
+
     /* ─── Whole-card drag ─────────────────────────────────────────────────
      * Drag is handled entirely by dnd-kit (PointerSensor) via `dragHandleProps`
      * spread onto the outer `<View>`. There is NO grip and NO HTML5 native
@@ -197,11 +214,13 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
             {/* Col 1: complete toggle */}
             <Pressable
               onPress={stopAndCall(() => onToggleComplete?.(task._id))}
+              onPressIn={stopDragActivation}
               hitSlop={8}
               style={({ hovered }: any) => [
                 styles.iconBtn,
                 hovered && styles.iconBtnHover,
               ]}
+              {...(dragSafePressProps ?? {})}
             >
               <MaterialIcons
                 name={isCompleted ? "check-circle" : "radio-button-unchecked"}
@@ -236,11 +255,13 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
             <View style={styles.timeCol}>
               <Pressable
                 onPress={stopAndCall(() => onToggleTimer?.(task._id))}
+                onPressIn={stopDragActivation}
                 hitSlop={6}
                 style={({ hovered }: any) => [
                   styles.iconBtn,
                   hovered && styles.iconBtnHover,
                 ]}
+                {...(dragSafePressProps ?? {})}
               >
                 <MaterialIcons
                   name={isTicking ? "pause" : "play-arrow"}

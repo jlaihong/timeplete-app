@@ -48,6 +48,7 @@ import {
   preferNonContainerCollisions,
   resolveDragDropTargetId,
 } from "../../lib/resolveDragDropTarget";
+import { mergeIncomingTaskFields } from "../../lib/mergeIncomingTaskFields";
 
 const isWeb = Platform.OS === "web";
 
@@ -294,36 +295,14 @@ function fingerprintTaskOrder(groups: LocalGroup[]): string {
     .join("|");
 }
 
-/**
- * While a drag-reorder is awaiting Convex, keep local order but still apply
- * row field patches (e.g. optimistic `dateCompleted`) so checkboxes update
- * immediately instead of waiting up to the pending-reorder deadline.
- */
-function mergeIncomingTaskFields(
+function mergeListDetailIncomingFields(
   local: LocalGroup[],
   incoming: LocalGroup[],
 ): LocalGroup[] {
-  const byId = new Map<string, TaskRowTask>();
-  const headerById = new Map<
-    string,
-    { headerCompletedCount: number; headerTotalCount: number }
-  >();
-  for (const g of incoming) {
-    headerById.set(g.id, {
-      headerCompletedCount: g.headerCompletedCount,
-      headerTotalCount: g.headerTotalCount,
-    });
-    for (const t of g.tasks) byId.set(String(t._id), t);
-  }
-  return local.map((g) => {
-    const header = headerById.get(g.id);
-    return {
-      ...g,
-      headerCompletedCount: header?.headerCompletedCount ?? g.headerCompletedCount,
-      headerTotalCount: header?.headerTotalCount ?? g.headerTotalCount,
-      tasks: g.tasks.map((t) => byId.get(String(t._id)) ?? t),
-    };
-  });
+  return mergeIncomingTaskFields(local, incoming, (inc) => ({
+    headerCompletedCount: inc.headerCompletedCount,
+    headerTotalCount: inc.headerTotalCount,
+  }));
 }
 
 export function ListDetailWebDnd({
@@ -359,22 +338,35 @@ export function ListDetailWebDnd({
 
   const [localGroups, setLocalGroups] = useState<LocalGroup[]>([]);
   const isDraggingRef = useRef(false);
+  /**
+   * Bumped when a drag ends so we re-apply `sections` after `isDraggingRef`
+   * clears. A checkbox tap that barely starts a drag used to consume the
+   * optimistic `dateCompleted` patch while dragging, then never resync.
+   */
+  const [dragSyncEpoch, setDragSyncEpoch] = useState(0);
   /** Block `sections` resync until Convex matches this order (mutation returns before query does). */
   const pendingReorderFingerprintRef = useRef<string | null>(null);
   /** Task count when `pendingReorderFingerprintRef` was captured — bypass the gate on external inserts/deletes. */
   const pendingReorderTaskCountRef = useRef(0);
   const pendingReorderDeadlineMsRef = useRef(0);
 
+  const finishDrag = useCallback(() => {
+    isDraggingRef.current = false;
+    setDragSyncEpoch((n) => n + 1);
+  }, []);
+
   useLayoutEffect(() => {
     // Same resync rules as before, but before paint so optimistic list rows appear
     // in the same frame as `lists.getPaginated` updates (parity with home task list).
     // A key that only tracked task ids missed field edits (e.g. `taskDay` from
     // TaskDetailSheet), so the list showed stale dates until full remount/refresh.
-    // While dragging (or awaiting `moveBetweenSections` in `onDragEnd`), skip sync so
-    // Convex cannot briefly overwrite optimistic order with a pre-mutation snapshot.
-    if (isDraggingRef.current) return;
-
+    // While dragging (or awaiting `moveBetweenSections` in `onDragEnd`), keep local
+    // order but still apply row field patches so a checkbox tap is not delayed.
     const incoming = groupsFromDetailSections(sections);
+    if (isDraggingRef.current) {
+      setLocalGroups((prev) => mergeListDetailIncomingFields(prev, incoming));
+      return;
+    }
     const incomingFp = fingerprintTaskOrder(incoming);
     const incomingTaskCount = incoming.reduce((n, g) => n + g.tasks.length, 0);
     const pending = pendingReorderFingerprintRef.current;
@@ -388,7 +380,7 @@ export function ListDetailWebDnd({
       incomingFp !== pending &&
       incomingTaskCount === pendingReorderTaskCountRef.current
     ) {
-      setLocalGroups((prev) => mergeIncomingTaskFields(prev, incoming));
+      setLocalGroups((prev) => mergeListDetailIncomingFields(prev, incoming));
       return;
     }
     if (pending !== null) {
@@ -398,7 +390,7 @@ export function ListDetailWebDnd({
     }
 
     setLocalGroups(incoming);
-  }, [sections]);
+  }, [sections, dragSyncEpoch]);
 
   const serverGroups = useMemo(
     () => groupsFromDetailSections(sections),
@@ -529,7 +521,7 @@ export function ListDetailWebDnd({
       const startInfo = activeDrag;
       setActiveDrag(null);
       if (!startInfo) {
-        isDraggingRef.current = false;
+        finishDrag();
         return;
       }
 
@@ -634,12 +626,13 @@ export function ListDetailWebDnd({
           console.error("List section move failed", err);
         }
       } finally {
-        isDraggingRef.current = false;
+        finishDrag();
       }
     },
     [
       activeDrag,
       findTaskLocation,
+      finishDrag,
       localGroups,
       moveBetweenSections,
       serverGroups,
@@ -648,12 +641,12 @@ export function ListDetailWebDnd({
 
   const onDragCancel = useCallback(() => {
     setActiveDrag(null);
-    isDraggingRef.current = false;
     pendingReorderFingerprintRef.current = null;
     pendingReorderTaskCountRef.current = 0;
     pendingReorderDeadlineMsRef.current = 0;
     setLocalGroups(serverGroups);
-  }, [serverGroups]);
+    finishDrag();
+  }, [finishDrag, serverGroups]);
 
   const noSections = localGroups.length === 0;
 

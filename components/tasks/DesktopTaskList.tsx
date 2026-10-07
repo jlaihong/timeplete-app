@@ -47,6 +47,7 @@ import { useTaskMoveMutations } from "../../hooks/useTaskMoveMutations";
 import { moveOverdueTaskToTodayOnTimerStart } from "../../lib/moveOverdueTaskToTodayOnTimerStart";
 import { compareTasksForDay } from "../../convex/_helpers/compareTasksForDay";
 import { resolveDragDropTargetId } from "../../lib/resolveDragDropTarget";
+import { mergeIncomingTaskFields } from "../../lib/mergeIncomingTaskFields";
 import {
   applyHoverTransfer,
   resolveTaskDropIndex,
@@ -598,13 +599,22 @@ export function DesktopTaskList({
     { id: string; tasks: TaskRowTask[] }[]
   >([]);
 
-  // Sync from server when query updates AND we are not mid-drag.
+  // Sync from server when query updates. Mid-drag we keep local order but
+  // still apply row field patches (optimistic `dateCompleted`) so a checkbox
+  // tap that barely starts a drag is not stuck until the server refresh.
   const isDraggingRef = useRef(false);
+  const [dragSyncEpoch, setDragSyncEpoch] = useState(0);
+  const finishDrag = useCallback(() => {
+    isDraggingRef.current = false;
+    setDragSyncEpoch((n) => n + 1);
+  }, []);
   useEffect(() => {
-    if (!isDraggingRef.current) {
-      setLocalGroups(serverGroups);
+    if (isDraggingRef.current) {
+      setLocalGroups((prev) => mergeIncomingTaskFields(prev, serverGroups));
+      return;
     }
-  }, [serverGroups]);
+    setLocalGroups(serverGroups);
+  }, [serverGroups, dragSyncEpoch]);
 
   /* Build display groups (parity with Lists: assignee filter → header counts; then completed) */
   const displayGroups = useMemo(() => {
@@ -848,7 +858,7 @@ export function DesktopTaskList({
       const startInfo = activeDrag;
       setActiveDrag(null);
       if (!startInfo) {
-        isDraggingRef.current = false;
+        finishDrag();
         return;
       }
 
@@ -1004,13 +1014,14 @@ export function DesktopTaskList({
           console.error("Task move failed", err);
         }
       } finally {
-        isDraggingRef.current = false;
+        finishDrag();
       }
     },
     [
       activeDrag,
       displayGroups,
       findTaskLocation,
+      finishDrag,
       localGroups,
       moveBetweenDays,
       moveOnDay,
@@ -1020,9 +1031,9 @@ export function DesktopTaskList({
 
   const onDragCancel = useCallback(() => {
     setActiveDrag(null);
-    isDraggingRef.current = false;
     setLocalGroups(serverGroups);
-  }, [serverGroups]);
+    finishDrag();
+  }, [finishDrag, serverGroups]);
 
   const buildMeta = useCallback(
     (task: TaskRowTask): TaskRowMeta => {
