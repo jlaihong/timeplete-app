@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   columns: { flex: 1, flexDirection: "row" },
   // Spacing between sections — replaces the previous 1px vertical dividers.
   // Background is uniform across all columns so the page reads as one surface.
-  sideColumn: { flex: 1, paddingHorizontal: 8 },
+  sideColumn: { flex: 1, minHeight: 0, paddingHorizontal: 8 },
   centerColumn: { flex: 1.5, paddingHorizontal: 8 },
   // Used only for the one-frame skeleton state of `HomeColumnsGate`. Keeps
   // each column's flex weight so the page chrome's layout doesn't jump when

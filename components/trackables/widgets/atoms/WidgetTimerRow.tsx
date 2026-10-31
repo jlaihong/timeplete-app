@@ -6,6 +6,7 @@ import { useTimer } from "../../../../hooks/useTimer";
 import { LiveElapsedText } from "../../../timer/LiveElapsedText";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { secondsToHhmm } from "../../../../lib/dates";
+import { stopTrackableDrag } from "../dragSafe";
 
 const formatTicking = (s: number) => secondsToHhmm(s, true);
 
@@ -38,6 +39,7 @@ export function WidgetTimerRow({ trackableId }: WidgetTimerRowProps) {
       <TouchableOpacity
         style={[styles.btn, ticking && styles.btnTicking]}
         onPress={onPress}
+        onPointerDown={stopTrackableDrag}
         accessibilityLabel={ticking ? "Pause timer" : "Start timer"}
       >
         <Ionicons

@@ -27,6 +27,8 @@ interface ButtonProps {
   style?: ViewStyle;
   textStyle?: TextStyle;
   icon?: React.ReactNode;
+  /** Stops a parent card-drag from starting when this button is pressed. */
+  onPointerDown?: (e: any) => void;
 }
 
 export function Button({
@@ -39,6 +41,7 @@ export function Button({
   style,
   textStyle,
   icon,
+  onPointerDown,
 }: ButtonProps) {
   const buttonStyle = [
     styles.base,
@@ -61,6 +64,7 @@ export function Button({
       onPress={onPress}
       disabled={disabled || loading}
       activeOpacity={0.7}
+      {...(onPointerDown ? ({ onPointerDown } as object) : null)}
     >
       {loading ? (
         <ActivityIndicator

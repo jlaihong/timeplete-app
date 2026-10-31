@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { Colors } from "../../../../constants/colors";
 import { getDayOfWeekLetter, todayYYYYMMDD } from "../../../../lib/dates";
+import { stopTrackableDrag } from "../dragSafe";
 
 export interface DayCompletionEntry {
   dayYYYYMMDD: string;
@@ -52,6 +53,7 @@ export function DayOfWeekCompletion({
               isToday && !isComplete && styles.segmentToday,
             ]}
             onPress={() => onDayPress(d.dayYYYYMMDD)}
+            onPointerDown={stopTrackableDrag}
             accessibilityLabel={`${getDayOfWeekLetter(d.dayYYYYMMDD)} ${
               isComplete ? "completed" : "not completed"
             }`}

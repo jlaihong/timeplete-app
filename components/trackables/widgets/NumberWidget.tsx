@@ -13,6 +13,7 @@ import {
   rateLabel,
 } from "./widgetMath";
 import type { WidgetBodyProps } from "./types";
+import { stopTrackableDrag } from "./dragSafe";
 
 /**
  * Mirror of productivity-one's default `goal-widget` block with
@@ -54,6 +55,7 @@ export function NumberWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
         }
         icon={<Ionicons name="add" size={20} color={Colors.primary} />}
         style={styles.addBtn}
+        onPointerDown={stopTrackableDrag}
       />
 
       {target > 0 && (

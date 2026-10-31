@@ -20,6 +20,7 @@ import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useAuth } from "../../hooks/useAuth";
 import { AddTrackableFlow } from "../trackables/AddTrackableFlow";
 import { TrackableWidgetFactory } from "../trackables/widgets/TrackableWidgetFactory";
+import { ActiveTrackableDnd } from "../trackables/ActiveTrackableDnd";
 import { TrackableDialogHost } from "../trackables/widgets/TrackableDialogHost";
 import type { LogRequest } from "../trackables/widgets/types";
 import { startOfWeek, todayYYYYMMDD } from "../../lib/dates";
@@ -243,7 +244,18 @@ export function TrackableList({
                 onTrackablesGridLayout(e.nativeEvent.layout.width)
               }
             >
-              {goalDetails.active.map(renderGoalTile)}
+              {Platform.OS === "web" ? (
+                <ActiveTrackableDnd
+                  goals={goalDetails.active}
+                  today={today}
+                  layout="grid"
+                  itemWidth={tileWidth}
+                  onRequestLog={handleRequestLog}
+                  onRequestEditTrackable={onRequestEditTrackable}
+                />
+              ) : (
+                goalDetails.active.map(renderGoalTile)
+              )}
             </View>
           )}
 
@@ -383,6 +395,16 @@ export function TrackableList({
               : "Create a trackable to start tracking your progress"
           }
         />
+      ) : Platform.OS === "web" && !isShowingArchivedList ? (
+        <View style={styles.reorderScroll}>
+          <ActiveTrackableDnd
+            goals={displayGoals}
+            today={today}
+            layout="vertical"
+            onRequestLog={handleRequestLog}
+            onRequestEditTrackable={onRequestEditTrackable}
+          />
+        </View>
       ) : (
         <FlatList
           data={displayGoals}
@@ -428,7 +450,7 @@ export function TrackableList({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container: { flex: 1, minHeight: 0, backgroundColor: Colors.background },
   loading: {
     flex: 1,
     justifyContent: "center",
@@ -480,6 +502,16 @@ const styles = StyleSheet.create({
   tabText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
   activeTabText: { color: Colors.onPrimary },
   listContent: { padding: 16, paddingBottom: 80 },
+  reorderScroll: {
+    flex: 1,
+    minHeight: 0,
+    padding: 16,
+    paddingBottom: 80,
+    ...Platform.select({
+      web: { overflow: "auto" } as object,
+      default: {},
+    }),
+  },
   trackablesPageScroll: { flex: 1 },
   trackablesPageScrollContent: {
     paddingBottom: 32,

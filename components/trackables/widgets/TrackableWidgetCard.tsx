@@ -10,6 +10,7 @@ import {
 } from "../../../lib/dates";
 import { useTimer } from "../../../hooks/useTimer";
 import type { WidgetGoal } from "./types";
+import { shouldIgnoreTrackablePress, stopTrackableDrag } from "./dragSafe";
 
 interface TrackableWidgetCardProps {
   goal: WidgetGoal;
@@ -40,6 +41,7 @@ export function TrackableWidgetCard({
   const dueCopy = showDueCopy ? formatDueCopy(goal.endDayYYYYMMDD) : null;
 
   const openEdit = () => {
+    if (shouldIgnoreTrackablePress()) return;
     if (onRequestEditTrackable) {
       onRequestEditTrackable(goal._id);
       return;
@@ -79,6 +81,7 @@ export function TrackableWidgetCard({
         <TouchableOpacity
           style={styles.headerBtn}
           onPress={openEdit}
+          onPointerDown={stopTrackableDrag}
           accessibilityLabel="Expand trackable details"
         >
           <Ionicons
