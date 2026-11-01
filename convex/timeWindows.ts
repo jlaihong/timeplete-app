@@ -19,6 +19,10 @@ import {
   onAttributedWindowPatched,
   deleteTimeWindowWithSideEffects,
 } from "./_helpers/trackableLifetime";
+import {
+  deletedOccurrenceForRecurringInstance,
+  recordDeletedRecurringEventOccurrence,
+} from "./_helpers/deletedRecurringEventOccurrence";
 
 function minutesFromHHMM(hhmm: string): number {
   const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
@@ -428,6 +432,17 @@ export const remove = mutation({
     const user = await requireApprovedUser(ctx);
     const tw = await ctx.db.get(args.id);
     if (!tw) throw new Error("Time window not found");
+    // Same transaction as the delete. A follow-up skip write would race
+    // `generateInstances`, which recreates any missing series day.
+    if (tw.userId === user._id) {
+      const skip = deletedOccurrenceForRecurringInstance(tw);
+      if (skip) {
+        await recordDeletedRecurringEventOccurrence(ctx, {
+          ...skip,
+          userId: user._id,
+        });
+      }
+    }
     await deleteTimeWindowWithSideEffects(ctx, tw);
   },
 });

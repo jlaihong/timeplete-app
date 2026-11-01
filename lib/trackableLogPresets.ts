@@ -1,3 +1,6 @@
+import { deviceTimeZone } from "./timeZones";
+import { wallClockInTimeZone } from "./wallClockTimeZone";
+
 /**
  * Presets for trackable “Add progress” time entry — shared by
  * `DurationPickerDesktop` (task rows) and trackable log dialogs so duration
@@ -43,10 +46,8 @@ export function quarterHourStartTimeOptions(): string[] {
  * productivity-one’s quarter-hour grid).
  */
 export function defaultStartTimeQuarterHour(): string {
-  const d = new Date();
-  const minutes = Math.floor(d.getMinutes() / 15) * 15;
-  return `${String(d.getHours()).padStart(2, "0")}:${String(minutes).padStart(
-    2,
-    "0"
-  )}`;
+  const { startTimeHHMM } = wallClockInTimeZone(Date.now(), deviceTimeZone());
+  const [h, m] = startTimeHHMM.split(":").map((x) => parseInt(x, 10));
+  const minutes = Math.floor((m || 0) / 15) * 15;
+  return `${String(h || 0).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }

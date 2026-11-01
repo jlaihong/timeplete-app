@@ -31,6 +31,7 @@ import type * as _helpers_auth from "../_helpers/auth.js";
 import type * as _helpers_clientMutationId from "../_helpers/clientMutationId.js";
 import type * as _helpers_compactYYYYMMDD from "../_helpers/compactYYYYMMDD.js";
 import type * as _helpers_compareTasksForDay from "../_helpers/compareTasksForDay.js";
+import type * as _helpers_deletedRecurringEventOccurrence from "../_helpers/deletedRecurringEventOccurrence.js";
 import type * as _helpers_eventColors from "../_helpers/eventColors.js";
 import type * as _helpers_orderShift from "../_helpers/orderShift.js";
 import type * as _helpers_ordering from "../_helpers/ordering.js";
@@ -95,6 +96,7 @@ declare const fullApi: ApiFromModules<{
   "_helpers/clientMutationId": typeof _helpers_clientMutationId;
   "_helpers/compactYYYYMMDD": typeof _helpers_compactYYYYMMDD;
   "_helpers/compareTasksForDay": typeof _helpers_compareTasksForDay;
+  "_helpers/deletedRecurringEventOccurrence": typeof _helpers_deletedRecurringEventOccurrence;
   "_helpers/eventColors": typeof _helpers_eventColors;
   "_helpers/orderShift": typeof _helpers_orderShift;
   "_helpers/ordering": typeof _helpers_ordering;

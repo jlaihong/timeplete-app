@@ -8,6 +8,10 @@ import {
   onAttributedWindowInserted,
   deleteTimeWindowWithSideEffects,
 } from "./_helpers/trackableLifetime";
+import {
+  clearDeletedRecurringEventOccurrence,
+  recordDeletedRecurringEventOccurrence,
+} from "./_helpers/deletedRecurringEventOccurrence";
 
 function minutesFromHHMM(hhmm: string): number {
   const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
@@ -223,16 +227,7 @@ export const deleteInstance = mutation({
   args: { recurringEventId: v.id("recurringEvents"), dateYYYYMMDD: v.string() },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
-    const existing = await ctx.db
-      .query("deletedRecurringEventOccurrences")
-      .withIndex("by_recurring_date", (q) =>
-        q
-          .eq("recurringEventId", args.recurringEventId)
-          .eq("deletedDateYYYYMMDD", args.dateYYYYMMDD)
-      )
-      .first();
-    if (existing) return existing._id;
-    return await ctx.db.insert("deletedRecurringEventOccurrences", {
+    return await recordDeletedRecurringEventOccurrence(ctx, {
       recurringEventId: args.recurringEventId,
       deletedDateYYYYMMDD: args.dateYYYYMMDD,
       userId: user._id,
@@ -403,20 +398,25 @@ export const recordDeletedOccurrence = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
-    const existing = await ctx.db
-      .query("deletedRecurringEventOccurrences")
-      .withIndex("by_recurring_date", (q) =>
-        q
-          .eq("recurringEventId", args.recurringEventId)
-          .eq("deletedDateYYYYMMDD", args.deletedDateYYYYMMDD)
-      )
-      .first();
-    if (existing) return existing._id;
-    return await ctx.db.insert("deletedRecurringEventOccurrences", {
+    return await recordDeletedRecurringEventOccurrence(ctx, {
       recurringEventId: args.recurringEventId,
       deletedDateYYYYMMDD: args.deletedDateYYYYMMDD,
       userId: user._id,
     });
+  },
+});
+
+/** Undo of a single-occurrence delete. Puts that day back in the series. */
+export const clearDeletedOccurrence = mutation({
+  args: {
+    recurringEventId: v.id("recurringEvents"),
+    deletedDateYYYYMMDD: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const rule = await ctx.db.get(args.recurringEventId);
+    if (!rule || rule.userId !== user._id) throw new Error("Not found");
+    await clearDeletedRecurringEventOccurrence(ctx, args);
   },
 });
 

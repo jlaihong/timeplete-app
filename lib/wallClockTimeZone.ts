@@ -32,14 +32,72 @@ function wallClockSortKey(w: {
   return `${w.startDayYYYYMMDD}${String(h).padStart(2, "0")}${String(m).padStart(2, "0")}`;
 }
 
+type WallClock = { startDayYYYYMMDD: string; startTimeHHMM: string };
+
+/**
+ * Most of B.C. stopped falling back on 2026-11-01 and stays on Pacific
+ * time (UTC-7) year round. Runtimes whose tzdata still turns
+ * `America/Vancouver` back to UTC-8 that morning are an hour early for
+ * every later instant. Probe a known afternoon and correct only when
+ * the runtime is still on the old rule, so an updated tzdata is left
+ * alone and client and server agree either way.
+ */
+const BC_PERMANENT_PACIFIC_ZONES = new Set([
+  "America/Vancouver",
+  "Canada/Pacific",
+]);
+/** 2026-11-01 02:00 former PDT, the fallback that no longer happens. */
+const BC_PERMANENT_PACIFIC_START_MS = Date.UTC(2026, 10, 1, 9, 0, 0);
+
+let bcPacificTzdataFallsBack: boolean | undefined;
+
+function bcRuntimeStillFallsBack(): boolean {
+  if (bcPacificTzdataFallsBack !== undefined) return bcPacificTzdataFallsBack;
+  // 16:00 UTC that day is 08:00 at UTC-8 and 09:00 at UTC-7.
+  const probe = formatWallClockUnadjusted(
+    Date.UTC(2026, 10, 1, 16, 0, 0),
+    "America/Vancouver",
+  );
+  bcPacificTzdataFallsBack = probe.startTimeHHMM === "08:00";
+  return bcPacificTzdataFallsBack;
+}
+
+function addOneCivilHour(wall: WallClock): WallClock {
+  const y = parseInt(wall.startDayYYYYMMDD.slice(0, 4), 10);
+  const mo = parseInt(wall.startDayYYYYMMDD.slice(4, 6), 10);
+  const d = parseInt(wall.startDayYYYYMMDD.slice(6, 8), 10);
+  const [hh, mm] = wall.startTimeHHMM.split(":").map((x) => parseInt(x, 10));
+  const rolled = new Date(Date.UTC(y, mo - 1, d, hh + 1, mm, 0));
+  const yyyy = rolled.getUTCFullYear().toString();
+  const month = String(rolled.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(rolled.getUTCDate()).padStart(2, "0");
+  const hour = String(rolled.getUTCHours()).padStart(2, "0");
+  const minute = String(rolled.getUTCMinutes()).padStart(2, "0");
+  return {
+    startDayYYYYMMDD: `${yyyy}${month}${day}`,
+    startTimeHHMM: `${hour}:${minute}`,
+  };
+}
+
+function applyBcPermanentPacific(
+  epochMs: number,
+  timeZone: string,
+  wall: WallClock,
+): WallClock {
+  if (epochMs < BC_PERMANENT_PACIFIC_START_MS) return wall;
+  if (!BC_PERMANENT_PACIFIC_ZONES.has(timeZone)) return wall;
+  if (!bcRuntimeStillFallsBack()) return wall;
+  return addOneCivilHour(wall);
+}
+
 /**
  * Wall clock fields in an IANA timezone for a UTC instant.
  * Shared by Convex (`finalizeTimer`) and the client.
  */
-export function wallClockInTimeZone(
+function formatWallClockUnadjusted(
   epochMs: number,
   timeZone: string,
-): { startDayYYYYMMDD: string; startTimeHHMM: string } {
+): WallClock {
   const tz = normalizeTimeZone(timeZone);
 
   const dtf = new Intl.DateTimeFormat("en-US", {
@@ -67,6 +125,18 @@ export function wallClockInTimeZone(
     startDayYYYYMMDD: `${y}${mo}${d}`,
     startTimeHHMM: `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`,
   };
+}
+
+export function wallClockInTimeZone(
+  epochMs: number,
+  timeZone: string,
+): WallClock {
+  const tz = normalizeTimeZone(timeZone);
+  return applyBcPermanentPacific(
+    epochMs,
+    tz,
+    formatWallClockUnadjusted(epochMs, tz),
+  );
 }
 
 /**

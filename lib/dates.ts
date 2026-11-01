@@ -1,3 +1,6 @@
+import { deviceTimeZone } from "./timeZones";
+import { wallClockInTimeZone } from "./wallClockTimeZone";
+
 export function formatYYYYMMDD(date: Date): string {
   const y = date.getFullYear().toString();
   const m = (date.getMonth() + 1).toString().padStart(2, "0");
@@ -13,7 +16,7 @@ export function parseYYYYMMDD(s: string): Date {
 }
 
 export function todayYYYYMMDD(): string {
-  return formatYYYYMMDD(new Date());
+  return wallClockInTimeZone(Date.now(), deviceTimeZone()).startDayYYYYMMDD;
 }
 
 /* ──────────────────────────────────────────────────────────────────── *

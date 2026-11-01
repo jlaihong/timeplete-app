@@ -339,6 +339,9 @@ export function CalendarView({
   ).withOptimisticUpdate((localStore, args) => {
     applyRemoveTimeWindowOptimisticUpdate(localStore, args.id);
   });
+  const clearDeletedRecurringOcc = useMutation(
+    (api as any).recurringEvents.clearDeletedOccurrence,
+  );
 
   const hourElsRef = useRef<Map<number, HTMLElement>>(new Map());
   const registerHourEl = useCallback(
@@ -695,6 +698,10 @@ export function CalendarView({
 
   /**
    * Delete a time window. Optimistic cache update + undo toast (`AutoDismissToast`).
+   *
+   * Recurring instances are skipped inside `timeWindows.remove`, in the same
+   * transaction as the row delete. Recording the skip only on the client
+   * left a gap where `generateInstances` rebuilt the tile (Talk to mew).
    */
   const handleEventDelete = useCallback(
     (id: string) => {
@@ -713,8 +720,20 @@ export function CalendarView({
   const restoreDeletedCalendarEvent = useCallback(() => {
     const snapshot = undoDeletedEventSnapshotRef.current;
     if (!snapshot || snapshot.isLive) return;
-    void upsertTimeWindow(undoUpsertPayloadFromCalendarRow(snapshot));
-  }, [upsertTimeWindow]);
+    void (async () => {
+      await upsertTimeWindow(undoUpsertPayloadFromCalendarRow(snapshot));
+      if (
+        snapshot.isRecurringInstance &&
+        snapshot.recurringEventId &&
+        snapshot.startDayYYYYMMDD
+      ) {
+        await clearDeletedRecurringOcc({
+          recurringEventId: snapshot.recurringEventId,
+          deletedDateYYYYMMDD: snapshot.startDayYYYYMMDD,
+        });
+      }
+    })();
+  }, [upsertTimeWindow, clearDeletedRecurringOcc]);
 
   /* ─── Right-click context menu ───────────────────────────────────── */
   /**
