@@ -237,42 +237,6 @@ export const getById = query({
 });
 
 /**
- * Returns the set of sibling task ids generated from the same recurring
- * rule. The detail sheet only needs to know *whether any future instance
- * exists*, which previously required iterating the full task list. We
- * scope to `by_recurring`, then project to `_id` + `taskDay` so the
- * payload stays tiny even for long series.
- *
- * Returns an empty array when `recurringTaskId` is null/undefined so the
- * caller can use the query unconditionally without `"skip"` plumbing.
- */
-export const getRecurringSiblings = query({
-  args: {
-    recurringTaskId: v.union(v.id("recurringTasks"), v.null()),
-  },
-  handler: async (ctx, args) => {
-    if (!args.recurringTaskId) return [];
-    const user = await requireApprovedUserOrEmpty(ctx);
-    if (!user) return [];
-
-    const siblings = await ctx.db
-      .query("tasks")
-      .withIndex("by_recurring", (q) =>
-        q.eq("recurringTaskId", args.recurringTaskId ?? undefined),
-      )
-      .collect();
-
-    return siblings
-      .filter((t) => t.userId === user._id)
-      .map((t) => ({
-        _id: t._id,
-        taskDay: t.taskDay,
-        dateCompleted: t.dateCompleted,
-      }));
-  },
-});
-
-/**
  * Shared enrichment for home-task rows (`taskTags` + TASK ACTUAL windows).
  */
 async function enrichHomeTasksPayload(

@@ -304,27 +304,17 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     );
   }, [task, hasNonRecurrenceChanges, recurrenceDirty]);
 
-  // Sibling subscription scoped to the rule (small payload, indexed scan).
-  // Returns `[]` when `recurringTaskId` is missing so we can subscribe
-  // unconditionally without an extra `"skip"` branch.
-  const recurringSiblings = useQuery(
-    api.tasks.getRecurringSiblings,
-    profileReady
-      ? { recurringTaskId: task?.recurringTaskId ?? null }
-      : "skip",
-  );
-
-  const hasFutureInstances = useMemo(() => {
-    if (!task?.recurringTaskId || !task.taskDay || !recurringSiblings) {
-      return false;
-    }
-    return recurringSiblings.some(
-      (t) =>
-        t._id !== task._id &&
-        !!t.taskDay &&
-        t.taskDay > task.taskDay!,
-    );
-  }, [task, recurringSiblings]);
+  // "This and future" splits the series at this day. Later occurrences are
+  // created lazily, only inside the loaded date window, so this must follow
+  // the rule's end date rather than rows that happen to exist already.
+  const canEditThisAndFuture = useMemo(() => {
+    if (!task?.recurringTaskId || !task.taskDay) return false;
+    const endDate =
+      form?.recurrence != null
+        ? form.recurrence.endDateYYYYMMDD
+        : (existingRule?.endDateYYYYMMDD ?? "");
+    return !endDate || endDate > task.taskDay;
+  }, [task, form?.recurrence, existingRule?.endDateYYYYMMDD]);
 
   if (!task || !form) return null;
 
@@ -450,10 +440,8 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
 
       if (scope === "THIS_AND_FUTURE") {
         const splitFrom = nextTaskDay;
-        if (
-          !hasFutureInstances ||
-          splitFrom <= existingRule.startDateYYYYMMDD
-        ) {
+        // First day of the series: nothing earlier to leave alone.
+        if (splitFrom <= existingRule.startDateYYYYMMDD) {
           await updateRule({
             id: existingRule._id,
             ...toRuleFields(next),
@@ -467,14 +455,22 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
           return;
         }
 
+        // New series starts on this day even when later occurrences have not
+        // been created yet. Those days are filled in the next time the list
+        // loads them.
         await createRule({
           ...toRuleFields(next),
           startDateYYYYMMDD: splitFrom,
           endDateYYYYMMDD: next.endDateYYYYMMDD || undefined,
           name: nameForSave,
           listId: nextListId ?? undefined,
+          sectionId: existingRule.sectionId,
           trackableId: nextTrackableId ?? undefined,
-          timeEstimatedInSeconds: task.timeEstimatedInSecondsUnallocated ?? 0,
+          tagIds: existingRule.tagIds,
+          timeEstimatedInSeconds:
+            task.timeEstimatedInSecondsUnallocated ??
+            existingRule.timeEstimatedInSeconds ??
+            0,
           sourceTaskId: taskId,
         });
 
@@ -1019,9 +1015,9 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
             <TouchableOpacity
               style={[
                 styles.scopeOption,
-                !hasFutureInstances && styles.scopeOptionDisabled,
+                !canEditThisAndFuture && styles.scopeOptionDisabled,
               ]}
-              disabled={!hasFutureInstances}
+              disabled={!canEditThisAndFuture}
               onPress={() => handleSelectRecurringScope("THIS_AND_FUTURE")}
             >
               <Ionicons name="git-branch-outline" size={18} color={Colors.text} />
