@@ -3,6 +3,8 @@
  * the Agent access screen, and unit tests. No database access.
  */
 
+import { startOfMonth, startOfWeek, startOfYear } from "./dates";
+
 export const AGENT_ACTION_NAMES = [
   "list_lists",
   "search_tasks",
@@ -10,6 +12,8 @@ export const AGENT_ACTION_NAMES = [
   "list_events",
   "create_event",
   "reschedule_event",
+  "read_reviews",
+  "write_reviews",
 ] as const;
 
 export type AgentActionName = (typeof AGENT_ACTION_NAMES)[number];
@@ -88,6 +92,28 @@ export const AGENT_ACTIONS: readonly AgentActionSpec[] = [
       durationMinutes: "Optional new length in minutes. Minimum 5.",
       occurrence:
         'Optional "this" (default) or "series". Series changes the time of this and later occurrences that still follow the series. Series cannot move to a different day.',
+    },
+  },
+  {
+    name: "read_reviews",
+    label: "Read reviews",
+    description:
+      "Read the questions and answers for one daily, weekly, monthly, or yearly review.",
+    input: {
+      frequency: 'Required. "daily", "weekly", "monthly", or "yearly".',
+      day: "Required date inside that period, YYYY-MM-DD. A week starts on Monday, a month on the 1st, and a year on January 1.",
+    },
+  },
+  {
+    name: "write_reviews",
+    label: "Write reviews",
+    description:
+      "Save answers for one daily, weekly, monthly, or yearly review.",
+    input: {
+      frequency: 'Required. "daily", "weekly", "monthly", or "yearly".',
+      day: "Required date inside that period, YYYY-MM-DD.",
+      answers:
+        "Required list of { question, answer }. question matches the question text. answer is the text to save. An empty answer clears it.",
     },
   },
 ];
@@ -552,4 +578,151 @@ export function parseRescheduleInput(
       occurrence,
     },
   };
+}
+
+export const REVIEW_FREQUENCIES = [
+  "DAILY",
+  "WEEKLY",
+  "MONTHLY",
+  "YEARLY",
+] as const;
+
+export type ReviewFrequency = (typeof REVIEW_FREQUENCIES)[number];
+
+export function parseReviewFrequency(raw: string): ReviewFrequency | null {
+  const token = raw.trim().toUpperCase();
+  if (
+    token === "DAILY" ||
+    token === "WEEKLY" ||
+    token === "MONTHLY" ||
+    token === "YEARLY"
+  ) {
+    return token;
+  }
+  return null;
+}
+
+/** The date the review screen stores for a period that contains `day`. */
+export function canonicalReviewDay(
+  frequency: ReviewFrequency,
+  day: string,
+): string {
+  if (frequency === "DAILY") return day;
+  if (frequency === "WEEKLY") return startOfWeek(day);
+  if (frequency === "MONTHLY") return startOfMonth(day);
+  return startOfYear(day);
+}
+
+export type ReviewAnswerInput = {
+  question: string;
+  answer: string;
+};
+
+export type ReadReviewsInput = {
+  frequency: ReviewFrequency;
+  day: string;
+};
+
+export type WriteReviewsInput = ReadReviewsInput & {
+  answers: ReviewAnswerInput[];
+};
+
+function parseReviewPeriod(
+  input: Record<string, unknown>,
+): ParseResult<ReadReviewsInput> {
+  const frequencyRaw = requiredString(input, "frequency", 20);
+  if (!frequencyRaw.ok) return frequencyRaw;
+  const frequency = parseReviewFrequency(frequencyRaw.value);
+  if (!frequency) {
+    return {
+      ok: false,
+      message: 'frequency must be "daily", "weekly", "monthly", or "yearly".',
+    };
+  }
+  const day = requiredDay(input, "day");
+  if (!day.ok) return day;
+  return {
+    ok: true,
+    value: { frequency, day: canonicalReviewDay(frequency, day.value) },
+  };
+}
+
+export function parseReadReviewsInput(
+  input: Record<string, unknown>,
+): ParseResult<ReadReviewsInput> {
+  return parseReviewPeriod(input);
+}
+
+export function parseWriteReviewsInput(
+  input: Record<string, unknown>,
+): ParseResult<WriteReviewsInput> {
+  const period = parseReviewPeriod(input);
+  if (!period.ok) return period;
+  if (!("answers" in input) || input.answers === undefined || input.answers === null) {
+    return { ok: false, message: "answers is required." };
+  }
+  if (!Array.isArray(input.answers)) {
+    return { ok: false, message: "answers must be a list." };
+  }
+  if (input.answers.length === 0) {
+    return { ok: false, message: "answers must include at least one answer." };
+  }
+  if (input.answers.length > 40) {
+    return { ok: false, message: "answers can include at most 40 items." };
+  }
+  const answers: ReviewAnswerInput[] = [];
+  for (const item of input.answers) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return { ok: false, message: "Each answer must be an object with question and answer." };
+    }
+    const record = item as Record<string, unknown>;
+    const question = requiredString(record, "question", 500);
+    if (!question.ok) return question;
+    if (!("answer" in record) || record.answer === undefined || record.answer === null) {
+      return { ok: false, message: "answer is required." };
+    }
+    if (typeof record.answer !== "string") {
+      return { ok: false, message: "answer must be a string." };
+    }
+    if (record.answer.length > 8000) {
+      return { ok: false, message: "answer must be 8000 characters or fewer." };
+    }
+    answers.push({ question: question.value, answer: record.answer });
+  }
+  return { ok: true, value: { ...period.value, answers } };
+}
+
+export type AgentQuestionChoice<T> =
+  | { status: "match"; question: T }
+  | { status: "none" }
+  | { status: "ambiguous"; names: string[] };
+
+export function resolveReviewQuestion<T extends { questionText: string }>(
+  questions: readonly T[],
+  hint: string,
+): AgentQuestionChoice<T> {
+  const q = hint.trim().toLowerCase();
+  if (!q) return { status: "none" };
+  const exact = questions.filter(
+    (question) => question.questionText.trim().toLowerCase() === q,
+  );
+  if (exact.length === 1) return { status: "match", question: exact[0] };
+  if (exact.length > 1) {
+    return {
+      status: "ambiguous",
+      names: exact.map((question) => question.questionText),
+    };
+  }
+  if (q.length < 3) return { status: "none" };
+  const partial = questions.filter((question) =>
+    question.questionText.trim().toLowerCase().includes(q),
+  );
+  if (partial.length === 1) return { status: "match", question: partial[0] };
+  if (partial.length > 1) {
+    return {
+      status: "ambiguous",
+      names: partial.map((question) => question.questionText),
+    };
+  }
+  return { status: "none" };
 }

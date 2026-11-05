@@ -102,6 +102,23 @@ export const create = mutation({
   },
 });
 
+export const updateScopes = mutation({
+  args: {
+    id: v.id("apiKeys"),
+    scopes: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const scopes = normalizeScopes(args.scopes);
+    if (!scopes.ok) throw new Error(scopes.message);
+    const row = await ctx.db.get(args.id);
+    if (!row || row.userId !== user._id) throw new Error("API key not found");
+    if (row.revokedAt !== undefined) throw new Error("This API key is revoked.");
+    await ctx.db.patch(args.id, { scopes: scopes.value });
+    return { scopes: scopes.value };
+  },
+});
+
 export const revoke = mutation({
   args: { id: v.id("apiKeys") },
   handler: async (ctx, args) => {

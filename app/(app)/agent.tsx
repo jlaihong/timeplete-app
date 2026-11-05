@@ -23,6 +23,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { getExpoPublicConvexSiteUrl } from "../../lib/convexEnv";
 import {
   AGENT_ACTIONS,
+  isAgentAction,
   type AgentActionName,
 } from "../../lib/agentActions";
 
@@ -94,6 +95,7 @@ export default function AgentAccessScreen() {
   const backend = useQuery(api.apiKeys.environment);
   const keys = useQuery(api.apiKeys.list, profileReady ? {} : "skip");
   const createKey = useMutation(api.apiKeys.create);
+  const updateKeyScopes = useMutation(api.apiKeys.updateScopes);
   const revokeKey = useMutation(api.apiKeys.revoke);
 
   const [name, setName] = useState("");
@@ -102,6 +104,10 @@ export default function AgentAccessScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedKey | null>(null);
   const [copied, setCopied] = useState<"key" | "instructions" | null>(null);
+  const [editingId, setEditingId] = useState<Id<"apiKeys"> | null>(null);
+  const [editScopes, setEditScopes] = useState<AgentActionName[]>([]);
+  const [savingScopes, setSavingScopes] = useState(false);
+  const [scopeError, setScopeError] = useState<string | null>(null);
 
   const endpoint = endpointUrl();
   const isProduction = backend?.environment === "production";
@@ -153,6 +159,42 @@ export default function AgentAccessScreen() {
         : agentInstructions(endpoint, created.apiKey, environmentLabel);
     const didCopy = await copyText(value);
     if (didCopy) setCopied(which);
+  };
+
+  const startEditing = (
+    id: Id<"apiKeys">,
+    current: readonly string[],
+  ) => {
+    setScopeError(null);
+    setEditingId(id);
+    setEditScopes(current.filter(isAgentAction));
+  };
+
+  const toggleEditScope = (action: AgentActionName) => {
+    setEditScopes((current) =>
+      current.includes(action)
+        ? current.filter((item) => item !== action)
+        : [...current, action],
+    );
+  };
+
+  const handleSaveScopes = async (id: Id<"apiKeys">) => {
+    if (editScopes.length === 0) {
+      setScopeError("Choose at least one action.");
+      return;
+    }
+    setSavingScopes(true);
+    setScopeError(null);
+    try {
+      await updateKeyScopes({ id, scopes: editScopes });
+      setEditingId(null);
+    } catch (error) {
+      setScopeError(
+        error instanceof Error ? error.message : "Could not update the key.",
+      );
+    } finally {
+      setSavingScopes(false);
+    }
   };
 
   const handleRevoke = (id: Id<"apiKeys">, keyName: string) => {
@@ -294,15 +336,74 @@ export default function AgentAccessScreen() {
                     {key.keyPrefix}...
                   </Text>
                 </View>
-                <Button
-                  title="Revoke"
-                  size="small"
-                  variant="danger"
-                  onPress={() => handleRevoke(key._id, key.name)}
-                  style={styles.revokeButton}
-                />
+                <View style={styles.keyActions}>
+                  <Button
+                    title="Actions"
+                    size="small"
+                    variant="outline"
+                    onPress={() => startEditing(key._id, key.scopes)}
+                    style={styles.revokeButton}
+                  />
+                  <Button
+                    title="Revoke"
+                    size="small"
+                    variant="danger"
+                    onPress={() => handleRevoke(key._id, key.name)}
+                    style={styles.revokeButton}
+                  />
+                </View>
               </View>
-              <Text style={styles.keyMeta}>{scopeLabels(key.scopes)}</Text>
+              {editingId === key._id ? (
+                <View style={styles.editScopes}>
+                  {AGENT_ACTIONS.map((action) => {
+                    const checked = editScopes.includes(action.name);
+                    return (
+                      <TouchableOpacity
+                        key={action.name}
+                        style={styles.scopeRow}
+                        onPress={() => toggleEditScope(action.name)}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked }}
+                      >
+                        <Ionicons
+                          name={checked ? "checkbox" : "square-outline"}
+                          size={22}
+                          color={checked ? Colors.primary : Colors.textTertiary}
+                        />
+                        <View style={styles.scopeCopy}>
+                          <Text style={styles.scopeLabel}>{action.label}</Text>
+                          <Text style={styles.scopeDescription}>
+                            {action.description}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {scopeError ? (
+                    <Text style={styles.formError}>{scopeError}</Text>
+                  ) : null}
+                  <View style={styles.keyActions}>
+                    <Button
+                      title="Save actions"
+                      size="small"
+                      onPress={() => void handleSaveScopes(key._id)}
+                      loading={savingScopes}
+                      disabled={savingScopes}
+                    />
+                    <Button
+                      title="Cancel"
+                      size="small"
+                      variant="ghost"
+                      onPress={() => {
+                        setEditingId(null);
+                        setScopeError(null);
+                      }}
+                    />
+                  </View>
+                </View>
+              ) : (
+                <Text style={styles.keyMeta}>{scopeLabels(key.scopes)}</Text>
+              )}
               <Text style={styles.keyMeta}>
                 {key.lastUsedAt
                   ? `Last used ${formatStamp(key.lastUsedAt)}`
@@ -450,7 +551,9 @@ const styles = StyleSheet.create({
       default: "monospace",
     }),
   },
+  keyActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   revokeButton: { alignSelf: "center" },
+  editScopes: { marginTop: 8 },
   keyMeta: {
     color: Colors.textSecondary,
     fontSize: 13,

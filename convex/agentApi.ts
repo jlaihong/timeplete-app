@@ -9,12 +9,17 @@ import {
   parseCreateEventInput,
   parseCreateTaskInput,
   parseListEventsInput,
+  parseReadReviewsInput,
   parseRescheduleInput,
   parseSearchTasksInput,
+  parseWriteReviewsInput,
   resolveAgentList,
+  resolveReviewQuestion,
   type AgentActionName,
   type RescheduleInput,
+  type ReviewFrequency,
 } from "../lib/agentActions";
+import { displayReviewQuestions } from "../lib/reviewParity";
 import { wallClockGridToEpochMs } from "./_helpers/wallClockTimeZone";
 import {
   onTimeWindowInserted,
@@ -42,6 +47,7 @@ type ApiError = {
     startTime: string;
   }>;
   lists?: string[];
+  questions?: string[];
 };
 
 type ApiOutcome = {
@@ -55,7 +61,7 @@ function fail(
   status: number,
   code: string,
   message: string,
-  extra?: Pick<ApiError, "candidates" | "lists">,
+  extra?: Pick<ApiError, "candidates" | "lists" | "questions">,
 ): ApiOutcome {
   return {
     status,
@@ -664,6 +670,148 @@ async function runReschedule(
   });
 }
 
+const MAX_REVIEW_ROWS = 100;
+
+async function loadReviewPeriod(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  frequency: ReviewFrequency,
+  day: string,
+) {
+  const questions = await ctx.db
+    .query("reviewQuestions")
+    .withIndex("by_user_frequency", (q) =>
+      q.eq("userId", user._id).eq("frequency", frequency),
+    )
+    .take(MAX_REVIEW_ROWS);
+  const answers = await ctx.db
+    .query("reviewAnswers")
+    .withIndex("by_user_frequency_day", (q) =>
+      q
+        .eq("userId", user._id)
+        .eq("frequency", frequency)
+        .eq("dayUnderReview", day),
+    )
+    .take(MAX_REVIEW_ROWS);
+  return { questions, answers };
+}
+
+function reviewResult(
+  frequency: ReviewFrequency,
+  day: string,
+  questions: Doc<"reviewQuestions">[],
+  answers: Doc<"reviewAnswers">[],
+) {
+  const visible = displayReviewQuestions(questions, answers);
+  const answerByQuestion = new Map(
+    answers.map((answer) => [answer.reviewQuestionId, answer.answerText]),
+  );
+  return {
+    frequency: frequency.toLowerCase(),
+    day: formatDay(day),
+    questions: visible.map((question) => ({
+      questionId: question._id,
+      question: question.questionText,
+      archived: question.archived,
+      answer: answerByQuestion.get(question._id) ?? null,
+    })),
+  };
+}
+
+async function runReadReviews(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  input: Record<string, unknown>,
+): Promise<ApiOutcome> {
+  const parsed = parseReadReviewsInput(input);
+  if (!parsed.ok) return fail(400, "bad_input", parsed.message);
+  const loaded = await loadReviewPeriod(
+    ctx,
+    user,
+    parsed.value.frequency,
+    parsed.value.day,
+  );
+  return ok(reviewResult(parsed.value.frequency, parsed.value.day, loaded.questions, loaded.answers));
+}
+
+async function runWriteReviews(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  input: Record<string, unknown>,
+): Promise<ApiOutcome> {
+  const parsed = parseWriteReviewsInput(input);
+  if (!parsed.ok) return fail(400, "bad_input", parsed.message);
+  const { frequency, day, answers } = parsed.value;
+  const loaded = await loadReviewPeriod(ctx, user, frequency, day);
+  const questionNames = loaded.questions
+    .filter((question) => !question.archived)
+    .map((question) => question.questionText);
+
+  const resolved: Array<{ question: Doc<"reviewQuestions">; answer: string }> = [];
+  const seen = new Set<string>();
+  for (const item of answers) {
+    const choice = resolveReviewQuestion(loaded.questions, item.question);
+    if (choice.status === "none") {
+      return fail(
+        404,
+        "not_found",
+        `No ${frequency.toLowerCase()} review question matches "${item.question}".`,
+        { questions: questionNames },
+      );
+    }
+    if (choice.status === "ambiguous") {
+      return fail(
+        409,
+        "ambiguous",
+        `More than one question matches "${item.question}".`,
+        { questions: choice.names },
+      );
+    }
+    if (choice.question.userId !== user._id) {
+      return fail(404, "not_found", "Review question not found.");
+    }
+    if (seen.has(choice.question._id)) {
+      return fail(
+        400,
+        "bad_input",
+        `Question "${choice.question.questionText}" is listed more than once.`,
+      );
+    }
+    seen.add(choice.question._id);
+    resolved.push({ question: choice.question, answer: item.answer });
+  }
+
+  for (const item of resolved) {
+    const existing = await ctx.db
+      .query("reviewAnswers")
+      .withIndex("by_user_frequency_day", (q) =>
+        q
+          .eq("userId", user._id)
+          .eq("frequency", frequency)
+          .eq("dayUnderReview", day),
+      )
+      .filter((q) => q.eq(q.field("reviewQuestionId"), item.question._id))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, { answerText: item.answer });
+    } else {
+      await ctx.db.insert("reviewAnswers", {
+        reviewQuestionId: item.question._id,
+        userId: user._id,
+        answerText: item.answer,
+        frequency,
+        dayUnderReview: day,
+      });
+    }
+  }
+
+  const saved = await loadReviewPeriod(ctx, user, frequency, day);
+  return ok({
+    ...reviewResult(frequency, day, saved.questions, saved.answers),
+    saved: resolved.length,
+  });
+}
+
 async function dispatch(
   ctx: MutationCtx,
   user: Doc<"users">,
@@ -683,6 +831,10 @@ async function dispatch(
       return await runCreateEvent(ctx, user, input);
     case "reschedule_event":
       return await runReschedule(ctx, user, input);
+    case "read_reviews":
+      return await runReadReviews(ctx, user, input);
+    case "write_reviews":
+      return await runWriteReviews(ctx, user, input);
   }
 }
 

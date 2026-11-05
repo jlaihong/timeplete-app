@@ -9,8 +9,11 @@ import {
   parseCreateEventInput,
   parseHHMM,
   parseListEventsInput,
+  parseReadReviewsInput,
   parseRescheduleInput,
+  parseWriteReviewsInput,
   resolveAgentList,
+  resolveReviewQuestion,
 } from "./agentActions";
 import {
   agentKeyEnvironment,
@@ -134,5 +137,67 @@ describe("agent action parsing", () => {
       assert.equal(ok.value.occurrence, "this");
       assert.equal(ok.value.newStartTime, "16:30");
     }
+  });
+
+  it("snaps a review date to the period the app stores", () => {
+    const daily = parseReadReviewsInput({
+      frequency: "daily",
+      day: "2026-11-05",
+    });
+    assert.equal(daily.ok, true);
+    if (daily.ok) assert.equal(daily.value.day, "20261105");
+
+    const weekly = parseReadReviewsInput({
+      frequency: "WEEKLY",
+      day: "20261105",
+    });
+    assert.equal(weekly.ok, true);
+    if (weekly.ok) assert.equal(weekly.value.day, "20261102");
+
+    const monthly = parseReadReviewsInput({
+      frequency: "monthly",
+      day: "2026-11-05",
+    });
+    assert.equal(monthly.ok, true);
+    if (monthly.ok) assert.equal(monthly.value.day, "20261101");
+
+    const yearly = parseReadReviewsInput({
+      frequency: "yearly",
+      day: "2026-11-05",
+    });
+    assert.equal(yearly.ok, true);
+    if (yearly.ok) assert.equal(yearly.value.day, "20260101");
+    assert.equal(parseReadReviewsInput({ frequency: "hourly", day: "2026-11-05" }).ok, false);
+  });
+
+  it("parses review answers and matches one question", () => {
+    const parsed = parseWriteReviewsInput({
+      frequency: "daily",
+      day: "2026-11-05",
+      answers: [{ question: "What went well?", answer: "Shipped the API." }],
+    });
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) {
+      assert.equal(parsed.value.answers[0]?.answer, "Shipped the API.");
+    }
+    assert.equal(
+      parseWriteReviewsInput({
+        frequency: "daily",
+        day: "2026-11-05",
+        answers: [],
+      }).ok,
+      false,
+    );
+
+    const questions = [
+      { questionText: "What went well?" },
+      { questionText: "What was hard?" },
+    ];
+    const match = resolveReviewQuestion(questions, "went well");
+    assert.equal(match.status, "match");
+    if (match.status === "match") {
+      assert.equal(match.question.questionText, "What went well?");
+    }
+    assert.equal(resolveReviewQuestion(questions, "what").status, "ambiguous");
   });
 });
