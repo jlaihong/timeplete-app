@@ -43,7 +43,9 @@ import type * as _helpers_timeWindowDisplayEnrichment from "../_helpers/timeWind
 import type * as _helpers_trackableAttribution from "../_helpers/trackableAttribution.js";
 import type * as _helpers_trackableLifetime from "../_helpers/trackableLifetime.js";
 import type * as _helpers_wallClockTimeZone from "../_helpers/wallClockTimeZone.js";
+import type * as agentApi from "../agentApi.js";
 import type * as analytics from "../analytics.js";
+import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
@@ -108,7 +110,9 @@ declare const fullApi: ApiFromModules<{
   "_helpers/trackableAttribution": typeof _helpers_trackableAttribution;
   "_helpers/trackableLifetime": typeof _helpers_trackableLifetime;
   "_helpers/wallClockTimeZone": typeof _helpers_wallClockTimeZone;
+  agentApi: typeof agentApi;
   analytics: typeof analytics;
+  apiKeys: typeof apiKeys;
   auth: typeof auth;
   crons: typeof crons;
   http: typeof http;

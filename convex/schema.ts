@@ -788,6 +788,31 @@ export default defineSchema({
     .index("by_token", ["token"]),
 
   /**
+   * Per-user credentials for the agent HTTP API. The raw key is shown
+   * once at creation. Only `keyHash` (SHA-256) is stored. `scopes` is the
+   * allow-list of action names from `lib/agentActions.ts`.
+   */
+  apiKeys: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    keyPrefix: v.string(),
+    keyHash: v.string(),
+    scopes: v.array(v.string()),
+    /**
+     * Which backend minted the key. A localhost key is stored only in the
+     * development deployment, and a production key only in production.
+     * Older rows omit this and belong to whichever deployment holds them.
+     */
+    environment: v.optional(
+      v.union(v.literal("local"), v.literal("production")),
+    ),
+    revokedAt: v.optional(v.number()),
+    lastUsedAt: v.optional(v.number()),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_keyHash", ["keyHash"]),
+
+  /**
    * Idempotency keys for client outbox replay. Claimed inside the mutation
    * transaction so a retried `clientMutationId` is a no-op after success.
    */

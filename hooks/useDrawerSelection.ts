@@ -11,6 +11,7 @@ export type DrawerSelection = {
   analytics: boolean;
   reviews: boolean;
   tags: boolean;
+  agent: boolean;
   allLists: boolean;
   shared: boolean;
   /** Set when viewing a single list; value is the list document id string. */
@@ -24,6 +25,7 @@ const empty: DrawerSelection = {
   analytics: false,
   reviews: false,
   tags: false,
+  agent: false,
   allLists: false,
   shared: false,
   activeListId: null,
@@ -67,6 +69,10 @@ export function useDrawerSelection(): DrawerSelection {
 
     if (path === "/tags" || path.startsWith("/tags/")) {
       return { ...empty, tags: true };
+    }
+
+    if (path === "/agent" || path.startsWith("/agent/")) {
+      return { ...empty, agent: true };
     }
 
     if (path === "/shared" || path.startsWith("/shared/")) {

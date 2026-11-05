@@ -331,6 +331,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
   const onAnalytics = useCallback(() => go("/(app)/(tabs)/analytics"), [go]);
   const onReviews = useCallback(() => go("/(app)/(tabs)/reviews"), [go]);
   const onTags = useCallback(() => go("/(app)/tags"), [go]);
+  const onAgent = useCallback(() => go("/(app)/agent"), [go]);
   const onAllLists = useCallback(() => go("/(app)/lists"), [go]);
   const onShared = useCallback(() => go("/(app)/shared"), [go]);
   const inboxId = inboxList?._id ?? null;
@@ -450,6 +451,15 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       <View style={styles.divider} />
 
       <NavDrawerItem
+        label="Agent access"
+        focused={sel.agent}
+        iconName="key-outline"
+        onPress={onAgent}
+      />
+
+      <View style={styles.divider} />
+
+      <NavDrawerItem
         label="Sign Out"
         focused={false}
         iconName="log-out-outline"
@@ -556,6 +566,7 @@ export default function AppLayout() {
                 <Drawer.Screen name="tags" options={{ title: "Tags" }} />
                 <Drawer.Screen name="lists" options={{ title: "Lists" }} />
                 <Drawer.Screen name="shared" options={{ title: "Shared" }} />
+                <Drawer.Screen name="agent" options={{ title: "Agent access" }} />
                 <Drawer.Screen
                   name="edit-trackable"
                   options={{ title: "Edit Goal" }}
