@@ -6,14 +6,19 @@ import {
   compactDay,
   daySpan,
   normalizeScopes,
+  parseCompleteTaskInput,
   parseCreateEventInput,
   parseHHMM,
   parseListEventsInput,
   parseReadReviewsInput,
   parseRescheduleInput,
+  parseAddToCalendarInput,
   parseWriteReviewsInput,
   resolveAgentList,
+  resolveNamedTask,
   resolveReviewQuestion,
+  taskDropDurationSeconds,
+  todayInTimeZone,
 } from "./agentActions";
 import {
   agentKeyEnvironment,
@@ -199,5 +204,67 @@ describe("agent action parsing", () => {
       assert.equal(match.question.questionText, "What went well?");
     }
     assert.equal(resolveReviewQuestion(questions, "what").status, "ambiguous");
+  });
+
+  it("schedules a named task onto the calendar and completes it", () => {
+    assert.equal(
+      parseAddToCalendarInput({ name: "test", day: "2026-11-10" }).ok,
+      false,
+    );
+    const scheduled = parseAddToCalendarInput({
+      name: "test",
+      day: "2026-11-10",
+      startTime: "3pm",
+      endTime: "4:30pm",
+    });
+    assert.equal(scheduled.ok, true);
+    if (scheduled.ok) {
+      assert.equal(scheduled.value.day, "20261110");
+      assert.equal(scheduled.value.startTime, "15:00");
+      assert.equal(scheduled.value.durationMinutes, 90);
+    }
+    assert.equal(
+      parseAddToCalendarInput({
+        name: "test",
+        day: "2026-11-10",
+        startTime: "15:00",
+        endTime: "14:00",
+      }).ok,
+      false,
+    );
+    assert.equal(taskDropDurationSeconds(undefined), 1800);
+    assert.equal(taskDropDurationSeconds(30), 1800);
+    assert.equal(taskDropDurationSeconds(90), 300);
+    assert.equal(taskDropDurationSeconds(5400), 5400);
+
+    const completed = parseCompleteTaskInput({ name: "test" });
+    assert.equal(completed.ok, true);
+    if (completed.ok) {
+      assert.equal(completed.value.completed, true);
+      assert.equal(completed.value.timeZone, "UTC");
+    }
+    const cleared = parseCompleteTaskInput({
+      taskId: "abc",
+      completed: false,
+      completedOn: "2026-11-10",
+    });
+    assert.equal(cleared.ok, true);
+    if (cleared.ok) assert.equal(cleared.value.completed, false);
+
+    const now = Date.parse("2026-11-11T04:00:00Z");
+    assert.equal(todayInTimeZone("UTC", now), "20261111");
+    assert.equal(todayInTimeZone("America/Vancouver", now), "20261110");
+
+    const tasks = [{ name: "Test" }, { name: "Test the API" }];
+    const match = resolveNamedTask(tasks, "test the");
+    assert.equal(match.status, "match");
+    assert.equal(resolveNamedTask(tasks, "test").status, "match");
+    assert.equal(
+      resolveNamedTask(
+        [{ name: "Team meeting" }, { name: "Home meeting" }],
+        "meeting",
+      ).status,
+      "ambiguous",
+    );
   });
 });

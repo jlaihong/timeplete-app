@@ -4,6 +4,7 @@
  */
 
 import { startOfMonth, startOfWeek, startOfYear } from "./dates";
+import { wallClockInTimeZone } from "./wallClockTimeZone";
 
 export const AGENT_ACTION_NAMES = [
   "list_lists",
@@ -14,6 +15,8 @@ export const AGENT_ACTION_NAMES = [
   "reschedule_event",
   "read_reviews",
   "write_reviews",
+  "add_to_calendar",
+  "complete_task",
 ] as const;
 
 export type AgentActionName = (typeof AGENT_ACTION_NAMES)[number];
@@ -114,6 +117,45 @@ export const AGENT_ACTIONS: readonly AgentActionSpec[] = [
       day: "Required date inside that period, YYYY-MM-DD.",
       answers:
         "Required list of { question, answer }. question matches the question text. answer is the text to save. An empty answer clears it.",
+    },
+  },
+  {
+    name: "add_to_calendar",
+    label: "Add to calendar",
+    description:
+      "Put an existing task on the calendar at a start and end time, the same as dragging it onto the calendar.",
+    input: {
+      taskId: "Optional id from search_tasks. Required when name is omitted.",
+      name: "Optional task name. Required when taskId is omitted.",
+      list: "Optional list name. Narrows the search when several tasks share a name.",
+      taskDay:
+        "Optional day the task is already on, YYYY-MM-DD. Narrows the search. This is not the calendar day.",
+      day: "Required calendar date, YYYY-MM-DD.",
+      startTime: "Required start time, 24-hour HH:MM or 3:00pm.",
+      endTime:
+        "Optional end time on the same day. When omitted, durationMinutes is used, or the task estimate, or 30 minutes.",
+      durationMinutes:
+        "Optional length in minutes. Minimum 5. Ignored when endTime is set.",
+      timeZone:
+        "Optional IANA time zone stored on the block. The time stays a floating wall-clock time. Defaults to UTC.",
+    },
+  },
+  {
+    name: "complete_task",
+    label: "Complete tasks",
+    description:
+      "Mark an existing task complete, or mark it incomplete again.",
+    input: {
+      taskId: "Optional id from search_tasks. Required when name is omitted.",
+      name: "Optional task name. Required when taskId is omitted.",
+      list: "Optional list name. Narrows the search when several tasks share a name.",
+      day: "Optional current scheduled date, YYYY-MM-DD. Narrows the search.",
+      completed:
+        "Optional boolean. True marks it complete. False clears completion. Defaults to true.",
+      completedOn:
+        "Optional completion date, YYYY-MM-DD. Used when completed is true. Defaults to today in timeZone.",
+      timeZone:
+        "Optional IANA time zone used only when completedOn is omitted. Defaults to UTC.",
     },
   },
 ];
@@ -724,5 +766,185 @@ export function resolveReviewQuestion<T extends { questionText: string }>(
       names: partial.map((question) => question.questionText),
     };
   }
+  return { status: "none" };
+}
+
+export type TaskLocator = {
+  taskId?: string;
+  name?: string;
+  list?: string;
+  /** Day the task is already on, used only to tell copies apart. */
+  day?: string;
+};
+
+export const DEFAULT_TASK_DROP_SECONDS = 30 * 60;
+export const MIN_TASK_DROP_SECONDS = 5 * 60;
+
+/** Duration used when a task is dropped on the calendar with no explicit length. */
+export function taskDropDurationSeconds(estimate: number | undefined): number {
+  const chosen =
+    typeof estimate === "number" && estimate > 60
+      ? estimate
+      : DEFAULT_TASK_DROP_SECONDS;
+  return Math.max(MIN_TASK_DROP_SECONDS, chosen);
+}
+
+export type AddToCalendarInput = {
+  taskId?: string;
+  name?: string;
+  list?: string;
+  /** Day the task is already on, used only to tell copies apart. */
+  taskDay?: string;
+  day: string;
+  startTime: string;
+  durationMinutes?: number;
+  timeZone: string;
+};
+
+export type CompleteTaskInput = TaskLocator & {
+  completed: boolean;
+  completedOn?: string;
+  timeZone: string;
+};
+
+export function todayInTimeZone(timeZone: string, now = Date.now()): string {
+  return wallClockInTimeZone(now, timeZone).startDayYYYYMMDD;
+}
+
+function clockToMinutes(hhmm: string): number {
+  const [hour, minute] = hhmm.split(":").map((part) => Number(part));
+  return hour * 60 + minute;
+}
+
+function parseTaskLocator(
+  input: Record<string, unknown>,
+  dayKey = "day",
+): ParseResult<TaskLocator> {
+  const taskId = optionalString(input, "taskId");
+  if (!taskId.ok) return taskId;
+  const name = optionalString(input, "name");
+  if (!name.ok) return name;
+  if (name.value && name.value.length > 500) {
+    return { ok: false, message: "name must be 500 characters or fewer." };
+  }
+  if (!taskId.value && !name.value) {
+    return {
+      ok: false,
+      message: "Pass taskId or name so the task can be found.",
+    };
+  }
+  const list = optionalString(input, "list");
+  if (!list.ok) return list;
+  const day = optionalDay(input, dayKey);
+  if (!day.ok) return day;
+  return {
+    ok: true,
+    value: {
+      taskId: taskId.value,
+      name: name.value,
+      list: list.value,
+      day: day.value,
+    },
+  };
+}
+
+export function parseAddToCalendarInput(
+  input: Record<string, unknown>,
+): ParseResult<AddToCalendarInput> {
+  const locator = parseTaskLocator(input, "taskDay");
+  if (!locator.ok) return locator;
+  const day = requiredDay(input, "day");
+  if (!day.ok) return day;
+  const startTime = optionalClock(input, "startTime");
+  if (!startTime.ok) return startTime;
+  if (!startTime.value) {
+    return { ok: false, message: "startTime is required." };
+  }
+  const endTime = optionalClock(input, "endTime");
+  if (!endTime.ok) return endTime;
+  const durationMinutes = optionalDuration(input, "durationMinutes");
+  if (!durationMinutes.ok) return durationMinutes;
+  let minutes = durationMinutes.value;
+  if (endTime.value) {
+    const span = clockToMinutes(endTime.value) - clockToMinutes(startTime.value);
+    if (span <= 0) {
+      return {
+        ok: false,
+        message: "endTime must be after startTime on the same day.",
+      };
+    }
+    if (span < 5) {
+      return { ok: false, message: "A calendar block must be at least 5 minutes." };
+    }
+    minutes = span;
+  }
+  const timeZone = optionalString(input, "timeZone");
+  if (!timeZone.ok) return timeZone;
+  const zone = timeZone.value ?? "UTC";
+  if (!isValidTimeZone(zone)) {
+    return { ok: false, message: "timeZone must be an IANA time zone." };
+  }
+  return {
+    ok: true,
+    value: {
+      taskId: locator.value.taskId,
+      name: locator.value.name,
+      list: locator.value.list,
+      taskDay: locator.value.day,
+      day: day.value,
+      startTime: startTime.value,
+      durationMinutes: minutes,
+      timeZone: zone,
+    },
+  };
+}
+
+export function parseCompleteTaskInput(
+  input: Record<string, unknown>,
+): ParseResult<CompleteTaskInput> {
+  const locator = parseTaskLocator(input);
+  if (!locator.ok) return locator;
+  const completed = optionalBoolean(input, "completed");
+  if (!completed.ok) return completed;
+  const completedOn = optionalDay(input, "completedOn");
+  if (!completedOn.ok) return completedOn;
+  const timeZone = optionalString(input, "timeZone");
+  if (!timeZone.ok) return timeZone;
+  const zone = timeZone.value ?? "UTC";
+  if (!isValidTimeZone(zone)) {
+    return { ok: false, message: "timeZone must be an IANA time zone." };
+  }
+  return {
+    ok: true,
+    value: {
+      ...locator.value,
+      completed: completed.value !== false,
+      completedOn: completedOn.value,
+      timeZone: zone,
+    },
+  };
+}
+
+export type NamedTaskChoice<T> =
+  | { status: "match"; task: T }
+  | { status: "none" }
+  | { status: "ambiguous"; tasks: T[] };
+
+/** Exact name first. A partial match counts only when it is the only one. */
+export function resolveNamedTask<T extends { name: string }>(
+  tasks: readonly T[],
+  hint: string,
+): NamedTaskChoice<T> {
+  const q = hint.trim().toLowerCase();
+  if (!q) return { status: "none" };
+  const exact = tasks.filter((task) => task.name.trim().toLowerCase() === q);
+  if (exact.length === 1) return { status: "match", task: exact[0] };
+  if (exact.length > 1) return { status: "ambiguous", tasks: exact };
+  if (q.length < 3) return { status: "none" };
+  const partial = tasks.filter((task) =>
+    task.name.trim().toLowerCase().includes(q),
+  );
+  if (partial.length === 1) return { status: "match", task: partial[0] };
+  if (partial.length > 1) return { status: "ambiguous", tasks: partial };
   return { status: "none" };
 }

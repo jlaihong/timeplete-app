@@ -6,18 +6,25 @@ import {
   asInputRecord,
   formatDay,
   isAgentAction,
+  parseCompleteTaskInput,
   parseCreateEventInput,
   parseCreateTaskInput,
   parseListEventsInput,
   parseReadReviewsInput,
   parseRescheduleInput,
+  parseAddToCalendarInput,
   parseSearchTasksInput,
   parseWriteReviewsInput,
+  taskDropDurationSeconds,
   resolveAgentList,
+  resolveNamedTask,
   resolveReviewQuestion,
+  todayInTimeZone,
   type AgentActionName,
+  type CompleteTaskInput,
   type RescheduleInput,
   type ReviewFrequency,
+  type TaskLocator,
 } from "../lib/agentActions";
 import { displayReviewQuestions } from "../lib/reviewParity";
 import { wallClockGridToEpochMs } from "./_helpers/wallClockTimeZone";
@@ -28,9 +35,14 @@ import {
 import {
   onAttributedWindowInserted,
   onAttributedWindowPatched,
+  onTaskCompletionAttribution,
   type WindowLifetimeRow,
 } from "./_helpers/trackableLifetime";
 import { recordDeletedRecurringEventOccurrence } from "./_helpers/deletedRecurringEventOccurrence";
+import {
+  buildListIdToTrackableId,
+  resolveSnapshotTrackableIdForTask,
+} from "./_helpers/trackableAttribution";
 
 const LAST_USED_MIN_GAP_MS = 5 * 60 * 1000;
 const MAX_EVENTS = 200;
@@ -48,6 +60,12 @@ type ApiError = {
   }>;
   lists?: string[];
   questions?: string[];
+  tasks?: Array<{
+    id: string;
+    name: string;
+    day: string | null;
+    list: string | null;
+  }>;
 };
 
 type ApiOutcome = {
@@ -61,7 +79,7 @@ function fail(
   status: number,
   code: string,
   message: string,
-  extra?: Pick<ApiError, "candidates" | "lists" | "questions">,
+  extra?: Pick<ApiError, "candidates" | "lists" | "questions" | "tasks">,
 ): ApiOutcome {
   return {
     status,
@@ -812,6 +830,233 @@ async function runWriteReviews(
   });
 }
 
+const MAX_TASK_MATCH = 200;
+
+function displayDay(value: string | undefined): string | null {
+  if (!value) return null;
+  return /^\d{8}$/.test(value) ? formatDay(value) : value;
+}
+
+async function taskResult(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  task: Doc<"tasks">,
+) {
+  const lists = await ownedLists(ctx, userId);
+  const list = task.listId
+    ? lists.find((item) => item._id === task.listId)
+    : undefined;
+  return {
+    taskId: task._id,
+    name: task.name,
+    list: list?.name ?? null,
+    day: displayDay(task.taskDay),
+    completed: !!task.dateCompleted,
+    completedOn: displayDay(task.dateCompleted),
+  };
+}
+
+async function findTask(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  args: TaskLocator,
+): Promise<
+  | { ok: true; task: Doc<"tasks"> }
+  | { ok: false; outcome: ApiOutcome }
+> {
+  if (args.taskId) {
+    const id = ctx.db.normalizeId("tasks", args.taskId);
+    const task = id ? await ctx.db.get(id) : null;
+    if (!task || task.userId !== user._id) {
+      return {
+        ok: false,
+        outcome: fail(404, "not_found", "Task not found."),
+      };
+    }
+    return { ok: true, task };
+  }
+
+  let listId: Id<"lists"> | undefined;
+  if (args.list) {
+    const resolved = await resolveOwnedList(ctx, user, args.list);
+    if (!resolved.ok) return resolved;
+    listId = resolved.list._id;
+  }
+
+  const rows = args.day
+    ? await ctx.db
+        .query("tasks")
+        .withIndex("by_user_day", (q) =>
+          q.eq("userId", user._id).eq("taskDay", args.day!),
+        )
+        .take(MAX_TASK_MATCH)
+    : listId
+      ? await ctx.db
+          .query("tasks")
+          .withIndex("by_list", (q) => q.eq("listId", listId))
+          .take(MAX_TASK_MATCH)
+      : await ctx.db
+          .query("tasks")
+          .withIndex("by_user", (q) => q.eq("userId", user._id))
+          .order("desc")
+          .take(MAX_TASK_MATCH);
+
+  const pool = rows.filter(
+    (task) =>
+      task.userId === user._id && (listId === undefined || task.listId === listId),
+  );
+  const choice = resolveNamedTask(pool, args.name ?? "");
+  if (choice.status === "none") {
+    return {
+      ok: false,
+      outcome: fail(
+        404,
+        "not_found",
+        `No task matches "${args.name}". Pass taskId, or add the list and day.`,
+      ),
+    };
+  }
+  if (choice.status === "ambiguous") {
+    const lists = await ownedLists(ctx, user._id);
+    const names = new Map(lists.map((list) => [list._id, list.name]));
+    return {
+      ok: false,
+      outcome: fail(
+        409,
+        "ambiguous",
+        "More than one task matches. Pass taskId.",
+        {
+          tasks: choice.tasks.slice(0, 8).map((task) => ({
+            id: task._id,
+            name: task.name,
+            day: displayDay(task.taskDay),
+            list: task.listId ? (names.get(task.listId) ?? null) : null,
+          })),
+        },
+      ),
+    };
+  }
+  return { ok: true, task: choice.task };
+}
+
+function endClock(startTime: string, durationSeconds: number): string {
+  const totalMinutes = Math.round(
+    (minutesFromHHMM(startTime) * 60 + durationSeconds) / 60,
+  );
+  const minute = ((totalMinutes % (24 * 60)) + 24 * 60) % (24 * 60);
+  return `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+}
+
+async function runAddToCalendar(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  input: Record<string, unknown>,
+): Promise<ApiOutcome> {
+  const parsed = parseAddToCalendarInput(input);
+  if (!parsed.ok) return fail(400, "bad_input", parsed.message);
+  const args = parsed.value;
+  const found = await findTask(ctx, user, {
+    taskId: args.taskId,
+    name: args.name,
+    list: args.list,
+    day: args.taskDay,
+  });
+  if (!found.ok) return found.outcome;
+  const task = found.task;
+
+  const durationSeconds =
+    args.durationMinutes !== undefined
+      ? args.durationMinutes * 60
+      : taskDropDurationSeconds(task.timeEstimatedInSecondsUnallocated);
+  const links = await ctx.db
+    .query("listTrackableLinks")
+    .withIndex("by_user", (q) => q.eq("userId", user._id))
+    .take(200);
+  const trackableId = resolveSnapshotTrackableIdForTask({
+    task: { trackableId: task.trackableId, listId: task.listId },
+    listIdToTrackableId: buildListIdToTrackableId(links),
+  });
+
+  const eventId = await ctx.db.insert("timeWindows", {
+    startTimeHHMM: args.startTime,
+    startDayYYYYMMDD: args.day,
+    startTimeEpochMs: epochFor(args.day, args.startTime, args.timeZone),
+    durationSeconds,
+    userId: user._id,
+    budgetType: "ACTUAL",
+    activityType: "TASK",
+    taskId: task._id,
+    trackableId,
+    timeZone: args.timeZone,
+    useTimeZone: false,
+    isRecurringInstance: false,
+    source: "calendar",
+  });
+  const inserted = {
+    taskId: task._id,
+    activityType: "TASK" as const,
+    budgetType: "ACTUAL" as const,
+    durationSeconds,
+  };
+  await onTimeWindowInserted(ctx, inserted);
+  await onAttributedWindowInserted(ctx, {
+    userId: user._id,
+    trackableId,
+    taskId: task._id,
+    listId: undefined,
+    budgetType: "ACTUAL",
+    durationSeconds,
+    startDayYYYYMMDD: args.day,
+    activityType: "TASK",
+  });
+
+  return ok({
+    eventId,
+    taskId: task._id,
+    name: task.name,
+    day: formatDay(args.day),
+    startTime: args.startTime,
+    endTime: endClock(args.startTime, durationSeconds),
+    durationMinutes: Math.round(durationSeconds / 60),
+  });
+}
+
+async function runCompleteTask(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  input: Record<string, unknown>,
+): Promise<ApiOutcome> {
+  const parsed = parseCompleteTaskInput(input);
+  if (!parsed.ok) return fail(400, "bad_input", parsed.message);
+  const found = await findTask(ctx, user, parsed.value);
+  if (!found.ok) return found.outcome;
+  const task = found.task;
+  const args: CompleteTaskInput = parsed.value;
+  const next = args.completed
+    ? (args.completedOn ?? todayInTimeZone(args.timeZone))
+    : undefined;
+  if ((task.dateCompleted ?? undefined) !== next) {
+    await ctx.db.patch(task._id, { dateCompleted: next });
+    await onTaskCompletionAttribution(
+      ctx,
+      {
+        userId: task.userId,
+        dateCompleted: task.dateCompleted,
+        trackableId: task.trackableId,
+        listId: task.listId,
+      },
+      {
+        userId: task.userId,
+        dateCompleted: next,
+        trackableId: task.trackableId,
+        listId: task.listId,
+      },
+    );
+  }
+  const updated = await ctx.db.get(task._id);
+  return ok(await taskResult(ctx, user._id, updated ?? task));
+}
+
 async function dispatch(
   ctx: MutationCtx,
   user: Doc<"users">,
@@ -835,6 +1080,10 @@ async function dispatch(
       return await runReadReviews(ctx, user, input);
     case "write_reviews":
       return await runWriteReviews(ctx, user, input);
+    case "add_to_calendar":
+      return await runAddToCalendar(ctx, user, input);
+    case "complete_task":
+      return await runCompleteTask(ctx, user, input);
   }
 }
 
