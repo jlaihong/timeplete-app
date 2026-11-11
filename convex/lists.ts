@@ -220,6 +220,21 @@ export const move = mutation({
   },
 });
 
+/**
+ * Hide a list from the sidebar and the active list tab, or put it back.
+ * Tasks, sections, and history stay on the list. The inbox cannot be archived.
+ */
+export const archive = mutation({
+  args: { id: v.id("lists") },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const list = await ctx.db.get(args.id);
+    if (!list || list.userId !== user._id) throw new Error("List not found");
+    if (list.isInbox) throw new Error("Cannot archive inbox list");
+    await ctx.db.patch(args.id, { archived: !list.archived });
+  },
+});
+
 export const remove = mutation({
   args: { id: v.id("lists") },
   handler: async (ctx, args) => {

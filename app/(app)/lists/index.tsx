@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 import { ListDialog } from "../../../components/lists/ListDialog";
 import { Stack, router } from "expo-router";
 import { useAuth } from "../../../hooks/useAuth";
+import { useArchiveList } from "../../../hooks/useArchiveList";
 
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
@@ -26,6 +27,22 @@ export default function ListsScreen() {
   const [showArchived, setShowArchived] = useState(false);
   // `null` = closed, `"new"` = create mode, otherwise the list being edited.
   const [dialogState, setDialogState] = useState<null | "new" | ListDoc>(null);
+  const confirmArchive = useArchiveList();
+
+  const activeCount = useMemo(
+    () => lists?.filter((l) => !l.archived).length ?? 0,
+    [lists],
+  );
+  const archivedCount = useMemo(
+    () => lists?.filter((l) => l.archived).length ?? 0,
+    [lists],
+  );
+
+  useEffect(() => {
+    if (showArchived && lists && archivedCount === 0) {
+      setShowArchived(false);
+    }
+  }, [showArchived, lists, archivedCount]);
 
   const filteredLists = lists
     ?.filter((l) => (showArchived ? l.archived : !l.archived))
@@ -41,15 +58,26 @@ export default function ListsScreen() {
           onPress={() => setShowArchived(false)}
         >
           <Text style={[styles.tabText, !showArchived && styles.activeTabText]}>
-            Active
+            Active ({activeCount})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, showArchived && styles.activeTab]}
+          style={[
+            styles.tab,
+            showArchived && styles.activeTab,
+            archivedCount === 0 && styles.tabDisabled,
+          ]}
           onPress={() => setShowArchived(true)}
+          disabled={archivedCount === 0}
         >
-          <Text style={[styles.tabText, showArchived && styles.activeTabText]}>
-            Archived
+          <Text
+            style={[
+              styles.tabText,
+              showArchived && styles.activeTabText,
+              archivedCount === 0 && styles.tabTextDisabled,
+            ]}
+          >
+            Archived ({archivedCount})
           </Text>
         </TouchableOpacity>
       </View>
@@ -57,7 +85,14 @@ export default function ListsScreen() {
       {!filteredLists ? (
         <Text style={styles.loading}>Loading...</Text>
       ) : filteredLists.length === 0 ? (
-        <EmptyState title="No lists" message="Create a list to organize your tasks" />
+        <EmptyState
+          title={showArchived ? "No archived lists" : "No lists"}
+          message={
+            showArchived
+              ? "Archive a list to hide it from the sidebar without deleting it"
+              : "Create a list to organize your tasks"
+          }
+        />
       ) : (
         <FlatList
           data={filteredLists}
@@ -99,6 +134,29 @@ export default function ListsScreen() {
                     />
                   </TouchableOpacity>
                 )}
+                {!item.isInbox && (
+                  <TouchableOpacity
+                    style={styles.editButton}
+                    onPress={() =>
+                      confirmArchive({
+                        _id: item._id,
+                        name: item.name,
+                        archived: item.archived,
+                      })
+                    }
+                    accessibilityLabel={
+                      item.archived
+                        ? `Unarchive list ${item.name}`
+                        : `Archive list ${item.name}`
+                    }
+                  >
+                    <Ionicons
+                      name="archive-outline"
+                      size={18}
+                      color={Colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
                   style={styles.openButton}
                   onPress={() => router.push(`/(app)/lists/${item._id}`)}
@@ -120,6 +178,8 @@ export default function ListsScreen() {
       <TouchableOpacity
         style={styles.fab}
         onPress={() => setDialogState("new")}
+        accessibilityRole="button"
+        accessibilityLabel="Create list"
       >
         <Ionicons name="add" size={24} color={Colors.white} />
       </TouchableOpacity>
@@ -150,8 +210,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceVariant,
   },
   activeTab: { backgroundColor: Colors.primary },
+  tabDisabled: { opacity: 0.45 },
   tabText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
   activeTabText: { color: Colors.white },
+  tabTextDisabled: { color: Colors.textTertiary },
   listContent: { padding: 16, paddingBottom: 80 },
   listCard: { marginBottom: 6 },
   listRow: {

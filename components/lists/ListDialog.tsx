@@ -14,7 +14,10 @@ import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
+import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
+import { useAuth } from "../../hooks/useAuth";
+import { useArchiveList } from "../../hooks/useArchiveList";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { ColorPicker } from "../ui/ColorPicker";
@@ -71,6 +74,14 @@ export function ListDialog({
   const isEditMode = !!list;
   const isInbox = !!list?.isInbox;
   const isGoalList = !!list?.isGoalList;
+  const { profile } = useAuth();
+  const confirmArchive = useArchiveList();
+  const canArchive =
+    isEditMode &&
+    !!list &&
+    !isInbox &&
+    profile?._id != null &&
+    list.userId === profile._id;
 
   const [name, setName] = useState(list?.name ?? "");
   const [colour, setColour] = useState(list?.colour ?? "#4A90D9");
@@ -149,9 +160,35 @@ export function ListDialog({
     // keyboard. High zIndex mirrors the previous Modal stacking on web.
     <DialogOverlay onBackdropPress={onClose} align="center" zIndex={2000}>
       <ListDialogCard>
-            <Text style={styles.title}>
-              {isEditMode ? "Edit List" : "Create List"}
-            </Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>
+                {isEditMode ? "Edit List" : "Create List"}
+              </Text>
+              {canArchive && list ? (
+                <Pressable
+                  style={styles.archiveButton}
+                  onPress={() =>
+                    confirmArchive({
+                      _id: list._id,
+                      name: list.name,
+                      archived: list.archived,
+                      onArchived: onClose,
+                    })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    list.archived ? "Unarchive list" : "Archive list"
+                  }
+                  hitSlop={6}
+                >
+                  <Ionicons
+                    name="archive-outline"
+                    size={22}
+                    color={Colors.textSecondary}
+                  />
+                </Pressable>
+              ) : null}
+            </View>
 
             {isEditMode && list ? (
               <View style={styles.tabsRow}>
@@ -332,11 +369,21 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 16,
+  },
   title: {
+    flex: 1,
     fontSize: 20,
     fontWeight: "700",
     color: Colors.text,
-    marginBottom: 16,
+  },
+  archiveButton: {
+    padding: 4,
   },
   tabsRow: {
     flexDirection: "row",
