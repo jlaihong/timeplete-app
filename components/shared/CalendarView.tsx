@@ -37,7 +37,10 @@ import { DEFAULT_EVENT_COLOR } from "../../lib/eventColors";
 import { wallClockInTimeZone, wallClockGridToEpochMs } from "../../lib/wallClockTimeZone";
 import { traceTimer } from "../../lib/timerTimeTrace";
 import { AutoDismissToast } from "../ui/AutoDismissToast";
-import { applyRemoveTimeWindowOptimisticUpdate } from "../../lib/removeTimeWindowOptimisticUpdate";
+import {
+  applyRemoveTimeWindowOptimisticUpdate,
+  applyStopRecurringEventOptimisticUpdate,
+} from "../../lib/removeTimeWindowOptimisticUpdate";
 import { applyUpsertTimeWindowOptimisticUpdate } from "../../lib/upsertTimeWindowOptimisticUpdate";
 import { CalendarEventBlock } from "./CalendarEventBlock";
 import { CalendarDndMonitor, HourSlot } from "./CalendarGridPieces";
@@ -298,9 +301,11 @@ export function CalendarView({
   const [deletedEventToastMessage, setDeletedEventToastMessage] = useState<
     string | null
   >(null);
+  const [deletedEventCanUndo, setDeletedEventCanUndo] = useState(false);
   const clearDeletedEventToast = useCallback(() => {
     undoDeletedEventSnapshotRef.current = null;
     setDeletedEventToastMessage(null);
+    setDeletedEventCanUndo(false);
   }, []);
 
   const [eventSaveErrorToastKey, setEventSaveErrorToastKey] = useState(0);
@@ -338,6 +343,11 @@ export function CalendarView({
     api.timeWindows.remove,
   ).withOptimisticUpdate((localStore, args) => {
     applyRemoveTimeWindowOptimisticUpdate(localStore, args.id);
+  });
+  const stopRecurringEvent = useMutation(
+    api.recurringEvents.stop,
+  ).withOptimisticUpdate((localStore, args) => {
+    applyStopRecurringEventOptimisticUpdate(localStore, args);
   });
   const clearDeletedRecurringOcc = useMutation(
     (api as any).recurringEvents.clearDeletedOccurrence,
@@ -708,6 +718,7 @@ export function CalendarView({
       const tw = sortedWindows.find((w) => String(w._id) === String(id));
       if (!tw || tw.isLive) return;
       undoDeletedEventSnapshotRef.current = tw;
+      setDeletedEventCanUndo(true);
       setDeletedEventToastKey((k) => k + 1);
       setDeletedEventToastMessage("Event deleted");
       removeTimeWindow({ id: id as Id<"timeWindows"> }).catch(() => {
@@ -715,6 +726,36 @@ export function CalendarView({
       });
     },
     [sortedWindows, removeTimeWindow, clearDeletedEventToast],
+  );
+
+  /**
+   * End the series on this occurrence: delete this tile and every later
+   * one, and stop the rule from generating them again.
+   */
+  const handleDeleteThisAndFollowing = useCallback(
+    (id: string) => {
+      const tw = sortedWindows.find((w) => String(w._id) === String(id));
+      if (
+        !tw ||
+        tw.isLive ||
+        !tw.isRecurringInstance ||
+        !tw.recurringEventId ||
+        !tw.startDayYYYYMMDD
+      ) {
+        return;
+      }
+      undoDeletedEventSnapshotRef.current = null;
+      setDeletedEventCanUndo(false);
+      setDeletedEventToastKey((k) => k + 1);
+      setDeletedEventToastMessage("This and following events deleted");
+      stopRecurringEvent({
+        id: tw.recurringEventId,
+        effectiveFromYYYYMMDD: tw.startDayYYYYMMDD,
+      }).catch(() => {
+        clearDeletedEventToast();
+      });
+    },
+    [sortedWindows, stopRecurringEvent, clearDeletedEventToast],
   );
 
   const restoreDeletedCalendarEvent = useCallback(() => {
@@ -1326,6 +1367,21 @@ export function CalendarView({
             handleEventDelete(contextMenu.eventId);
             setContextMenu(null);
           }}
+          onDeleteFollowing={
+            contextMenu.kind === "event" &&
+            sortedWindows.some(
+              (w) =>
+                w._id === contextMenu.eventId &&
+                w.isRecurringInstance &&
+                w.recurringEventId,
+            )
+              ? () => {
+                  if (contextMenu.kind !== "event") return;
+                  handleDeleteThisAndFollowing(contextMenu.eventId);
+                  setContextMenu(null);
+                }
+              : undefined
+          }
           onEdit={() => {
             if (contextMenu.kind !== "event") return;
             const tw = sortedWindows.find((w) => w._id === contextMenu.eventId);
@@ -1369,8 +1425,8 @@ export function CalendarView({
         key={deletedEventToastKey}
         message={deletedEventToastMessage}
         onDismiss={clearDeletedEventToast}
-        actionLabel="Undo"
-        onAction={restoreDeletedCalendarEvent}
+        actionLabel={deletedEventCanUndo ? "Undo" : null}
+        onAction={deletedEventCanUndo ? restoreDeletedCalendarEvent : undefined}
       />
 
       <AutoDismissToast

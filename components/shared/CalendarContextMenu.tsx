@@ -9,7 +9,8 @@ import { calendarViewStyles as styles } from "./CalendarViewStyles";
  *  CalendarContextMenu — right-click dropdown on calendar
  *
  *  Content varies by `state.kind`:
- *    - "event" → Delete
+ *    - "event" → Edit, delete this event, and (for a series) delete this
+ *      and following instances
  *    - "empty" → Create event at this time
  *
  *  Rendered with `position: fixed` (web) so it floats above the
@@ -24,19 +25,23 @@ export type CalendarContextMenuKind =
 export function CalendarContextMenu({
   state,
   onDelete,
+  onDeleteFollowing,
   onEdit,
   onCreate,
 }: {
   state: CalendarContextMenuKind;
   onDelete: () => void;
+  /** Set for a recurring instance. Omits the following-instances item. */
+  onDeleteFollowing?: () => void;
   onEdit: () => void;
   onCreate: () => void;
 }) {
   // Approximate menu size so we can clamp position to the viewport.
   // Real measurement would need a layout pass; this is close enough
   // and avoids a flicker at the wrong position on first paint.
-  const APPROX_W = 220;
-  const APPROX_H = 48;
+  const itemCount = state.kind === "empty" ? 1 : onDeleteFollowing ? 3 : 2;
+  const APPROX_W = onDeleteFollowing ? 360 : 220;
+  const APPROX_H = itemCount * 40 + 8;
   const vw = typeof window !== "undefined" ? window.innerWidth : 0;
   const vh = typeof window !== "undefined" ? window.innerHeight : 0;
   const left = vw ? Math.min(state.x, vw - APPROX_W - 8) : state.x;
@@ -72,13 +77,27 @@ export function CalendarContextMenu({
           <TouchableOpacity
             style={styles.contextMenuItem}
             onPress={onDelete}
-            accessibilityLabel="Delete time window"
+            accessibilityLabel={
+              onDeleteFollowing ? "Delete this instance" : "Delete time window"
+            }
           >
             <Ionicons name="trash-outline" size={16} color={Colors.error} />
             <Text style={[styles.contextMenuItemText, { color: Colors.error }]}>
-              Delete
+              {onDeleteFollowing ? "Delete this instance" : "Delete"}
             </Text>
           </TouchableOpacity>
+          {onDeleteFollowing ? (
+            <TouchableOpacity
+              style={styles.contextMenuItem}
+              onPress={onDeleteFollowing}
+              accessibilityLabel="Delete this and following instances"
+            >
+              <Ionicons name="trash-outline" size={16} color={Colors.error} />
+              <Text style={[styles.contextMenuItemText, { color: Colors.error }]}>
+                Delete this and following instances
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </>
       ) : (
         <TouchableOpacity

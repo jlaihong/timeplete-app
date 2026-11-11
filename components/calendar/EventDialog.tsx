@@ -39,7 +39,10 @@ import { DateField } from "../ui/DateField";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
-import { applyRemoveTimeWindowOptimisticUpdate } from "../../lib/removeTimeWindowOptimisticUpdate";
+import {
+  applyRemoveTimeWindowOptimisticUpdate,
+  applyStopRecurringEventOptimisticUpdate,
+} from "../../lib/removeTimeWindowOptimisticUpdate";
 import {
   RecurrenceSection,
   type RecurrenceFormValue,
@@ -152,6 +155,7 @@ export function EventDialog({
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showRecurringScopeModal, setShowRecurringScopeModal] = useState(false);
+  const [showRecurringDeleteModal, setShowRecurringDeleteModal] = useState(false);
   const [pendingScopeSave, setPendingScopeSave] = useState<{
     titleToPersist: string | undefined;
     activityType: "TASK" | "EVENT" | "TRACKABLE";
@@ -178,7 +182,11 @@ export function EventDialog({
   );
   const createRecurringRule = useMutation((api as any).recurringEvents.create);
   const updateRecurringRule = useMutation((api as any).recurringEvents.updateRule);
-  const stopRecurringRule = useMutation((api as any).recurringEvents.stop);
+  const stopRecurringRule = useMutation(
+    api.recurringEvents.stop,
+  ).withOptimisticUpdate((localStore, args) => {
+    applyStopRecurringEventOptimisticUpdate(localStore, args);
+  });
   const applyRecurringOverride = useMutation(
     (api as any).recurringEvents.applyInstanceOverride
   );
@@ -462,49 +470,76 @@ export function EventDialog({
   };
 
   /**
-   * Delete the event being edited. Confirmation first (same pattern as
-   * task / trackable deletes: `window.confirm` on web, `Alert.alert` on
-   * native), then:
+   * Delete the event being edited. A one-off event confirms, then removes
+   * the row. A recurring instance asks whether to remove only this
+   * occurrence or this occurrence and every one after it.
    *
-   *  - recurring instance → record a skip for this occurrence BEFORE
-   *    removing the row, so `generateInstances` doesn't immediately
-   *    re-create it on the next calendar render;
-   *  - then remove the time window (optimistic, tile disappears at once).
+   * A single occurrence is recorded in the skip set before the row is
+   * removed, so `generateInstances` does not recreate it. "This and
+   * following" ends the series the day before this occurrence, which
+   * also deletes the later rows.
    */
+  const deleteThisInstance = async () => {
+    if (!existingEvent || deleting) return;
+    setDeleting(true);
+    try {
+      if (
+        existingEvent.isRecurringInstance &&
+        existingEvent.recurringEventId &&
+        existingEvent.startDayYYYYMMDD
+      ) {
+        await recordDeletedRecurringOcc({
+          recurringEventId:
+            existingEvent.recurringEventId as Id<"recurringEvents">,
+          deletedDateYYYYMMDD: existingEvent.startDayYYYYMMDD,
+        });
+      }
+      await removeTimeWindow({ id: existingEvent._id as Id<"timeWindows"> });
+      setShowRecurringDeleteModal(false);
+      onClose();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const deleteThisAndFollowing = async () => {
+    if (!existingEvent?.recurringEventId || deleting) return;
+    const fromDay = existingEvent.startDayYYYYMMDD || eventDay;
+    if (!fromDay) return;
+    setDeleting(true);
+    try {
+      await stopRecurringRule({
+        id: existingEvent.recurringEventId as Id<"recurringEvents">,
+        effectiveFromYYYYMMDD: fromDay,
+      });
+      setShowRecurringDeleteModal(false);
+      onClose();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleDelete = () => {
     if (!existingEvent) return;
+    if (existingEvent.isRecurringInstance && existingEvent.recurringEventId) {
+      setShowRecurringDeleteModal(true);
+      return;
+    }
     const eventName =
       existingEvent.title ?? existingEvent.derivedTitle ?? "this event";
     const message = `Delete "${eventName}"?`;
 
-    const run = async () => {
-      setDeleting(true);
-      try {
-        if (
-          existingEvent.isRecurringInstance &&
-          existingEvent.recurringEventId &&
-          existingEvent.startDayYYYYMMDD
-        ) {
-          await recordDeletedRecurringOcc({
-            recurringEventId:
-              existingEvent.recurringEventId as Id<"recurringEvents">,
-            deletedDateYYYYMMDD: existingEvent.startDayYYYYMMDD,
-          });
-        }
-        await removeTimeWindow({ id: existingEvent._id as Id<"timeWindows"> });
-        onClose();
-      } finally {
-        setDeleting(false);
-      }
-    };
-
     if (Platform.OS === "web") {
-      if (window.confirm(message)) void run();
+      if (window.confirm(message)) void deleteThisInstance();
       return;
     }
     Alert.alert("Delete event", message, [
       { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => void run() },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => void deleteThisInstance(),
+      },
     ]);
   };
 
@@ -768,6 +803,44 @@ export function EventDialog({
                 } finally {
                   setLoading(false);
                 }
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      ) : null}
+      {showRecurringDeleteModal ? (
+        <Pressable
+          style={styles.scopeOverlay}
+          onPress={(e) => {
+            e.stopPropagation?.();
+            if (!deleting) setShowRecurringDeleteModal(false);
+          }}
+        >
+          <Pressable
+            style={styles.scopeDialog}
+            onPress={(e) => e.stopPropagation?.()}
+          >
+            <Text style={styles.scopeTitle}>Delete recurring event</Text>
+            <Text style={styles.scopeBody}>
+              Choose what to remove. Earlier occurrences stay on the calendar.
+            </Text>
+            <Button
+              title="This instance only"
+              variant="outline"
+              disabled={deleting}
+              onPress={() => void deleteThisInstance()}
+            />
+            <Button
+              title="This and following instances"
+              variant="outline"
+              disabled={deleting}
+              onPress={() => void deleteThisAndFollowing()}
+            />
+            <Button
+              title="Cancel"
+              variant="ghost"
+              onPress={() => {
+                if (!deleting) setShowRecurringDeleteModal(false);
               }}
             />
           </Pressable>
