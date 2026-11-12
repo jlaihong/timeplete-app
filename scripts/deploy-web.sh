@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Build the Expo web bundle with prod Convex URLs, sync to S3, and invalidate CloudFront.
 #
-# Why we move .env.local out of the way:
-#   `app.config.js` reads .env.local DIRECTLY (higher precedence than .env.production)
-#   to support the loopback-port discovery used during dev. For a prod build we have to
-#   bypass that or it can bake localhost / dev URLs into the bundle. The script restores
-#   .env.local at the end (and on any error) so dev workflow is undisturbed.
+# The build runs with your normal dev setup untouched: `.env.local` stays in
+# place and `convex dev` keeps running. That is safe because the two Convex
+# URLs are the only values that differ between dev and prod, and this script
+# passes them in the shell environment, which wins over `.env.local` both in
+# Expo's own env loading and in `app.config.js`. As a backstop the script
+# refuses to upload a bundle that lacks the prod URL or contains the dev one.
 #
 # Usage:
 #   timeplete-app/scripts/deploy-web.sh             # full: build + upload + invalidate
@@ -30,22 +31,6 @@ if [[ "${1:-}" == "--no-build" ]]; then DO_BUILD=0; fi
 if [[ "$DO_BUILD" == "1" ]]; then
   echo "==> Building web bundle with prod Convex URLs"
 
-  # Stop any local convex dev that may be rewriting .env.local mid-build.
-  pkill -f "convex dev" 2>/dev/null || true
-  sleep 1
-
-  ENV_LOCAL_BAK=""
-  if [[ -f .env.local ]]; then
-    ENV_LOCAL_BAK=".env.local.deploy-bak.$$"
-    mv .env.local "$ENV_LOCAL_BAK"
-  fi
-  cleanup() {
-    if [[ -n "$ENV_LOCAL_BAK" && -f "$ENV_LOCAL_BAK" ]]; then
-      mv "$ENV_LOCAL_BAK" .env.local
-    fi
-  }
-  trap cleanup EXIT
-
   rm -rf "$DIST_DIR" .expo node_modules/.cache
 
   EXPO_PUBLIC_CONVEX_URL="$PROD_CONVEX_URL" \
@@ -54,6 +39,14 @@ if [[ "$DO_BUILD" == "1" ]]; then
 
   if ! grep -q "${PROD_CONVEX_URL#https://}" "$DIST_DIR"/_expo/static/js/web/*.js 2>/dev/null; then
     echo "ERROR: prod Convex URL not found in built bundle. Aborting before upload." >&2
+    exit 1
+  fi
+
+  # The dev backend address from .env.local must not have leaked in.
+  DEV_CONVEX_URL="$(sed -n 's/^EXPO_PUBLIC_CONVEX_URL=//p' .env.local 2>/dev/null | tr -d "\"'" | head -1)"
+  if [[ -n "$DEV_CONVEX_URL" && "$DEV_CONVEX_URL" != "$PROD_CONVEX_URL" ]] &&
+    grep -qF "$DEV_CONVEX_URL" "$DIST_DIR"/_expo/static/js/web/*.js 2>/dev/null; then
+    echo "ERROR: dev Convex URL from .env.local found in built bundle. Aborting before upload." >&2
     exit 1
   fi
 
