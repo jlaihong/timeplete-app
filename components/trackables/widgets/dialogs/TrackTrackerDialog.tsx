@@ -174,12 +174,15 @@ export function TrackTrackerDialog({
   return (
     <TrackDialogShell
       onClose={onClose}
+      title={trackableName}
+      colour={trackableColour}
+      subtitle="Log entry"
       maxWidth={isRatingTracker ? 600 : 480}
       actions={
         <>
           <Button
             title="Cancel"
-            variant="outline"
+            variant="ghost"
             onPress={onClose}
             size="small"
           />
@@ -193,14 +196,6 @@ export function TrackTrackerDialog({
         </>
       }
     >
-          <View style={styles.header}>
-            <View
-              style={[styles.colourDot, { backgroundColor: trackableColour }]}
-            />
-            <Text style={styles.title} numberOfLines={1}>
-              {trackableName}
-            </Text>
-          </View>
           <View style={styles.dateBlock}>
             <DateField label="Date" value={day} onChange={setDay} />
           </View>

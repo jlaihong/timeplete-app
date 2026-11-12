@@ -24,7 +24,12 @@ import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { AutoDismissToast } from "../ui/AutoDismissToast";
-import { DialogOverlay } from "../ui/DialogScaffold";
+import {
+  DialogOverlay,
+  DialogHeader,
+  DialogFooter,
+  dialogSurfaceStyle,
+} from "../ui/DialogScaffold";
 import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 import {
   initialAssignmentStateFromAddTaskContext,
@@ -186,6 +191,10 @@ export function AddTaskSheet({
        * keyboard. */}
       <DialogOverlay onBackdropPress={onClose} align="center">
         <AddTaskCard>
+          <DialogHeader
+            title={parentId ? "Add subtask" : "Add task"}
+            onClose={onClose}
+          />
           <KeyboardAwareScrollView
             style={styles.scroll}
             keyboardShouldPersistTaps="handled"
@@ -195,9 +204,6 @@ export function AddTaskSheet({
             // the indicator inside the scroll viewport, not outside it).
             showsVerticalScrollIndicator={false}
           >
-            <Text style={styles.title}>
-              {parentId ? "Add Subtask" : "Add Task"}
-            </Text>
 
             <Input
               ref={titleInputRef}
@@ -231,15 +237,15 @@ export function AddTaskSheet({
           {/* Fixed footer (outside the scroll) so Cancel/Create stay
            * visible while the keyboard is up and the card is
            * height-capped. */}
-          <View style={styles.actions}>
+          <DialogFooter>
             <Button
               title="Cancel"
-              variant="outline"
+              variant="ghost"
               onPress={onClose}
               size="small"
             />
             <Button title="Create" onPress={handleCreate} size="small" />
-          </View>
+          </DialogFooter>
         </AddTaskCard>
       </DialogOverlay>
       {/**
@@ -279,6 +285,7 @@ function AddTaskCard({ children }: { children: React.ReactNode }) {
 
 const styles = StyleSheet.create({
   dialog: {
+    ...dialogSurfaceStyle,
     // 92% (not 100%) keeps the old overlay-padding side insets on phones.
     width: "92%",
     maxWidth: 420,

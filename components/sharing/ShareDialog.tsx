@@ -7,7 +7,12 @@ import { Card } from "../ui/Card";
 import { Id } from "../../convex/_generated/dataModel";
 import { ListSharePanel } from "./ListSharePanel";
 import { TrackableSharePanel } from "./TrackableSharePanel";
-import { DialogOverlay } from "../ui/DialogScaffold";
+import {
+  DialogOverlay,
+  DialogHeader,
+  DialogFooter,
+  dialogSurfaceStyle,
+} from "../ui/DialogScaffold";
 import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 
 interface ShareDialogProps {
@@ -23,9 +28,10 @@ export function ShareDialog({ type, entityId, onClose }: ShareDialogProps) {
     // input and Close button) above the soft keyboard.
     <DialogOverlay onBackdropPress={onClose} align="center">
       <ShareDialogCard>
-        <Text style={styles.title}>
-          Share {type === "list" ? "List" : "Trackable"}
-        </Text>
+        <DialogHeader
+          title={type === "list" ? "Share list" : "Share trackable"}
+          onClose={onClose}
+        />
 
         {type === "list" ? (
           <ListSharePanel
@@ -39,14 +45,14 @@ export function ShareDialog({ type, entityId, onClose }: ShareDialogProps) {
           />
         )}
 
-        <View style={styles.actions}>
+        <DialogFooter>
           <Button
             title="Close"
-            variant="outline"
+            variant="ghost"
             onPress={onClose}
             size="small"
           />
-        </View>
+        </DialogFooter>
       </ShareDialogCard>
     </DialogOverlay>
   );
@@ -73,7 +79,12 @@ function ShareDialogCard({ children }: { children: React.ReactNode }) {
 const styles = StyleSheet.create({
   // 92% (not 100%) keeps side insets on phones now that the overlay no
   // longer applies padding.
-  dialog: { width: "92%", maxWidth: 400, alignSelf: "center" },
+  dialog: {
+    ...dialogSurfaceStyle,
+    width: "92%",
+    maxWidth: 400,
+    alignSelf: "center",
+  },
   title: {
     fontSize: FontSize.title,
     fontWeight: "700",

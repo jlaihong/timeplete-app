@@ -15,11 +15,21 @@ import React, { useContext } from "react";
 import { View, StyleSheet, Platform } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Card } from "../../../ui/Card";
-import { DialogOverlay } from "../../../ui/DialogScaffold";
+import {
+  DialogOverlay,
+  DialogHeader,
+  DialogFooter,
+  dialogSurfaceStyle,
+} from "../../../ui/DialogScaffold";
 import { DialogMaxHeightContext } from "../../../ui/useDialogKeyboardShift";
 
 interface TrackDialogShellProps {
   onClose: () => void;
+  /** The trackable being logged against, and its colour. */
+  title: string;
+  colour?: string;
+  /** What is being logged, e.g. "Log time". */
+  subtitle?: string;
   /** Card width cap — mirrors each dialog's previous `dialogWrap` width. */
   maxWidth?: number;
   /** Scrollable dialog body. */
@@ -30,6 +40,9 @@ interface TrackDialogShellProps {
 
 export function TrackDialogShell({
   onClose,
+  title,
+  colour,
+  subtitle,
   maxWidth = 480,
   children,
   actions,
@@ -37,6 +50,12 @@ export function TrackDialogShell({
   return (
     <DialogOverlay onBackdropPress={onClose} align="center">
       <ShellCard maxWidth={maxWidth}>
+        <DialogHeader
+          title={title}
+          colour={colour}
+          subtitle={subtitle}
+          onClose={onClose}
+        />
         <KeyboardAwareScrollView
           style={styles.scroll}
           keyboardShouldPersistTaps="handled"
@@ -47,7 +66,7 @@ export function TrackDialogShell({
         >
           {children}
         </KeyboardAwareScrollView>
-        <View style={styles.actions}>{actions}</View>
+        <DialogFooter>{actions}</DialogFooter>
       </ShellCard>
     </DialogOverlay>
   );
@@ -81,6 +100,7 @@ function ShellCard({
 
 const styles = StyleSheet.create({
   dialog: {
+    ...dialogSurfaceStyle,
     // 92% (not 100%) keeps the old overlay-padding side insets on phones.
     width: "92%",
     alignSelf: "center",
@@ -94,11 +114,4 @@ const styles = StyleSheet.create({
   // `flexShrink: 1` (RN default 0) lets the body give up height when the
   // card is height-capped (keyboard open); content beyond that scrolls.
   scroll: { flexGrow: 0, flexShrink: 1 },
-  actions: {
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "flex-end",
-    marginTop: 12,
-    flexShrink: 0,
-  },
 });

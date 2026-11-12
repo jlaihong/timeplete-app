@@ -64,7 +64,10 @@ export function useDrawerSelection(): DrawerSelection {
       return { ...empty, home: true };
     }
 
-    if (path === "/goals") return { ...empty, goals: true };
+    // A trackable's own page belongs to Trackables.
+    if (path === "/goals" || path.startsWith("/edit-trackable/")) {
+      return { ...empty, goals: true };
+    }
     if (path === "/analytics") return { ...empty, analytics: true };
     if (path === "/reviews") return { ...empty, reviews: true };
 

@@ -115,12 +115,15 @@ export function TrackCountDialog({
   return (
     <TrackDialogShell
       onClose={onClose}
+      title={trackableName}
+      colour={trackableColour}
+      subtitle="Log count"
       maxWidth={420}
       actions={
         <>
           <Button
             title="Cancel"
-            variant="outline"
+            variant="ghost"
             onPress={onClose}
             size="small"
           />
@@ -133,15 +136,6 @@ export function TrackCountDialog({
         </>
       }
     >
-          <View style={styles.header}>
-            <View
-              style={[styles.colourDot, { backgroundColor: trackableColour }]}
-            />
-            <Text style={styles.title} numberOfLines={1}>
-              {trackableName}
-            </Text>
-          </View>
-          <Text style={styles.subtitle}>Log count</Text>
 
           <View style={styles.dateBlock}>
             <DateField label="Date" value={day} onChange={setDay} />

@@ -25,8 +25,15 @@ import { ColorPicker } from "../ui/ColorPicker";
 import { Card } from "../ui/Card";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { ListSharePanel } from "../sharing/ListSharePanel";
-import { DialogOverlay } from "../ui/DialogScaffold";
+import {
+  DialogOverlay,
+  DialogHeader,
+  DialogFooter,
+  DialogMenu,
+  dialogSurfaceStyle,
+} from "../ui/DialogScaffold";
 import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
+import { useDiscardGuard } from "../../hooks/useDiscardGuard";
 
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
@@ -92,6 +99,13 @@ export function ListDialog({
   const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(
     list?.trackableId ?? null,
   );
+  // Backdrop, Escape and the header ✕ ask before discarding edits.
+  const isDirty =
+    name !== (list?.name ?? "") ||
+    colour !== (list?.colour ?? DEFAULT_ENTITY_COLOUR) ||
+    showInSidebar !== (list?.showInSidebar ?? true) ||
+    trackableId !== (list?.trackableId ?? null);
+  const requestClose = useDiscardGuard(isDirty, onClose);
   const [saving, setSaving] = useState(false);
   const [detailsTab, setDetailsTab] = useState<"details" | "sharing">(
     "details",
@@ -159,37 +173,47 @@ export function ListDialog({
     // mobile-web visual-viewport sizing, and — on native — the keyboard
     // shift that keeps the card (and its footer buttons) above the soft
     // keyboard. High zIndex mirrors the previous Modal stacking on web.
-    <DialogOverlay onBackdropPress={onClose} align="center" zIndex={2000}>
+    <DialogOverlay onBackdropPress={requestClose} align="center" zIndex={2000}>
       <ListDialogCard>
-            <View style={styles.titleRow}>
-              <Text style={styles.title}>
-                {isEditMode ? "Edit List" : "Create List"}
-              </Text>
-              {canArchive && list ? (
-                <Pressable
-                  style={styles.archiveButton}
-                  onPress={() =>
-                    confirmArchive({
-                      _id: list._id,
-                      name: list.name,
-                      archived: list.archived,
-                      onArchived: onClose,
-                    })
-                  }
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    list.archived ? "Unarchive list" : "Archive list"
-                  }
-                  hitSlop={6}
-                >
-                  <Ionicons
-                    name="archive-outline"
-                    size={22}
-                    color={Colors.textSecondary}
+            <DialogHeader
+              title={isEditMode ? "Edit list" : "Create list"}
+              onClose={requestClose}
+              headerActions={
+                isEditMode && list ? (
+                  <DialogMenu
+                    items={[
+                      ...(canArchive
+                        ? [
+                            {
+                              label: list.archived
+                                ? "Unarchive list"
+                                : "Archive list",
+                              icon: "archive-outline" as const,
+                              onPress: () =>
+                                confirmArchive({
+                                  _id: list._id,
+                                  name: list.name,
+                                  archived: list.archived,
+                                  onArchived: onClose,
+                                }),
+                            },
+                          ]
+                        : []),
+                      ...(!isInbox
+                        ? [
+                            {
+                              label: "Delete list",
+                              icon: "trash-outline" as const,
+                              onPress: handleDelete,
+                              destructive: true,
+                            },
+                          ]
+                        : []),
+                    ]}
                   />
-                </Pressable>
-              ) : null}
-            </View>
+                ) : undefined
+              }
+            />
 
             {isEditMode && list ? (
               <View style={styles.tabsRow}>
@@ -289,37 +313,19 @@ export function ListDialog({
               )}
             </KeyboardAwareScrollView>
 
-            {isEditMode && list && detailsTab === "sharing" ? (
-              <View
-                style={[styles.actionsRow, styles.actionsRowSharing, styles.actionsFooter]}
-              >
-                <View style={styles.spacer} />
-                <View style={styles.primaryActions}>
+            <DialogFooter>
+              {isEditMode && list && detailsTab === "sharing" ? (
+                <Button
+                  title="Close"
+                  variant="ghost"
+                  onPress={onClose}
+                  size="small"
+                />
+              ) : (
+                <>
                   <Button
                     title="Cancel"
-                    variant="outline"
-                    onPress={onClose}
-                    size="small"
-                  />
-                </View>
-              </View>
-            ) : (
-              <View style={[styles.actionsRow, styles.actionsFooter]}>
-                {isEditMode && !isInbox ? (
-                  <Button
-                    title="Delete"
-                    variant="danger"
-                    onPress={handleDelete}
-                    style={styles.deleteButton}
-                    size="small"
-                  />
-                ) : (
-                  <View style={styles.spacer} />
-                )}
-                <View style={styles.primaryActions}>
-                  <Button
-                    title="Cancel"
-                    variant="outline"
+                    variant="ghost"
                     onPress={onClose}
                     size="small"
                   />
@@ -330,9 +336,9 @@ export function ListDialog({
                     disabled={!name.trim()}
                     size="small"
                   />
-                </View>
-              </View>
-            )}
+                </>
+              )}
+            </DialogFooter>
       </ListDialogCard>
     </DialogOverlay>
   );
@@ -361,6 +367,8 @@ function ListDialogCard({ children }: { children: React.ReactNode }) {
 
 const styles = StyleSheet.create({
   dialog: {
+    ...dialogSurfaceStyle,
+    overflow: "hidden",
     // 92% (not 100%) keeps the old Modal-era side insets on phones.
     width: "92%",
     maxWidth: 440,

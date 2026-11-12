@@ -308,15 +308,12 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
             </Text>
           </View>
 
-          {/* Quiet metadata: a colour dot carries identity, the text stays grey */}
+          {/* Quiet metadata: a colour dot carries identity, the text stays
+              grey. The column is the same width on every row and starts
+              with the trackable / list label, so the dots line up down
+              the list instead of floating with each label's length. */}
           {hasMeta && (
             <View style={styles.meta}>
-              {initials && (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{initials}</Text>
-                </View>
-              )}
-              {dateLabel && <Text style={styles.metaText}>{dateLabel}</Text>}
               {showTrackableTag && meta.trackable && (
                 <MetaLabel
                   colour={meta.trackable.colour}
@@ -329,6 +326,12 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
               {meta.tags?.map((tag, i) => (
                 <MetaLabel key={i} colour={tag.colour} name={tag.name} />
               ))}
+              {dateLabel && <Text style={styles.metaText}>{dateLabel}</Text>}
+              {initials && (
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </View>
+              )}
             </View>
           )}
 
@@ -494,18 +497,18 @@ const styles = StyleSheet.create({
     textDecorationLine: "line-through",
     color: Colors.textTertiary,
   },
+  // A fixed-width column, left-aligned, so every row's first dot sits at
+  // the same x. Labels that don't fit are cut off with an ellipsis.
   meta: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-end",
+    justifyContent: "flex-start",
     gap: 12,
-    // Shrink is weighted by natural width, so a long title would still
-    // lose most of the squeeze at 2:1. A large factor makes the labels
-    // give way to their minimum before the title loses a character.
-    flexShrink: 50,
-    // Never squeezed out entirely: the dot and a few letters always remain.
-    minWidth: 72,
-    maxWidth: "45%",
+    // Narrow on purpose: the title is what people read, the label is a cue.
+    width: "24%",
+    minWidth: 96,
+    maxWidth: 160,
+    flexShrink: 0,
     overflow: "hidden",
   },
   metaLabel: {

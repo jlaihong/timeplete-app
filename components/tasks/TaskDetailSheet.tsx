@@ -66,7 +66,9 @@ import {
   TrackingHistoryTable,
 } from "../trackables/TrackingHistoryTable";
 import { Id } from "../../convex/_generated/dataModel";
-import { DialogOverlay } from "../ui/DialogScaffold";
+import { DialogOverlay, DialogMenu } from "../ui/DialogScaffold";
+import { useDiscardGuard } from "../../hooks/useDiscardGuard";
+import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
 import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 
 type Tab = "details" | "time" | "comments";
@@ -75,6 +77,14 @@ type RecurringEditScope = "THIS_INSTANCE" | "THIS_AND_FUTURE" | "ALL_INSTANCES";
 interface TaskDetailSheetProps {
   taskId: Id<"tasks">;
   onClose: () => void;
+  /**
+   * `dialog` (default) is the centred popup / phone bottom sheet. `panel`
+   * fills its parent with no backdrop — desktop Home shows the task beside
+   * the list this way, so you keep your place and can click through tasks.
+   */
+  presentation?: "dialog" | "panel";
+  /** Reports whether the form holds unsaved edits (for panel hosts). */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 /** Local-state shape for the controlled form.
@@ -103,7 +113,13 @@ interface EditableForm {
   recurrence: RecurrenceFormValue | null;
 }
 
-export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
+export function TaskDetailSheet({
+  taskId,
+  onClose,
+  presentation = "dialog",
+  onDirtyChange,
+}: TaskDetailSheetProps) {
+  const isPanel = presentation === "panel";
   const isDesktop = useIsDesktop();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   // On mobile web, shrink with the soft keyboard so Save / bottom fields
@@ -304,6 +320,18 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
       hasNonRecurrenceChanges || recurrenceDirty
     );
   }, [task, hasNonRecurrenceChanges, recurrenceDirty]);
+
+  // Accidental ways out (backdrop, Escape, the header ✕) ask before
+  // discarding edits. Cancel and post-save closes go straight through.
+  const requestClose = useDiscardGuard(isDirty, onClose);
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+    return () => onDirtyChange?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDirty]);
+  // Panel mode has no backdrop, so it registers Escape itself.
+  useRegisterEscapeClose(requestClose, isPanel);
+
 
   // "This and future" splits the series at this day. Later occurrences are
   // created lazily, only inside the loaded date window, so this must follow
@@ -834,9 +862,15 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
 
   const content = (
     <SheetPanel
-      style={isDesktop ? styles.dialogPanel : styles.sheet}
-      width={dialogWidth}
-      height={dialogHeight}
+      style={
+        isPanel
+          ? styles.sidePanel
+          : isDesktop
+            ? styles.dialogPanel
+            : styles.sheet
+      }
+      width={isPanel ? undefined : dialogWidth}
+      height={isPanel ? undefined : dialogHeight}
     >
       {/* Header — title row + a tracked-time chip directly underneath
           so total time is visible from every tab, not just Details. */}
@@ -883,8 +917,24 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
             </View>
           )}
         </View>
-        <TouchableOpacity onPress={handleClose}>
-          <Ionicons name="close" size={24} color={Colors.textSecondary} />
+        <DialogMenu
+          items={[
+            {
+              label: "Delete task",
+              icon: "trash-outline",
+              onPress: handleDelete,
+              destructive: true,
+            },
+          ]}
+        />
+        <TouchableOpacity
+          onPress={requestClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+          style={styles.headerCloseBtn}
+          hitSlop={8}
+        >
+          <Ionicons name="close" size={20} color={Colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -944,15 +994,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
           Save commits the sparse upsert and closes. */}
       {activeTab === "details" && (
         <View style={styles.footer}>
-          {/* Delete lives on the left with a spacer between it and the
-           * primary actions — same layout as `ListDialog`'s footer so
-           * destructive actions are visually separated from Save/Cancel. */}
-          <Button
-            title="Delete"
-            variant="danger"
-            onPress={handleDelete}
-            size="small"
-          />
+          {/* Delete lives in the header's "more" menu, away from Save. */}
           <View style={styles.footerSpacer} />
           <Button
             title="Cancel"
@@ -972,14 +1014,16 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     </SheetPanel>
   );
 
+  const Shell = isPanel ? PanelShell : DialogOverlay;
+
   return (
-    <DialogOverlay
+    <Shell
       align={isDesktop ? "center" : "bottom"}
       onBackdropPress={() => {
         if (showRecurringScopeModal || showStopRecurringModal) {
           return;
         }
-        handleClose();
+        requestClose();
       }}
     >
       {content}
@@ -1098,7 +1142,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
           </Pressable>
         </Pressable>
       )}
-    </DialogOverlay>
+    </Shell>
   );
 }
 
@@ -1111,6 +1155,17 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
  * the `flex: 1` scroll region absorbs the difference and the footer stays
  * visible.
  */
+/** Panel-mode stand-in for `DialogOverlay`: fills the parent, no backdrop. */
+function PanelShell({
+  children,
+}: {
+  children: React.ReactNode;
+  align?: "center" | "bottom";
+  onBackdropPress?: () => void;
+}) {
+  return <View style={styles.panelRoot}>{children}</View>;
+}
+
 function SheetPanel({
   style,
   width,
@@ -1118,11 +1173,15 @@ function SheetPanel({
   children,
 }: {
   style: ViewStyle;
-  width: number;
-  height: number;
+  /** Omitted in panel mode, where the surface fills its parent. */
+  width?: number;
+  height?: number;
   children: React.ReactNode;
 }) {
   const keyboardMax = React.useContext(DialogMaxHeightContext);
+  if (width == null || height == null) {
+    return <View style={style}>{children}</View>;
+  }
   const cappedHeight =
     keyboardMax != null ? Math.min(height, keyboardMax) : height;
   return (
@@ -1135,6 +1194,23 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainerHigh,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
+  },
+  panelRoot: { flex: 1, minHeight: 0 },
+  // Side panel on desktop Home: a card filling the column, no shadow.
+  sidePanel: {
+    flex: 1,
+    minHeight: 0,
+    marginVertical: 8,
+    backgroundColor: Colors.surfaceContainerLow,
+    borderRadius: Radius.lg,
+    overflow: "hidden",
+  },
+  headerCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: Radius.xl,
+    alignItems: "center",
+    justifyContent: "center",
   },
   dialogPanel: {
     backgroundColor: Colors.surfaceContainerHigh,

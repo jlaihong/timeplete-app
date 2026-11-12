@@ -5,6 +5,7 @@ import { TrackableList } from "../../../components/shared/TrackableList";
 import { EditTrackableDialog } from "../../../components/trackables/EditTrackableDialog";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
 import { traceScreenMount } from "../../../lib/navInstrumentation";
+import { router } from "expo-router";
 import { Id } from "../../../convex/_generated/dataModel";
 
 const PAGE_PADDING = 24;
@@ -57,8 +58,12 @@ export default function GoalsScreen() {
             variant="trackables-page"
             title="Trackables"
             showArchivedToggle={false}
+            // Desktop opens the trackable's own page; phones keep the
+            // dialog owned here.
             onRequestEditTrackable={(id) =>
-              setEditingTrackableId(id as Id<"trackables">)
+              isDesktop
+                ? router.push(`/(app)/edit-trackable/${id}`)
+                : setEditingTrackableId(id as Id<"trackables">)
             }
           />
         )}

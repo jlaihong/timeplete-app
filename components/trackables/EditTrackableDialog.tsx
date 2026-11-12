@@ -1,5 +1,5 @@
 import { FontSize, Radius } from "../../theme/tokens";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -25,8 +25,10 @@ import { ColourSwatchPicker } from "./ColourSwatchPicker";
 import {
   DialogOverlay,
   DialogCard,
-  DialogFooter,
   DialogHeader,
+  DialogFooter,
+  DialogMenu,
+  type DialogMenuItem,
 } from "../ui/DialogScaffold";
 import { GoalReasonsForm } from "./goal/GoalReasonsForm";
 import {
@@ -40,12 +42,26 @@ import { useAuth } from "../../hooks/useAuth";
 import { homeHiddenReason } from "../../lib/trackableHomeVisibility";
 import { todayYYYYMMDD } from "../../lib/dates";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
+import { useDiscardGuard } from "../../hooks/useDiscardGuard";
 import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
 
 interface EditTrackableDialogProps {
   trackableId: Id<"trackables">;
   onClose: () => void;
+  /**
+   * - `dialog` (default): every tab in one popup. Phones use this.
+   * - `page`: desktop full page. Progress, tasks and history sit side by
+   *   side for looking; an Edit button opens the `settings` dialog.
+   * - `settings`: a small dialog with only the editable tabs.
+   */
+  presentation?: "dialog" | "page" | "settings";
 }
+
+const GOAL_SETTINGS_TABS: GoalEditTab[] = [
+  "commitment",
+  "motivations",
+  "accountability",
+];
 
 type TrackableType =
   | "NUMBER"
@@ -83,9 +99,12 @@ const TRACKER_TAB_DEFS: { key: TrackerEditTab; label: string }[] = [
 export function EditTrackableDialog({
   trackableId,
   onClose,
+  presentation = "dialog",
 }: EditTrackableDialogProps) {
+  const settingsOnly = presentation === "settings";
+  const [showSettings, setShowSettings] = useState(false);
   const { profileReady } = useAuth();
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const isDesktop = useIsDesktop();
   // On mobile web the *visual* viewport shrinks when the software keyboard
   // opens; the *layout* viewport does not. Sizing our mobile bottom sheet
@@ -111,7 +130,9 @@ export function EditTrackableDialog({
   const setShowOnHome = useMutation(api.trackables.setShowOnHome);
   const deleteTrackable = useMutation(api.trackables.remove);
 
-  const [goalTab, setGoalTab] = useState<GoalEditTab>("progress");
+  const [goalTab, setGoalTab] = useState<GoalEditTab>(
+    presentation === "settings" ? "commitment" : "progress",
+  );
   const [trackerTab, setTrackerTab] = useState<TrackerEditTab>("details");
   const [name, setName] = useState("");
   const [colour, setColour] = useState(DEFAULT_ENTITY_COLOUR);
@@ -134,12 +155,48 @@ export function EditTrackableDialog({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setGoalTab("progress");
+    setGoalTab(settingsOnly ? "commitment" : "progress");
     setTrackerTab("details");
-  }, [trackableId]);
+  }, [trackableId, settingsOnly]);
+
+  // Unsaved-change guard for the accidental ways out (backdrop, Escape, ✕).
+  // The baseline is the form as first rendered after loading from the
+  // server (see the load effect below, which clears it on every reload).
+  const formSnapshot = JSON.stringify([
+    name,
+    colour,
+    startDay,
+    endDay,
+    targetCount,
+    targetHours,
+    targetDaysAWeek,
+    targetWeeks,
+    targetMinutesAWeek,
+    trackTime,
+    trackCount,
+    autoCountFromCalendar,
+    isCumulative,
+    isRatingTracker,
+    goalReasons,
+    accountability,
+  ]);
+  const baselineRef = useRef<string | null>(null);
+  const loadedForRef = useRef<unknown>(null);
+  if (
+    trackable &&
+    loadedForRef.current === trackable &&
+    baselineRef.current === null
+  ) {
+    baselineRef.current = formSnapshot;
+  }
+  const isDirty =
+    baselineRef.current !== null && formSnapshot !== baselineRef.current;
+  const requestClose = useDiscardGuard(isDirty, onClose);
 
   useEffect(() => {
     if (!trackable) return;
+    loadedForRef.current = trackable;
+    baselineRef.current = null;
     setName(trackable.name);
     setColour(trackable.colour);
     setStartDay(trackable.startDayYYYYMMDD);
@@ -188,10 +245,17 @@ export function EditTrackableDialog({
   const trackableType = trackable.trackableType as TrackableType;
   const isGoal = trackableType !== "TRACKER";
 
-  /** Save on commitment/details and on motivations so reasons and order persist without switching tabs. */
+  /**
+   * Save shows on every tab that holds editable form state: commitment
+   * (details), motivations and accountability. Accountability used to be
+   * left out, so its changes were only saved if you happened to press Save
+   * on another tab.
+   */
   const showSaveFooter =
     isGoal
-      ? goalTab === "commitment" || goalTab === "motivations"
+      ? goalTab === "commitment" ||
+        goalTab === "motivations" ||
+        goalTab === "accountability"
       : trackerTab === "details";
 
   const cardFlexStyle: ViewStyle[] = [
@@ -202,8 +266,10 @@ export function EditTrackableDialog({
           overflow: "hidden",
         } as ViewStyle)
       : {},
-    // Desktop: cap the card height so long tabs (e.g. Time Tracked) don't
-    //   stretch past the viewport; content-sized within the cap.
+    // Desktop: one fixed height for every tab. Sizing the card to its
+    //   content made the dialog grow, shrink and re-centre on each tab
+    //   change, moving the tab bar out from under the pointer. Short tabs
+    //   leave space below; long ones scroll inside the body.
     // Mobile: use a **fixed** height (not maxHeight). Without a concrete
     //   height, the inner `dialogFill: flex:1` → `dialogBody: flex:1`
     //   chain collapses to zero on native, so the bottom sheet appears as
@@ -211,7 +277,7 @@ export function EditTrackableDialog({
     //   Use `availableHeight` (visual viewport) so the sheet also shrinks
     //   when the keyboard opens on mobile web.
     isDesktop
-      ? { maxHeight: Math.min(availableHeight * 0.9, 840) }
+      ? { height: Math.min(availableHeight * 0.9, settingsOnly ? 600 : 700) }
       : { height: availableHeight * 0.92 },
   ];
 
@@ -594,148 +660,209 @@ export function EditTrackableDialog({
     );
   };
 
-  // Header only carries the non-destructive Archive toggle now — the
-  // destructive Delete has moved to the footer's leading slot for parity
-  // with `ListDialog` / `TaskDetailSheet` (see the confirmation dialog
-  // in `confirmDelete` below for the actual guard rail).
+  // Occasional and destructive actions live in one labelled menu, in the
+  // dialog header and on the page alike. The footer keeps Cancel and Save.
   // Mirrors the home column's own rule, so a goal that dropped off home
   // because it ended reads as "not on home" and one tap brings it back.
   const isOnHome = homeHiddenReason(trackable, todayYYYYMMDD()) === null;
-  const headerActions = (
-    <>
-      {ownListId && (
-        <Pressable
-          style={styles.headerIconBtn}
-          onPress={() => {
-            onClose();
-            router.push(`/(app)/lists/${ownListId}`);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Open task list"
-          hitSlop={6}
-        >
-          <Ionicons name="list-outline" size={22} color={Colors.textSecondary} />
-        </Pressable>
-      )}
-      {!trackable.archived && (
-        <Pressable
-          style={styles.headerIconBtn}
-          onPress={() =>
-            void setShowOnHome({ id: trackableId, showOnHome: !isOnHome })
-          }
-          accessibilityRole="button"
-          accessibilityLabel={isOnHome ? "Hide from home" : "Show on home"}
-          hitSlop={6}
-        >
-          <Ionicons
-            name={isOnHome ? "home" : "home-outline"}
-            size={22}
-            color={isOnHome ? Colors.primary : Colors.textSecondary}
-          />
-        </Pressable>
-      )}
-      <Pressable
-        style={styles.headerIconBtn}
-        onPress={handleArchive}
-        accessibilityRole="button"
-        accessibilityLabel={
-          trackable.archived ? "Unarchive trackable" : "Archive trackable"
-        }
-        hitSlop={6}
-      >
-        <Ionicons
-          name="archive-outline"
-          size={22}
-          color={Colors.textSecondary}
-        />
-      </Pressable>
-    </>
+  const menuItems: DialogMenuItem[] = [
+    ...(ownListId
+      ? [
+          {
+            label: "Open task list",
+            icon: "list-outline" as const,
+            onPress: () => {
+              onClose();
+              router.push(`/(app)/lists/${ownListId}`);
+            },
+          },
+        ]
+      : []),
+    ...(!trackable.archived
+      ? [
+          {
+            label: isOnHome ? "Hide from Home" : "Show on Home",
+            icon: (isOnHome ? "home" : "home-outline") as "home" | "home-outline",
+            onPress: () =>
+              void setShowOnHome({ id: trackableId, showOnHome: !isOnHome }),
+          },
+        ]
+      : []),
+    {
+      label: trackable.archived ? "Unarchive" : "Archive",
+      icon: "archive-outline",
+      onPress: handleArchive,
+    },
+    {
+      label: "Delete trackable",
+      icon: "trash-outline",
+      onPress: confirmDelete,
+      destructive: true,
+    },
+  ];
+
+  const historyPane = (
+    <View style={styles.historyTabPane}>
+      <EditTrackableHistoryTab
+        trackableId={trackableId}
+        trackTime={trackTime}
+        trackCount={trackCount}
+        autoCountFromCalendar={autoCountFromCalendar}
+      />
+    </View>
   );
+
+  if (presentation === "page") {
+    /** Too narrow for three readable columns beside the sidebar. */
+    const pageStacked = windowWidth < 1180;
+    const pageColStyle = pageStacked ? styles.pageColStacked : styles.pageCol;
+    return (
+      <View style={styles.page}>
+        <View style={styles.pageHeader}>
+          <Pressable
+            onPress={onClose}
+            style={styles.headerIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            hitSlop={6}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={20}
+              color={Colors.textSecondary}
+            />
+          </Pressable>
+          <View
+            style={[styles.pageDot, { backgroundColor: trackable.colour }]}
+          />
+          <Text style={styles.pageTitle} numberOfLines={1}>
+            {trackable.name}
+          </Text>
+          <Button
+            title="Edit"
+            variant="outline"
+            size="small"
+            onPress={() => setShowSettings(true)}
+          />
+          <DialogMenu items={menuItems} />
+        </View>
+
+        {/* Three things to look at, side by side, each scrolling on its
+            own. On a narrow window they stack and the page scrolls. */}
+        <ScrollView
+          style={styles.pageColumnsScroll}
+          contentContainerStyle={
+            pageStacked ? styles.pageColumnsStacked : styles.pageColumns
+          }
+          scrollEnabled={pageStacked}
+        >
+          <View style={pageColStyle}>
+            <Text style={styles.pageColTitle}>Progress</Text>
+            {renderProgressTabPane()}
+          </View>
+          <View style={pageColStyle}>
+            <Text style={styles.pageColTitle}>Tasks</Text>
+            <EditTrackableTasksTab trackableId={trackableId} />
+          </View>
+          <View style={[pageColStyle, !pageStacked && styles.pageColWide]}>
+            <Text style={styles.pageColTitle}>
+              {isGoal ? "Time tracked" : "Tracking history"}
+            </Text>
+            {historyPane}
+          </View>
+        </ScrollView>
+
+        {showSettings && (
+          <EditTrackableDialog
+            trackableId={trackableId}
+            presentation="settings"
+            onClose={() => setShowSettings(false)}
+          />
+        )}
+      </View>
+    );
+  }
+
+  const goalTabs = settingsOnly
+    ? GOAL_TAB_DEFS.filter((t) => GOAL_SETTINGS_TABS.includes(t.key))
+    : GOAL_TAB_DEFS;
+  // A tracker's settings are a single form, so it needs no tab bar.
+  const showTabBar = isGoal || !settingsOnly;
 
   return (
     <DialogOverlay
-      onBackdropPress={onClose}
+      onBackdropPress={requestClose}
       align={isDesktop ? "center" : "bottom"}
     >
-      <DialogCard desktopWidth={640} style={cardFlexStyle}>
+      <DialogCard desktopWidth={settingsOnly ? 560 : 640} style={cardFlexStyle}>
         <View style={styles.dialogFill}>
           <DialogHeader
-            title={trackable.name}
-            onClose={onClose}
-            headerActions={headerActions}
+            title={settingsOnly ? `Edit ${trackable.name}` : trackable.name}
+            colour={trackable.colour}
+            onClose={requestClose}
+            headerActions={
+              settingsOnly ? undefined : <DialogMenu items={menuItems} />
+            }
           />
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.tabBarScroll}
-            contentContainerStyle={styles.tabBarContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            {isGoal
-              ? GOAL_TAB_DEFS.map(({ key, label }) => (
-                  <Pressable
-                    key={key}
-                    style={[styles.tab, goalTab === key && styles.tabActive]}
-                    onPress={() => setGoalTab(key)}
-                  >
-                    <Text
-                      style={[
-                        styles.tabText,
-                        goalTab === key && styles.tabTextActive,
-                      ]}
+          {showTabBar ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.tabBarScroll}
+              contentContainerStyle={styles.tabBarContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {isGoal
+                ? goalTabs.map(({ key, label }) => (
+                    <Pressable
+                      key={key}
+                      style={[styles.tab, goalTab === key && styles.tabActive]}
+                      onPress={() => setGoalTab(key)}
                     >
-                      {label}
-                    </Text>
-                  </Pressable>
-                ))
-              : TRACKER_TAB_DEFS.map(({ key, label }) => (
-                  <Pressable
-                    key={key}
-                    style={[styles.tab, trackerTab === key && styles.tabActive]}
-                    onPress={() => setTrackerTab(key)}
-                  >
-                    <Text
+                      <Text
+                        style={[
+                          styles.tabText,
+                          goalTab === key && styles.tabTextActive,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </Pressable>
+                  ))
+                : TRACKER_TAB_DEFS.map(({ key, label }) => (
+                    <Pressable
+                      key={key}
                       style={[
-                        styles.tabText,
-                        trackerTab === key && styles.tabTextActive,
+                        styles.tab,
+                        trackerTab === key && styles.tabActive,
                       ]}
+                      onPress={() => setTrackerTab(key)}
                     >
-                      {label}
-                    </Text>
-                  </Pressable>
-                ))}
-          </ScrollView>
+                      <Text
+                        style={[
+                          styles.tabText,
+                          trackerTab === key && styles.tabTextActive,
+                        ]}
+                      >
+                        {label}
+                      </Text>
+                    </Pressable>
+                  ))}
+            </ScrollView>
+          ) : null}
 
-          <View
-            style={[
-              styles.dialogBody,
-              {
-                // On desktop cap the body height for readability; on mobile
-                // let it flex to fill the remaining bottom-sheet space so
-                // tabs like Progress and Tracking History aren't squeezed.
-                maxHeight: isDesktop
-                  ? Math.min(windowHeight * 0.62, 520)
-                  : undefined,
-              },
-            ]}
-          >
+          {/* Fills whatever the fixed-height card leaves between the tab
+              bar and the footer, on desktop and mobile alike. */}
+          <View style={styles.dialogBody}>
             {isGoal ? renderGoalTabContents() : renderTrackerTabContents()}
           </View>
 
           <DialogFooter>
-            {/* Destructive action on the leading edge — same layout as
-             * `ListDialog` / `TaskDetailSheet`, with a flex-1 spacer
-             * pushing Cancel/Save to the trailing edge. */}
+            {/* "Cancel" only means something beside Save; tabs that save
+                as you go (or are read-only) get "Close". */}
             <Button
-              title="Delete"
-              variant="danger"
-              onPress={confirmDelete}
-              size="small"
-            />
-            <View style={styles.footerSpacer} />
-            <Button
-              title="Cancel"
+              title={showSaveFooter ? "Cancel" : "Close"}
               variant="ghost"
               onPress={onClose}
               size="small"
@@ -833,6 +960,58 @@ const styles = StyleSheet.create({
   // `TaskDetailSheet` so every dialog's destructive action lives in
   // the same visual slot.
   footerSpacer: { flex: 1 },
+  page: { flex: 1, minHeight: 0, backgroundColor: Colors.background },
+  pageHeader: {
+    minHeight: 60,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingLeft: 8,
+    paddingRight: 16,
+    // Above the columns, so the menu can drop over them.
+    zIndex: 10,
+  },
+  pageDot: { width: 10, height: 10, borderRadius: Radius.pill },
+  pageTitle: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: FontSize.title,
+    fontWeight: "600",
+    color: Colors.text,
+  },
+  pageColumnsScroll: { flex: 1, minHeight: 0 },
+  // Side by side: the row is exactly as tall as the viewport, so each
+  // column scrolls inside itself.
+  pageColumns: {
+    flex: 1,
+    flexDirection: "row",
+    gap: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  pageColumnsStacked: { gap: 16, paddingHorizontal: 16, paddingBottom: 16 },
+  pageCol: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
+    padding: 16,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.surfaceContainerLow,
+  },
+  // The history table has the most columns.
+  pageColWide: { flex: 1.3 },
+  pageColStacked: {
+    height: 440,
+    padding: 16,
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.surfaceContainerLow,
+  },
+  pageColTitle: {
+    fontSize: FontSize.bodyLarge,
+    fontWeight: "600",
+    color: Colors.text,
+    marginBottom: 12,
+  },
   headerIconBtn: {
     width: 40,
     height: 40,

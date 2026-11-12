@@ -111,12 +111,15 @@ export function TrackPeriodicDialog({
   return (
     <TrackDialogShell
       onClose={onClose}
+      title={trackableName}
+      colour={trackableColour}
+      subtitle="Log progress"
       maxWidth={420}
       actions={
         <>
           <Button
             title="Cancel"
-            variant="outline"
+            variant="ghost"
             onPress={onClose}
             size="small"
           />
@@ -129,14 +132,6 @@ export function TrackPeriodicDialog({
         </>
       }
     >
-          <View style={styles.header}>
-            <View
-              style={[styles.colourDot, { backgroundColor: trackableColour }]}
-            />
-            <Text style={styles.title} numberOfLines={1}>
-              {trackableName}
-            </Text>
-          </View>
           <View style={styles.dateBlock}>
             <DateField label="Date" value={day} onChange={setDay} />
           </View>

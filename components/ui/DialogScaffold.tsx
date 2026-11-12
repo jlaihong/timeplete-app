@@ -10,7 +10,7 @@ import {
   type ViewStyle,
   type StyleProp,
 } from "react-native";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
 import { DialogMaxHeightContext } from "./useDialogKeyboardShift";
 
@@ -79,18 +79,46 @@ interface DialogHeaderProps {
   onClose: () => void;
   /** Productivity-one-style icon actions before the close button (e.g. archive, delete). */
   headerActions?: React.ReactNode;
+  /** One quiet line under the title, e.g. what the dialog is about to log. */
+  subtitle?: string;
+  /** Colour dot before the title, for a dialog about one list or trackable. */
+  colour?: string;
 }
+
+/**
+ * Surface every dialog card shares, for the few dialogs that keep their own
+ * card component (they carry keyboard handling `DialogCard` doesn't).
+ */
+export const dialogSurfaceStyle = {
+  backgroundColor: Colors.surfaceContainerHigh,
+  borderRadius: Radius.lg,
+  padding: 24,
+} as const;
 
 export function DialogHeader({
   title,
   onClose,
   headerActions,
+  subtitle,
+  colour,
 }: DialogHeaderProps) {
   return (
     <View style={styles.header}>
-      <Text style={styles.headerTitle} numberOfLines={2}>
-        {title}
-      </Text>
+      <View style={styles.headerText}>
+        <View style={styles.headerTitleRow}>
+          {colour ? (
+            <View style={[styles.headerDot, { backgroundColor: colour }]} />
+          ) : null}
+          <Text style={styles.headerTitle} numberOfLines={2}>
+            {title}
+          </Text>
+        </View>
+        {subtitle ? (
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
       <View style={styles.headerRight}>
         {headerActions}
         <Pressable
@@ -102,6 +130,83 @@ export function DialogHeader({
           <MaterialIcons name="close" size={20} color={Colors.text} />
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+export interface DialogMenuItem {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  /** Shown in the error colour, e.g. Delete. */
+  destructive?: boolean;
+}
+
+/**
+ * "More actions" menu for a dialog header. Holds the occasional and
+ * destructive actions (archive, delete, …) with their names spelled out,
+ * so the footer is left for Cancel and Save and nothing irreversible sits
+ * one stray click from the primary button.
+ */
+export function DialogMenu({ items }: { items: DialogMenuItem[] }) {
+  const [open, setOpen] = React.useState(false);
+  if (items.length === 0) return null;
+  return (
+    <View style={styles.menuAnchor}>
+      <Pressable
+        onPress={() => setOpen((o) => !o)}
+        style={styles.closeBtn}
+        accessibilityRole="button"
+        accessibilityLabel="More actions"
+        accessibilityState={{ expanded: open }}
+        hitSlop={8}
+      >
+        <Ionicons name="ellipsis-horizontal" size={20} color={Colors.text} />
+      </Pressable>
+      {open ? (
+        <>
+          {/* Click-away catcher: anywhere else in the card closes the menu. */}
+          <Pressable
+            style={styles.menuCatcher}
+            onPress={() => setOpen(false)}
+            accessibilityLabel="Close menu"
+          />
+          <View style={styles.menu} accessibilityRole="menu">
+            {items.map((item) => (
+              <Pressable
+                key={item.label}
+                onPress={() => {
+                  setOpen(false);
+                  item.onPress();
+                }}
+                accessibilityRole="menuitem"
+                accessibilityLabel={item.label}
+                style={(state) => [
+                  styles.menuItem,
+                  ((state as { hovered?: boolean }).hovered ||
+                    state.pressed) &&
+                    styles.menuItemHover,
+                ]}
+              >
+                <Ionicons
+                  name={item.icon}
+                  size={18}
+                  color={item.destructive ? Colors.error : Colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.menuItemText,
+                    item.destructive && { color: Colors.error },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {item.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      ) : null}
     </View>
   );
 }
@@ -144,16 +249,28 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12,
     marginBottom: 16,
+    minHeight: 32,
+    // Above the body, so the header's menu can drop over it.
+    zIndex: 10,
+    flexShrink: 0,
+  },
+  headerText: { flex: 1, minWidth: 0, gap: 2, paddingRight: 4 },
+  headerTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  headerDot: {
+    width: 10,
+    height: 10,
+    borderRadius: Radius.pill,
     flexShrink: 0,
   },
   headerTitle: {
     flex: 1,
     minWidth: 0,
-    fontSize: FontSize.heading,
+    fontSize: FontSize.title,
+    lineHeight: 28,
     fontWeight: "600",
     color: Colors.text,
-    paddingRight: 4,
   },
+  headerSubtitle: { fontSize: FontSize.body, color: Colors.textSecondary },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
@@ -171,6 +288,46 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  menuAnchor: { position: "relative" },
+  menuCatcher: {
+    position: "absolute",
+    top: -2000,
+    left: -2000,
+    right: -2000,
+    bottom: -2000,
+    ...Platform.select({
+      web: { cursor: "default" } as any,
+      default: {},
+    }),
+  },
+  menu: {
+    position: "absolute",
+    top: 36,
+    right: 0,
+    minWidth: 200,
+    paddingVertical: 4,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceContainerHighest,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.outlineVariant,
+    ...Platform.select({
+      web: { boxShadow: "0 8px 24px rgba(0,0,0,0.45)" } as any,
+      default: { elevation: 8 },
+    }),
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    ...Platform.select({
+      web: { cursor: "pointer" } as any,
+      default: {},
+    }),
+  },
+  menuItemHover: { backgroundColor: Colors.surfaceContainerHigh },
+  menuItemText: { fontSize: FontSize.body, color: Colors.text },
   footer: {
     flexDirection: "row",
     gap: 12,

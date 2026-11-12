@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { todayYYYYMMDD } from "../../lib/dates";
 import { View, StyleSheet, Pressable, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,11 +16,12 @@ import { AddTaskSheet } from "../tasks/AddTaskSheet";
 import { TaskDetailSheet } from "../tasks/TaskDetailSheet";
 import { EventDialog } from "../calendar/EventDialog";
 import { AddTrackableFlow } from "../trackables/AddTrackableFlow";
-import { EditTrackableDialog } from "../trackables/EditTrackableDialog";
+import { router } from "expo-router";
 import { TrackableDialogHost } from "../trackables/widgets/TrackableDialogHost";
 import type { LogRequest } from "../trackables/widgets/types";
 import { Id } from "../../convex/_generated/dataModel";
 import { HomeDndProvider } from "../dnd/HomeDndProvider";
+import { confirmDiscardChanges } from "../../hooks/useDiscardGuard";
 
 /**
  * Single dialog state — there is one EventDialog instance reused for
@@ -50,11 +51,12 @@ function HomeColumnsGate({
   setHomeCalendarDay,
   setShowAddTask,
   setAddTaskDay,
+  selectedTaskId,
   setSelectedTaskId,
+  onTaskDirtyChange,
   setEventDialog,
   setShowAddTrackable,
   setLogRequest,
-  setEditingTrackableId,
   trackablesCollapsed,
   setTrackablesCollapsed,
   compact,
@@ -67,11 +69,12 @@ function HomeColumnsGate({
   setHomeCalendarDay: (day: string) => void;
   setShowAddTask: (b: boolean) => void;
   setAddTaskDay: (day: string | undefined) => void;
+  selectedTaskId: Id<"tasks"> | null;
   setSelectedTaskId: (id: Id<"tasks"> | null) => void;
+  onTaskDirtyChange: (dirty: boolean) => void;
   setEventDialog: (s: DialogState) => void;
   setShowAddTrackable: (b: boolean) => void;
   setLogRequest: (r: LogRequest | null) => void;
-  setEditingTrackableId: (id: Id<"trackables"> | null) => void;
 }) {
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -135,8 +138,9 @@ function HomeColumnsGate({
             homeOnly
             onRequestAddTrackable={() => setShowAddTrackable(true)}
             onRequestLog={setLogRequest}
+            // A trackable opens as its own page; `from` brings Back here.
             onRequestEditTrackable={(id) =>
-              setEditingTrackableId(id as Id<"trackables">)
+              router.push(`/(app)/edit-trackable/${id}?from=home`)
             }
           />
           <Pressable
@@ -168,6 +172,19 @@ function HomeColumnsGate({
       </View>
 
       <View style={styles.sideColumn}>
+        {/* An open task takes the calendar's place as a side panel, so the
+            task list stays visible and you can click through tasks. The
+            calendar stays mounted underneath to keep its day and scroll. */}
+        {selectedTaskId && (
+          <TaskDetailSheet
+            key={selectedTaskId}
+            presentation="panel"
+            taskId={selectedTaskId}
+            onClose={() => setSelectedTaskId(null)}
+            onDirtyChange={onTaskDirtyChange}
+          />
+        )}
+        <View style={selectedTaskId ? styles.hidden : styles.fill}>
         <CalendarView
           title="Calendar"
           onSelectedDayChange={setHomeCalendarDay}
@@ -186,6 +203,7 @@ function HomeColumnsGate({
             });
           }}
         />
+        </View>
       </View>
     </View>
   );
@@ -202,12 +220,22 @@ export function DesktopHome() {
   );
   const [eventDialog, setEventDialog] = useState<DialogState>(null);
 
+  // The open task shows as a side panel. Picking another task (or the same
+  // row again) while it holds unsaved edits asks before discarding them.
+  const taskDirtyRef = useRef(false);
+  const selectTask = (id: Id<"tasks"> | null) => {
+    if (id === selectedTaskId) return;
+    if (taskDirtyRef.current && selectedTaskId) {
+      confirmDiscardChanges(() => setSelectedTaskId(id));
+      return;
+    }
+    setSelectedTaskId(id);
+  };
+
   // Trackable dialogs are owned here (rather than inside `TrackableList`) so
   // their overlays cover the full viewport and aren't clipped by the narrow
   // `sideColumn`. See note in `TrackableList.tsx`.
   const [showAddTrackable, setShowAddTrackable] = useState(false);
-  const [editingTrackableId, setEditingTrackableId] =
-    useState<Id<"trackables"> | null>(null);
   const [logRequest, setLogRequest] = useState<LogRequest | null>(null);
 
   // Tasks are the primary job of this screen; the trackables rail can be
@@ -254,11 +282,14 @@ export function DesktopHome() {
           setHomeCalendarDay={setHomeCalendarDay}
           setShowAddTask={setShowAddTask}
           setAddTaskDay={setAddTaskDay}
-          setSelectedTaskId={setSelectedTaskId}
+          selectedTaskId={selectedTaskId}
+          setSelectedTaskId={selectTask}
+          onTaskDirtyChange={(dirty) => {
+            taskDirtyRef.current = dirty;
+          }}
           setEventDialog={setEventDialog}
           setShowAddTrackable={setShowAddTrackable}
           setLogRequest={setLogRequest}
-          setEditingTrackableId={setEditingTrackableId}
           trackablesCollapsed={trackablesCollapsed}
           setTrackablesCollapsed={setTrackablesCollapsed}
           compact={compact}
@@ -269,13 +300,6 @@ export function DesktopHome() {
         <AddTaskSheet
           day={addTaskDay}
           onClose={() => setShowAddTask(false)}
-        />
-      )}
-
-      {selectedTaskId && (
-        <TaskDetailSheet
-          taskId={selectedTaskId}
-          onClose={() => setSelectedTaskId(null)}
         />
       )}
 
@@ -301,13 +325,6 @@ export function DesktopHome() {
 
       {showAddTrackable && (
         <AddTrackableFlow onClose={() => setShowAddTrackable(false)} />
-      )}
-
-      {editingTrackableId && (
-        <EditTrackableDialog
-          trackableId={editingTrackableId}
-          onClose={() => setEditingTrackableId(null)}
-        />
       )}
 
       <TrackableDialogHost
@@ -338,6 +355,8 @@ const styles = StyleSheet.create({
   },
   trackablesColumnCompact: { width: 256 },
   centerColumn: { flex: 1.6, maxWidth: 880, minWidth: 0, paddingHorizontal: 8 },
+  fill: { flex: 1, minHeight: 0 },
+  hidden: { display: "none" },
   collapsedRail: { width: 40, alignItems: "center", paddingTop: 12 },
   railToggle: { padding: 6 },
   // Sits beside the column's "+" button in the Trackables header.

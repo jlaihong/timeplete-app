@@ -4,15 +4,19 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
-  Pressable,
+  useWindowDimensions,
   Switch,
   ScrollView,
 } from "react-native";
 import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
 import type { TaskFilterMember } from "../../lib/taskFilters";
-import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
+import {
+  DialogOverlay,
+  DialogCard,
+  DialogHeader,
+  DialogFooter,
+} from "../ui/DialogScaffold";
 
 export type TaskFilterModalProps = {
   visible: boolean;
@@ -38,17 +42,16 @@ export function TaskFilterModal({
   assignableMembers,
   showCollaboratorFilter,
 }: TaskFilterModalProps) {
-  useRegisterEscapeClose(onClose, visible);
+  const { width } = useWindowDimensions();
+  if (!visible) return null;
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
+    // Same shell as every other dialog: backdrop, Escape, close button.
+    <DialogOverlay
+      onBackdropPress={onClose}
+      align={width >= 768 ? "center" : "bottom"}
     >
-      <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <Pressable style={styles.filterSheet} onPress={(e) => e.stopPropagation()}>
-          <Text style={styles.filterSheetTitle}>Filters</Text>
+      <DialogCard desktopWidth={400}>
+          <DialogHeader title="Filters" onClose={onClose} />
           <View style={styles.filterRow}>
             <Text style={styles.filterLabel}>Show completed</Text>
             <Switch
@@ -90,41 +93,15 @@ export function TaskFilterModal({
               </ScrollView>
             </>
           )}
-          <Button
-            title="Done"
-            onPress={onClose}
-            style={{ marginTop: 12 }}
-            size="small"
-          />
-        </Pressable>
-      </Pressable>
-    </Modal>
+          <DialogFooter>
+            <Button title="Done" onPress={onClose} size="small" />
+          </DialogFooter>
+      </DialogCard>
+    </DialogOverlay>
   );
 }
 
 const styles = StyleSheet.create({
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  filterSheet: {
-    width: "100%",
-    maxWidth: 400,
-    backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: Radius.lg,
-    padding: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.outlineVariant,
-  },
-  filterSheetTitle: {
-    fontSize: FontSize.title,
-    fontWeight: "700",
-    color: Colors.text,
-    marginBottom: 16,
-  },
   filterSectionLabel: {
     fontSize: FontSize.caption,
     fontWeight: "600",

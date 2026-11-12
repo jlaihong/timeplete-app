@@ -19,7 +19,7 @@ import { FontSize, Radius } from "../../theme/tokens";
  * `budgetType` is hard-coded to `"ACTUAL"` — the "BUDGETED" branch is
  * legacy and no longer surfaced in the UI.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -58,6 +58,11 @@ import {
   DialogFooter,
 } from "../ui/DialogScaffold";
 import { deviceTimeZone, listTimeZones } from "../../lib/timeZones";
+import { DialogMenu } from "../ui/DialogScaffold";
+import { useDiscardGuard } from "../../hooks/useDiscardGuard";
+import { hhmmToSeconds } from "../../lib/dates";
+import { StartTimeComboField } from "../trackables/widgets/dialogs/StartTimeComboField";
+import { DurationComboField } from "../trackables/widgets/dialogs/DurationComboField";
 
 interface EventDialogProps {
   day: string;
@@ -153,6 +158,35 @@ export function EventDialog({
     [selectedTimeZone]
   );
   const [titleError, setTitleError] = useState<string | null>(null);
+
+  // Time zone, comments and recurrence are the occasional fields; they sit
+  // behind "More options" so a new event is title, day, time and length.
+  // Opens by default when the event already uses one of them.
+  const [showMore, setShowMore] = useState(
+    () =>
+      !!existingEvent?.comments?.trim() ||
+      !!existingEvent?.isRecurringInstance,
+  );
+
+  // Unsaved-change guard for the accidental ways out (backdrop, Escape, ✕).
+  // Compares the simple fields against what the dialog opened with;
+  // recurrence loads asynchronously, so it is left out to avoid a false
+  // "unsaved changes" prompt.
+  const formSnapshot = JSON.stringify([
+    title,
+    eventDay,
+    startTime,
+    durationMinutes,
+    trackableId,
+    comments,
+    useTimeZone,
+    selectedTimeZone,
+  ]);
+  const initialSnapshot = useRef(formSnapshot);
+  const requestClose = useDiscardGuard(
+    formSnapshot !== initialSnapshot.current,
+    onClose,
+  );
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showRecurringScopeModal, setShowRecurringScopeModal] = useState(false);
@@ -547,8 +581,22 @@ export function EventDialog({
   const card = (
       <DialogCard desktopWidth={520}>
         <DialogHeader
-          title={existingEvent ? "Edit Event" : "New Event"}
-          onClose={onClose}
+          title={existingEvent ? "Edit event" : "New event"}
+          onClose={requestClose}
+          headerActions={
+            existingEvent ? (
+              <DialogMenu
+                items={[
+                  {
+                    label: "Delete event",
+                    icon: "trash-outline",
+                    onPress: handleDelete,
+                    destructive: true,
+                  },
+                ]}
+              />
+            ) : undefined
+          }
         />
 
         <KeyboardAwareScrollView
@@ -579,28 +627,48 @@ export function EventDialog({
           <DateField label="Date" value={eventDay} onChange={setEventDay} />
 
           <View style={styles.row}>
+            {/* Same pickers as "Log time": type a value or pick a preset.
+                Duration reads as hours and minutes, not raw minutes. */}
             <View style={styles.flex1}>
-              <Input
-                label="Start Time (HH:MM)"
+              <StartTimeComboField
+                label="Start time"
                 value={startTime}
-                onChangeText={setStartTime}
-                placeholder="09:00"
-                autoCapitalize="none"
-                containerStyle={{ marginBottom: 0 }}
+                onChange={setStartTime}
               />
             </View>
             <View style={styles.flex1}>
-              <Input
-                label="Duration (minutes)"
-                value={durationMinutes}
-                onChangeText={setDurationMinutes}
-                keyboardType="numeric"
-                placeholder="60"
-                containerStyle={{ marginBottom: 0 }}
+              <DurationComboField
+                label="Duration"
+                value={minutesToHhmm(durationMinutes)}
+                onChange={(hhmm) =>
+                  setDurationMinutes(
+                    String(Math.round(hhmmToSeconds(hhmm) / 60)),
+                  )
+                }
+                allowNone={false}
               />
             </View>
           </View>
 
+          <TrackablePicker
+            label="Trackable"
+            value={trackableId}
+            onChange={setTrackableId}
+          />
+
+          <Pressable
+            onPress={() => setShowMore((v) => !v)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showMore }}
+            style={styles.moreToggle}
+          >
+            <Text style={styles.moreToggleText}>
+              {showMore ? "Fewer options" : "More options"}
+            </Text>
+          </Pressable>
+
+          {showMore ? (
+            <>
           <View style={styles.recurringToggleRow}>
             <Text style={styles.recurringToggleLabel}>Use Time Zone</Text>
             <Switch
@@ -652,12 +720,6 @@ export function EventDialog({
               />
             )
           ) : null}
-
-          <TrackablePicker
-            label="Trackable"
-            value={trackableId}
-            onChange={setTrackableId}
-          />
 
           <Input
             label="Comments"
@@ -716,27 +778,14 @@ export function EventDialog({
               hideTimeWindowControls
             />
           ) : null}
+            </>
+          ) : null}
         </KeyboardAwareScrollView>
 
         <DialogFooter>
-          {/* Destructive action pinned bottom-left with a spacer before the
-              primary actions — same footer split as TaskDetailSheet /
-              ListDialog. Only shown when editing an existing event. */}
-          {existingEvent ? (
-            <>
-              <Button
-                title="Delete"
-                variant="danger"
-                onPress={handleDelete}
-                loading={deleting}
-                size="small"
-              />
-              <View style={styles.footerSpacer} />
-            </>
-          ) : null}
           <Button
             title="Cancel"
-            variant="outline"
+            variant="ghost"
             onPress={onClose}
             size="small"
           />
@@ -854,10 +903,19 @@ export function EventDialog({
     // Keyboard avoidance (lifting the card above the soft keyboard +
     // KeyboardToolbar, and capping its height) is built into the native
     // `DialogOverlay` — see `useDialogKeyboardShift`.
-    <DialogOverlay onBackdropPress={onClose} align={isWide ? "center" : "bottom"}>
+    <DialogOverlay
+      onBackdropPress={requestClose}
+      align={isWide ? "center" : "bottom"}
+    >
       {card}
     </DialogOverlay>
   );
+}
+
+/** "90" → "1:30", the format the duration field edits. */
+function minutesToHhmm(minutes: string): string {
+  const total = Math.max(0, Math.round(Number(minutes) || 0));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
 const styles = StyleSheet.create({
@@ -879,6 +937,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   flex1: { flex: 1 },
+  moreToggle: { alignSelf: "flex-start", paddingVertical: 6, marginBottom: 8 },
+  moreToggleText: {
+    fontSize: FontSize.body,
+    fontWeight: "600",
+    color: Colors.primary,
+  },
   recurringToggleRow: {
     flexDirection: "row",
     alignItems: "center",

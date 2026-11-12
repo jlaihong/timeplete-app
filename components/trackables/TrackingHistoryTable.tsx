@@ -1,5 +1,5 @@
 import { FontSize, Radius } from "../../theme/tokens";
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -31,12 +31,19 @@ export interface TrackingHistoryTableProps {
 /**
  * Tracking history — desktop table + mobile stacked-card layout.
  *
- * The desktop layout is a 6/7-column grid mirroring productivity-one's
- * mat-table. On a phone (~375–414px wide) the fixed columns alone are
- * ~330px, leaving virtually no room for Comments, so we swap to a
- * two-line stacked card on mobile: meta chips (date + duration + start +
- * value) on the top row, comments below.
+ * The table layout is a 6/7-column grid mirroring productivity-one's
+ * mat-table. Its fixed columns alone are ~330px, leaving virtually no room
+ * for Comments in a narrow space, so below `TABLE_MIN_WIDTH` we swap to a
+ * two-line stacked card: meta chips (date + duration + start + value) on
+ * the top row, comments below on their own full-width line.
+ *
+ * The choice follows the table's OWN width, not the window's: on desktop
+ * it also sits in narrow places (the task side panel, a column of the
+ * trackable page) where the grid crushed comments into a few characters
+ * per line.
  */
+const TABLE_MIN_WIDTH = 520;
+
 export function TrackingHistoryTable({
   rows,
   showValueColumn,
@@ -45,8 +52,17 @@ export function TrackingHistoryTable({
   footer,
 }: TrackingHistoryTableProps) {
   const isDesktop = useIsDesktop();
+  const [width, setWidth] = useState(0);
+  // Until measured, guess from the window so the first frame is usually right.
+  const useTable = width > 0 ? width >= TABLE_MIN_WIDTH : isDesktop;
   return (
-    <View style={styles.trackerTabWrap}>
+    <View
+      style={styles.trackerTabWrap}
+      onLayout={(e) => {
+        const w = Math.round(e.nativeEvent.layout.width);
+        if (w !== width) setWidth(w);
+      }}
+    >
       <TrackingHistoryScroller
         style={styles.scroll}
         // `contentContainerStyle` is what fixes Android scroll inside a
@@ -60,7 +76,7 @@ export function TrackingHistoryTable({
         showsVerticalScrollIndicator
         showsHorizontalScrollIndicator
       >
-        {isDesktop ? (
+        {useTable ? (
           <View style={styles.trackerTable}>
             <View style={[styles.trackerDataRow, styles.trackerHeadRowBg]}>
               <View style={styles.trackerIconCol} />
