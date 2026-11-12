@@ -1,3 +1,4 @@
+import { Radius } from "../../theme/tokens";
 import React from "react";
 import {
   Pressable,
@@ -61,7 +62,7 @@ export function SectionHeadingAddButton({
 const styles = StyleSheet.create({
   root: {
     padding: 6,
-    borderRadius: 20,
+    borderRadius: Radius.pill,
     ...Platform.select({
       web: { cursor: "pointer" } as object,
       default: {},

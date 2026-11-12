@@ -1,4 +1,6 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 import React, { createElement } from "react";
+import { Colors } from "../../../constants/colors";
 
 export interface AnalyticsSelectOption {
   value: string;
@@ -51,13 +53,13 @@ export function AnalyticsSelect({
         maxWidth: 200,
         paddingLeft: 10,
         paddingRight: 8,
-        borderRadius: 8,
+        borderRadius: Radius.md,
         borderWidth: 1,
         borderStyle: "solid",
-        borderColor: "#3B494C",
-        backgroundColor: "#242B2D",
-        color: "#DDE4E5",
-        fontSize: 13,
+        borderColor: Colors.outlineVariant,
+        backgroundColor: Colors.surfaceContainerHigh,
+        color: Colors.text,
+        fontSize: FontSize.body,
         fontWeight: 600,
         cursor: "pointer",
       } as import("react").CSSProperties,

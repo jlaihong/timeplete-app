@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../../theme/tokens";
 import React from "react";
 import {
   View,
@@ -79,8 +80,8 @@ const styles = StyleSheet.create({
     alignItems: "stretch",
     alignSelf: "stretch",
     backgroundColor: Colors.surfaceContainer,
-    borderRadius: 999,
-    padding: 3,
+    borderRadius: Radius.pill,
+    padding: 4,
     gap: 2,
     width: "100%",
     ...Platform.select({
@@ -91,7 +92,7 @@ const styles = StyleSheet.create({
   segment: {
     flex: 1,
     minHeight: 32,
-    borderRadius: 999,
+    borderRadius: Radius.pill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: Colors.surfaceContainerHigh,
@@ -102,7 +103,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
   },
   segmentLabel: {
-    fontSize: 11,
+    fontSize: FontSize.caption,
     fontWeight: "700",
     color: Colors.textSecondary,
     letterSpacing: 0.5,

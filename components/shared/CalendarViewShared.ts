@@ -7,15 +7,22 @@ import { wallClockInTimeZone, wallClockGridToEpochMs } from "../../lib/wallClock
  *
  *  Productivity-One uses FullCalendar with `slotDuration: '00:05:00'` and
  *  `snapDuration: '00:05:00'`. We mirror that with a pixel-per-minute grid:
- *  `PX_PER_MINUTE = 2` doubles the day timeline vs the original 1 px/min
- *  so hour rows and snap targets are easier to hit. Events shorter than
- *  five minutes still *render* at five minutes tall (see `eventBlockHeightPx`);
+ *  The scale depends on the pointer. Native is touch, so it keeps 2 px/min
+ *  (120 px hours) to make hour rows and snap targets easy to hit with a
+ *  finger. Web is driven by a mouse, so it uses 1.2 px/min (72 px hours):
+ *  about ten hours fit in the home panel instead of six. Very short events
+ *  still *render* at `MIN_RENDER_MINUTES` tall (see `eventBlockHeightPx`);
  *  persisted times are unchanged.
  *
  *  Events are absolute-positioned over the 24h timeline: a 30 min block is
  *  30 × PX_PER_MINUTE px tall.
  * ──────────────────────────────────────────────────────────────────────── */
-export const PX_PER_MINUTE = 2;
+export const PX_PER_MINUTE = Platform.OS === "web" ? 1.2 : 2;
+/**
+ * Shortest an event is ever drawn, in grid minutes: 10 px on native, 12 px
+ * on web, which is the least that still fits one line of title.
+ */
+export const MIN_RENDER_MINUTES = Platform.OS === "web" ? 10 : 5;
 export const HOUR_HEIGHT = 60 * PX_PER_MINUTE;
 export const DAY_MINUTES = 24 * 60;
 export const DAY_HEIGHT = DAY_MINUTES * PX_PER_MINUTE;
@@ -76,9 +83,9 @@ export function cachedWallClockGridToEpochMs(
   return v;
 }
 
-/** On-screen height: at least five minutes of grid, even when the event is shorter. */
+/** On-screen height: at least `MIN_RENDER_MINUTES` of grid, even when the event is shorter. */
 export function eventBlockHeightPx(durationMinutes: number): number {
-  return Math.max(MIN_DURATION_MINUTES, durationMinutes) * PX_PER_MINUTE;
+  return Math.max(MIN_RENDER_MINUTES, durationMinutes) * PX_PER_MINUTE;
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -395,9 +402,9 @@ export function pickTierLayout(height: number): TierLayout {
     return {
       tier: "medium",
       handlePx: 4,
-      padTop: 0,
+      padTop: 3,
       padBottom: 0,
-      padHorizontal: 6,
+      padHorizontal: 8,
       showTime: false,
       showDuration: false,
       showBadges: false,
@@ -406,9 +413,9 @@ export function pickTierLayout(height: number): TierLayout {
   return {
     tier: "large",
     handlePx: RESIZE_HANDLE_HEIGHT,
-    padTop: 0,
+    padTop: 5,
     padBottom: 0,
-    padHorizontal: 6,
+    padHorizontal: 8,
     showTime: true,
     // Duration + badges only render when the tile is tall enough that
     // they don't push the title out (one hour tall at the current scale).
@@ -460,7 +467,9 @@ export function packOverlappingEvents(
     const start = eventGridStartMinutes(w, gridTimeZone, nowMs);
     const end =
       start +
-      Math.max(MIN_DURATION_MINUTES, Math.round(w.durationSeconds / 60));
+      // Pack by drawn height, so a very short event never sits on top of
+      // the one that starts right after it.
+      Math.max(MIN_RENDER_MINUTES, Math.round(w.durationSeconds / 60));
     return { id: w._id, start, end };
   });
   items.sort((a, b) => a.start - b.start || b.end - a.end);

@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -63,14 +64,12 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     gap: 8,
-    marginBottom: 8,
   },
   btn: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: Radius.xl,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: Colors.surfaceContainerHighest,
@@ -83,7 +82,7 @@ const styles = StyleSheet.create({
   },
   display: {
     fontFamily: "Courier",
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
   },

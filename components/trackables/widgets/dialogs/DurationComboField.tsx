@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../../theme/tokens";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
@@ -146,7 +147,7 @@ const ROW_HEIGHT = 44;
 const styles = StyleSheet.create({
   block: { width: "100%", marginBottom: 0 },
   fieldLabel: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.textSecondary,
     marginBottom: 6,
@@ -157,24 +158,24 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     minHeight: 44,
   },
   comboInput: {
     flex: 1,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
   },
   comboChevron: { paddingHorizontal: 10, paddingVertical: 8 },
   errorSmall: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.error,
     marginTop: 6,
   },
   helperSmall: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.textTertiary,
     marginTop: 6,
   },
@@ -187,13 +188,13 @@ const styles = StyleSheet.create({
   modalCard: {
     maxHeight: "70%",
     backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     overflow: "hidden",
   },
   modalTitle: {
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "700",
     color: Colors.text,
     paddingHorizontal: 16,
@@ -210,6 +211,6 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.outlineVariant,
   },
   rowActive: { backgroundColor: Colors.primary + "18" },
-  rowText: { fontSize: 14, color: Colors.text },
+  rowText: { fontSize: FontSize.body, color: Colors.text },
   rowTextActive: { fontWeight: "700", color: Colors.primary },
 });

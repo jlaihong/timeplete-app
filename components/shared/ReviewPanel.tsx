@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
@@ -154,6 +155,16 @@ export function ReviewPanel({ title }: ReviewPanelProps) {
   };
 
   const handleFrequencySwitch = (f: Frequency) => {
+    if (isDirty && Platform.OS === "web") {
+      // `Alert.alert` does nothing on web, which left these tabs dead
+      // whenever an answer was unsaved. Cancel keeps the user where they are.
+      // eslint-disable-next-line no-alert
+      if (window.confirm("Discard your unsaved answers and switch?")) {
+        setFrequency(f);
+        setOffset(0);
+      }
+      return;
+    }
     if (isDirty) {
       Alert.alert("Unsaved Changes", "Save before switching?", [
         {
@@ -349,7 +360,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainer,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
+  sectionTitle: { fontSize: FontSize.title, fontWeight: "700", color: Colors.text },
   freqTabs: {
     flexDirection: "row",
     paddingHorizontal: 16,
@@ -359,12 +370,12 @@ const styles = StyleSheet.create({
   freqTab: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 16,
+    borderRadius: Radius.xl,
     backgroundColor: Colors.surfaceVariant,
   },
   activeFreqTab: { backgroundColor: Colors.primary },
   freqTabText: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.textSecondary,
   },
@@ -376,7 +387,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 16,
   },
-  dateLabel: { fontSize: 15, fontWeight: "600", color: Colors.text },
+  dateLabel: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
   reviewHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -385,27 +396,27 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   reviewTitle: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "700",
     color: Colors.text,
   },
   reflectLink: {
     marginLeft: 12,
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "400",
     color: Colors.primary,
   },
   headerSpacer: { flex: 1 },
   settingsHit: { padding: 4 },
   empty: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textTertiary,
     paddingVertical: 12,
   },
   content: { padding: 16, paddingBottom: 40 },
   questionCard: { marginBottom: 16 },
   questionText: {
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     marginBottom: 10,
@@ -414,9 +425,9 @@ const styles = StyleSheet.create({
     minHeight: 80,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     padding: 12,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
     backgroundColor: Colors.surfaceContainer,
   },
@@ -424,17 +435,17 @@ const styles = StyleSheet.create({
     minHeight: 56,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     padding: 12,
     backgroundColor: Colors.surfaceContainer,
   },
   answerPreviewText: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     lineHeight: 21,
     color: Colors.text,
   },
   answerPlaceholder: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     lineHeight: 21,
     color: Colors.textTertiary,
   },

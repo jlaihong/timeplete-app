@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, {
   useCallback,
   useEffect,
@@ -298,13 +299,13 @@ export function DurationPickerDesktop({
           border: "none",
           padding: "4px 8px",
           margin: 0,
-          color: active ? Colors.success : Colors.text,
+          color: active ? Colors.primary : Colors.textSecondary,
           fontWeight: active ? 600 : 400,
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontFamily: "inherit",
           fontVariantNumeric: "tabular-nums",
-          fontSize: 14,
+          fontSize: FontSize.caption,
           cursor: readonly ? "default" : "text",
-          borderRadius: 6,
+          borderRadius: Radius.md,
           minWidth: 56,
           textAlign: "right",
           ...buttonStyle,
@@ -346,10 +347,10 @@ export function DurationPickerDesktop({
           background: Colors.surfaceContainerHighest,
           color: Colors.text,
           border: `1px solid ${Colors.outline}`,
-          borderRadius: 6,
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          borderRadius: Radius.md,
+          fontFamily: "inherit",
           fontVariantNumeric: "tabular-nums",
-          fontSize: 14,
+          fontSize: FontSize.caption,
           textAlign: "right",
           outline: "none",
         }}
@@ -369,7 +370,7 @@ export function DurationPickerDesktop({
               overflowY: "auto",
               background: Colors.surfaceContainerHigh,
               border: `1px solid ${Colors.outlineVariant}`,
-              borderRadius: 8,
+              borderRadius: Radius.md,
               boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
               padding: 4,
             }}
@@ -389,11 +390,11 @@ export function DurationPickerDesktop({
                   style={{
                     padding: "8px 12px",
                     cursor: "pointer",
-                    borderRadius: 6,
+                    borderRadius: Radius.md,
                     fontFamily:
                       "ui-monospace, SFMono-Regular, Menlo, monospace",
                     fontVariantNumeric: "tabular-nums",
-                    fontSize: 14,
+                    fontSize: FontSize.body,
                     color: Colors.text,
                     background: isHighlighted
                       ? "rgba(255,255,255,0.08)"

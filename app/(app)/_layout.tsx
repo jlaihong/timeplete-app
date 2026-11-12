@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Drawer } from "expo-router/drawer";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -5,18 +6,21 @@ import {
   SafeAreaInsetsContext,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
 import { useQuery, useConvexAuth } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { View, Text, StyleSheet, ActivityIndicator, Platform } from "react-native";
 import {
-  DrawerContentScrollView,
-  DrawerItem,
-  type DrawerContentComponentProps,
-} from "@react-navigation/drawer";
+  View,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  ScrollView,
+} from "react-native";
+import { type DrawerContentComponentProps } from "@react-navigation/drawer";
 import { router, Redirect, useRouter, useSegments, useNavigationContainerRef, type Href } from "expo-router";
-import { authClient } from "../../lib/auth-client";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useDrawerSelection } from "../../hooks/useDrawerSelection";
@@ -24,10 +28,12 @@ import { useOutboxReplay } from "../../hooks/useOutboxReplay";
 import { TimerDisplay } from "../../components/timer/TimerDisplay";
 import { TimerCheckInGate } from "../../components/timer/TimerCheckInGate";
 import { TimerNotifications } from "../../components/timer/TimerNotifications";
+import { SiriAddToListHost } from "../../components/siri/SiriAddToListHost";
 import {
   DesktopAppChromeProvider,
-  DesktopAppTopBar,
-  useRegisterDrawerNavigationForDesktopChrome,
+  SIDEBAR_RAIL_WIDTH,
+  SIDEBAR_WIDTH,
+  useDesktopAppChrome,
 } from "../../components/layout/DesktopAppChrome";
 import { NavPathTrace } from "../../components/debug/NavPathTrace";
 import { NavTreeProfiler } from "../../components/debug/NavTreeProfiler";
@@ -44,94 +50,87 @@ import {
   traceSidebarClickFlushComplete,
 } from "../../lib/navInstrumentation";
 
-const drawerItemStyle = { borderRadius: 8 };
-
 /**
- * `DrawerItem` from `@react-navigation/drawer` does shallow prop compare in its
- * memo wrapper. Wrapping with our own React.memo plus stable callbacks/icon
- * factories means only items whose `focused` state actually changes re-render
- * on a sidebar click. Without this the entire drawer (10+ items + N user
- * lists) re-renders on every navigation — the profiler caught a 47-72ms
- * Drawer phase=update which dominated the longtask blocking the main thread
- * between click and first paint.
+ * One sidebar row. Memoized with stable callbacks so only the rows whose
+ * `focused` state actually changes re-render on a sidebar click. Without
+ * this the entire sidebar (10+ items + N user lists) re-renders on every
+ * navigation — the profiler caught a 47-72ms Drawer phase=update which
+ * dominated the longtask blocking the main thread between click and first
+ * paint.
+ *
+ * `rail` is the folded desktop sidebar (icon only); `touch` is the phone
+ * drawer, which keeps finger-sized rows.
  */
-type NavDrawerItemProps = {
+type NavRowProps = {
   label: string;
   focused: boolean;
-  iconName: keyof typeof Ionicons.glyphMap;
-  iconColor?: string;
-  labelStyle?: { color?: string };
   onPress: () => void;
+  iconName?: keyof typeof Ionicons.glyphMap;
+  /** Lists show their colour as a dot instead of a glyph. */
+  dotColour?: string;
+  rail?: boolean;
+  touch?: boolean;
 };
 
-const NavDrawerItem = React.memo(function NavDrawerItem({
+/** Web: a native tooltip, for the icon rail and for truncated list names. */
+function setTitleAttribute(label: string) {
+  return (node: unknown) => {
+    if (Platform.OS !== "web") return;
+    (node as { setAttribute?: (k: string, v: string) => void } | null)
+      ?.setAttribute?.("title", label);
+  };
+}
+
+const NavRow = React.memo(function NavRow({
   label,
   focused,
+  onPress,
   iconName,
-  iconColor,
-  labelStyle,
-  onPress,
-}: NavDrawerItemProps) {
-  const icon = useCallback(
-    ({ size, color }: { size: number; color: string }) => (
-      <Ionicons
-        name={iconName}
-        size={size}
-        color={iconColor ?? color}
-      />
-    ),
-    [iconName, iconColor],
-  );
+  dotColour,
+  rail = false,
+  touch = false,
+}: NavRowProps) {
+  const titleRef = useMemo(() => setTitleAttribute(label), [label]);
   return (
-    <DrawerItem
-      label={label}
-      focused={focused}
-      activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
-      inactiveTintColor={Colors.textSecondary}
-      activeTintColor={Colors.textSecondary}
-      style={drawerItemStyle}
-      labelStyle={labelStyle}
-      icon={icon}
+    <Pressable
+      ref={titleRef as never}
       onPress={onPress}
-    />
-  );
-});
-
-type ListDrawerItemProps = {
-  label: string;
-  colour: string;
-  focused: boolean;
-  onPress: () => void;
-};
-
-/**
- * Per-list rows in the "My Lists" section. Same memoization rationale as
- * {@link NavDrawerItem}, plus the icon is a plain coloured dot (not an Ionic
- * glyph) so it has its own stable factory keyed on the list colour.
- */
-const ListDrawerItem = React.memo(function ListDrawerItem({
-  label,
-  colour,
-  focused,
-  onPress,
-}: ListDrawerItemProps) {
-  const icon = useCallback(
-    () => (
-      <View style={[styles.listDot, { backgroundColor: colour }]} />
-    ),
-    [colour],
-  );
-  return (
-    <DrawerItem
-      label={label}
-      focused={focused}
-      activeBackgroundColor={Colors.sidenavItemSelectedHoverMatch}
-      inactiveTintColor={Colors.textSecondary}
-      activeTintColor={Colors.textSecondary}
-      style={drawerItemStyle}
-      icon={icon}
-      onPress={onPress}
-    />
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: focused }}
+      style={(state) => [
+        styles.row,
+        touch && styles.rowTouch,
+        rail && styles.rowRail,
+        ((state as { hovered?: boolean }).hovered || state.pressed) &&
+          styles.rowHover,
+        focused && styles.rowActive,
+      ]}
+    >
+      <View style={styles.rowIconSlot}>
+        {dotColour ? (
+          <View style={[styles.listDot, { backgroundColor: dotColour }]} />
+        ) : iconName ? (
+          <Ionicons
+            name={iconName}
+            size={touch ? 20 : 18}
+            color={focused ? Colors.primary : Colors.textSecondary}
+          />
+        ) : null}
+      </View>
+      {!rail && (
+        <Text
+          style={[
+            styles.rowLabel,
+            touch && styles.rowLabelTouch,
+            focused && styles.rowLabelActive,
+          ]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+      )}
+    </Pressable>
   );
 });
 
@@ -274,14 +273,29 @@ function buildStableGo(envRef: { current: DrawerGoEnv }): (href: Href) => void {
 
 function CustomDrawerContent(props: DrawerContentComponentProps) {
   const { navigation } = props;
-  useRegisterDrawerNavigationForDesktopChrome(navigation);
   const navigationContainerRef = useNavigationContainerRef();
   const { profileReady } = useAuth();
   const isDesktop = useIsDesktop();
+  const insets = useSafeAreaInsets();
+  const { sidebarCollapsed, setSidebarCollapsed } = useDesktopAppChrome();
   const sel = useDrawerSelection();
   const expoRouter = useRouter();
   const segments = useSegments();
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
+
+  /** Desktop sidebar folded down to icons. */
+  const rail = isDesktop && sidebarCollapsed;
+  /** Phone drawer: finger-sized rows. */
+  const touch = !isDesktop;
+
+  // The drawer's open/closed status is fixed from the first render, so a
+  // window that loads narrow and is then widened would keep a "closed"
+  // desktop sidebar — hidden, with nothing on screen to bring it back.
+  // On desktop the sidebar only ever folds to the rail, so force it open.
+  useEffect(() => {
+    if (isDesktop) navigation.openDrawer();
+    else navigation.closeDrawer();
+  }, [isDesktop, navigation]);
 
   useEffect(() => {
     if (!profileReady) return;
@@ -299,10 +313,20 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
     return inbox[0] ?? null;
   }, [lists]);
 
+  // Only hand-made lists. A trackable's own list would otherwise repeat the
+  // whole Trackables page here and bury lists like "Groceries"; those open
+  // from the trackable, or from Manage. The one being viewed still shows,
+  // so the sidebar always marks where you are.
+  const activeListId = sel.activeListId;
   const sidebarLists = useMemo(() => {
     if (!lists) return null;
-    return lists.filter((l) => !l.archived && !l.isInbox);
-  }, [lists]);
+    return lists.filter(
+      (l) =>
+        !l.archived &&
+        !l.isInbox &&
+        (!l.isGoalList || l._id === activeListId),
+    );
+  }, [lists, activeListId]);
 
   const envRef = useRef<DrawerGoEnv>({
     segments,
@@ -321,8 +345,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
   // `go` is stable for the lifetime of the component — `useCallback` with
   // an empty dep array is intentional; everything mutable goes through
   // `envRef`. This is what unlocks the per-item `useCallback`s below to
-  // also stay stable, so memoized `NavDrawerItem`s don't re-render on
-  // every navigation.
+  // also stay stable, so memoized `NavRow`s don't re-render on every
+  // navigation.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const go = useCallback(buildStableGo(envRef), []);
 
@@ -331,7 +355,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
   const onAnalytics = useCallback(() => go("/(app)/(tabs)/analytics"), [go]);
   const onReviews = useCallback(() => go("/(app)/(tabs)/reviews"), [go]);
   const onTags = useCallback(() => go("/(app)/tags"), [go]);
-  const onAgent = useCallback(() => go("/(app)/agent"), [go]);
+  const onSettings = useCallback(() => go("/(app)/settings"), [go]);
   const onAllLists = useCallback(() => go("/(app)/lists"), [go]);
   const onShared = useCallback(() => go("/(app)/shared"), [go]);
   const inboxId = inboxList?._id ?? null;
@@ -339,18 +363,10 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
     if (inboxId) go(`/(app)/lists/${inboxId}`);
   }, [go, inboxId]);
 
-  const onSignOut = useCallback(async () => {
-    await authClient.signOut();
-    navigation.closeDrawer();
-    replaceBrowserHistorySync("/");
-    router.replace("/");
-    flushExpoRouterNavigationQueue(navigationContainerRef);
-  }, [navigation, navigationContainerRef]);
-
   // Stable per-list onPress map: looked up by list id. The map itself is
   // recreated when the list set changes, but the *individual* callbacks
-  // stay stable across renders within that set so `ListDrawerItem`s can
-  // skip re-rendering when only the focused id changed.
+  // stay stable across renders within that set so list rows can skip
+  // re-rendering when only the focused id changed.
   const listOnPressMap = useMemo(() => {
     const map = new Map<string, () => void>();
     if (sidebarLists) {
@@ -361,119 +377,231 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
     return map;
   }, [sidebarLists, go]);
 
-  const signOutLabelStyle = useMemo(
-    () => ({ color: Colors.error }),
-    [],
+  const toggleLabel = rail ? "Expand sidebar" : "Collapse sidebar";
+  const toggleTitleRef = useMemo(
+    () => setTitleAttribute(toggleLabel),
+    [toggleLabel],
   );
 
   return (
-    <DrawerContentScrollView {...props} style={styles.drawer}>
-      {!isDesktop && (
-        <View style={styles.drawerHeader}>
-          <Text style={styles.drawerTitle}>Timeplete</Text>
-        </View>
-      )}
+    <View
+      style={[
+        styles.drawer,
+        { paddingTop: insets.top, paddingBottom: insets.bottom },
+      ]}
+    >
+      {/* Brand + fold toggle. On desktop this replaces the old full-width
+          top bar, which spent a 56px strip of every page on the app name. */}
+      <View style={[styles.brandRow, rail && styles.brandRowRail]}>
+        {!rail && (
+          <View style={styles.brand}>
+            <Text style={styles.brandText}>Timeplete</Text>
+            <View style={styles.betaPill}>
+              <Text style={styles.betaLabel}>Beta</Text>
+            </View>
+          </View>
+        )}
+        {isDesktop && (
+          <Pressable
+            ref={toggleTitleRef as never}
+            onPress={() => setSidebarCollapsed(!sidebarCollapsed)}
+            accessibilityRole="button"
+            accessibilityLabel={toggleLabel}
+            style={(state) => [
+              styles.toggle,
+              ((state as { hovered?: boolean }).hovered || state.pressed) &&
+                styles.rowHover,
+            ]}
+          >
+            <MaterialIcons
+              name={rail ? "menu" : "menu-open"}
+              size={20}
+              color={Colors.textSecondary}
+            />
+          </Pressable>
+        )}
+      </View>
 
-      <NavDrawerItem
-        label="Home"
-        focused={sel.home}
-        iconName="home-outline"
-        onPress={onHome}
-      />
-      {inboxList ? (
-        <NavDrawerItem
-          label="Inbox"
-          focused={sel.inbox}
-          iconName="file-tray-outline"
-          onPress={onInbox}
+      <View style={styles.group}>
+        <NavRow
+          label="Home"
+          focused={sel.home}
+          iconName="home-outline"
+          onPress={onHome}
+          rail={rail}
+          touch={touch}
         />
-      ) : null}
-      <NavDrawerItem
-        label="Trackables"
-        focused={sel.goals}
-        iconName="analytics-outline"
-        onPress={onTrackables}
-      />
-      <NavDrawerItem
-        label="Analytics"
-        focused={sel.analytics}
-        iconName="bar-chart-outline"
-        onPress={onAnalytics}
-      />
-
-      {!isDesktop && (
-        <NavDrawerItem
+        {inboxList ? (
+          <NavRow
+            label="Inbox"
+            focused={sel.inbox}
+            iconName="file-tray-outline"
+            onPress={onInbox}
+            rail={rail}
+            touch={touch}
+          />
+        ) : null}
+        <NavRow
+          label="Trackables"
+          focused={sel.goals}
+          iconName="trophy-outline"
+          onPress={onTrackables}
+          rail={rail}
+          touch={touch}
+        />
+        <NavRow
+          label="Analytics"
+          focused={sel.analytics}
+          iconName="bar-chart-outline"
+          onPress={onAnalytics}
+          rail={rail}
+          touch={touch}
+        />
+        <NavRow
           label="Reviews"
           focused={sel.reviews}
           iconName="journal-outline"
           onPress={onReviews}
+          rail={rail}
+          touch={touch}
         />
+        <NavRow
+          label="Tags"
+          focused={sel.tags}
+          iconName="pricetag-outline"
+          onPress={onTags}
+          rail={rail}
+          touch={touch}
+        />
+        {rail && (
+          <NavRow
+            label="All lists"
+            focused={sel.allLists || sel.activeListId != null}
+            iconName="list-outline"
+            onPress={onAllLists}
+            rail
+          />
+        )}
+      </View>
+
+      {/* Lists are the only part that scrolls, so the pages above and the
+          account rows below stay put however many lists there are. */}
+      {rail ? (
+        <View style={styles.listsScroll} />
+      ) : (
+        <>
+          <View style={styles.listsHeader}>
+            <Text style={styles.sectionTitle}>Lists</Text>
+            <Pressable
+              onPress={onAllLists}
+              accessibilityRole="button"
+              accessibilityLabel="All lists"
+              hitSlop={8}
+              style={(state) => [
+                styles.allListsLink,
+                ((state as { hovered?: boolean }).hovered || state.pressed) &&
+                  styles.rowHover,
+                sel.allLists && styles.rowActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.allListsText,
+                  sel.allLists && styles.rowLabelActive,
+                ]}
+              >
+                Manage
+              </Text>
+            </Pressable>
+          </View>
+          <ScrollView
+            style={styles.listsScroll}
+            contentContainerStyle={styles.group}
+            showsVerticalScrollIndicator={false}
+          >
+            {sidebarLists?.map(
+              (list: { _id: string; name: string; colour: string }) => (
+                <NavRow
+                  key={list._id}
+                  label={list.name}
+                  dotColour={list.colour}
+                  focused={sel.activeListId === list._id}
+                  onPress={listOnPressMap.get(list._id)!}
+                  touch={touch}
+                />
+              ),
+            )}
+          </ScrollView>
+        </>
       )}
 
-      <NavDrawerItem
-        label="Tags"
-        focused={sel.tags}
-        iconName="pricetag-outline"
-        onPress={onTags}
-      />
-
-      <View style={styles.divider} />
-
-      <Text style={styles.sectionTitle}>My Lists</Text>
-      {sidebarLists &&
-        sidebarLists.map(
-          (list: { _id: string; name: string; colour: string }) => (
-            <ListDrawerItem
-              key={list._id}
-              label={list.name}
-              colour={list.colour}
-              focused={sel.activeListId === list._id}
-              onPress={listOnPressMap.get(list._id)!}
-            />
-          ),
-        )}
-      <NavDrawerItem
-        label="All Lists"
-        focused={sel.allLists}
-        iconName="list-outline"
-        onPress={onAllLists}
-      />
-
-      <View style={styles.divider} />
-
-      <NavDrawerItem
-        label="Shared with Me"
-        focused={sel.shared}
-        iconName="people-outline"
-        onPress={onShared}
-      />
-
-      <View style={styles.divider} />
-
-      <NavDrawerItem
-        label="Agent access"
-        focused={sel.agent}
-        iconName="key-outline"
-        onPress={onAgent}
-      />
-
-      <View style={styles.divider} />
-
-      <NavDrawerItem
-        label="Sign Out"
-        focused={false}
-        iconName="log-out-outline"
-        iconColor={Colors.error}
-        labelStyle={signOutLabelStyle}
-        onPress={onSignOut}
-      />
-    </DrawerContentScrollView>
+      <View style={[styles.group, styles.footer]}>
+        <NavRow
+          label="Shared with me"
+          focused={sel.shared}
+          iconName="people-outline"
+          onPress={onShared}
+          rail={rail}
+          touch={touch}
+        />
+        <NavRow
+          label="Settings"
+          focused={sel.settings}
+          iconName="settings-outline"
+          onPress={onSettings}
+          rail={rail}
+          touch={touch}
+        />
+      </View>
+    </View>
   );
 }
 
 function OutboxReplayHost() {
   useOutboxReplay();
   return null;
+}
+
+/**
+ * The drawer navigator. Split out of `AppLayout` so it can read the
+ * sidebar's folded state from `DesktopAppChromeProvider`.
+ */
+function AppDrawer({ isDesktop }: { isDesktop: boolean }) {
+  const { sidebarCollapsed } = useDesktopAppChrome();
+  const width = !isDesktop
+    ? 264
+    : sidebarCollapsed
+      ? SIDEBAR_RAIL_WIDTH
+      : SIDEBAR_WIDTH;
+  return (
+    <Drawer
+      drawerContent={CustomDrawerContent}
+      defaultStatus={isDesktop ? "open" : "closed"}
+      screenOptions={{
+        headerShown: false,
+        drawerType: isDesktop ? "permanent" : "slide",
+        swipeEnabled: !isDesktop,
+        overlayColor: "transparent",
+        drawerStyle: {
+          backgroundColor: Colors.sidenav,
+          width,
+          borderRightWidth: 0,
+        },
+      }}
+    >
+      <Drawer.Screen name="(tabs)" />
+      <Drawer.Screen name="inbox" options={{ title: "Inbox" }} />
+      <Drawer.Screen name="tags" options={{ title: "Tags" }} />
+      <Drawer.Screen name="lists" options={{ title: "Lists" }} />
+      <Drawer.Screen name="shared" options={{ title: "Shared" }} />
+      <Drawer.Screen name="settings" options={{ title: "Settings" }} />
+      <Drawer.Screen name="agent" options={{ title: "Settings" }} />
+      <Drawer.Screen
+        name="edit-trackable"
+        options={{ title: "Edit Trackable" }}
+      />
+    </Drawer>
+  );
 }
 
 export default function AppLayout() {
@@ -543,35 +671,9 @@ export default function AppLayout() {
       <SafeAreaInsetsContext.Provider value={insetsBelowTimerBar}>
       <DesktopAppChromeProvider>
         <View style={{ flex: 1 }}>
-          {isDesktop ? <DesktopAppTopBar /> : null}
           <View style={{ flex: 1, minHeight: 0 }}>
             <NavTreeProfiler id="(app)/Drawer">
-              <Drawer
-                drawerContent={CustomDrawerContent}
-                defaultStatus={isDesktop ? "open" : "closed"}
-                screenOptions={{
-                  headerShown: false,
-                  drawerType: isDesktop ? "permanent" : "slide",
-                  swipeEnabled: !isDesktop,
-                  overlayColor: "transparent",
-                  drawerStyle: {
-                    backgroundColor: Colors.sidenav,
-                    width: 250,
-                    borderRightWidth: 0,
-                  },
-                }}
-              >
-                <Drawer.Screen name="(tabs)" />
-                <Drawer.Screen name="inbox" options={{ title: "Inbox" }} />
-                <Drawer.Screen name="tags" options={{ title: "Tags" }} />
-                <Drawer.Screen name="lists" options={{ title: "Lists" }} />
-                <Drawer.Screen name="shared" options={{ title: "Shared" }} />
-                <Drawer.Screen name="agent" options={{ title: "Agent access" }} />
-                <Drawer.Screen
-                  name="edit-trackable"
-                  options={{ title: "Edit Goal" }}
-                />
-              </Drawer>
+              <AppDrawer isDesktop={isDesktop} />
             </NavTreeProfiler>
           </View>
         </View>
@@ -579,6 +681,7 @@ export default function AppLayout() {
       </SafeAreaInsetsContext.Provider>
       {/* Durable mutation outbox replay after auth (renders nothing). */}
       {profile != null && isApproved ? <OutboxReplayHost /> : null}
+      {profile != null && isApproved ? <SiriAddToListHost /> : null}
       {/* Long-running-timer check-ins — overlays every screen. */}
       <TimerCheckInGate />
       {/* Reminder notifications for the check-ins (renders nothing). */}
@@ -597,36 +700,94 @@ export default function AppLayout() {
 
 const styles = StyleSheet.create({
   drawer: { flex: 1, backgroundColor: Colors.sidenav },
-  drawerHeader: {
-    padding: 20,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
+  brandRow: {
+    height: 60,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingLeft: 18,
+    paddingRight: 10,
   },
-  drawerTitle: {
-    fontSize: 24,
-    fontWeight: "800",
+  brandRowRail: { justifyContent: "center", paddingLeft: 0, paddingRight: 0 },
+  brand: { flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0 },
+  brandText: {
+    fontSize: FontSize.bodyLarge,
+    fontWeight: "700",
     color: Colors.text,
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
   },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.outlineVariant,
-    marginVertical: 8,
-    marginHorizontal: 16,
+  betaPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.surfaceContainerHigh,
+  },
+  betaLabel: {
+    fontSize: FontSize.micro,
+    fontWeight: "700",
+    color: Colors.textSecondary,
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  toggle: {
+    width: 32,
+    height: 32,
+    borderRadius: Radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  group: { paddingHorizontal: 8, gap: 2 },
+  row: {
+    height: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 10,
+    borderRadius: Radius.md,
+  },
+  rowTouch: { height: 46, gap: 14, paddingHorizontal: 12 },
+  rowRail: { justifyContent: "center", paddingHorizontal: 0 },
+  rowHover: { backgroundColor: Colors.sidenavItemHover },
+  rowActive: { backgroundColor: Colors.sidenavItemActive },
+  rowIconSlot: { width: 20, alignItems: "center", justifyContent: "center" },
+  rowLabel: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: FontSize.body,
+    color: Colors.textSecondary,
+  },
+  rowLabelTouch: { fontSize: FontSize.bodyLarge },
+  rowLabelActive: { color: Colors.text, fontWeight: "600" },
+  listsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+    marginBottom: 4,
+    paddingLeft: 18,
+    paddingRight: 10,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.textTertiary,
-    textTransform: "uppercase",
-    paddingHorizontal: 20,
+  },
+  allListsLink: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.md,
+  },
+  allListsText: { fontSize: FontSize.caption, color: Colors.textTertiary },
+  listsScroll: { flex: 1, minHeight: 0 },
+  footer: {
     paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.outlineVariant,
   },
   listDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 8,
+    height: 8,
+    borderRadius: Radius.pill,
   },
   bootstrapOverlay: {
     ...StyleSheet.absoluteFillObject,

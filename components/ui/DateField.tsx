@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 /**
  * Shared date field used by EventDialog, TaskDetailSheet, the goal forms
  * and RecurrenceSection so date editing looks/behaves the same everywhere.
@@ -348,7 +349,7 @@ const webDateInputStyle = {
   border: "none",
   outline: "none",
   padding: "22px 0 8px 0",
-  fontSize: 16,
+  fontSize: FontSize.bodyLarge,
   color: Colors.text,
   width: "100%",
   boxSizing: "border-box" as const,
@@ -377,7 +378,7 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
   labelGhost: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "400",
     height: 0,
     lineHeight: 0,
@@ -408,7 +409,7 @@ const styles = StyleSheet.create({
     minHeight: FIELD_MIN_HEIGHT,
   },
   nativeValueText: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     color: Colors.text,
     flexShrink: 1,
   },
@@ -435,12 +436,12 @@ const styles = StyleSheet.create({
   },
   iosSheetCancel: {
     color: Colors.textSecondary,
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "600",
   },
   iosSheetDone: {
     color: Colors.primary,
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "600",
   },
 });

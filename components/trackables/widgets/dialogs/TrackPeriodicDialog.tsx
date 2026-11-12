@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../../theme/tokens";
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -197,8 +198,8 @@ export function TrackPeriodicDialog({
 
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8 },
-  colourDot: { width: 14, height: 14, borderRadius: 7 },
-  title: { fontSize: 18, fontWeight: "700", color: Colors.text, flex: 1 },
+  colourDot: { width: 14, height: 14, borderRadius: Radius.pill },
+  title: { fontSize: FontSize.title, fontWeight: "700", color: Colors.text, flex: 1 },
   dateBlock: {
     marginTop: 10,
     marginBottom: 16,
@@ -213,24 +214,24 @@ const styles = StyleSheet.create({
   checkbox: {
     width: 22,
     height: 22,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     borderWidth: 2,
     borderColor: Colors.outline,
     alignItems: "center",
     justifyContent: "center",
   },
-  checkboxLabel: { fontSize: 15, color: Colors.text, flex: 1 },
+  checkboxLabel: { fontSize: FontSize.body, color: Colors.text, flex: 1 },
   completedTasksBlock: {
     marginBottom: 16,
     paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: Colors.surfaceContainer,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
   },
   completedTasksLabel: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.textSecondary,
     marginBottom: 6,
@@ -241,9 +242,9 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 2,
   },
-  completedTaskText: { fontSize: 13, color: Colors.text, flex: 1 },
+  completedTaskText: { fontSize: FontSize.body, color: Colors.text, flex: 1 },
   fieldLabel: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.textSecondary,
     marginBottom: 6,
@@ -252,10 +253,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
     minHeight: 72,
     textAlignVertical: "top",

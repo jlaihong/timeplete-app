@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import ReanimatedSwipeable, {
@@ -84,22 +85,18 @@ const styles = StyleSheet.create({
   actionContainer: {
     width: DELETE_ACTION_WIDTH,
     justifyContent: "center",
-    // Match the vertical breathing room of `TaskList.styles.taskCard`
-    // (marginBottom: 8) so the red action doesn't crash into the next row.
-    paddingBottom: 8,
   },
   deleteBtn: {
     flex: 1,
     backgroundColor: Colors.errorContainer,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 12,
     marginLeft: 8,
     gap: 2,
   },
   deleteText: {
     color: Colors.white,
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "600",
   },
 });

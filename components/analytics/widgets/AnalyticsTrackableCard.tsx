@@ -1,3 +1,4 @@
+import { FontSize } from "../../../theme/tokens";
 import React from "react";
 import {
   View,
@@ -82,7 +83,7 @@ const styles = StyleSheet.create({
     }),
   },
   titleBlock: { flex: 1 },
-  title: { fontSize: 14, fontWeight: "700", color: Colors.text },
+  title: { fontSize: FontSize.body, fontWeight: "700", color: Colors.text },
   headerBtn: { padding: 4 },
   body: { gap: 8 },
 });

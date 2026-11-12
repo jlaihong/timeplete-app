@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { todayYYYYMMDD } from "../../lib/dates";
-import { View, StyleSheet, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Pressable, useWindowDimensions } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SkeletonRows } from "../ui/SkeletonRows";
 import { Colors } from "../../constants/colors";
 import { DesktopTaskList } from "../tasks/DesktopTaskList";
 import { TrackableList } from "../shared/TrackableList";
@@ -23,6 +26,12 @@ import { HomeDndProvider } from "../dnd/HomeDndProvider";
  * Single dialog state — there is one EventDialog instance reused for
  * both create and edit. The `mode` discriminates how it's mounted.
  */
+const TRACKABLES_COLLAPSED_KEY = "home.trackablesCollapsed";
+/** Window width under which the trackables rail narrows. */
+const COMPACT_BELOW = 1280;
+/** Window width under which the trackables rail starts folded away. */
+const AUTO_COLLAPSE_BELOW = 1280;
+
 type DialogState =
   | { mode: "create"; day: string; prefill: AddEventPrefill | null }
   | { mode: "edit"; day: string; event: EditEventPayload }
@@ -46,7 +55,14 @@ function HomeColumnsGate({
   setShowAddTrackable,
   setLogRequest,
   setEditingTrackableId,
+  trackablesCollapsed,
+  setTrackablesCollapsed,
+  compact,
 }: {
+  /** Narrow window: the trackables rail takes less room. */
+  compact: boolean;
+  trackablesCollapsed: boolean;
+  setTrackablesCollapsed: (collapsed: boolean) => void;
   homeCalendarDay: string;
   setHomeCalendarDay: (day: string) => void;
   setShowAddTask: (b: boolean) => void;
@@ -66,14 +82,23 @@ function HomeColumnsGate({
   if (!ready) {
     return (
       <View style={styles.columns}>
-        <View style={[styles.sideColumn, styles.skeletonColumn]}>
-          <ActivityIndicator color={Colors.primary} />
+        {trackablesCollapsed ? (
+          <View style={styles.collapsedRail} />
+        ) : (
+          <View
+            style={[
+              styles.trackablesColumn,
+              compact && styles.trackablesColumnCompact,
+            ]}
+          >
+            <SkeletonRows count={4} rowHeight={120} />
+          </View>
+        )}
+        <View style={styles.centerColumn}>
+          <SkeletonRows count={8} />
         </View>
-        <View style={[styles.centerColumn, styles.skeletonColumn]}>
-          <ActivityIndicator color={Colors.primary} />
-        </View>
-        <View style={[styles.sideColumn, styles.skeletonColumn]}>
-          <ActivityIndicator color={Colors.primary} />
+        <View style={styles.sideColumn}>
+          <SkeletonRows count={6} rowHeight={64} />
         </View>
       </View>
     );
@@ -81,17 +106,54 @@ function HomeColumnsGate({
 
   return (
     <View style={styles.columns}>
-      <View style={styles.sideColumn}>
-        <TrackableList
-          title="Trackables"
-          showArchivedToggle={false}
-          onRequestAddTrackable={() => setShowAddTrackable(true)}
-          onRequestLog={setLogRequest}
-          onRequestEditTrackable={(id) =>
-            setEditingTrackableId(id as Id<"trackables">)
-          }
-        />
-      </View>
+      {trackablesCollapsed ? (
+        <View style={styles.collapsedRail}>
+          <Pressable
+            onPress={() => setTrackablesCollapsed(false)}
+            style={styles.railToggle}
+            accessibilityRole="button"
+            accessibilityLabel="Show trackables"
+            hitSlop={8}
+          >
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={Colors.textSecondary}
+            />
+          </Pressable>
+        </View>
+      ) : (
+        <View
+          style={[
+            styles.trackablesColumn,
+            compact && styles.trackablesColumnCompact,
+          ]}
+        >
+          <TrackableList
+            title="Trackables"
+            showArchivedToggle={false}
+            homeOnly
+            onRequestAddTrackable={() => setShowAddTrackable(true)}
+            onRequestLog={setLogRequest}
+            onRequestEditTrackable={(id) =>
+              setEditingTrackableId(id as Id<"trackables">)
+            }
+          />
+          <Pressable
+            onPress={() => setTrackablesCollapsed(true)}
+            style={[styles.railToggle, styles.railToggleFloating]}
+            accessibilityRole="button"
+            accessibilityLabel="Hide trackables"
+            hitSlop={8}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={18}
+              color={Colors.textSecondary}
+            />
+          </Pressable>
+        </View>
+      )}
 
       <View style={styles.centerColumn}>
         <DesktopTaskList
@@ -148,6 +210,37 @@ export function DesktopHome() {
     useState<Id<"trackables"> | null>(null);
   const [logRequest, setLogRequest] = useState<LogRequest | null>(null);
 
+  // Tasks are the primary job of this screen; the trackables rail can be
+  // folded away. The choice is remembered per device.
+  // Until the user picks, it follows the window: folded when the window
+  // is too narrow to give tasks and the calendar a usable width.
+  const { width: windowWidth } = useWindowDimensions();
+  const compact = windowWidth < COMPACT_BELOW;
+  const [trackablesChoice, setTrackablesCollapsedState] = useState<
+    boolean | null
+  >(null);
+  const trackablesCollapsed =
+    trackablesChoice ?? windowWidth < AUTO_COLLAPSE_BELOW;
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(TRACKABLES_COLLAPSED_KEY)
+      .then((stored) => {
+        if (cancelled) return;
+        if (stored === "1") setTrackablesCollapsedState(true);
+        else if (stored === "0") setTrackablesCollapsedState(false);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const setTrackablesCollapsed = (collapsed: boolean) => {
+    setTrackablesCollapsedState(collapsed);
+    AsyncStorage.setItem(TRACKABLES_COLLAPSED_KEY, collapsed ? "1" : "0").catch(
+      () => {},
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* Single continuous surface — sections are separated by spacing/typography,
@@ -166,6 +259,9 @@ export function DesktopHome() {
           setShowAddTrackable={setShowAddTrackable}
           setLogRequest={setLogRequest}
           setEditingTrackableId={setEditingTrackableId}
+          trackablesCollapsed={trackablesCollapsed}
+          setTrackablesCollapsed={setTrackablesCollapsed}
+          compact={compact}
         />
       </HomeDndProvider>
 
@@ -224,13 +320,26 @@ export function DesktopHome() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  columns: { flex: 1, flexDirection: "row" },
+  // Centred so that on a very wide window the leftover space is split
+  // either side instead of piling up on the right.
+  columns: { flex: 1, flexDirection: "row", justifyContent: "center" },
   // Spacing between sections — replaces the previous 1px vertical dividers.
   // Background is uniform across all columns so the page reads as one surface.
-  sideColumn: { flex: 1, minHeight: 0, paddingHorizontal: 8 },
-  centerColumn: { flex: 1.5, paddingHorizontal: 8 },
-  // Used only for the one-frame skeleton state of `HomeColumnsGate`. Keeps
-  // each column's flex weight so the page chrome's layout doesn't jump when
-  // the real content swaps in.
-  skeletonColumn: { alignItems: "center", justifyContent: "center" },
+  //
+  // Widths: the trackables rail is a fixed width (its cards have one good
+  // size); tasks and the calendar share the rest, each capped so a wide
+  // window doesn't stretch a task's title away from its labels.
+  sideColumn: { flex: 1, maxWidth: 480, minHeight: 0, paddingHorizontal: 8 },
+  trackablesColumn: {
+    width: 296,
+    flexShrink: 0,
+    minHeight: 0,
+    paddingHorizontal: 8,
+  },
+  trackablesColumnCompact: { width: 256 },
+  centerColumn: { flex: 1.6, maxWidth: 880, minWidth: 0, paddingHorizontal: 8 },
+  collapsedRail: { width: 40, alignItems: "center", paddingTop: 12 },
+  railToggle: { padding: 6 },
+  // Sits beside the column's "+" button in the Trackables header.
+  railToggleFloating: { position: "absolute", top: 14, right: 60 },
 });

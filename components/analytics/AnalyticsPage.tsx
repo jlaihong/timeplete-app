@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -9,13 +10,13 @@ import {
 } from "react-native";
 import { Colors } from "../../constants/colors";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
+import { DesktopPageHeader } from "../layout/DesktopPageHeader";
 import { AnalyticsStateProvider } from "./AnalyticsState";
 import { AnalyticsTabs } from "./AnalyticsTabs";
 import { AnalyticsDateNavigator } from "./AnalyticsDateNavigator";
 import { TrackableProgressionSection } from "./sections/TrackableProgressionSection";
 import { TimeBreakdownSection } from "./sections/TimeBreakdownSection";
 import { TimeSpendSection } from "./sections/TimeSpendSection";
-import { ReviewSection } from "./sections/ReviewSection";
 
 /* ──────────────────────────────────────────────────────────────────── *
  * AnalyticsPage — productivity-one's `analytics-page` shell.
@@ -27,10 +28,9 @@ import { ReviewSection } from "./sections/ReviewSection";
  *    `useAnalyticsDataset()`. Switching tab or date triggers a single
  *    Convex re-query and re-renders every section together.
  *
- * Layout: row of four columns from `md+` (≥1280px), single-column
- * stack on narrow viewports. Matches P1's `flex flex-col md:flex-row
- * gap-4`. The stacked layout omits `ReviewSection` — mobile reaches
- * reviews via the dedicated sidebar page instead.
+ * Layout: row of three columns from `md+` (≥1280px), single-column
+ * stack on narrow viewports. Reviews are not shown here — they have
+ * their own page in the sidebar on every platform.
  *
  * Note: there is no `TrackableDialogHost` mounted here — analytics
  * widgets are intentionally read-only (header `open_in_new` only;
@@ -63,11 +63,7 @@ export function AnalyticsPage({ title }: { title?: string }) {
   return (
     <AnalyticsStateProvider>
       <View style={styles.container}>
-        {title ? (
-          <View style={styles.headerBar}>
-            <Text style={styles.headerTitle}>{title}</Text>
-          </View>
-        ) : null}
+        {title ? <DesktopPageHeader title={title} /> : null}
         <AnalyticsTabs />
         <AnalyticsDateNavigator />
         <AnalyticsHeavyBodyGate>
@@ -96,17 +92,13 @@ function AnalyticsBody() {
           <View style={styles.col}>
             <TimeSpendSection />
           </View>
-          <View style={styles.col}>
-            <ReviewSection />
-          </View>
         </View>
       </ScrollView>
     );
   }
 
-  // No ReviewSection in the stacked (mobile / narrow) layout — the
-  // dedicated Reviews page is reachable from the sidebar there, so
-  // repeating the questions at the bottom of Analytics is redundant.
+  // Reviews are written on their own page (in the sidebar on every
+  // platform), so Analytics doesn't repeat the questions.
   return (
     <ScrollView contentContainerStyle={styles.scrollContent}>
       <TrackableProgressionSection />
@@ -124,14 +116,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainer,
-  },
-  headerTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
   scrollContent: { padding: 16, paddingBottom: 40 },
   columns: {
     flexDirection: "row",

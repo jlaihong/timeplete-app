@@ -482,7 +482,7 @@ function ChartLegend({ series }: { series: LineSeries[] }) {
         <View key={`leg-${i}`} style={legendStyles.item}>
           <DashedSwatch colour={s.colour} />
           <Text style={legendStyles.label}>
-            {s.name === "Required" ? "Required progress" : (s.name ?? "Goal")}
+            {s.name === "Required" ? "Required progress" : (s.name ?? "Trackable")}
           </Text>
         </View>
       ))}

@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React from "react";
 import {
   View,
@@ -113,19 +114,19 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 400,
     backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     padding: 20,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
   },
   filterSheetTitle: {
-    fontSize: 18,
+    fontSize: FontSize.title,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 16,
   },
   filterSectionLabel: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.textSecondary,
     marginTop: 12,
@@ -138,6 +139,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     gap: 12,
   },
-  filterLabel: { fontSize: 15, color: Colors.text, flex: 1 },
+  filterLabel: { fontSize: FontSize.body, color: Colors.text, flex: 1 },
   filterUserScroll: { maxHeight: 220 },
 });

@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 import React, {
   useCallback,
   useContext,
@@ -27,6 +28,7 @@ import { DialogOverlay } from "../ui/DialogScaffold";
 import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 import {
   initialAssignmentStateFromAddTaskContext,
+  normalizeTrackableOverride,
   resolveEffectiveListIdForTaskCreate,
 } from "../../lib/addTaskDefaults";
 
@@ -77,19 +79,28 @@ export function AddTaskSheet({
   const { profileReady, profile } = useAuth();
   const titleInputRef = useRef<TextInput>(null);
   const [name, setName] = useState("");
-  const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(() =>
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
+  const inboxListId = lists?.find((l) => l.isInbox)?._id ?? null;
+
+  /** Trackable the list the dialog was opened from is linked to, if any. */
+  const contextualListTrackableId =
+    ((lists?.find((l) => l._id === contextualListId)?.trackableId ??
+      null) as Id<"trackables"> | null);
+
+  const initialAssignment = () =>
     initialAssignmentStateFromAddTaskContext({
       contextualListId,
       defaultTrackableId,
-    }).trackableId,
+      contextualListTrackableId,
+    });
+
+  /** Explicit "counts toward" override; `null` follows the list. */
+  const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(
+    () => initialAssignment().trackableId,
   );
-  // Local manual list selection. `null` here means "no manual list" — on
-  // save we fall back to the inbox list (mirrors P1's `AddTask.onSave`).
-  const [listId, setListId] = useState<Id<"lists"> | null>(() =>
-    initialAssignmentStateFromAddTaskContext({
-      contextualListId,
-      defaultTrackableId,
-    }).listId,
+  /** Picked list; `null` means Inbox. */
+  const [listId, setListId] = useState<Id<"lists"> | null>(
+    () => initialAssignment().listId,
   );
 
   /** Once the user touches either picker, contextual defaults stop auto-tracking. */
@@ -97,14 +108,11 @@ export function AddTaskSheet({
 
   useEffect(() => {
     if (assignmentTouchedRef.current) return;
-    const next = initialAssignmentStateFromAddTaskContext({
-      contextualListId,
-      defaultTrackableId,
-    });
+    const next = initialAssignment();
     setTrackableId(next.trackableId);
     setListId(next.listId);
-  }, [contextualListId, defaultTrackableId]);
-  const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextualListId, defaultTrackableId, contextualListTrackableId]);
   const upsertTask = useTaskUpsertMutation();
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -115,43 +123,35 @@ export function AddTaskSheet({
     setToastKey((k) => k + 1);
     setToastMessage(msg);
   }, []);
-  const inboxListId =
-    lists?.find((l) => l.isInbox)?._id ?? null;
 
-  const hasGoalSelected = !!trackableId;
-  const hideListPicker =
-    hasGoalSelected || (!!contextualListId && lockListToContext);
+  /** The list is fixed when the dialog was opened from a list page. */
+  const hideListPicker = !!contextualListId && lockListToContext;
 
-  /** List-detail add dialog: trackable is display-only (productivity-one parity). */
-  const lockTrackableAssignment = lockListToContext;
+  /** List the task will be created in — drives the inherited trackable. */
+  const effectiveListId = resolveEffectiveListIdForTaskCreate({
+    lockListToContext,
+    contextualListId,
+    explicitListId: listId,
+    inboxListId,
+  });
+  const inheritedTrackableId =
+    ((lists?.find((l) => l._id === effectiveListId)?.trackableId ??
+      null) as Id<"trackables"> | null);
 
-  // Mutual exclusion handlers — verbatim from P1's
-  // `onGoalSelectionChange` / `onListSelectionChange`.
+  // List and trackable are independent: the list is where the task lives,
+  // the trackable is what it counts toward.
   const handleTrackableChange = (id: Id<"trackables"> | null) => {
-    if (lockTrackableAssignment) return;
     assignmentTouchedRef.current = true;
-    setTrackableId(id);
-    if (id) setListId(null);
+    setTrackableId(normalizeTrackableOverride(id, inheritedTrackableId));
   };
   const handleListChange = (id: Id<"lists"> | null) => {
     assignmentTouchedRef.current = true;
     setListId(id);
-    if (id) setTrackableId(null);
   };
 
   const handleCreate = () => {
     const title = name.trim();
     if (!title) return;
-
-    // P1 ordering, extended so list-detail (`lockListToContext`) always passes the
-    // page list id when appropriate — Convex + optimistic list pagination rely on it.
-    const effectiveListId = resolveEffectiveListIdForTaskCreate({
-      trackableId,
-      lockListToContext,
-      contextualListId,
-      explicitListId: listId,
-      inboxListId,
-    });
 
     flushDialogFeedback(() => {
       setName("");
@@ -211,13 +211,7 @@ export function AddTaskSheet({
               onSubmitEditing={handleCreate}
             />
 
-            <TrackablePicker
-              value={trackableId}
-              onChange={handleTrackableChange}
-              editable={!lockTrackableAssignment}
-            />
-
-            {/* List picker hidden when a trackable is selected, or list context locks the roster. */}
+            {/* Where the task lives. Hidden when opened from a list page. */}
             {!hideListPicker && (
               <ListPicker
                 value={listId}
@@ -225,6 +219,13 @@ export function AddTaskSheet({
                 mode="add"
               />
             )}
+
+            {/* What the task counts toward — follows the list by default. */}
+            <TrackablePicker
+              value={trackableId}
+              inheritedTrackableId={inheritedTrackableId}
+              onChange={handleTrackableChange}
+            />
           </KeyboardAwareScrollView>
 
           {/* Fixed footer (outside the scroll) so Cancel/Create stay
@@ -289,7 +290,7 @@ const styles = StyleSheet.create({
   // card is height-capped (keyboard open); content beyond that scrolls.
   scroll: { flexGrow: 0, flexShrink: 1 },
   title: {
-    fontSize: 20,
+    fontSize: FontSize.title,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 20,

@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 /**
  * Input — Material 3 "filled" text field with a floating label.
  *
@@ -258,7 +259,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   input: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     color: Colors.text,
     // Bottom padding leaves room for the underline; horizontal padding
     // is provided by the field wrapper so the input itself can sit
@@ -290,13 +291,13 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   error: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.error,
     marginTop: 4,
     marginLeft: FIELD_HORIZONTAL_PADDING,
   },
   helperText: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.textSecondary,
     lineHeight: 16,
     marginTop: 4,

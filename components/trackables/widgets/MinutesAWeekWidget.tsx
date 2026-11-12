@@ -35,7 +35,7 @@ export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
     targetMinutes > 0 ? minuteCredits / targetMinutes : 0;
 
   return (
-    <View style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}>
+    <View style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "stretch" }}>
       <WidgetTimerRow trackableId={goal._id} />
       <DayOfWeekCompletion
         days={goal.weeklyDayCompletion}

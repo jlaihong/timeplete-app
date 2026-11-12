@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 /**
  * "How long did you actually work?" — shown when a long-running timer is
  * stopped through the check-in flow ("No, I'm not working on this any
@@ -162,13 +163,13 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   taskName: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 4,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     lineHeight: 19,
     color: Colors.textSecondary,
     marginBottom: 16,
@@ -177,7 +178,7 @@ const styles = StyleSheet.create({
     height: 12,
   },
   error: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.error,
     marginTop: 12,
   },

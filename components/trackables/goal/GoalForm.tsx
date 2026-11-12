@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 /**
  * The 3-step `mat-vertical-stepper` goal-onboarding dialog.
  *
@@ -11,10 +12,12 @@
  * All five share the same chrome:
  *   <h2>Create a new goal</h2>
  *   Step "Goal details"             — variant-specific commitment form
- *   Step "Why is this important..." — GoalReasonsForm (always valid)
- *   Step "Accountability"           — GoalAccountabilityForm
+ *   Step "Why is this important..." — GoalReasonsForm (optional)
+ *   Step "Accountability"           — GoalAccountabilityForm (optional)
  *
- * Submit button on step 3 is "Let's do this!".
+ * Only the first step is required: "Create goal" is available as soon as
+ * the details are valid. Motivations and stakes can be added here or later
+ * from the goal's own dialog.
  */
 import React, { useState, useMemo } from "react";
 import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
@@ -78,7 +81,7 @@ export function GoalForm({ variant, seed, onSubmitted }: GoalFormProps) {
 
   const submit = async () => {
     if (submitting) return;
-    if (!stepValid) return;
+    if (!canCreate) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -118,7 +121,13 @@ export function GoalForm({ variant, seed, onSubmitted }: GoalFormProps) {
     }
   };
 
-  const stepLabels = ["Goal details", "Why is this important to me?", "Accountability"];
+  const stepLabels = [
+    "Goal details",
+    "Why is this important to me? (optional)",
+    "Accountability (optional)",
+  ];
+  /** The goal can be created from any step once its details are valid. */
+  const canCreate = isCommitmentValid(variant, commitment);
 
   return (
     <View style={styles.container}>
@@ -210,27 +219,26 @@ export function GoalForm({ variant, seed, onSubmitted }: GoalFormProps) {
                         size="small"
                       />
                     )}
-                    {i < 2 ? (
+                    {i < 2 && (
                       <Button
-                        title="Next"
-                        variant="primary"
+                        title={i === 0 ? "Add motivation & stakes" : "Next"}
+                        variant="outline"
                         onPress={goNext}
                         disabled={!stepValid}
                         size="small"
                       />
-                    ) : (
-                      <Button
-                        title="Let's do this!"
-                        variant="primary"
-                        onPress={submit}
-                        disabled={!stepValid || submitting}
-                        loading={submitting}
-                        size="small"
-                      />
                     )}
+                    <Button
+                      title="Create goal"
+                      variant="primary"
+                      onPress={submit}
+                      disabled={!canCreate || submitting}
+                      loading={submitting}
+                      size="small"
+                    />
                   </View>
 
-                  {submitError && i === 2 && (
+                  {submitError && (
                     <Text style={styles.submitError}>{submitError}</Text>
                   )}
                 </View>
@@ -246,7 +254,7 @@ export function GoalForm({ variant, seed, onSubmitted }: GoalFormProps) {
 const styles = StyleSheet.create({
   container: { gap: 16, flex: 1, minHeight: 0 },
   title: {
-    fontSize: 22,
+    fontSize: FontSize.heading,
     fontWeight: "600",
     color: Colors.text,
     paddingHorizontal: 24,
@@ -274,7 +282,7 @@ const styles = StyleSheet.create({
   stepBadge: {
     width: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     backgroundColor: Colors.surfaceContainerHigh,
     alignItems: "center",
     justifyContent: "center",
@@ -282,12 +290,12 @@ const styles = StyleSheet.create({
   stepBadgeActive: { backgroundColor: Colors.primary },
   stepBadgeDone: { backgroundColor: Colors.primary },
   stepBadgeText: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.text,
   },
   stepHeaderLabel: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
   },
   stepBody: { paddingTop: 12, paddingBottom: 16, gap: 16 },
@@ -298,7 +306,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   submitError: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.error,
     textAlign: "right",
   },

@@ -1,3 +1,4 @@
+import { FontSize } from "../../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -52,7 +53,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   text: {
-    fontSize: 11,
+    fontSize: FontSize.caption,
     color: Colors.textTertiary,
   },
 });

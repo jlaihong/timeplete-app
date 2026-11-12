@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useState, useMemo } from "react";
 import {
   View,
@@ -26,7 +27,7 @@ export interface ListPickerProps {
   onChange: (id: Id<"lists"> | null) => void;
   label?: string;
   /**
-   * In `add` mode, the empty option is labelled "None" (matching
+   * In `add` mode, the empty option was once labelled "None" (matching
    * productivity-one's `AddTask` mat-select); in `edit` mode it is the
    * literal Inbox list, labelled "Inbox" (matching `TaskDetails`).
    */
@@ -86,9 +87,7 @@ export function ListPicker({
   const triggerLabel = selectedNonInbox
     ? selectedNonInbox.name
     : isInboxSelected || value == null
-      ? mode === "edit"
-        ? "Inbox"
-        : "None"
+      ? "Inbox"
       : "";
 
   const triggerColour =
@@ -132,7 +131,8 @@ export function ListPicker({
             onPress={(e) => e.stopPropagation?.()}
           >
             <ScrollView style={styles.menuScroll}>
-              {/* Empty-state row: "None" in add mode, "Inbox" in edit mode. */}
+              {/* Default row: always labelled "Inbox" — an unassigned task
+                  is saved to the Inbox list in both add and edit mode. */}
               <TouchableOpacity
                 style={styles.menuItem}
                 onPress={() => {
@@ -148,7 +148,7 @@ export function ListPicker({
               >
                 <View style={styles.colourDotEmpty} />
                 <Text style={styles.menuItemText}>
-                  {mode === "edit" ? "Inbox" : "None"}
+                  Inbox
                 </Text>
                 {(value == null || isInboxSelected) && (
                   <Ionicons
@@ -203,10 +203,10 @@ export function ListPicker({
 const styles = StyleSheet.create({
   container: { marginBottom: 12 },
   label: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     marginBottom: 6,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   trigger: {
     flexDirection: "row",
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outline,
     backgroundColor: Colors.surfaceContainer,
@@ -227,12 +227,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  triggerText: { fontSize: 14, color: Colors.text, flex: 1 },
-  colourDot: { width: 12, height: 12, borderRadius: 3 },
+  triggerText: { fontSize: FontSize.body, color: Colors.text, flex: 1 },
+  colourDot: { width: 12, height: 12, borderRadius: Radius.sm },
   colourDotEmpty: {
     width: 12,
     height: 12,
-    borderRadius: 3,
+    borderRadius: Radius.sm,
     borderWidth: 1,
     borderColor: Colors.outline,
   },
@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   },
   menu: {
     backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     width: "100%",
@@ -269,11 +269,11 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 6,
+    borderRadius: Radius.md,
   },
-  menuItemText: { flex: 1, fontSize: 14, color: Colors.text },
+  menuItemText: { flex: 1, fontSize: FontSize.body, color: Colors.text },
   emptyText: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textTertiary,
     padding: 16,
     textAlign: "center",

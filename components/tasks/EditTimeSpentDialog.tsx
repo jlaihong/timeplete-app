@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 /**
  * Mobile counterpart of `DurationPickerDesktop` — the click-to-edit
  * time-spent control on web task rows.
@@ -183,7 +184,7 @@ export function EditTimeSpentDialog({
 
 const styles = StyleSheet.create({
   taskName: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     marginBottom: 12,
   },
@@ -191,18 +192,18 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     minHeight: 44,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
   },
   listWrap: {
     marginTop: 10,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     overflow: "hidden",
     backgroundColor: Colors.surfaceContainer,
   },
@@ -218,7 +219,7 @@ const styles = StyleSheet.create({
   },
   rowActive: { backgroundColor: Colors.primary + "18" },
   rowText: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
     fontVariant: ["tabular-nums"],
   },

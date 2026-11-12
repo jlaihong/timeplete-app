@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 /**
  * THE tap-to-edit time-spent control shown on native task rows.
  *
@@ -76,14 +77,14 @@ export function TaskTimeSpentButton({
 
 const styles = StyleSheet.create({
   duration: {
-    fontSize: 14,
-    color: Colors.textSecondary,
+    fontSize: FontSize.caption,
+    color: Colors.textTertiary,
     fontVariant: ["tabular-nums"],
     minWidth: 42,
     textAlign: "right",
   },
   durationActive: {
-    color: Colors.success,
+    color: Colors.primary,
     fontWeight: "600",
   },
 });

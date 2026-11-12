@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
   View,
@@ -7,19 +8,19 @@ import {
   TouchableOpacity,
   RefreshControl,
   Platform,
-  Switch,
 } from "react-native";
 import {
   NestableScrollContainer,
   NestableDraggableFlatList,
   type RenderItemParams,
 } from "react-native-draggable-flatlist";
+import { Pressable as GesturePressable } from "react-native-gesture-handler";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
-import { Card } from "../ui/Card";
 import { EmptyState } from "../ui/EmptyState";
+import { SkeletonRows } from "../ui/SkeletonRows";
 import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import {
   todayYYYYMMDD,
@@ -38,9 +39,25 @@ import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
 import { useTaskMoveMutations } from "../../hooks/useTaskMoveMutations";
 import { SwipeableTaskRow } from "../tasks/SwipeableTaskRow";
+import { TaskFilterModal } from "../tasks/TaskFilterModal";
+import type { TaskFilterMember } from "../../lib/taskFilters";
+
+/** True for a dated group that falls before today (it holds overdue tasks). */
+function isPastDayGroup(day: string, today: string): boolean {
+  return /^\d/.test(day) && day < today;
+}
+
+const NO_FILTER_USERS: string[] = [];
+const NO_FILTER_MEMBERS: TaskFilterMember[] = [];
+const noopToggleUserFilter = () => {};
 import { TaskTimeSpentButton } from "../tasks/TaskTimeSpentButton";
 import { useTaskTimeSpentEditor } from "../tasks/useTaskTimeSpentEditor";
 import { Id } from "../../convex/_generated/dataModel";
+import {
+  nextOverdueWeeksLoaded,
+  overdueCutoffDay,
+  splitOverdueByCutoff,
+} from "../../lib/overdueWindow";
 
 const LOAD_MORE_DAYS = 7;
 const isWeb = Platform.OS === "web";
@@ -159,10 +176,14 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const timer = useTimer();
 
   const [showCompleted, setShowCompleted] = useState(true);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
   );
+  /** Weeks of overdue history shown; older tasks sit behind "Load previous week". */
+  const [overdueWeeksLoaded, setOverdueWeeksLoaded] = useState(1);
+  const overdueCutoff = overdueCutoffDay(today, overdueWeeksLoaded);
   const [dragOverTarget, setDragOverTarget] = useState<{
     day: string;
     index: number;
@@ -217,10 +238,21 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
    * don't need a client-side `futureTasksBeyondRange` check because anything
    * outside the requested window never reaches the client.
    */
+  /** Overdue tasks older than the loaded window — counted, not rendered. */
+  const olderOverdue = useMemo(() => {
+    const overdue = (tasks ?? []).filter(
+      (t) => !t.dateCompleted && !!t.taskDay && t.taskDay < today,
+    );
+    const { hiddenCount, newestHiddenDay } = splitOverdueByCutoff(
+      overdue,
+      overdueCutoff,
+    );
+    return { hiddenCount, newestHiddenDay };
+  }, [tasks, today, overdueCutoff]);
+
   const groupedTasks = useMemo(() => {
     if (!tasks) return [];
     const groups = new Map<string, typeof tasks>();
-    const overdueKey = "overdue";
     const unscheduledKey = "unscheduled";
 
     for (const task of tasks) {
@@ -236,9 +268,10 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         groups.get(unscheduledKey)!.push(task);
         continue;
       }
-      if (day < today) {
-        if (!groups.has(overdueKey)) groups.set(overdueKey, []);
-        groups.get(overdueKey)!.push(task);
+      // Overdue tasks sit under their own date, like any other day. Days
+      // older than the loaded window stay behind "Load previous week".
+      if (day < overdueCutoff) {
+        continue;
       } else {
         if (!groups.has(day)) groups.set(day, []);
         groups.get(day)!.push(task);
@@ -255,27 +288,30 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
     }
 
     const entries = Array.from(groups.entries()).sort(([a], [b]) => {
-      if (a === "overdue") return -1;
-      if (b === "overdue") return 1;
       if (a === "unscheduled") return 1;
       if (b === "unscheduled") return -1;
       return a.localeCompare(b);
     });
 
-    return entries.map(([day, dayTasks]) => {
+    return entries.flatMap(([day, dayTasks]) => {
       const allTasks = dayTasks.sort(compareTasksForDay);
       const completedCount = allTasks.filter((t) => !!t.dateCompleted).length;
       const visibleTasks = showCompleted
         ? allTasks
         : allTasks.filter((t) => !t.dateCompleted);
 
-      return {
+      const isPastDay = isPastDayGroup(day, today);
+      // Past days only exist to hold their tasks: no empty placeholders.
+      if (isPastDay && visibleTasks.length === 0) return [];
+
+      return [{
         day,
+        isPastDay,
+        /** A past day that still has open tasks: its date reads as overdue. */
+        isOverdueDay: isPastDay && visibleTasks.some((t) => !t.dateCompleted),
         nextOrderIndex: maxOrderPlusOne(allTasks.map((t) => t.taskDayOrderIndex)),
         label:
-          day === "overdue"
-            ? "Overdue"
-            : day === "unscheduled"
+          day === "unscheduled"
               ? "Unscheduled"
               : isToday(day)
                 ? "Today"
@@ -283,9 +319,20 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         tasks: visibleTasks,
         completedCount,
         totalCount: allTasks.length,
-      };
+      }];
     });
-  }, [tasks, showCompleted, today, visibleEndDay]);
+  }, [tasks, showCompleted, today, visibleEndDay, overdueCutoff]);
+
+  const isGroupCollapsed = useCallback(
+    (day: string, _visibleCount: number) => collapsedGroups.has(day),
+    [collapsedGroups],
+  );
+
+  const handleLoadPreviousOverdueWeek = useCallback(() => {
+    setOverdueWeeksLoaded((weeks) =>
+      nextOverdueWeeksLoaded(today, weeks, olderOverdue.newestHiddenDay),
+    );
+  }, [today, olderOverdue.newestHiddenDay]);
 
   const toggleComplete = useCallback(
     async (taskId: Id<"tasks">, taskName: string, isCompleted: boolean) => {
@@ -345,6 +392,8 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         completedCount: number;
         totalCount: number;
         isCollapsed: boolean;
+        isPastDay: boolean;
+        isOverdueDay: boolean;
       }
     | {
         kind: "task";
@@ -352,12 +401,21 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         day: string;
         indexInDay: number;
       }
-    | { kind: "empty-placeholder"; day: string };
+    | { kind: "empty-placeholder"; day: string }
+    | { kind: "load-previous-overdue"; day: string; hiddenCount: number };
 
   const flatRows = useMemo<FlatRow[]>(() => {
     const out: FlatRow[] = [];
+    // Older overdue days load a week at a time, mirroring "Load More".
+    if (olderOverdue.hiddenCount > 0) {
+      out.push({
+        kind: "load-previous-overdue",
+        day: "older",
+        hiddenCount: olderOverdue.hiddenCount,
+      });
+    }
     for (const group of groupedTasks) {
-      const isCollapsed = collapsedGroups.has(group.day);
+      const isCollapsed = isGroupCollapsed(group.day, group.tasks.length);
       out.push({
         kind: "header",
         day: group.day,
@@ -365,10 +423,11 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         completedCount: group.completedCount,
         totalCount: group.totalCount,
         isCollapsed,
+        isPastDay: group.isPastDay,
+        isOverdueDay: group.isOverdueDay,
       });
       if (isCollapsed) continue;
-      const isValidDropDay =
-        group.day !== "overdue" && group.day !== "unscheduled";
+      const isValidDropDay = !group.isPastDay && group.day !== "unscheduled";
       if (group.tasks.length === 0 && isValidDropDay) {
         out.push({ kind: "empty-placeholder", day: group.day });
       }
@@ -377,7 +436,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       });
     }
     return out;
-  }, [groupedTasks, collapsedGroups]);
+  }, [groupedTasks, isGroupCollapsed, olderOverdue.hiddenCount]);
 
   const toggleGroupExpansion = useCallback((day: string) => {
     setCollapsedGroups((prev) => {
@@ -402,7 +461,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       const taskId = drag.taskId as Id<"tasks">;
       const sourceTask = tasks?.find((t) => t._id === taskId);
       const fromDay =
-        drag.sourceDay === "overdue" || drag.sourceDay === "unscheduled"
+        drag.sourceDay === "unscheduled"
           ? (sourceTask?.taskDay ?? drag.sourceDay)
           : drag.sourceDay;
       const insertAboveTaskId = (insertAboveId ?? null) as Id<"tasks"> | null;
@@ -619,73 +678,79 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         .map((id: string) => tagMap.get(id))
         .filter(Boolean);
 
+      const metaLabels: { colour?: string; name: string }[] = [];
+      if (trackable) metaLabels.push(trackable);
+      else if (list) metaLabels.push(list);
+      for (const tag of taskTags) if (tag) metaLabels.push(tag as any);
+      const hasTime = timeSpent > 0 || isTimerActive;
+
+      // Flat row: no card. The colour dot carries identity; text stays grey.
       const cardContent = (
-        <Card
+        <View
           style={[
             styles.taskCard,
             isTimerActive && styles.taskCardTicking,
             isCompleted && styles.taskCardCompleted,
           ]}
-          padded={false}
         >
-            <TouchableOpacity
-              style={styles.taskRow}
-              onPress={() => onSelectTask?.(task._id)}
-              onLongPress={onLongPressDrag}
-              delayLongPress={300}
-              activeOpacity={0.7}
-            >
-              {/* Col 1: Complete toggle */}
-              <TouchableOpacity
-                onPress={(e) => {
-                  e.stopPropagation?.();
-                  toggleComplete(task._id, task.name, isCompleted);
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons
-                  name={
-                    isCompleted ? "checkmark-circle" : "ellipse-outline"
-                  }
-                  size={24}
-                  color={isCompleted ? Colors.success : Colors.textTertiary}
-                />
-              </TouchableOpacity>
-
-              {/* Col 2: Name */}
+          {/* Native gesture, outside the row long-press, so a check
+              does not wait on the list pan or the 300ms drag timer. */}
+          <GesturePressable
+            onPress={() => {
+              toggleComplete(task._id, task.name, isCompleted);
+            }}
+            hitSlop={8}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: isCompleted }}
+            accessibilityLabel={
+              isCompleted ? "Mark incomplete" : "Mark complete"
+            }
+            style={styles.checkBtn}
+          >
+            <Ionicons
+              name={isCompleted ? "checkmark-circle" : "ellipse-outline"}
+              size={22}
+              color={isCompleted ? Colors.success : Colors.textTertiary}
+            />
+          </GesturePressable>
+          <TouchableOpacity
+            style={styles.taskMain}
+            onPress={() => onSelectTask?.(task._id)}
+            onLongPress={onLongPressDrag}
+            delayLongPress={300}
+            activeOpacity={0.7}
+          >
+            <View style={styles.taskText}>
               <Text
-                style={[
-                  styles.taskName,
-                  isCompleted && styles.completedTask,
-                ]}
+                style={[styles.taskName, isCompleted && styles.completedTask]}
                 numberOfLines={1}
               >
                 {task.name}
               </Text>
+              {metaLabels.length > 0 && (
+                <View style={styles.tagsRow}>
+                  {metaLabels.map((label, i) => (
+                    <View key={i} style={styles.tagChip}>
+                      <View
+                        style={[
+                          styles.tagDot,
+                          { backgroundColor: label.colour || Colors.neutral },
+                        ]}
+                      />
+                      <Text style={styles.tagName} numberOfLines={1}>
+                        {label.name}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
 
-              {/* Col 3: Timer + Duration */}
-              <View style={styles.timeCol}>
-                {!isCompleted && (
-                  <TouchableOpacity
-                    onPress={(e) => {
-                      e.stopPropagation?.();
-                      handleToggleTimer(task._id);
-                    }}
-                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  >
-                    <Ionicons
-                      name={isTimerActive ? "pause" : "play-outline"}
-                      size={20}
-                      color={
-                        isTimerActive
-                          ? Colors.success
-                          : Colors.textSecondary
-                      }
-                    />
-                  </TouchableOpacity>
-                )}
-                {/* Tap-to-edit time spent (web parity: DurationPickerDesktop).
-                    Read-only while the timer drives the value. */}
+            {/* Timer + duration. The duration only appears once there is one. */}
+            <View style={styles.timeCol}>
+              {hasTime && (
+                /* Tap-to-edit time spent (web parity: DurationPickerDesktop).
+                   Read-only while the timer drives the value. */
                 <TaskTimeSpentButton
                   taskId={task._id}
                   taskName={task.name}
@@ -694,69 +759,28 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                   timerStartTime={timer.startTime}
                   onEdit={openTimeSpentEditor}
                 />
-              </View>
-            </TouchableOpacity>
-
-            {/* Tags row — below the main grid */}
-            {(trackable || list || taskTags.length > 0) && (
-              <View style={styles.tagsRow}>
-                {trackable && (
-                  <View style={styles.tagChip}>
-                    <Ionicons
-                      name="analytics"
-                      size={13}
-                      color={trackable.colour || Colors.text}
-                    />
-                    <Text
-                      style={[
-                        styles.tagName,
-                        { color: trackable.colour || Colors.text },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {trackable.name}
-                    </Text>
-                  </View>
-                )}
-                {!trackable && list && (
-                  <View style={styles.tagChip}>
-                    <Ionicons
-                      name="list"
-                      size={13}
-                      color={list.colour || Colors.text}
-                    />
-                    <Text
-                      style={[
-                        styles.tagName,
-                        { color: list.colour || Colors.text },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {list.name}
-                    </Text>
-                  </View>
-                )}
-                {taskTags.map((tag: any, i: number) => (
-                  <View key={i} style={styles.tagChip}>
-                    <Ionicons
-                      name="pricetag"
-                      size={12}
-                      color={tag.colour || Colors.text}
-                    />
-                    <Text
-                      style={[
-                        styles.tagName,
-                        { color: tag.colour || Colors.text },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {tag.name}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </Card>
+              )}
+              {!isCompleted && (
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    handleToggleTimer(task._id);
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+                  accessibilityLabel={
+                    isTimerActive ? "Pause timer" : "Start timer"
+                  }
+                >
+                  <Ionicons
+                    name={isTimerActive ? "pause" : "play-outline"}
+                    size={18}
+                    color={isTimerActive ? Colors.primary : Colors.textTertiary}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
       );
 
       return (
@@ -850,7 +874,8 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         }
       }
       if (!targetDay) return;
-      if (targetDay === "overdue" || targetDay === "unscheduled") return;
+      if (isPastDayGroup(targetDay, today) || targetDay === "unscheduled")
+        return;
 
       const destTaskAt = (row: FlatRow | undefined) =>
         row?.kind === "task" &&
@@ -893,7 +918,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
 
       const taskId = moved.task._id as Id<"tasks">;
       const fromDay =
-        sourceDay === "overdue" || sourceDay === "unscheduled"
+        sourceDay === "unscheduled"
           ? (moved.task.taskDay ?? sourceDay)
           : sourceDay;
       if (fromDay === targetDay) {
@@ -943,7 +968,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
               <Text
                 style={[
                   styles.groupLabel,
-                  item.day === "overdue" && styles.overdueLabel,
+                  item.isOverdueDay && styles.overdueLabel,
                 ]}
               >
                 {item.label}
@@ -952,7 +977,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                   {item.completedCount}/{item.totalCount}
                 </Text>
               </Text>
-              {item.day !== "overdue" && onAddTask && (
+              {!item.isPastDay && onAddTask && (
                 <SectionHeadingAddButton
                   onPress={() =>
                     onAddTask(
@@ -965,6 +990,19 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
             </TouchableOpacity>
             <View style={styles.divider} />
           </View>
+        );
+      }
+      if (item.kind === "load-previous-overdue") {
+        return (
+          <TouchableOpacity
+            style={styles.loadPreviousWeek}
+            onPress={handleLoadPreviousOverdueWeek}
+            accessibilityRole="button"
+          >
+            <Text style={styles.loadMoreText}>
+              Load previous week ({item.hiddenCount} older)
+            </Text>
+          </TouchableOpacity>
         );
       }
       if (item.kind === "empty-placeholder") {
@@ -980,21 +1018,22 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         { day: item.day, tasks: [] as any },
         {
           isValidDropDay:
-            item.day !== "overdue" && item.day !== "unscheduled",
+            !isPastDayGroup(item.day, today) && item.day !== "unscheduled",
           onLongPressDrag: drag,
           isActive,
         },
       );
     },
-    [renderTaskCard, toggleGroupExpansion, onAddTask],
+    [
+      renderTaskCard,
+      toggleGroupExpansion,
+      onAddTask,
+      handleLoadPreviousOverdueWeek,
+    ],
   );
 
   if (!tasks) {
-    return (
-      <View style={styles.loading}>
-        <Text style={styles.loadingText}>Loading tasks...</Text>
-      </View>
-    );
+    return <SkeletonRows count={8} accessibilityLabel="Loading tasks" />;
   }
 
   /**
@@ -1020,20 +1059,32 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         </View>
       )}
 
+      {/* "Show completed" is rarely changed, so it lives behind a quiet
+          filter icon instead of a permanent bar above the list. */}
       <View style={styles.filterBar}>
-        <View style={styles.filterRow}>
-          <Text style={styles.filterLabel}>Show completed</Text>
-          <Switch
-            value={showCompleted}
-            onValueChange={setShowCompleted}
-            trackColor={{
-              false: Colors.outlineVariant,
-              true: Colors.primary + "60",
-            }}
-            thumbColor={showCompleted ? Colors.primary : Colors.textTertiary}
+        <TouchableOpacity
+          onPress={() => setFilterMenuOpen(true)}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Task filters"
+        >
+          <Ionicons
+            name="options-outline"
+            size={20}
+            color={showCompleted ? Colors.textTertiary : Colors.primary}
           />
-        </View>
+        </TouchableOpacity>
       </View>
+      <TaskFilterModal
+        visible={filterMenuOpen}
+        onClose={() => setFilterMenuOpen(false)}
+        showCompleted={showCompleted}
+        onPersistShowCompleted={setShowCompleted}
+        filterUserIds={NO_FILTER_USERS}
+        onToggleUserFilter={noopToggleUserFilter}
+        assignableMembers={NO_FILTER_MEMBERS}
+        showCollaboratorFilter={false}
+      />
 
       {groupedTasks.length === 0 ? (
         <EmptyState
@@ -1074,7 +1125,9 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                   ? `h:${row.day}`
                   : row.kind === "empty-placeholder"
                     ? `e:${row.day}`
-                    : `t:${row.task._id}`
+                    : row.kind === "load-previous-overdue"
+                      ? `lp:${row.day}`
+                      : `t:${row.task._id}`
               }
               activationDistance={5}
               // Autoscroll the outer `NestableScrollContainer` when the
@@ -1095,10 +1148,21 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
               renderItem={renderFlatRow}
             />
           )}
+          {isWeb && olderOverdue.hiddenCount > 0 && (
+            <TouchableOpacity
+              style={styles.loadPreviousWeek}
+              onPress={handleLoadPreviousOverdueWeek}
+              accessibilityRole="button"
+            >
+              <Text style={styles.loadMoreText}>
+                Load previous week ({olderOverdue.hiddenCount} older)
+              </Text>
+            </TouchableOpacity>
+          )}
           {isWeb && groupedTasks.map((group) => {
             const isValidDropDay =
-              group.day !== "overdue" && group.day !== "unscheduled";
-            const isCollapsed = collapsedGroups.has(group.day);
+              !group.isPastDay && group.day !== "unscheduled";
+            const isCollapsed = isGroupCollapsed(group.day, group.tasks.length);
 
             return (
               <View
@@ -1134,7 +1198,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                   <Text
                     style={[
                       styles.groupLabel,
-                      group.day === "overdue" && styles.overdueLabel,
+                      group.isOverdueDay && styles.overdueLabel,
                     ]}
                   >
                     {group.label}
@@ -1143,7 +1207,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                       {group.completedCount}/{group.totalCount}
                     </Text>
                   </Text>
-                  {group.day !== "overdue" && onAddTask && (
+                  {!group.isPastDay && onAddTask && (
                     <SectionHeadingAddButton
                       onPress={() =>
                         onAddTask(
@@ -1270,31 +1334,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: Colors.background,
   },
-  loadingText: { color: Colors.textSecondary, fontSize: 16 },
+  loadingText: { color: Colors.textSecondary, fontSize: FontSize.bodyLarge },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainer,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
+  sectionTitle: { fontSize: FontSize.title, fontWeight: "700", color: Colors.text },
   filterBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.outlineVariant,
-    backgroundColor: Colors.surfaceContainer,
-  },
-  filterRow: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
+    paddingHorizontal: 16,
+    paddingTop: 8,
   },
-  filterLabel: { fontSize: 14, color: Colors.textSecondary },
   listContent: { padding: 16, paddingBottom: 80 },
   group: { marginBottom: 20 },
   // Top spacing for headers when rendered as rows inside the flat
@@ -1316,15 +1370,16 @@ const styles = StyleSheet.create({
   },
   groupLabel: {
     flex: 1,
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
   },
   overdueLabel: { color: Colors.error },
+  loadPreviousWeek: { alignItems: "center", paddingVertical: 8 },
   taskCount: {
     fontWeight: "400",
     color: Colors.textTertiary,
-    fontSize: 13,
+    fontSize: FontSize.body,
     marginLeft: 4,
   },
   divider: {
@@ -1338,21 +1393,34 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.outlineVariant,
     borderStyle: "dashed",
-    borderRadius: 8,
+    borderRadius: Radius.md,
     padding: 12,
     alignItems: "center",
     marginBottom: 6,
   },
   emptyDropZoneText: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontStyle: "italic",
     color: Colors.textTertiary,
   },
 
-  taskCard: { marginBottom: 6 },
+  // Flat row. The background is opaque (same as the page) so the swipe
+  // "Delete" action stays hidden underneath until the row is dragged.
+  taskCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    minHeight: 52,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    backgroundColor: Colors.background,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.borderLight,
+  },
   taskCardTicking: {
-    borderColor: Colors.success,
-    borderWidth: 2,
+    backgroundColor: Colors.accentWash,
+    borderRadius: Radius.md,
+    borderBottomColor: Colors.transparent,
   },
   taskCardCompleted: { opacity: 0.5 },
   /** Visual cue while the native long-press drag is active. */
@@ -1361,15 +1429,24 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.02 }],
   },
 
-  taskRow: {
+  checkBtn: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: -6,
+    marginLeft: -8,
+  },
+  taskMain: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    gap: 8,
+    gap: 12,
+    minWidth: 0,
   },
+  taskText: { flex: 1, minWidth: 0, gap: 2 },
   taskName: {
-    flex: 1,
-    fontSize: 15,
+    fontSize: FontSize.bodyLarge,
     color: Colors.text,
     fontWeight: "400",
   },
@@ -1381,43 +1458,44 @@ const styles = StyleSheet.create({
   timeCol: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
   },
   duration: {
-    fontSize: 14,
-    color: Colors.textSecondary,
+    fontSize: FontSize.caption,
+    color: Colors.textTertiary,
     fontVariant: ["tabular-nums"] as any,
     minWidth: 42,
     textAlign: "right",
   },
   durationActive: {
-    color: Colors.success,
+    color: Colors.primary,
     fontWeight: "600",
   },
 
   tagsRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    paddingTop: 0,
+    alignItems: "center",
+    gap: 12,
+    overflow: "hidden",
   },
   tagChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
+    flexShrink: 1,
   },
+  tagDot: { width: 6, height: 6, borderRadius: Radius.pill },
   tagName: {
-    fontSize: 12,
-    maxWidth: 100,
+    fontSize: FontSize.caption,
+    color: Colors.textTertiary,
+    maxWidth: 140,
   },
 
   dropPlaceholder: {
-    height: 80,
+    height: 52,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.3)",
-    borderRadius: 8,
+    borderRadius: Radius.md,
     marginBottom: 6,
     ...Platform.select({
       web: {
@@ -1435,9 +1513,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   loadMoreText: {
-    color: Colors.primary,
-    fontSize: 14,
-    fontWeight: "500",
+    color: Colors.textSecondary,
+    fontSize: FontSize.caption,
   },
   fab: {
     position: "absolute",
@@ -1445,7 +1522,7 @@ const styles = StyleSheet.create({
     bottom: 20,
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",

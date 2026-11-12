@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 import React, {
   useCallback,
   useEffect,
@@ -236,27 +237,27 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   reviewTitle: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "700",
     color: Colors.text,
   },
   reflectLink: {
     marginLeft: 12,
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "400",
     color: Colors.primary,
   },
   headerSpacer: { flex: 1 },
   settingsHit: { padding: 4 },
   empty: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textTertiary,
     paddingVertical: 12,
   },
   form: { marginTop: 4 },
   questionBlock: { marginBottom: 16 },
   questionText: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     marginBottom: 4,
@@ -265,9 +266,9 @@ const styles = StyleSheet.create({
     minHeight: 60,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     padding: 10,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
     backgroundColor: Colors.background,
   },

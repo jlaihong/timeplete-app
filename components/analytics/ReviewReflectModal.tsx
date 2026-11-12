@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 /**
  * productivity-one `ReflectDialogComponent` — title `Reflect — {Current} Review`,
  * two columns (child reviews read-only | current review editable), footer
@@ -520,7 +521,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   columnHeading: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "600",
     marginBottom: 16,
     color: Colors.text,
@@ -530,7 +531,7 @@ const styles = StyleSheet.create({
   },
   dateHeading: {
     fontWeight: "600",
-    fontSize: 14,
+    fontSize: FontSize.body,
     marginBottom: 8,
     paddingBottom: 4,
     borderBottomWidth: 1,
@@ -541,14 +542,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   questionLabel: {
-    fontSize: 13,
-    fontWeight: "500",
+    fontSize: FontSize.body,
+    fontWeight: "600",
     opacity: 0.8,
     marginBottom: 2,
     color: Colors.text,
   },
   answerText: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     lineHeight: 21,
     color: Colors.text,
     ...(Platform.OS === "web"
@@ -558,7 +559,7 @@ const styles = StyleSheet.create({
   emptyState: {
     opacity: 0.6,
     fontStyle: "italic",
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
   },
   currentField: {
@@ -566,7 +567,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   currentLabel: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
   },
@@ -574,9 +575,9 @@ const styles = StyleSheet.create({
     minHeight: 72,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     padding: 12,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
     backgroundColor: Colors.surfaceContainer,
   },
@@ -584,12 +585,12 @@ const styles = StyleSheet.create({
     minHeight: 56,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     padding: 12,
     backgroundColor: Colors.surfaceContainer,
   },
   currentPlaceholder: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     lineHeight: 21,
     color: Colors.textTertiary,
   },
@@ -606,7 +607,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 16,
+    borderRadius: Radius.xl,
     backgroundColor: Colors.surfaceVariant,
     alignItems: "center",
   },
@@ -614,7 +615,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
   },
   segmentTabText: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.textSecondary,
   },

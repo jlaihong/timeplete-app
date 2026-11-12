@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../constants/colors";
@@ -49,14 +50,14 @@ const styles = StyleSheet.create({
   },
   icon: { fontSize: 48, marginBottom: 16 },
   title: {
-    fontSize: 18,
+    fontSize: FontSize.title,
     fontWeight: "600",
     color: Colors.text,
     textAlign: "center",
     marginBottom: 8,
   },
   message: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     textAlign: "center",
     lineHeight: 20,

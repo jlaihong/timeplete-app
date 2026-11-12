@@ -444,6 +444,12 @@ export default defineSchema({
      * `periodicOverallProgress` from the legacy per-day scans.
      */
     weekStatsSeeded: v.optional(v.boolean()),
+    /**
+     * Whether the trackable appears in the home screen's side column.
+     * `undefined` (rows written before this field existed) means shown.
+     * The Trackables page always lists every trackable regardless.
+     */
+    showOnHome: v.optional(v.boolean()),
     legacyId: v.optional(v.string()),
   })
     .index("by_user", ["userId"])

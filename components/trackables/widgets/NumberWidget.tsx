@@ -39,7 +39,7 @@ export function NumberWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
 
   return (
     <View
-      style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}
+      style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "stretch" }}
     >
       <Button
         title="Add progress"
@@ -53,8 +53,9 @@ export function NumberWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
             initialComments: todayEntry?.comments ?? "",
           })
         }
-        icon={<Ionicons name="add" size={20} color={Colors.primary} />}
+        icon={<Ionicons name="add" size={16} color={Colors.textSecondary} />}
         style={styles.addBtn}
+          size="small"
         onPointerDown={stopTrackableDrag}
       />
 
@@ -103,14 +104,15 @@ function fmt(n: number, decimals = 0): string {
 
 const styles = StyleSheet.create({
   addBtn: {
+    alignSelf: "flex-start",
     paddingVertical: 6,
     paddingHorizontal: 12,
   },
   statsRow: {
     flexDirection: "row",
-    gap: 18,
+    gap: 16,
     flexWrap: "wrap",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     alignSelf: "stretch",
   },
 });

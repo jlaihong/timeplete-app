@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useState } from "react";
 import {
   View,
@@ -15,6 +16,7 @@ import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { EmptyState } from "../ui/EmptyState";
+import { SkeletonRows } from "../ui/SkeletonRows";
 import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useAuth } from "../../hooks/useAuth";
@@ -24,6 +26,8 @@ import { ActiveTrackableDnd } from "../trackables/ActiveTrackableDnd";
 import { TrackableDialogHost } from "../trackables/widgets/TrackableDialogHost";
 import type { LogRequest } from "../trackables/widgets/types";
 import { startOfWeek, todayYYYYMMDD } from "../../lib/dates";
+import { splitTrackablesForHome } from "../../lib/trackableHomeVisibility";
+import { router } from "expo-router";
 
 interface TrackableListProps {
   title?: string;
@@ -52,12 +56,17 @@ interface TrackableListProps {
    */
   showArchivedToggle?: boolean;
   /**
-   * - `productivity-one-goals`: blue Tasks-style header strip + centered title.
+   * Home side column: leave out trackables the user unpinned and goals that
+   * ended a while ago (`lib/trackableHomeVisibility`). A footer links to the
+   * Trackables page, which always lists everything.
+   */
+  homeOnly?: boolean;
+  /**
    * - `trackables-page`: productivity-one `goals-page.html` — page title + add,
    *   "Current trackables" / "Archived trackables" sections, responsive grid
    *   (no Active/Archived tab strip).
    */
-  variant?: "default" | "productivity-one-goals" | "trackables-page";
+  variant?: "default" | "trackables-page";
 }
 
 /**
@@ -66,9 +75,6 @@ interface TrackableListProps {
  * (days-a-week pill, minutes-a-week timer pill, number stepper, etc.) and
  * wraps it in the shared `TrackableWidgetCard` chrome.
  */
-/** Matches `#1787D8` productivity-one Tasks panel (`DayActionTaskComponent.tsx`). */
-const P_ONE_TASKS_HEADER_BLUE = "#1787D8";
-
 /** Breakpoints aligned with productivity-one `goals-page.css` grid rules. */
 function trackablesPageColumnCount(windowWidth: number): number {
   if (windowWidth <= 600) return 1;
@@ -83,6 +89,7 @@ export function TrackableList({
   onRequestLog,
   onRequestEditTrackable,
   showArchivedToggle = true,
+  homeOnly = false,
   variant = "default",
 }: TrackableListProps) {
   const isDesktop = useIsDesktop();
@@ -153,9 +160,11 @@ export function TrackableList({
 
   if (!goalDetails) {
     return (
-      <View style={styles.loading}>
-        <Text style={styles.loadingText}>Loading trackables...</Text>
-      </View>
+      <SkeletonRows
+        count={4}
+        rowHeight={120}
+        accessibilityLabel="Loading trackables"
+      />
     );
   }
 
@@ -318,37 +327,42 @@ export function TrackableList({
   }
 
   const isShowingArchivedList = showArchivedToggle && showArchived;
+  const homeSplit = homeOnly
+    ? splitTrackablesForHome(goalDetails.active, today)
+    : null;
   const displayGoals = isShowingArchivedList
     ? goalDetails.archived
-    : goalDetails.active;
-
-  const productivityGoalsChrome =
-    variant === "productivity-one-goals" && title;
+    : (homeSplit?.shown ?? goalDetails.active);
+  // Count against the full active total so trackables beyond the fetched
+  // page are included in "N more".
+  const hiddenFromHomeCount = homeSplit
+    ? goalDetails.activeCount - homeSplit.shown.length
+    : 0;
+  const hiddenFromHomeFooter =
+    hiddenFromHomeCount > 0 ? (
+      <TouchableOpacity
+        style={styles.hiddenFromHome}
+        onPress={() => router.push("/(app)/(tabs)/goals")}
+        accessibilityRole="link"
+      >
+        <Text style={styles.hiddenFromHomeText}>
+          {hiddenFromHomeCount} more on the Trackables page
+        </Text>
+      </TouchableOpacity>
+    ) : null;
 
   return (
     <View style={styles.container}>
-      {productivityGoalsChrome ? (
-        <View style={styles.pOneGoalsBanner}>
-          <SectionHeadingAddButton
-            onPress={openAddTrackable}
-            accessibilityLabel="Add trackable"
-            tone="onInverse"
-          />
-          <Text style={styles.pOneGoalsBannerTitle}>{title}</Text>
-          <View style={styles.pOneGoalsBannerSpacer} />
+      {title && (
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{title}</Text>
+          {isDesktop && (
+            <SectionHeadingAddButton
+              onPress={openAddTrackable}
+              accessibilityLabel="Add trackable"
+            />
+          )}
         </View>
-      ) : (
-        title && (
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>{title}</Text>
-            {isDesktop && (
-              <SectionHeadingAddButton
-                onPress={openAddTrackable}
-                accessibilityLabel="Add trackable"
-              />
-            )}
-          </View>
-        )
       )}
 
       {showArchivedToggle && (
@@ -373,7 +387,7 @@ export function TrackableList({
               Archived ({goalDetails.archivedCount})
             </Text>
           </TouchableOpacity>
-          {!title && !productivityGoalsChrome && isDesktop && (
+          {!title && isDesktop && (
             <SectionHeadingAddButton
               onPress={openAddTrackable}
               accessibilityLabel="Add trackable"
@@ -387,12 +401,16 @@ export function TrackableList({
           title={
             isShowingArchivedList
               ? "No archived trackables"
-              : "No active trackables"
+              : hiddenFromHomeCount > 0
+                ? "Nothing on home"
+                : "No active trackables"
           }
           message={
             isShowingArchivedList
               ? "Archive trackables you've completed"
-              : "Create a trackable to start tracking your progress"
+              : hiddenFromHomeCount > 0
+                ? "Open a trackable and tap the home icon to show it here"
+                : "Create a trackable to start tracking your progress"
           }
         />
       ) : Platform.OS === "web" && !isShowingArchivedList ? (
@@ -404,6 +422,7 @@ export function TrackableList({
             onRequestLog={handleRequestLog}
             onRequestEditTrackable={onRequestEditTrackable}
           />
+          {hiddenFromHomeFooter}
         </View>
       ) : (
         <FlatList
@@ -418,6 +437,7 @@ export function TrackableList({
             />
           )}
           contentContainerStyle={styles.listContent}
+          ListFooterComponent={hiddenFromHomeFooter}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -465,27 +485,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
+    minHeight: 60,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
-  pOneGoalsBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    backgroundColor: P_ONE_TASKS_HEADER_BLUE,
-  },
-  pOneGoalsBannerTitle: {
-    flex: 1,
-    textAlign: "center",
-    color: Colors.white,
-    fontSize: 22,
-    fontWeight: "600",
-  },
-  pOneGoalsBannerSpacer: {
-    width: 34,
-    height: 34,
-  },
+  sectionTitle: { fontSize: FontSize.title, fontWeight: "700", color: Colors.text },
   tabs: {
     flexDirection: "row",
     paddingHorizontal: 16,
@@ -495,13 +497,15 @@ const styles = StyleSheet.create({
   tab: {
     paddingVertical: 8,
     paddingHorizontal: 16,
-    borderRadius: 20,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.surfaceVariant,
   },
   activeTab: { backgroundColor: Colors.primary },
-  tabText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
+  tabText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.textSecondary },
   activeTabText: { color: Colors.onPrimary },
   listContent: { padding: 16, paddingBottom: 80 },
+  hiddenFromHome: { alignItems: "center", paddingVertical: 12 },
+  hiddenFromHomeText: { color: Colors.primary, fontSize: FontSize.body, fontWeight: "600" },
   reorderScroll: {
     flex: 1,
     minHeight: 0,
@@ -518,25 +522,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: "100%",
   },
+  // Left-aligned at the shared page-title size, like every other page.
   trackablesPageTitleRow: {
+    alignSelf: "stretch",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
     gap: 8,
-    marginBottom: 20,
-    paddingHorizontal: 8,
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
   trackablesPageTitle: {
-    fontSize: 28,
-    fontWeight: "700",
+    fontSize: FontSize.title,
+    fontWeight: "600",
     color: Colors.text,
-    textAlign: "center",
   },
   trackablesPageSectionHeading: {
     alignSelf: "stretch",
     maxWidth: 1200,
     width: "100%",
-    fontSize: 20,
+    fontSize: FontSize.title,
     fontWeight: "600",
     color: Colors.text,
     marginBottom: 4,
@@ -546,10 +551,10 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     maxWidth: 1200,
     width: "100%",
-    fontSize: 20,
+    fontSize: FontSize.title,
     fontWeight: "600",
     color: Colors.text,
-    marginTop: 28,
+    marginTop: 24,
     marginBottom: 4,
     paddingHorizontal: 4,
   },
@@ -573,7 +578,7 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     maxWidth: 1200,
     color: Colors.textTertiary,
-    fontSize: 15,
+    fontSize: FontSize.body,
     paddingHorizontal: 4,
   },
   trackablesPageLoadMore: {
@@ -581,13 +586,13 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     borderWidth: 1,
     borderColor: Colors.outline,
   },
   trackablesPageLoadMoreText: {
     color: Colors.primary,
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
   },
   trackablesPageBottomSpacer: { height: 24 },
@@ -597,7 +602,7 @@ const styles = StyleSheet.create({
     bottom: 20,
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",

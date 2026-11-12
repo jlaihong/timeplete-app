@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React from "react";
 import {
   View,
@@ -134,9 +135,9 @@ function DateInputWeb({
         backgroundColor: Colors.surfaceContainer,
         color: Colors.text,
         border: `1px solid ${Colors.outlineVariant}`,
-        borderRadius: 8,
+        borderRadius: Radius.md,
         padding: "6px 10px",
-        fontSize: 13,
+        fontSize: FontSize.body,
         fontFamily: "inherit",
       }}
     />
@@ -171,7 +172,7 @@ const styles = StyleSheet.create({
   iconBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: Radius.pill,
     alignItems: "center",
     justifyContent: "center",
     ...Platform.select({
@@ -201,7 +202,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   middleLabel: {
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     textAlign: "center",

@@ -36,20 +36,21 @@ export default function TabsLayout() {
       })}
     >
       <Tabs.Screen
+        name="index"
+        options={{
+          // Same name as the drawer row and the desktop sidebar.
+          title: "Home",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="goals"
         options={{
           title: "Trackables",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="trophy-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "Tasks",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="checkbox-outline" size={size} color={color} />
           ),
         }}
       />

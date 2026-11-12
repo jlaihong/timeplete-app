@@ -1,3 +1,4 @@
+import { FontSize } from "../../../theme/tokens";
 /**
  * Step 1 of every goal-onboarding dialog — five variants matching the
  * angular `MyCommitmentForm*` components.
@@ -17,7 +18,7 @@
  */
 import React, { useEffect } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { Colors } from "../../../constants/colors";
+import { Colors, TRACKABLE_COLORS } from "../../../constants/colors";
 import {
   todayYYYYMMDD,
   weeksBetweenYYYYMMDD,
@@ -71,21 +72,7 @@ export interface CommitmentValue {
 /* ──────────────────────────────────────────────────────────────────── */
 
 function generateRandomColour(): string {
-  // 12 fixed swatches inspired by the trackable palette to give pleasant defaults.
-  const palette = [
-    "#6750A4",
-    "#E91E63",
-    "#00DAF5",
-    "#02E600",
-    "#F59E0B",
-    "#FF6B6B",
-    "#8B5CF6",
-    "#14B8A6",
-    "#F97316",
-    "#06B6D4",
-    "#84CC16",
-    "#EF4444",
-  ];
+  const palette = TRACKABLE_COLORS;
   return palette[Math.floor(Math.random() * palette.length)];
 }
 
@@ -460,9 +447,9 @@ export function CommitmentForm({ variant, value, onChange }: FormProps) {
 const styles = StyleSheet.create({
   form: { gap: 16 },
   row: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  helper: { fontSize: 14, color: Colors.text, lineHeight: 20 },
+  helper: { fontSize: FontSize.body, color: Colors.text, lineHeight: 20 },
   helperSmall: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     lineHeight: 18,
   },
@@ -481,5 +468,5 @@ const styles = StyleSheet.create({
    * column's full width.
    */
   weeksGroup: { alignSelf: "flex-start", gap: 4 },
-  error: { fontSize: 13, color: Colors.error, lineHeight: 18 },
+  error: { fontSize: FontSize.body, color: Colors.error, lineHeight: 18 },
 });

@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 /**
  * RecurrenceSection — controlled-form UI for configuring a recurring
  * task series.
@@ -856,9 +857,9 @@ function todayYYYYMMDDLocal(): string {
 const webSelectStyle = {
   backgroundColor: Colors.surfaceContainer,
   border: `1px solid ${Colors.outlineVariant}`,
-  borderRadius: 8,
+  borderRadius: Radius.md,
   padding: "8px 12px",
-  fontSize: 14,
+  fontSize: FontSize.body,
   color: Colors.text,
   width: "100%",
   boxSizing: "border-box" as const,
@@ -880,18 +881,18 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 6,
   },
-  toggleLabel: { fontSize: 14, color: Colors.text, fontWeight: "500" },
+  toggleLabel: { fontSize: FontSize.body, color: Colors.text, fontWeight: "600" },
   controls: {
     marginTop: 12,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainerLow,
     gap: 12,
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     marginBottom: 4,
@@ -899,14 +900,14 @@ const styles = StyleSheet.create({
   field: { gap: 6 },
   flex1: { flex: 1, minWidth: 140 },
   row: { flexDirection: "row", gap: 12, flexWrap: "wrap" },
-  label: { fontSize: 12, color: Colors.textSecondary, fontWeight: "500" },
+  label: { fontSize: FontSize.caption, color: Colors.textSecondary, fontWeight: "600" },
 
   // Native fallback for Dropdown
   pillRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   pill: {
     paddingVertical: 6,
     paddingHorizontal: 12,
-    borderRadius: 16,
+    borderRadius: Radius.xl,
     borderWidth: 1,
     borderColor: Colors.outline,
     backgroundColor: Colors.surface,
@@ -915,7 +916,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
     backgroundColor: Colors.primary + "22",
   },
-  pillText: { fontSize: 13, color: Colors.text },
+  pillText: { fontSize: FontSize.body, color: Colors.text },
   pillTextActive: { color: Colors.primary, fontWeight: "600" },
 
   dayChipRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
@@ -923,7 +924,7 @@ const styles = StyleSheet.create({
     minWidth: 38,
     paddingHorizontal: 8,
     height: 32,
-    borderRadius: 16,
+    borderRadius: Radius.xl,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
@@ -934,6 +935,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
     backgroundColor: Colors.primary,
   },
-  dayChipText: { fontSize: 12, color: Colors.text, fontWeight: "500" },
+  dayChipText: { fontSize: FontSize.caption, color: Colors.text, fontWeight: "600" },
   dayChipTextActive: { color: Colors.onPrimary ?? "#fff", fontWeight: "700" },
 });

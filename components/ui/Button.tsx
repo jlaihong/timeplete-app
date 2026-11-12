@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React from "react";
 import {
   TouchableOpacity,
@@ -88,15 +89,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     gap: 8,
   },
   // Compact footer button for dialogs / sheets — smaller padding + radius
   // so a Cancel/Save pair doesn't dominate a narrow mobile modal.
   baseSmall: {
-    paddingVertical: 9,
-    paddingHorizontal: 14,
-    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: Radius.md,
     gap: 6,
   },
   primary: { backgroundColor: Colors.primary },
@@ -109,8 +110,8 @@ const styles = StyleSheet.create({
   ghost: { backgroundColor: Colors.transparent },
   danger: { backgroundColor: Colors.errorContainer },
   disabled: { opacity: 0.5 },
-  text: { fontSize: 16, fontWeight: "600" },
-  textSmall: { fontSize: 14 },
+  text: { fontSize: FontSize.bodyLarge, fontWeight: "600" },
+  textSmall: { fontSize: FontSize.body },
   primaryText: { color: Colors.onPrimary } as TextStyle,
   secondaryText: { color: Colors.text } as TextStyle,
   outlineText: { color: Colors.text } as TextStyle,

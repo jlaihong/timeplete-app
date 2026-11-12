@@ -1,3 +1,4 @@
+import { FontSize } from "../../../theme/tokens";
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../../constants/colors";
@@ -41,7 +42,7 @@ import type { AnalyticsWidgetProps } from "./types";
 /* Required-progress dashed line colour. See note in
  * `AnalyticsLineChartWidget.tsx` — the legend in `LineChart`
  * carries the explicit meaning. */
-const REQUIRED_LINE_COLOUR = "#EF4444";
+const REQUIRED_LINE_COLOUR = Colors.danger;
 
 /* ──────────────────────────────────────────────────────────────────── *
  * AnalyticsWeeklyDaysAWeekWidget
@@ -234,8 +235,8 @@ export function AnalyticsWeeklyTrackerWidget({ goal }: AnalyticsWidgetProps) {
   const entriesThisWeek = countByDay.filter((n) => n > 0).length;
   const ratingAvg = entriesThisWeek > 0 ? totalCount / entriesThisWeek : 0;
 
-  const countColour = showBoth ? "#3B82F6" : goal.colour;
-  const timeColour = showBoth ? "#10B981" : goal.colour;
+  const countColour = showBoth ? Colors.chartCount : goal.colour;
+  const timeColour = showBoth ? Colors.chartTime : goal.colour;
 
   // ── Series ──
   const series: LineSeries[] = [];
@@ -405,7 +406,7 @@ function buildCumulativeOrDiscreteSeries({
 
 const styles = StyleSheet.create({
   summary: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     textAlign: "center",

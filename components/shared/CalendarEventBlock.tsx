@@ -472,7 +472,7 @@ export function CalendarEventBlock({
   const isInteracting = draft !== null;
   // Translucent backgrounds: 26 (≈15%) for normal, 33 (≈20%) when
   // dragging so the user can see the moved tile lift off the surface.
-  const tintAlpha = isInteracting ? "33" : "26";
+  const tintAlpha = isInteracting ? "4D" : "33";
   const backgroundColor = withAlpha(displayColor, tintAlpha);
 
   // RN-Web forwards `onPointerDown` and `style.cursor` at runtime, but the
@@ -595,6 +595,8 @@ export function CalendarEventBlock({
           width: `${colWidthPercent}%` as unknown as number,
           paddingLeft: slotPaddingLeft,
           paddingRight: slotPaddingRight,
+          // Hairline gap so back-to-back events read as separate tiles.
+          paddingBottom: 1,
           // Lift the tile above siblings while it's selected or being
           // dragged/resized. IMPORTANT (Android): the `zIndex` property
           // must ALWAYS be present with a numeric value — only its
@@ -647,15 +649,12 @@ export function CalendarEventBlock({
           style={[
             {
               flex: 1,
-              // Reserve space at top/bottom for either the web edge
-              // hit strips OR the native visible drag handles (only
-              // one of these is ever > 0 at a time).
-              marginTop:
-                (resizeHitPxTop > 0 ? resizeHitPxTop : 0) +
-                (showNativeHandles ? nativeHandleHeightPx : 0),
-              marginBottom:
-                (resizeHitPxBottom > 0 ? resizeHitPxBottom : 0) +
-                (showNativeHandles ? nativeHandleHeightPx : 0),
+              // Reserve space only for the native drag handles, which
+              // are visible. The web resize strips are invisible
+              // overlays on top of the body; reserving room for them
+              // pushed the title down and clipped it on short events.
+              marginTop: showNativeHandles ? nativeHandleHeightPx : 0,
+              marginBottom: showNativeHandles ? nativeHandleHeightPx : 0,
             },
             canDragBody
               ? ({
@@ -685,7 +684,7 @@ export function CalendarEventBlock({
             <Text
               style={[
                 styles.eventTime,
-                { color: isInteracting ? Colors.text : displayColor },
+                { color: isInteracting ? Colors.text : Colors.textSecondary },
               ]}
               numberOfLines={1}
             >
@@ -696,7 +695,7 @@ export function CalendarEventBlock({
                   <Text
                     style={[
                       styles.eventDuration,
-                      { color: Colors.textSecondary },
+                      { color: Colors.textTertiary },
                     ]}
                   >
                     ({formatSecondsAsHM(renderDuration * 60)})

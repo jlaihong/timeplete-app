@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 /**
  * Step 3 of every goal-onboarding dialog.
  *
@@ -43,7 +44,8 @@ export function GoalAccountabilityForm({
   return (
     <View style={styles.container}>
       <Text style={styles.copy}>
-        You're more likely to accomplish your goal if there are stakes invoked.
+        Optional: you're more likely to accomplish a goal when something is at
+        stake.
       </Text>
       <Text style={styles.copy}>If I don't accomplish my goal I will:</Text>
 
@@ -57,10 +59,10 @@ export function GoalAccountabilityForm({
         <Text
           style={[
             styles.stanceButtonText,
-            value.willAcceptPenalty === false && { color: "#EF5350" },
+            value.willAcceptPenalty === false && { color: Colors.danger },
           ]}
         >
-          Not have any penalty. I don't take my goals seriously
+          No penalty
         </Text>
       </Pressable>
 
@@ -74,10 +76,10 @@ export function GoalAccountabilityForm({
         <Text
           style={[
             styles.stanceButtonText,
-            value.willAcceptPenalty === true && { color: "#66BB6A" },
+            value.willAcceptPenalty === true && { color: Colors.success },
           ]}
         >
-          Accept a penalty because I'm hardcore and committed
+          Set a penalty
         </Text>
       </Pressable>
 
@@ -194,11 +196,11 @@ export function GoalAccountabilityForm({
 
 const styles = StyleSheet.create({
   container: { gap: 8 },
-  copy: { fontSize: 14, color: Colors.text, lineHeight: 20 },
+  copy: { fontSize: FontSize.body, color: Colors.text, lineHeight: 20 },
   stanceButton: {
     borderWidth: 1,
     borderColor: Colors.outline,
-    borderRadius: 6,
+    borderRadius: Radius.md,
     paddingVertical: 10,
     paddingHorizontal: 12,
     marginTop: 4,
@@ -207,9 +209,9 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  stanceButtonNo: { borderColor: "#EF5350" },
-  stanceButtonYes: { borderColor: "#66BB6A" },
-  stanceButtonText: { fontSize: 14, color: Colors.text, textAlign: "center" },
+  stanceButtonNo: { borderColor: Colors.danger },
+  stanceButtonYes: { borderColor: Colors.success },
+  stanceButtonText: { fontSize: FontSize.body, color: Colors.text, textAlign: "center" },
   penaltyGroup: { gap: 4, marginTop: 4 },
   indented: {
     flexDirection: "row",
@@ -218,15 +220,15 @@ const styles = StyleSheet.create({
     paddingLeft: 56,
     marginVertical: 2,
   },
-  inlineLabel: { fontSize: 14, color: Colors.text },
+  inlineLabel: { fontSize: FontSize.body, color: Colors.text },
   smallInput: {
     backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
-    borderRadius: 6,
+    borderRadius: Radius.md,
     paddingHorizontal: 8,
     paddingVertical: 6,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
     width: 80,
   },

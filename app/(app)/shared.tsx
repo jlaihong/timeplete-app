@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React from "react";
 import {
   View,
@@ -17,6 +18,7 @@ import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Stack } from "expo-router";
 import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
+import { DesktopPageHeader } from "../../components/layout/DesktopPageHeader";
 import { useAuth } from "../../hooks/useAuth";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 
@@ -61,6 +63,14 @@ export default function SharedScreen() {
   };
 
   const handleReject = (shareId: string, type: "list" | "trackable") => {
+    // `Alert.alert` does nothing on web, so Reject was dead there.
+    if (Platform.OS === "web") {
+      // eslint-disable-next-line no-alert
+      if (window.confirm("Reject this share?")) {
+        void rejectShare({ shareId, shareType: type });
+      }
+      return;
+    }
     Alert.alert("Reject Share", "Are you sure?", [
       { text: "Cancel" },
       {
@@ -106,11 +116,12 @@ export default function SharedScreen() {
           headerLeft: () => <DrawerMenuButton />,
         }}
       />
+      <DesktopPageHeader title="Shared with me" />
 
       {allItems.length === 0 ? (
         <EmptyState
           title="Nothing shared with you"
-          message="When someone shares a list or goal with you, it will appear here"
+          message="When someone shares a list or trackable with you, it will appear here"
         />
       ) : (
         <FlatList
@@ -184,19 +195,19 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   shareInfo: { flex: 1 },
-  shareName: { fontSize: 16, fontWeight: "600", color: Colors.text },
-  shareOwner: { fontSize: 13, color: Colors.textSecondary },
+  shareName: { fontSize: FontSize.bodyLarge, fontWeight: "600", color: Colors.text },
+  shareOwner: { fontSize: FontSize.body, color: Colors.textSecondary },
   statusBadge: {
-    fontSize: 11,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.warning,
     backgroundColor: Colors.warning + "20",
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
+    paddingVertical: 4,
+    borderRadius: Radius.sm,
     overflow: "hidden",
   },
-  permission: { fontSize: 13, color: Colors.textSecondary, marginBottom: 12 },
+  permission: { fontSize: FontSize.body, color: Colors.textSecondary, marginBottom: 12 },
   actions: { flexDirection: "row", gap: 12 },
   acceptBtn: { flex: 1 },
 });

@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 import React, {
   useState,
   useCallback,
@@ -22,6 +23,7 @@ import {
   NestableDraggableFlatList,
   type RenderItemParams,
 } from "react-native-draggable-flatlist";
+import { Pressable as GesturePressable } from "react-native-gesture-handler";
 import { api } from "../../../convex/_generated/api";
 import { Colors } from "../../../constants/colors";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -48,6 +50,7 @@ import { toIndexAfterFlatMove } from "../../../convex/_helpers/orderShift";
 import { Card } from "../../../components/ui/Card";
 import { Input } from "../../../components/ui/Input";
 import { Button } from "../../../components/ui/Button";
+import { useIsDesktop } from "../../../hooks/useIsDesktop";
 import { TaskFilterModal } from "../../../components/tasks/TaskFilterModal";
 import { useTaskFilters } from "../../../hooks/useTaskFilters";
 import {
@@ -125,7 +128,7 @@ function ContextMenuPopover({
         zIndex: 9999,
         background: Colors.surfaceContainerHigh,
         border: `1px solid ${Colors.outlineVariant}`,
-        borderRadius: 8,
+        borderRadius: Radius.md,
         boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
         minWidth: 180,
         padding: 4,
@@ -146,10 +149,10 @@ function ContextMenuPopover({
           background: "transparent",
           border: "none",
           color: Colors.text,
-          fontSize: 14,
+          fontSize: FontSize.body,
           textAlign: "left",
           cursor: "pointer",
-          borderRadius: 6,
+          borderRadius: Radius.md,
         }}
       >
         <MaterialIcons name="delete" size={18} color={Colors.text} />
@@ -264,6 +267,7 @@ export default function ListDetailScreen() {
   const upsertSection = useMutation(api.listSections.upsert);
   const { moveBetweenSections, moveBetweenDays } = useTaskMoveMutations();
 
+  const isDesktop = useIsDesktop();
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const filterScope = useMemo(
@@ -407,6 +411,12 @@ export default function ListDetailScreen() {
       };
     });
   }, [paginatedData, showCompleted, filterUserIds, collapsedSectionKeys]);
+
+  /** Completed tasks among those loaded, after the collaborator filter. */
+  const completedCount = useMemo(
+    () => filteredSections.reduce((n, s) => n + s.headerCompletedCount, 0),
+    [filteredSections],
+  );
 
   const defaultSectionId = useMemo((): Id<"listSections"> | undefined => {
     if (!paginatedData?.sections.length) return undefined;
@@ -587,6 +597,18 @@ export default function ListDetailScreen() {
 
   const listFooter = (
     <View style={styles.listFooter}>
+      {/* Completed tasks are hidden by default; this is the way back. */}
+      {completedCount > 0 ? (
+        <Button
+          title={
+            showCompleted
+              ? "Hide completed"
+              : `Show ${completedCount} completed`
+          }
+          variant="ghost"
+          onPress={() => void persistShowCompleted(!showCompleted)}
+        />
+      ) : null}
       {hasMoreSections ? (
         <Button
           title="Load more sections"
@@ -639,26 +661,35 @@ export default function ListDetailScreen() {
     return (
       <View style={isActive ? styles.taskCardDragging : undefined}>
         <Card style={styles.taskCard} padded={false}>
-          <TouchableOpacity
-            style={styles.taskRow}
-            onPress={() => setSelectedTaskId(task._id)}
-            onLongPress={onLongPressDrag}
-            delayLongPress={300}
-            activeOpacity={0.7}
-          >
-            <TouchableOpacity
-              onPress={(e) => {
-                e.stopPropagation?.();
+          <View style={styles.taskRow}>
+            {/* Native gesture, outside the row long-press. A nested
+                TouchableOpacity waits on the list pan and the 300ms
+                long-press before the check paints. */}
+            <GesturePressable
+              onPress={() => {
                 void toggleComplete(task._id, task.name, isCompleted);
               }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={8}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isCompleted }}
+              accessibilityLabel={
+                isCompleted ? "Mark incomplete" : "Mark complete"
+              }
+              style={styles.checkBtn}
             >
               <Ionicons
                 name={isCompleted ? "checkmark-circle" : "ellipse-outline"}
                 size={24}
                 color={isCompleted ? Colors.success : Colors.textTertiary}
               />
-            </TouchableOpacity>
+            </GesturePressable>
+            <TouchableOpacity
+              style={styles.taskMain}
+              onPress={() => setSelectedTaskId(task._id)}
+              onLongPress={onLongPressDrag}
+              delayLongPress={300}
+              activeOpacity={0.7}
+            >
             <Text
               style={[styles.taskName, isCompleted && styles.completedTask]}
               numberOfLines={1}
@@ -680,7 +711,7 @@ export default function ListDetailScreen() {
                   />
                 </TouchableOpacity>
               )}
-              {/* Tap-to-edit time spent — the SAME control as the home
+              {/* Tap-to-edit time spent. The same control as the home
                   screen's TaskList. Read-only while the timer drives the
                   value. */}
               <TaskTimeSpentButton
@@ -692,7 +723,8 @@ export default function ListDetailScreen() {
                 onEdit={openTimeSpentEditor}
               />
             </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
           {(trackable ||
             (!task.trackableId &&
               list &&
@@ -926,7 +958,9 @@ export default function ListDetailScreen() {
         }}
       />
 
-      <View style={styles.toolbarOuter}>
+      <View
+        style={[styles.toolbarOuter, isDesktop && styles.toolbarOuterDesktop]}
+      >
         <View style={styles.toolbarInner}>
           <TouchableOpacity
             activeOpacity={0.7}
@@ -938,6 +972,12 @@ export default function ListDetailScreen() {
             <Text style={styles.listNameText} numberOfLines={1}>
               {listTitle}
             </Text>
+            {/* The title opens the list's details; the pencil says so. */}
+            <Ionicons
+              name="pencil-outline"
+              size={14}
+              color={Colors.textTertiary}
+            />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => setFilterMenuOpen(true)}
@@ -951,6 +991,21 @@ export default function ListDetailScreen() {
               color={isFilterActive ? Colors.primary : Colors.textSecondary}
             />
           </TouchableOpacity>
+          {/* Desktop adds from the header, like Home; phones keep the
+              floating button, which sits under the thumb. */}
+          {isDesktop && tasksReady ? (
+            <TouchableOpacity
+              onPress={() => {
+                if (defaultSectionId) setAddTaskSectionId(defaultSectionId);
+              }}
+              style={styles.filterIconBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Add task"
+              hitSlop={10}
+            >
+              <Ionicons name="add" size={26} color={Colors.primary} />
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
 
@@ -1111,7 +1166,7 @@ export default function ListDetailScreen() {
         </NestableScrollContainer>
       )}
 
-      {tasksReady ? (
+      {tasksReady && !isDesktop ? (
         <TouchableOpacity
           style={styles.fab}
           onPress={() => {
@@ -1179,7 +1234,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingMessage: {
-    fontSize: 15,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     textAlign: "center",
   },
@@ -1189,7 +1244,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
-    gap: 14,
+    gap: 12,
   },
   toolbarOuter: {
     alignItems: "center",
@@ -1200,6 +1255,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     zIndex: 40,
     elevation: 40,
+  },
+  // Desktop: same height and plain background as every other page title.
+  toolbarOuterDesktop: {
+    minHeight: 60,
+    justifyContent: "center",
+    paddingVertical: 0,
+    borderBottomWidth: 0,
+    backgroundColor: Colors.background,
   },
   toolbarInner: {
     flexDirection: "row",
@@ -1212,13 +1275,17 @@ const styles = StyleSheet.create({
   nameButton: {
     flex: 1,
     minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     paddingVertical: 6,
     paddingHorizontal: 4,
   },
   listNameText: {
-    fontSize: 16,
+    flexShrink: 1,
+    fontSize: FontSize.title,
     fontWeight: "600",
-    color: Colors.primary,
+    color: Colors.text,
   },
   filterIconBtn: { padding: 4 },
   modalBackdrop: {
@@ -1232,13 +1299,13 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 400,
     backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     padding: 20,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
   },
   filterSheetTitle: {
-    fontSize: 18,
+    fontSize: FontSize.title,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 16,
@@ -1263,13 +1330,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Colors.outlineVariant,
     borderStyle: "dashed",
-    borderRadius: 8,
+    borderRadius: Radius.md,
     padding: 12,
     alignItems: "center",
     marginBottom: 6,
   },
   emptySectionPlaceholderText: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontStyle: "italic",
     color: Colors.textTertiary,
   },
@@ -1314,13 +1381,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     flex: 1,
-    fontSize: 18,
-    fontWeight: "500",
+    fontSize: FontSize.title,
+    fontWeight: "600",
     color: Colors.text,
     minWidth: 0,
   },
   sectionCountInline: {
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "400",
     color: Colors.textTertiary,
   },
@@ -1338,10 +1405,25 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     gap: 10,
   },
+  checkBtn: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: -8,
+    marginLeft: -8,
+  },
+  taskMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    minWidth: 0,
+  },
   taskName: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: "500",
+    fontSize: FontSize.body,
+    fontWeight: "600",
     color: Colors.text,
   },
   completedTask: {
@@ -1355,7 +1437,7 @@ const styles = StyleSheet.create({
     minWidth: 72,
     justifyContent: "flex-end",
   },
-  duration: { fontSize: 13, color: Colors.textSecondary },
+  duration: { fontSize: FontSize.body, color: Colors.textSecondary },
   durationActive: { color: Colors.success, fontWeight: "600" },
   tagsRow: {
     flexDirection: "row",
@@ -1370,7 +1452,7 @@ const styles = StyleSheet.create({
     gap: 4,
     maxWidth: "48%",
   },
-  tagName: { fontSize: 12 },
+  tagName: { fontSize: FontSize.caption },
   fab: {
     zIndex: 30,
     position: "absolute",
@@ -1378,7 +1460,7 @@ const styles = StyleSheet.create({
     bottom: 20,
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",

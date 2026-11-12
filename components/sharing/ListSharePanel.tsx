@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useState } from "react";
 import {
   View,
@@ -130,7 +131,7 @@ export function ListSharePanel({ listId, onInviteSent }: ListSharePanelProps) {
 
 const styles = StyleSheet.create({
   sectionTitle: {
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 12,
@@ -139,7 +140,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   permLabel: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     marginBottom: 8,
@@ -149,7 +150,7 @@ const styles = StyleSheet.create({
   permOption: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.border,
     alignItems: "center",
@@ -158,6 +159,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
     backgroundColor: Colors.primary + "10",
   },
-  permText: { fontSize: 14, fontWeight: "500", color: Colors.textSecondary },
+  permText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.textSecondary },
   permTextSelected: { color: Colors.primary },
 });

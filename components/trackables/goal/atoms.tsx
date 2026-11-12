@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 /**
  * Small UI atoms shared across the goal-onboarding stepper:
  * checkboxes, labelled inputs, date pickers (web-only `<input type="date">`),
@@ -312,7 +313,7 @@ function WebSortableRow({
           justifyContent: "center",
           touchAction: "none",
           cursor: isDragging ? "grabbing" : "grab",
-          borderRadius: 6,
+          borderRadius: Radius.md,
         }}
       >
         <MaterialIcons
@@ -569,7 +570,7 @@ const styles = StyleSheet.create({
   checkboxBox: {
     width: 20,
     height: 20,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     borderWidth: 2,
     borderColor: Colors.outline,
     alignItems: "center",
@@ -582,7 +583,7 @@ const styles = StyleSheet.create({
   },
   checkboxLabel: {
     flex: 1,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
   },
   /* labeled field */
@@ -601,20 +602,20 @@ const styles = StyleSheet.create({
     minWidth: 220,
   },
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: "500",
+    fontSize: FontSize.body,
+    fontWeight: "600",
     color: Colors.textSecondary,
   },
-  fieldError: { fontSize: 12, color: Colors.error, marginTop: 2 },
+  fieldError: { fontSize: FontSize.caption, color: Colors.error, marginTop: 2 },
   /* text input */
   textInput: {
     backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
   },
   /* draggable list */
@@ -633,7 +634,7 @@ const styles = StyleSheet.create({
   reorderNudge: {
     paddingVertical: 1,
     paddingHorizontal: 2,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     ...Platform.select({
       web: { cursor: "pointer" } as any,
       default: {},
@@ -645,10 +646,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
-    borderRadius: 6,
+    borderRadius: Radius.md,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
     minHeight: 36,
   },
@@ -663,7 +664,7 @@ const styles = StyleSheet.create({
   iconBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: Radius.pill,
     alignItems: "center",
     justifyContent: "center",
     ...Platform.select({
@@ -678,11 +679,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 8,
     alignSelf: "flex-start",
-    borderRadius: 6,
+    borderRadius: Radius.md,
     ...Platform.select({
       web: { cursor: "pointer" } as any,
       default: {},
     }),
   },
-  addBtnText: { fontSize: 14, fontWeight: "500", color: Colors.primary },
+  addBtnText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.primary },
 });

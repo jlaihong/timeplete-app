@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -59,19 +60,19 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 26,
     height: 26,
-    borderRadius: 13,
+    borderRadius: Radius.pill,
     alignItems: "center",
     justifyContent: "center",
   },
   copy: { alignItems: "center" },
   title: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "700",
     color: Colors.text,
     textAlign: "center",
   },
   sub: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.textSecondary,
     marginTop: 1,
     textAlign: "center",

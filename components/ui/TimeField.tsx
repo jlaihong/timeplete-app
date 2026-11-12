@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 /**
  * TimeField — shared time input used wherever the app captures an
  * HH:MM time (recurrence time-windows, event dialog, etc.).
@@ -143,7 +144,7 @@ const webTimeInputStyle = {
   border: "none",
   outline: "none",
   padding: "22px 0 8px 0",
-  fontSize: 16,
+  fontSize: FontSize.bodyLarge,
   color: Colors.text,
   width: "100%",
   boxSizing: "border-box" as const,
@@ -169,7 +170,7 @@ const styles = StyleSheet.create({
     fontWeight: "400",
   },
   labelGhost: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "400",
     height: 0,
     lineHeight: 0,

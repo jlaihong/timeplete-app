@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useState, useMemo } from "react";
 import {
   View,
@@ -220,7 +221,7 @@ export function AnalyticsView({ title }: AnalyticsViewProps) {
 
             {stats.byTrackable.length > 0 && (
               <Card style={styles.sectionCard}>
-                <Text style={styles.cardTitle}>By Goal</Text>
+                <Text style={styles.cardTitle}>By Trackable</Text>
                 {stats.byTrackable.map((item) => (
                   <View key={item.name} style={styles.breakdownRow}>
                     <View style={styles.breakdownLabelRow}>
@@ -255,7 +256,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainer,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
+  sectionTitle: { fontSize: FontSize.title, fontWeight: "700", color: Colors.text },
   periodTabs: {
     flexDirection: "row",
     paddingHorizontal: 16,
@@ -264,13 +265,13 @@ const styles = StyleSheet.create({
   },
   periodTab: {
     paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
+    paddingHorizontal: 12,
+    borderRadius: Radius.xl,
     backgroundColor: Colors.surfaceVariant,
   },
   activePeriodTab: { backgroundColor: Colors.primary },
   periodTabText: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.textSecondary,
   },
@@ -282,7 +283,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 16,
   },
-  periodLabel: { fontSize: 15, fontWeight: "600", color: Colors.text },
+  periodLabel: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
   content: { padding: 16, paddingBottom: 40 },
   loadingText: {
     textAlign: "center",
@@ -291,15 +292,15 @@ const styles = StyleSheet.create({
   },
   summaryRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
   summaryCard: { flex: 1, alignItems: "center" as const },
-  summaryValue: { fontSize: 24, fontWeight: "700", color: Colors.text },
+  summaryValue: { fontSize: FontSize.heading, fontWeight: "700", color: Colors.text },
   summaryLabel: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.textSecondary,
     marginTop: 4,
   },
   sectionCard: { marginBottom: 16 },
   cardTitle: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 12,
@@ -317,7 +318,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  colorDot: { width: 10, height: 10, borderRadius: 5 },
-  breakdownLabel: { fontSize: 14, color: Colors.text },
-  breakdownValue: { fontSize: 14, fontWeight: "600", color: Colors.text },
+  colorDot: { width: 10, height: 10, borderRadius: Radius.pill },
+  breakdownLabel: { fontSize: FontSize.body, color: Colors.text },
+  breakdownValue: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
 });

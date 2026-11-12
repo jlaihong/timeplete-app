@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -805,7 +806,7 @@ const styles = StyleSheet.create({
   captionMuted: {
     textAlign: "center",
     color: Colors.textSecondary,
-    fontSize: 15,
+    fontSize: FontSize.body,
     marginBottom: 4,
   },
   monthNav: {
@@ -814,12 +815,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   navBtn: { padding: 6 },
-  monthLabel: { fontWeight: "600", color: Colors.text, fontSize: 15 },
+  monthLabel: { fontWeight: "600", color: Colors.text, fontSize: FontSize.body },
   weekdayRow: { flexDirection: "row", marginTop: 4 },
   weekdayHead: {
     flex: 1,
     textAlign: "center",
-    fontSize: 11,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.textSecondary,
     textTransform: "uppercase",
@@ -838,11 +839,11 @@ const styles = StyleSheet.create({
     minWidth: 0,
     aspectRatio: 1,
     position: "relative",
-    borderRadius: 6,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainer,
-    padding: 3,
+    padding: 4,
     paddingTop: 2,
     overflow: "hidden",
   },
@@ -862,7 +863,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 3,
     right: 4,
-    fontSize: 11,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.text,
     zIndex: 1,
@@ -878,7 +879,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
   contributionNum: {
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "700",
     color: Colors.text,
     lineHeight: 18,
@@ -890,19 +891,19 @@ const styles = StyleSheet.create({
     color: Colors.onPrimaryContainer,
   },
   taskLine: {
-    fontSize: 9,
-    fontWeight: "500",
+    fontSize: FontSize.micro,
+    fontWeight: "600",
     color: Colors.text,
     lineHeight: 12,
   },
   commentLine: {
-    fontSize: 9,
+    fontSize: FontSize.micro,
     fontWeight: "400",
     color: Colors.textSecondary,
     lineHeight: 12,
   },
   moreTasksLine: {
-    fontSize: 9,
+    fontSize: FontSize.micro,
     fontWeight: "600",
     color: Colors.textSecondary,
     lineHeight: 12,
@@ -911,7 +912,7 @@ const styles = StyleSheet.create({
   metaFaded: {
     color: Colors.textTertiary,
   },
-  loadingHint: { fontSize: 12, color: Colors.textSecondary, marginTop: 6 },
+  loadingHint: { fontSize: FontSize.caption, color: Colors.textSecondary, marginTop: 6 },
   modalRoot: {
     flex: 1,
   },
@@ -939,25 +940,25 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   modalSectionLabel: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "700",
     color: Colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.4,
   },
   modalBodyText: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     color: Colors.text,
     lineHeight: 22,
   },
   modalBullet: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     color: Colors.text,
     lineHeight: 22,
     marginTop: 4,
   },
   modalMuted: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.textTertiary,
     fontStyle: "italic",
     lineHeight: 20,

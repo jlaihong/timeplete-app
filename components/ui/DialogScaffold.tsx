@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React from "react";
 import {
   View,
@@ -127,7 +128,7 @@ const styles = StyleSheet.create({
   cardDesktop: {
     maxWidth: "94%",
     maxHeight: "90%",
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     padding: 24,
   },
   cardMobile: {
@@ -148,7 +149,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1,
     minWidth: 0,
-    fontSize: 22,
+    fontSize: FontSize.heading,
     fontWeight: "600",
     color: Colors.text,
     paddingRight: 4,
@@ -162,7 +163,7 @@ const styles = StyleSheet.create({
   closeBtn: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: Radius.xl,
     alignItems: "center",
     justifyContent: "center",
     ...Platform.select({

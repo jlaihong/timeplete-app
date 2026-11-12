@@ -9,7 +9,7 @@ export const Colors = {
   secondaryContainer: "#124E57",
   onSecondaryContainer: "#B6EBF7",
 
-  tertiary: "#02E600",
+  tertiary: "#4ADE80",
   tertiaryContainer: "#015300",
   onTertiaryContainer: "#77FF61",
 
@@ -31,7 +31,7 @@ export const Colors = {
   border: "#3B494C",
   borderLight: "#242B2D",
 
-  success: "#02E600",
+  success: "#4ADE80",
   warning: "#F59E0B",
   error: "#FFB4AB",
   errorContainer: "#93000A",
@@ -40,8 +40,20 @@ export const Colors = {
   black: "#000000",
   transparent: "transparent",
 
-  taskPanel: "#4F4F4F",
-  appBackground: "#333333",
+  /**
+   * Faint wash of the accent, for the one thing that is "live" on screen
+   * (the row or card whose timer is running). Opaque so it can sit on any
+   * surface, including under a swipe action.
+   */
+  accentWash: "#12292D",
+
+  /** Destructive actions and "required" chart lines. */
+  danger: "#EF4444",
+  /** Fallback swatch for a task with no list, trackable or tag colour. */
+  neutral: "#6B7280",
+  /** Chart series when a widget plots count and time together. */
+  chartCount: "#3B82F6",
+  chartTime: "#10B981",
 
   /**
    * Same surface as trackable/task widgets (`theme/panels.ts` / surfaceContainerLow).
@@ -106,3 +118,6 @@ export const TRACKABLE_COLORS = [
   "#84CC16",
   "#EF4444",
 ];
+
+/** Colour pre-selected when creating a list, tag or trackable. */
+export const DEFAULT_ENTITY_COLOUR = "#4A90D9";

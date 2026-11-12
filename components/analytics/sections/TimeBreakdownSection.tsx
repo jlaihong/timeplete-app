@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -264,37 +265,37 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
-  dot: { width: 10, height: 10, borderRadius: 5 },
+  dot: { width: 10, height: 10, borderRadius: Radius.pill },
   rowLabel: {
     flex: 1,
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
   },
   rowLabelNested: {
-    fontWeight: "500",
-    fontSize: 12.5,
+    fontWeight: "600",
+    fontSize: FontSize.caption,
     color: Colors.textSecondary,
   },
   barTrack: {
     height: 6,
     backgroundColor: Colors.surfaceVariant,
-    borderRadius: 3,
+    borderRadius: Radius.sm,
     overflow: "hidden",
     marginBottom: 4,
   },
-  barFill: { height: 6, borderRadius: 3 },
+  barFill: { height: 6, borderRadius: Radius.sm },
   rowValues: {
     flexDirection: "row",
     justifyContent: "space-between",
   },
   rowValueTime: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.text,
   },
   rowValuePct: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.textTertiary,
   },
 });

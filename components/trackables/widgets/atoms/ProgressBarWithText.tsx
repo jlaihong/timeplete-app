@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet, ViewStyle, StyleProp } from "react-native";
 import { Colors } from "../../../../constants/colors";
@@ -64,26 +65,24 @@ function defaultFormat(n: number): string {
 const styles = StyleSheet.create({
   container: { width: "100%", alignSelf: "stretch" },
   caption: {
-    fontSize: 11,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.textTertiary,
     marginBottom: 2,
-    textAlign: "center",
   },
   label: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.textSecondary,
     marginBottom: 4,
-    textAlign: "center",
   },
   track: {
-    height: 6,
-    borderRadius: 3,
+    height: 4,
+    borderRadius: Radius.sm,
     backgroundColor: Colors.surfaceVariant,
     overflow: "hidden",
   },
   fill: {
-    height: 6,
-    borderRadius: 3,
+    height: 4,
+    borderRadius: Radius.sm,
   },
 });

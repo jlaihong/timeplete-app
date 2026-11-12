@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import { Redirect, Stack } from "expo-router";
@@ -55,5 +56,5 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 12,
   },
-  muted: { fontSize: 14, color: Colors.textSecondary },
+  muted: { fontSize: FontSize.body, color: Colors.textSecondary },
 });

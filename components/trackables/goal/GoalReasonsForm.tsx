@@ -1,3 +1,4 @@
+import { FontSize } from "../../../theme/tokens";
 /**
  * Step 2 of every goal-onboarding dialog.
  *
@@ -48,5 +49,5 @@ export function GoalReasonsForm({
 
 const styles = StyleSheet.create({
   container: { gap: 12 },
-  copy: { fontSize: 14, color: Colors.text, lineHeight: 20 },
+  copy: { fontSize: FontSize.body, color: Colors.text, lineHeight: 20 },
 });

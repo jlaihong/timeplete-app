@@ -162,32 +162,9 @@ export const upsert = mutation({
       weekStatsSeeded: true,
     });
 
-    const listId = await ctx.db.insert("lists", {
-      name: args.name,
-      colour: args.colour,
-      orderIndex: maxOrder + 1,
-      userId: user._id,
-      archived: false,
-      isGoalList: true,
-      showInSidebar: false,
-      isInbox: false,
-    });
-
-    await ctx.db.insert("listSections", {
-      listId,
-      name: "Default",
-      orderIndex: 0,
-      isDefaultSection: true,
-      userId: user._id,
-    });
-
-    await ctx.db.insert("listTrackableLinks", {
-      listId,
-      trackableId,
-      userId: user._id,
-    });
-
-    await ctx.db.patch(trackableId, { listId });
+    // No list is created alongside the trackable. Tasks count toward a
+    // trackable directly (`task.trackableId`) or through a list the user
+    // chooses to link (`listTrackableLinks`, managed from the list dialog).
 
     return trackableId;
   },
@@ -200,6 +177,18 @@ export const archive = mutation({
     const t = await ctx.db.get(args.id);
     if (!t || t.userId !== user._id) throw new Error("Trackable not found");
     await ctx.db.patch(args.id, { archived: !t.archived });
+  },
+});
+
+/** Pin a trackable to, or unpin it from, the home screen's side column. */
+export const setShowOnHome = mutation({
+  args: { id: v.id("trackables"), showOnHome: v.boolean() },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const t = await ctx.db.get(args.id);
+    if (!t || t.userId !== user._id) throw new Error("Trackable not found");
+    await ctx.db.patch(args.id, { showOnHome: args.showOnHome });
+    return null;
   },
 });
 
@@ -356,6 +345,88 @@ export const getCompletedTaskNamesForDay = query({
         return false;
       })
       .map((t) => t.name);
+  },
+});
+
+/**
+ * Open tasks that count toward `trackableId`, for the trackable's Tasks tab:
+ * tasks assigned to it directly plus tasks in a list linked to it.
+ *
+ * Recurring occurrences are collapsed to the next one per series (stale
+ * past occurrences are dropped) so a daily habit shows up once.
+ */
+export const getOpenTasks = query({
+  args: {
+    trackableId: v.id("trackables"),
+    /** Caller's local day, YYYYMMDD — the cutoff for stale recurring rows. */
+    today: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
+    const trackable = await ctx.db.get(args.trackableId);
+    if (!trackable || trackable.userId !== user._id) return [];
+
+    const READ_CAP = 500;
+    const direct = await ctx.db
+      .query("tasks")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", args.trackableId))
+      .order("desc")
+      .take(READ_CAP);
+
+    const links = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", args.trackableId))
+      .take(20);
+    const viaList = [];
+    for (const link of links) {
+      const rows = await ctx.db
+        .query("tasks")
+        .withIndex("by_list", (q) => q.eq("listId", link.listId))
+        .order("desc")
+        .take(READ_CAP);
+      // A task in a linked list that is explicitly assigned to another
+      // trackable counts toward that one instead.
+      viaList.push(...rows.filter((t) => t.trackableId === undefined));
+    }
+
+    const today = toCompactYYYYMMDD(args.today);
+    const seen = new Set<string>();
+    const nextBySeries = new Map<string, (typeof direct)[number]>();
+    const open = [];
+    for (const t of [...direct, ...viaList]) {
+      if (seen.has(t._id)) continue;
+      seen.add(t._id);
+      if (t.userId !== user._id || t.dateCompleted !== undefined) continue;
+      if (t.isRecurringInstance) {
+        const day = t.taskDay ? toCompactYYYYMMDD(t.taskDay) : undefined;
+        if (!day || day < today) continue;
+        const series = t.recurringTaskId ?? t._id;
+        const kept = nextBySeries.get(series);
+        if (!kept || day < toCompactYYYYMMDD(kept.taskDay!)) {
+          nextBySeries.set(series, t);
+        }
+        continue;
+      }
+      open.push(t);
+    }
+    open.push(...nextBySeries.values());
+
+    return open
+      .sort((a, b) => {
+        // Scheduled first (soonest on top), then unscheduled, newest first.
+        if (a.taskDay && b.taskDay) return a.taskDay.localeCompare(b.taskDay);
+        if (a.taskDay) return -1;
+        if (b.taskDay) return 1;
+        return b._creationTime - a._creationTime;
+      })
+      .map((t) => ({
+        _id: t._id,
+        name: t.name,
+        taskDay: t.taskDay ?? null,
+        listId: t.listId ?? null,
+        isRecurringInstance: t.isRecurringInstance,
+      }));
   },
 });
 

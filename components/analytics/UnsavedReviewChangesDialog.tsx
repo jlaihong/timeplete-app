@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { DialogOverlay } from "../ui/DialogOverlay";
@@ -75,7 +76,7 @@ export function UnsavedReviewChangesDialog({
 
 const styles = StyleSheet.create({
   body: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     lineHeight: 21,
     color: Colors.textSecondary,
     marginBottom: 8,

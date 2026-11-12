@@ -1,3 +1,4 @@
+import { FontSize } from "../../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useQuery } from "convex/react";
@@ -95,7 +96,7 @@ export function TrackableProgressionSection() {
 
 const styles = StyleSheet.create({
   empty: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textTertiary,
     paddingVertical: 12,
     textAlign: "center",

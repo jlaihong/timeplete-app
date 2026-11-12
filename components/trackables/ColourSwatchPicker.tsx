@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useRef } from "react";
 import {
   View,
@@ -103,13 +104,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   label: {
-    fontSize: 14,
-    fontWeight: "500",
+    fontSize: FontSize.body,
+    fontWeight: "600",
     color: Colors.textSecondary,
   },
   swatch: {
     /* 6px rounded rectangle — matches `app-colour-picker .cp-swatch`. */
-    borderRadius: 6,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outline,
     overflow: "hidden",

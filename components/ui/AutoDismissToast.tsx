@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useEffect } from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Colors } from "../../constants/colors";
@@ -85,9 +86,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainerHigh,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: Radius.pill,
     maxWidth: 400,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 3 },
@@ -98,7 +99,7 @@ const styles = StyleSheet.create({
   pillRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 12,
     maxWidth: "100%",
   },
   textFlexible: {
@@ -107,13 +108,13 @@ const styles = StyleSheet.create({
   },
   text: {
     color: Colors.text,
-    fontSize: 15,
-    fontWeight: "500",
+    fontSize: FontSize.body,
+    fontWeight: "600",
     textAlign: "center",
   },
   actionText: {
     color: Colors.primary,
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "600",
   },
 });

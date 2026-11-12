@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React from "react";
 import {
   View,
@@ -350,7 +351,7 @@ const styles = StyleSheet.create({
   // row's delete icon from being clipped by rounded card corners.
   scrollContent: { flexGrow: 1, paddingBottom: 12 },
   center: { paddingVertical: 24, alignItems: "center" },
-  muted: { fontSize: 14, color: Colors.textTertiary, textAlign: "center" },
+  muted: { fontSize: FontSize.body, color: Colors.textTertiary, textAlign: "center" },
   trackerTabWrap: {
     gap: 0,
     flex: 1,
@@ -372,7 +373,7 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     overflow: "hidden",
     ...(Platform.OS === "web"
       ? ({ direction: "ltr" } as ViewStyle)
@@ -393,7 +394,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainerHigh,
   },
   cellHead: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     paddingVertical: 8,
@@ -401,7 +402,7 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "web" ? ({ whiteSpace: "nowrap" } as TextStyle) : {}),
   },
   cellBody: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.text,
     paddingVertical: 6,
     paddingHorizontal: 2,
@@ -473,7 +474,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   mobileDate: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     flexShrink: 0,
@@ -491,28 +492,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
+    paddingVertical: 4,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.surfaceContainerHigh,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
   },
   mobileChipText: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.text,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   mobileDeleteBtn: {
     width: 32,
     height: 32,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 16,
+    borderRadius: Radius.xl,
     flexShrink: 0,
     marginLeft: 2,
   },
   mobileComments: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     lineHeight: 18,
     paddingLeft: 24,

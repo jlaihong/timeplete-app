@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../../theme/tokens";
 import React, { useMemo, useState } from "react";
 import {
   View,
@@ -298,15 +299,15 @@ export function TrackTrackerDialog({
 
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8 },
-  colourDot: { width: 14, height: 14, borderRadius: 7 },
-  title: { fontSize: 18, fontWeight: "700", color: Colors.text, flex: 1 },
+  colourDot: { width: 14, height: 14, borderRadius: Radius.pill },
+  title: { fontSize: FontSize.title, fontWeight: "700", color: Colors.text, flex: 1 },
   dateBlock: {
     marginTop: 10,
     marginBottom: 16,
   },
   ratingBlock: { marginBottom: 16 },
   ratingLabel: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
     textAlign: "center",
     marginBottom: 8,
@@ -321,7 +322,7 @@ const styles = StyleSheet.create({
     minWidth: 36,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     backgroundColor: Colors.surfaceContainerHighest,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
@@ -329,7 +330,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   ratingBtnText: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "700",
     color: Colors.textSecondary,
   },
@@ -340,13 +341,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 14,
+    gap: 12,
     marginBottom: 16,
   },
   stepperBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: Radius.pill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: Colors.surfaceContainerHighest,
@@ -356,18 +357,18 @@ const styles = StyleSheet.create({
   countInput: {
     minWidth: 80,
     textAlign: "center",
-    fontSize: 28,
+    fontSize: FontSize.heading,
     fontWeight: "700",
     color: Colors.text,
     backgroundColor: Colors.surfaceContainer,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     paddingVertical: 6,
     paddingHorizontal: 10,
   },
   fieldLabel: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.textSecondary,
     marginBottom: 6,
@@ -376,14 +377,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
     minHeight: 72,
     textAlignVertical: "top",
     marginBottom: 12,
   },
-  error: { fontSize: 13, color: Colors.error, marginBottom: 12 },
+  error: { fontSize: FontSize.body, color: Colors.error, marginBottom: 12 },
 });

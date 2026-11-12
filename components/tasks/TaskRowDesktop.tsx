@@ -1,4 +1,5 @@
-import React, { forwardRef, useCallback } from "react";
+import { FontSize, Radius } from "../../theme/tokens";
+import React, { forwardRef, useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -9,7 +10,6 @@ import {
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
-import { panelStyle } from "../../theme/panels";
 import {
   todayYYYYMMDD,
   addDays,
@@ -21,6 +21,40 @@ import { useTimerElapsed } from "../../hooks/useTimer";
 import { DurationPickerDesktop } from "./DurationPickerDesktop";
 
 const isWeb = Platform.OS === "web";
+
+/**
+ * True when the device has a real hover (mouse / trackpad). Rows keep their
+ * timer controls hidden until hovered; on touch screens there is no hover,
+ * so the controls stay visible there.
+ */
+const canHover =
+  isWeb &&
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(hover: hover)").matches;
+
+/**
+ * The card's drag listener sits on an ancestor. A bubble-phase stop on the
+ * checkbox Pressable can lose to that listener on a phone browser. This
+ * wrapper stops the pointer before it reaches the card, and `display: contents`
+ * keeps the row layout unchanged.
+ */
+function StopRowDrag({ children }: { children: React.ReactNode }) {
+  if (!isWeb) return <>{children}</>;
+  return (
+    <div
+      onPointerDown={(event) => {
+        event.stopPropagation();
+      }}
+      onTouchStart={(event) => {
+        event.stopPropagation();
+      }}
+      style={{ display: "contents" }}
+    >
+      {children}
+    </div>
+  );
+}
 
 export interface TaskRowTask {
   _id: Id<"tasks">;
@@ -130,8 +164,9 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
     const dateLabel = showDate ? getDateDisplay(task.taskDay) : null;
 
     const showTrackableTag = !!meta.trackable;
+    // List (where it lives) and trackable (what it counts toward) are
+    // independent, so a task can carry both tags.
     const showListTag =
-      !showTrackableTag &&
       !!meta.list &&
       !meta.list.isGoalList &&
       !meta.list.isInbox;
@@ -186,18 +221,36 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
     // `react-native-web/dist/modules/forwardedProps`), but the TS types
     // don't expose it. Bundle it with `dragHandleProps` via a single
     // spread cast through `any`.
+    const [hovered, setHovered] = useState(false);
     const webOnlyProps = isWeb
-      ? ({ onContextMenu: handleContextMenu } as Record<string, unknown>)
+      ? ({
+          onContextMenu: handleContextMenu,
+          onMouseEnter: () => setHovered(true),
+          onMouseLeave: () => setHovered(false),
+        } as Record<string, unknown>)
       : null;
+
+    // The row rests as plain text. Timer controls appear on hover; a
+    // logged or running time stays visible because it is information,
+    // not chrome.
+    const showPlay = !canHover || hovered || isTicking;
+    const showDuration = showPlay || totalSeconds > 0;
+
+    const hasMeta =
+      !!initials ||
+      !!dateLabel ||
+      showTrackableTag ||
+      showListTag ||
+      (meta.tags?.length ?? 0) > 0;
 
     return (
       <View
         ref={ref as any}
         style={[
-          styles.cardWrap,
-          isDragging && styles.cardWrapDragging,
-          isOverlay && styles.cardWrapOverlay,
-          isWeb && (styles.cardWrapWebGrab as any),
+          styles.rowWrap,
+          isDragging && styles.rowWrapDragging,
+          isOverlay && styles.rowWrapOverlay,
+          isWeb && (styles.rowWrapWebGrab as any),
         ]}
         {...(webOnlyProps ?? {})}
         {...(dragHandleProps ?? {})}
@@ -205,70 +258,103 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
         <Pressable
           onPress={() => onSelect?.(task._id)}
           style={[
-            styles.card,
-            isTicking && styles.cardTicking,
-            isCompleted && styles.cardCompleted,
+            styles.row,
+            hovered && styles.rowHover,
+            isTicking && styles.rowTicking,
+            isOverlay && styles.rowOverlay,
+            isCompleted && styles.rowCompleted,
           ]}
         >
-          <View style={styles.grid}>
-            {/* Col 1: complete toggle */}
+          {/* Complete toggle */}
+          <StopRowDrag>
             <Pressable
               onPress={stopAndCall(() => onToggleComplete?.(task._id))}
               onPressIn={stopDragActivation}
               hitSlop={8}
-              style={({ hovered }: any) => [
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isCompleted }}
+              accessibilityLabel={
+                isCompleted ? "Mark incomplete" : "Mark complete"
+              }
+              style={({ hovered: btnHovered }: any) => [
                 styles.iconBtn,
-                hovered && styles.iconBtnHover,
+                btnHovered && styles.iconBtnHover,
               ]}
               {...(dragSafePressProps ?? {})}
             >
               <MaterialIcons
                 name={isCompleted ? "check-circle" : "radio-button-unchecked"}
-                size={22}
-                color={isCompleted ? Colors.tertiary : Colors.text}
+                size={20}
+                color={isCompleted ? Colors.success : Colors.textTertiary}
               />
             </Pressable>
+          </StopRowDrag>
 
-            {/* Col 2: title (with optional recurring-instance badge) */}
-            <View style={styles.titleRow}>
-              {task.isRecurringInstance && (
-                <Ionicons
-                  name="repeat"
-                  size={14}
-                  color={Colors.textSecondary}
-                  style={styles.recurringIcon}
+          {/* Title (with optional recurring-instance badge) */}
+          <View style={styles.titleRow}>
+            {task.isRecurringInstance && (
+              <Ionicons
+                name="repeat"
+                size={14}
+                color={Colors.textTertiary}
+                style={styles.recurringIcon}
+              />
+            )}
+            <Text
+              numberOfLines={1}
+              style={[styles.title, isCompleted && styles.titleCompleted]}
+            >
+              {task.name}
+            </Text>
+          </View>
+
+          {/* Quiet metadata: a colour dot carries identity, the text stays grey */}
+          {hasMeta && (
+            <View style={styles.meta}>
+              {initials && (
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </View>
+              )}
+              {dateLabel && <Text style={styles.metaText}>{dateLabel}</Text>}
+              {showTrackableTag && meta.trackable && (
+                <MetaLabel
+                  colour={meta.trackable.colour}
+                  name={meta.trackable.name}
                 />
               )}
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.title,
-                  isCompleted && styles.titleCompleted,
-                  styles.titleFlex,
-                ]}
-              >
-                {task.name}
-              </Text>
+              {showListTag && meta.list && (
+                <MetaLabel colour={meta.list.colour} name={meta.list.name} />
+              )}
+              {meta.tags?.map((tag, i) => (
+                <MetaLabel key={i} colour={tag.colour} name={tag.name} />
+              ))}
             </View>
+          )}
 
-            {/* Col 3: time area */}
-            <View style={styles.timeCol}>
+          {/* Time: play on hover, duration once there is one */}
+          <View style={styles.timeCol}>
+            <StopRowDrag>
               <Pressable
                 onPress={stopAndCall(() => onToggleTimer?.(task._id))}
                 onPressIn={stopDragActivation}
                 hitSlop={6}
-                style={({ hovered }: any) => [
+                accessibilityLabel={isTicking ? "Pause timer" : "Start timer"}
+                style={({ hovered: btnHovered, focused }: any) => [
                   styles.iconBtn,
-                  hovered && styles.iconBtnHover,
+                  btnHovered && styles.iconBtnHover,
+                  !showPlay && !focused && styles.hidden,
                 ]}
                 {...(dragSafePressProps ?? {})}
               >
                 <MaterialIcons
                   name={isTicking ? "pause" : "play-arrow"}
-                  size={20}
-                  color={Colors.text}
+                  size={18}
+                  color={isTicking ? Colors.primary : Colors.textSecondary}
                 />
               </Pressable>
+            </StopRowDrag>
+            <View style={!showDuration && styles.hidden}>
               {isWeb ? (
                 <DurationPickerDesktop
                   durationSeconds={totalSeconds}
@@ -283,85 +369,36 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
                 />
               ) : (
                 <Text
-                  style={[
-                    styles.duration,
-                    isTicking && styles.durationActive,
-                  ]}
+                  style={[styles.duration, isTicking && styles.durationActive]}
                 >
                   {secondsToDurationString(totalSeconds, isTicking)}
                 </Text>
               )}
             </View>
-
           </View>
-
-          {/* Meta + chips: keep date/assignee on the same row as trackable/tags */}
-          {(initials ||
-            dateLabel ||
-            showTrackableTag ||
-            showListTag ||
-            (meta.tags?.length ?? 0) > 0) && (
-            <View style={styles.tagsRow}>
-              {initials && (
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{initials}</Text>
-                </View>
-              )}
-              {dateLabel && (
-                <Text style={styles.dateTextInline}>{dateLabel}</Text>
-              )}
-              {showTrackableTag && meta.trackable && (
-                <View style={styles.tagChip}>
-                  <MaterialIcons
-                    name="track-changes"
-                    size={16}
-                    color={meta.trackable.colour || Colors.text}
-                  />
-                  <Text
-                    style={styles.tagName}
-                    numberOfLines={1}
-                  >
-                    {meta.trackable.name}
-                  </Text>
-                </View>
-              )}
-              {showListTag && meta.list && (
-                <View style={styles.tagChip}>
-                  <Ionicons
-                    name="list"
-                    size={16}
-                    color={meta.list.colour || Colors.text}
-                  />
-                  <Text style={styles.tagName} numberOfLines={1}>
-                    {meta.list.name}
-                  </Text>
-                </View>
-              )}
-              {meta.tags?.map((tag, i) => (
-                <View key={i} style={styles.tagChip}>
-                  <MaterialIcons
-                    name="label"
-                    size={16}
-                    color={tag.colour || Colors.text}
-                  />
-                  <Text style={styles.tagName} numberOfLines={1}>
-                    {tag.name}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
         </Pressable>
       </View>
     );
   }
 );
 
+function MetaLabel({ colour, name }: { colour?: string; name: string }) {
+  return (
+    <View style={styles.metaLabel}>
+      <View
+        style={[styles.metaDot, { backgroundColor: colour || Colors.neutral }]}
+      />
+      <Text style={styles.metaText} numberOfLines={1}>
+        {name}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  cardWrap: {
+  rowWrap: {
     width: "100%",
     alignSelf: "stretch",
-    marginBottom: 8,
     ...Platform.select({
       web: {
         userSelect: "none",
@@ -371,16 +408,15 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  // Visual affordance: the whole card is the drag source. Cursor flips to
-  // `grabbing` while dnd-kit's PointerSensor is active (handled globally
-  // by dnd-kit's overlay); `grab` here is the resting hint.
-  cardWrapWebGrab: {
+  // The whole row is the drag source. Cursor flips to `grabbing` while
+  // dnd-kit's PointerSensor is active; `grab` here is the resting hint.
+  rowWrapWebGrab: {
     cursor: "grab",
   } as any,
-  cardWrapDragging: {
+  rowWrapDragging: {
     opacity: 0.4,
   },
-  cardWrapOverlay: {
+  rowWrapOverlay: {
     ...Platform.select({
       web: {
         cursor: "grabbing",
@@ -389,31 +425,45 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  card: panelStyle,
-  cardTicking: {
-    borderColor: Colors.success,
-    borderWidth: 2,
-  },
-  cardCompleted: {
-    opacity: 0.5,
-  },
-  grid: {
+  // Flat row: no surface, no border. Separation comes from spacing and a
+  // faint hover wash, so the list reads as text rather than as boxes.
+  row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    minHeight: 40,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     columnGap: 8,
+    borderRadius: Radius.md,
+    ...Platform.select({
+      web: { transition: "background-color 120ms ease" } as any,
+      default: {},
+    }),
   },
+  rowHover: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  rowTicking: {
+    backgroundColor: Colors.accentWash,
+  },
+  /** The drag overlay floats over other rows, so it needs a solid surface. */
+  rowOverlay: {
+    backgroundColor: Colors.surfaceContainerHigh,
+  },
+  rowCompleted: {
+    opacity: 0.5,
+  },
+  hidden: { opacity: 0 },
   iconBtn: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: Radius.xl,
     alignItems: "center",
     justifyContent: "center",
     ...Platform.select({
       web: {
         cursor: "pointer",
-        transition: "background-color 120ms ease",
+        transition: "background-color 120ms ease, opacity 120ms ease",
       } as any,
       default: {},
     }),
@@ -422,24 +472,58 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.06)",
   },
   title: {
-    flex: 1,
+    flexShrink: 1,
     minWidth: 0,
     color: Colors.text,
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "400",
   },
+  // The title wins the width: it takes its natural size first and the
+  // metadata gives way (see `meta.flexShrink`).
   titleRow: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: "auto",
     minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
-  titleFlex: { flex: 1 },
   recurringIcon: { flexShrink: 0 },
   titleCompleted: {
     textDecorationLine: "line-through",
     color: Colors.textTertiary,
+  },
+  meta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 12,
+    // Shrink is weighted by natural width, so a long title would still
+    // lose most of the squeeze at 2:1. A large factor makes the labels
+    // give way to their minimum before the title loses a character.
+    flexShrink: 50,
+    // Never squeezed out entirely: the dot and a few letters always remain.
+    minWidth: 72,
+    maxWidth: "45%",
+    overflow: "hidden",
+  },
+  metaLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  metaDot: { width: 6, height: 6, borderRadius: Radius.pill, flexShrink: 0 },
+  metaText: {
+    fontSize: FontSize.caption,
+    color: Colors.textTertiary,
+    flexShrink: 1,
+    ...Platform.select({
+      web: { whiteSpace: "nowrap" } as object,
+      default: {},
+    }),
   },
   timeCol: {
     flexDirection: "row",
@@ -447,60 +531,29 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   duration: {
-    color: Colors.text,
-    fontSize: 14,
+    color: Colors.textSecondary,
+    fontSize: FontSize.caption,
     fontVariant: ["tabular-nums"] as any,
     minWidth: 48,
     textAlign: "right",
-    ...Platform.select({
-      web: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" } as any,
-      default: {},
-    }),
   },
   durationActive: {
-    color: Colors.success,
+    color: Colors.primary,
     fontWeight: "600",
   },
   avatar: {
     width: 20,
     height: 20,
-    borderRadius: 10,
+    borderRadius: Radius.pill,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.primaryContainer,
+    backgroundColor: Colors.surfaceContainerHighest,
   },
   avatarText: {
-    fontSize: 10,
+    fontSize: FontSize.micro,
     fontWeight: "600",
-    color: Colors.onPrimaryContainer,
+    color: Colors.textSecondary,
     lineHeight: 10,
-  },
-  dateTextInline: {
-    fontSize: 12,
-    color: Colors.textTertiary,
-    marginRight: 4,
-    ...Platform.select({
-      web: { whiteSpace: "nowrap" } as object,
-      default: {},
-    }),
-  },
-  tagsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-  },
-  tagChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  tagName: {
-    fontSize: 12,
-    color: Colors.text,
-    maxWidth: 140,
   },
 });
 
@@ -517,9 +570,8 @@ const placeholderStyles = StyleSheet.create({
   placeholder: {
     width: "100%",
     alignSelf: "stretch",
-    height: 100,
-    marginBottom: 8,
-    borderRadius: 12,
+    height: 40,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.3)",
     overflow: "hidden",

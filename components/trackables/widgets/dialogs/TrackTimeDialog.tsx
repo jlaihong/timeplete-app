@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../../theme/tokens";
 import React, { useMemo, useState } from "react";
 import { View, Text, StyleSheet, TextInput } from "react-native";
 import { useMutation } from "convex/react";
@@ -170,10 +171,10 @@ export function TrackTimeDialog({
 
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8 },
-  colourDot: { width: 14, height: 14, borderRadius: 7 },
-  title: { fontSize: 18, fontWeight: "700", color: Colors.text, flex: 1 },
+  colourDot: { width: 14, height: 14, borderRadius: Radius.pill },
+  title: { fontSize: FontSize.title, fontWeight: "700", color: Colors.text, flex: 1 },
   subtitle: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     marginTop: 2,
     marginBottom: 8,
@@ -182,7 +183,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   fieldLabel: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.textSecondary,
     marginBottom: 6,
@@ -191,17 +192,17 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
     minHeight: 72,
     textAlignVertical: "top",
     marginBottom: 12,
   },
   error: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.error,
     marginBottom: 12,
   },

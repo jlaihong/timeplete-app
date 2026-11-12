@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 /**
  * Web-only drag-and-drop list sections (productivity-one `task-group` + CDK).
  * Self-contained `DndContext` — unlike the home page, the list has no calendar.
@@ -191,7 +192,7 @@ function DroppableGroupBody({
           ? {
               minHeight: 60,
               padding: 4,
-              borderRadius: 8,
+              borderRadius: Radius.md,
               transition: "background-color 120ms ease",
               backgroundColor: isOver
                 ? "rgba(0, 218, 245, 0.08)"
@@ -299,10 +300,17 @@ function mergeListDetailIncomingFields(
   local: LocalGroup[],
   incoming: LocalGroup[],
 ): LocalGroup[] {
-  return mergeIncomingTaskFields(local, incoming, (inc) => ({
-    headerCompletedCount: inc.headerCompletedCount,
-    headerTotalCount: inc.headerTotalCount,
-  }));
+  return mergeIncomingTaskFields(
+    local,
+    incoming,
+    (inc) => ({
+      headerCompletedCount: inc.headerCompletedCount,
+      headerTotalCount: inc.headerTotalCount,
+    }),
+    // Incoming rows are already filtered (completed items hidden). A missing
+    // id is a row that should leave, including a checkbox tap during a drag.
+    { dropMissing: true },
+  );
 }
 
 export function ListDetailWebDnd({
@@ -360,8 +368,8 @@ export function ListDetailWebDnd({
     // in the same frame as `lists.getPaginated` updates (parity with home task list).
     // A key that only tracked task ids missed field edits (e.g. `taskDay` from
     // TaskDetailSheet), so the list showed stale dates until full remount/refresh.
-    // While dragging (or awaiting `moveBetweenSections` in `onDragEnd`), keep local
-    // order but still apply row field patches so a checkbox tap is not delayed.
+    // While the finger is down, keep local order, copy new row fields, and
+    // drop rows the filtered list no longer contains (a completion).
     const incoming = groupsFromDetailSections(sections);
     if (isDraggingRef.current) {
       setLocalGroups((prev) => mergeListDetailIncomingFields(prev, incoming));
@@ -407,7 +415,7 @@ export function ListDetailWebDnd({
     (task: TaskRowTask, meta: TaskRowMeta) => {
       if (task.trackableId && meta.trackable?.colour) return meta.trackable.colour;
       if (task.listId && meta.list?.colour) return meta.list.colour;
-      return "#6b7280";
+      return Colors.neutral;
     },
     [],
   );
@@ -525,8 +533,9 @@ export function ListDetailWebDnd({
         return;
       }
 
-      /** Keep true until mutation + local fixes finish so `sections` sync cannot
-       * clobber optimistic `onDragOver` state with a stale Convex snapshot. */
+      /** The fingerprint below keeps a stale snapshot from undoing the drop.
+       * The drag hold itself ends with the finger, so a checkbox tap is not
+       * stuck behind `moveBetweenSections`. */
       try {
         const { active, over } = event;
         const taskId = String(active.id) as Id<"tasks">;
@@ -608,6 +617,10 @@ export function ListDetailWebDnd({
           0,
         );
         pendingReorderDeadlineMsRef.current = Date.now() + 8000;
+
+        // Release before the save. Completions that arrive while the request
+        // is in flight must take the filtered list, not the pre-drag row.
+        isDraggingRef.current = false;
 
         const toSectionId = toSectionKey as Id<"listSections">;
 
@@ -819,13 +832,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     flex: 1,
-    fontSize: 18,
-    fontWeight: "500",
+    fontSize: FontSize.title,
+    fontWeight: "600",
     color: Colors.text,
     minWidth: 0,
   },
   sectionCountInline: {
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "400",
     color: Colors.textTertiary,
   },
@@ -835,5 +848,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  emptyDropZoneText: { fontSize: 13, color: Colors.textTertiary },
+  emptyDropZoneText: { fontSize: FontSize.body, color: Colors.textTertiary },
 });

@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -17,11 +18,18 @@ import { ListDialog } from "../../../components/lists/ListDialog";
 import { Stack, router } from "expo-router";
 import { useAuth } from "../../../hooks/useAuth";
 import { useArchiveList } from "../../../hooks/useArchiveList";
+import { useIsDesktop } from "../../../hooks/useIsDesktop";
+import {
+  DesktopPageHeader,
+  pageColumnStyle,
+} from "../../../components/layout/DesktopPageHeader";
+import { SectionHeadingAddButton } from "../../../components/ui/SectionHeadingAddButton";
 
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
 export default function ListsScreen() {
   const { profileReady } = useAuth();
+  const isDesktop = useIsDesktop();
   const canQueryLists = profileReady;
   const lists = useQuery(api.lists.search, canQueryLists ? {} : "skip");
   const [showArchived, setShowArchived] = useState(false);
@@ -50,9 +58,21 @@ export default function ListsScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ headerShown: true, title: "All Lists" }} />
+      {/* Desktop hides the navigator header (it only carried a second menu
+          button there) and shows the shared page title instead. */}
+      <Stack.Screen options={{ headerShown: !isDesktop, title: "All Lists" }} />
+      <DesktopPageHeader
+        column
+        title="Lists"
+        right={
+          <SectionHeadingAddButton
+            onPress={() => setDialogState("new")}
+            accessibilityLabel="Create list"
+          />
+        }
+      />
 
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, pageColumnStyle]}>
         <TouchableOpacity
           style={[styles.tab, !showArchived && styles.activeTab]}
           onPress={() => setShowArchived(false)}
@@ -113,7 +133,7 @@ export default function ListsScreen() {
                       <Text style={styles.badge}>Inbox</Text>
                     )}
                     {item.isGoalList && (
-                      <Text style={styles.badge}>Goal</Text>
+                      <Text style={styles.badge}>Trackable</Text>
                     )}
                     {!!item.trackableId && !item.isGoalList && (
                       <Text style={styles.badge}>Linked</Text>
@@ -171,18 +191,21 @@ export default function ListsScreen() {
               </View>
             </Card>
           )}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, pageColumnStyle]}
         />
       )}
 
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => setDialogState("new")}
-        accessibilityRole="button"
-        accessibilityLabel="Create list"
-      >
-        <Ionicons name="add" size={24} color={Colors.white} />
-      </TouchableOpacity>
+      {/* Desktop adds from the header; phones keep the floating button. */}
+      {!isDesktop && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => setDialogState("new")}
+          accessibilityRole="button"
+          accessibilityLabel="Create list"
+        >
+          <Ionicons name="add" size={24} color={Colors.white} />
+        </TouchableOpacity>
+      )}
 
       {dialogState && (
         <ListDialog
@@ -206,12 +229,12 @@ const styles = StyleSheet.create({
   tab: {
     paddingVertical: 8,
     paddingHorizontal: 16,
-    borderRadius: 20,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.surfaceVariant,
   },
   activeTab: { backgroundColor: Colors.primary },
   tabDisabled: { opacity: 0.45 },
-  tabText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
+  tabText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.textSecondary },
   activeTabText: { color: Colors.white },
   tabTextDisabled: { color: Colors.textTertiary },
   listContent: { padding: 16, paddingBottom: 80 },
@@ -232,23 +255,23 @@ const styles = StyleSheet.create({
   },
   editButton: {
     padding: 10,
-    borderRadius: 6,
+    borderRadius: Radius.md,
   },
   openButton: {
     padding: 10,
-    borderRadius: 6,
+    borderRadius: Radius.md,
   },
-  listDot: { width: 14, height: 14, borderRadius: 7 },
+  listDot: { width: 14, height: 14, borderRadius: Radius.pill },
   listInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
-  listName: { fontSize: 15, fontWeight: "500", color: Colors.text },
+  listName: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
   badge: {
-    fontSize: 10,
+    fontSize: FontSize.micro,
     fontWeight: "600",
     color: Colors.textTertiary,
     backgroundColor: Colors.surfaceVariant,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     overflow: "hidden",
   },
   fab: {
@@ -257,7 +280,7 @@ const styles = StyleSheet.create({
     bottom: 20,
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",

@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 import React, { useContext } from "react";
 import { Text, View, StyleSheet } from "react-native";
 import { Colors } from "../../constants/colors";
@@ -23,7 +24,7 @@ export function ShareDialog({ type, entityId, onClose }: ShareDialogProps) {
     <DialogOverlay onBackdropPress={onClose} align="center">
       <ShareDialogCard>
         <Text style={styles.title}>
-          Share {type === "list" ? "List" : "Goal"}
+          Share {type === "list" ? "List" : "Trackable"}
         </Text>
 
         {type === "list" ? (
@@ -74,7 +75,7 @@ const styles = StyleSheet.create({
   // longer applies padding.
   dialog: { width: "92%", maxWidth: 400, alignSelf: "center" },
   title: {
-    fontSize: 20,
+    fontSize: FontSize.title,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 20,

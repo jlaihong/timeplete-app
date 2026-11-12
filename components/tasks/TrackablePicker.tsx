@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useState } from "react";
 import {
   View,
@@ -22,6 +23,12 @@ interface TrackablePickerProps {
   onChange: (id: Id<"trackables"> | null) => void;
   label?: string;
   /**
+   * Trackable the task already counts toward through its list. Shown as
+   * the default when `value` is empty, so picking a trackable here is an
+   * override rather than a competing assignment.
+   */
+  inheritedTrackableId?: Id<"trackables"> | null;
+  /**
    * When false, list-detail / locked goal UX (productivity-one): show the
    * swatch + label with no menu.
    */
@@ -34,14 +41,17 @@ interface TrackablePickerProps {
 }
 
 /**
- * Field for assigning a task to a trackable. Mirrors productivity-one's
- * `<mat-select>` in `task-details.html` (single select, "None" option,
- * shows the goal's colour swatch + name).
+ * "Counts toward" field: which trackable a task's time and completion feed.
+ *
+ * A task always lives in a list; the trackable is a separate question. By
+ * default it follows the list (when the list is linked to a trackable) and
+ * this field only stores an explicit per-task override.
  */
 export function TrackablePicker({
   value,
   onChange,
-  label = "Trackable",
+  label = "Counts toward",
+  inheritedTrackableId,
   editable = true,
   compact = true,
 }: TrackablePickerProps) {
@@ -54,28 +64,37 @@ export function TrackablePicker({
   );
 
   const selected = trackables?.find((t) => t._id === value);
+  const inherited =
+    !value && inheritedTrackableId
+      ? trackables?.find((t) => t._id === inheritedTrackableId)
+      : undefined;
+  /** What the task effectively counts toward: the override, else the list's. */
+  const shown = selected ?? inherited;
+
+  const triggerBody = shown ? (
+    <>
+      <View style={[styles.colourDot, { backgroundColor: shown.colour }]} />
+      <Text style={styles.triggerText} numberOfLines={1}>
+        {shown.name}
+        {inherited ? (
+          <Text style={styles.triggerHint}> · from list</Text>
+        ) : null}
+      </Text>
+    </>
+  ) : (
+    <Text style={styles.triggerPlaceholder}>Nothing</Text>
+  );
 
   const readonlyBody = (
     <View
       style={[styles.trigger, styles.triggerReadonly]}
       accessibilityRole="text"
       accessibilityLabel={
-        selected ? `${label}: ${selected.name}` : `${label}: None`
+        shown ? `${label}: ${shown.name}` : `${label}: nothing`
       }
     >
       <View style={styles.triggerInner}>
-        {selected ? (
-          <>
-            <View
-              style={[styles.colourDot, { backgroundColor: selected.colour }]}
-            />
-            <Text style={styles.triggerText} numberOfLines={1}>
-              {selected.name}
-            </Text>
-          </>
-        ) : (
-          <Text style={styles.triggerPlaceholder}>None</Text>
-        )}
+        {triggerBody}
       </View>
     </View>
   );
@@ -88,18 +107,7 @@ export function TrackablePicker({
       accessibilityRole="button"
     >
       <View style={styles.triggerInner}>
-        {selected ? (
-          <>
-            <View
-              style={[styles.colourDot, { backgroundColor: selected.colour }]}
-            />
-            <Text style={styles.triggerText} numberOfLines={1}>
-              {selected.name}
-            </Text>
-          </>
-        ) : (
-          <Text style={styles.triggerPlaceholder}>None</Text>
-        )}
+        {triggerBody}
       </View>
       <Ionicons name="chevron-down" size={16} color={Colors.textSecondary} />
     </TouchableOpacity>
@@ -139,7 +147,15 @@ export function TrackablePicker({
                 }}
               >
                 <View style={styles.colourDotEmpty} />
-                <Text style={styles.menuItemText}>None</Text>
+                <Text style={styles.menuItemText} numberOfLines={1}>
+                  {inheritedTrackableId
+                    ? `Same as list${
+                        trackables?.find((t) => t._id === inheritedTrackableId)
+                          ? ` (${trackables.find((t) => t._id === inheritedTrackableId)!.name})`
+                          : ""
+                      }`
+                    : "Nothing"}
+                </Text>
                 {!value && (
                   <Ionicons
                     name="checkmark"
@@ -177,7 +193,7 @@ export function TrackablePicker({
               })}
               {trackables && trackables.length === 0 && (
                 <Text style={styles.emptyText}>
-                  No trackables yet — create one from the Goals tab.
+                  No trackables yet — create one from the Trackables tab.
                 </Text>
               )}
             </ScrollView>
@@ -191,10 +207,10 @@ export function TrackablePicker({
 const styles = StyleSheet.create({
   container: { marginBottom: 12 },
   label: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     marginBottom: 6,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   trigger: {
     flexDirection: "row",
@@ -202,7 +218,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outline,
     backgroundColor: Colors.surfaceContainer,
@@ -218,13 +234,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  triggerText: { fontSize: 14, color: Colors.text, flex: 1 },
-  triggerPlaceholder: { fontSize: 14, color: Colors.textTertiary },
-  colourDot: { width: 12, height: 12, borderRadius: 3 },
+  triggerText: { fontSize: FontSize.body, color: Colors.text, flex: 1 },
+  triggerHint: { color: Colors.textTertiary },
+  triggerPlaceholder: { fontSize: FontSize.body, color: Colors.textTertiary },
+  colourDot: { width: 12, height: 12, borderRadius: Radius.sm },
   colourDotEmpty: {
     width: 12,
     height: 12,
-    borderRadius: 3,
+    borderRadius: Radius.sm,
     borderWidth: 1,
     borderColor: Colors.outline,
   },
@@ -237,7 +254,7 @@ const styles = StyleSheet.create({
   },
   menu: {
     backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     width: "100%",
@@ -262,11 +279,11 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 6,
+    borderRadius: Radius.md,
   },
-  menuItemText: { flex: 1, fontSize: 14, color: Colors.text },
+  menuItemText: { flex: 1, fontSize: FontSize.body, color: Colors.text },
   emptyText: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textTertiary,
     padding: 16,
     textAlign: "center",

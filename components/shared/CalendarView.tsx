@@ -26,7 +26,7 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   todayYYYYMMDD,
   addDays,
-  formatDisplayDateLong,
+  parseYYYYMMDD,
   formatSecondsAsHM,
 } from "../../lib/dates";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
@@ -208,7 +208,7 @@ export function CalendarView({
     if (Platform.OS !== "web" || typeof document === "undefined") return;
     const id = "cal-live-timer-outline-pulse-v1";
     if (document.getElementById(id)) return;
-    const c = Colors.success;
+    const c = Colors.primary;
     const style = document.createElement("style");
     style.id = id;
     style.textContent = `
@@ -432,6 +432,40 @@ export function CalendarView({
   }, [timeWindows]);
 
   const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => i), []);
+
+  /**
+   * Header copy. The big line says which day in the way you'd say it
+   * ("Today", "Tomorrow", else the weekday); the small line carries the
+   * date and the day's totals.
+   */
+  const dayHeading = useMemo(() => {
+    const d = parseYYYYMMDD(selectedDay);
+    const sameYear =
+      selectedDay.slice(0, 4) === todayInGridZone.slice(0, 4);
+    const date = d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      ...(sameYear ? {} : { year: "numeric" }),
+    });
+    const primary =
+      selectedDay === todayInGridZone
+        ? "Today"
+        : selectedDay === addDays(todayInGridZone, 1)
+          ? "Tomorrow"
+          : selectedDay === addDays(todayInGridZone, -1)
+            ? "Yesterday"
+            : d.toLocaleDateString(undefined, { weekday: "long" });
+    return { primary, date };
+  }, [selectedDay, todayInGridZone]);
+
+  const daySummary = useMemo(() => {
+    const n = sortedWindows.length;
+    const events =
+      n === 0 ? "No events" : n === 1 ? "1 event" : `${n} events`;
+    return totalDuration > 0
+      ? `${events} · ${formatSecondsAsHM(totalDuration)} tracked`
+      : events;
+  }, [sortedWindows.length, totalDuration]);
 
   useEffect(() => {
     if (recurringEventRules === undefined) return;
@@ -803,12 +837,6 @@ export function CalendarView({
         const id = eventNode.getAttribute("data-calendar-event-id");
         if (!id) return;
         e.preventDefault();
-        // eslint-disable-next-line no-console
-        console.log("RIGHT CLICK DETECTED (event)", {
-          x: e.clientX,
-          y: e.clientY,
-          eventId: id,
-        });
         setContextMenu({
           kind: "event",
           x: e.clientX,
@@ -832,12 +860,6 @@ export function CalendarView({
               DAY_MINUTES - MIN_DURATION_MINUTES
             )
           : 0;
-        // eslint-disable-next-line no-console
-        console.log("RIGHT CLICK DETECTED (empty)", {
-          x: e.clientX,
-          y: e.clientY,
-          startMinutes,
-        });
         setContextMenu({
           kind: "empty",
           x: e.clientX,
@@ -1097,25 +1119,45 @@ export function CalendarView({
         </View>
       )}
 
-      <View style={styles.dayNav}>
-        <TouchableOpacity onPress={() => setSelectedDay((d) => addDays(d, -1))}>
-          <Ionicons name="chevron-back" size={24} color={Colors.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => setSelectedDay(todayYYYYMMDD())}>
-          <Text style={styles.dayLabel}>
-            {formatDisplayDateLong(selectedDay)}
+      <View style={[styles.dayNav, !title && styles.dayNavNoTitle]}>
+        <View style={styles.dayHeading}>
+          <Text style={styles.dayLabel} numberOfLines={1}>
+            {dayHeading.primary}
           </Text>
+          <Text style={styles.summaryText} numberOfLines={1}>
+            {[dayHeading.date, daySummary].join(" · ")}
+          </Text>
+        </View>
+        {!isTodayColumn && (
+          <TouchableOpacity
+            style={styles.todayButton}
+            onPress={() => setSelectedDay(todayYYYYMMDD())}
+            accessibilityRole="button"
+            accessibilityLabel="Go to today"
+          >
+            <Text style={styles.todayButtonText}>Today</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={styles.dayNavButton}
+          onPress={() => setSelectedDay((d) => addDays(d, -1))}
+          accessibilityRole="button"
+          accessibilityLabel="Previous day"
+        >
+          <Ionicons name="chevron-back" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setSelectedDay((d) => addDays(d, 1))}>
-          <Ionicons name="chevron-forward" size={24} color={Colors.primary} />
+        <TouchableOpacity
+          style={styles.dayNavButton}
+          onPress={() => setSelectedDay((d) => addDays(d, 1))}
+          accessibilityRole="button"
+          accessibilityLabel="Next day"
+        >
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={Colors.textSecondary}
+          />
         </TouchableOpacity>
-      </View>
-
-      <View style={styles.summary}>
-        <Text style={styles.summaryText}>
-          {sortedWindows.length} events | {formatSecondsAsHM(totalDuration)}{" "}
-          tracked
-        </Text>
       </View>
 
       <ScrollView
@@ -1343,7 +1385,9 @@ export function CalendarView({
                   ),
                 },
               ]}
-            />
+            >
+              <View style={styles.nowDot} />
+            </View>
           ) : null}
         </View>
       </ScrollView>
@@ -1422,7 +1466,9 @@ export function CalendarView({
       )}
 
       <AutoDismissToast
-        key={deletedEventToastKey}
+        // Prefixed: the two toasts are siblings and both counters start
+        // at 0, which gave them the same key.
+        key={`deleted-${deletedEventToastKey}`}
         message={deletedEventToastMessage}
         onDismiss={clearDeletedEventToast}
         actionLabel={deletedEventCanUndo ? "Undo" : null}
@@ -1430,7 +1476,7 @@ export function CalendarView({
       />
 
       <AutoDismissToast
-        key={eventSaveErrorToastKey}
+        key={`save-error-${eventSaveErrorToastKey}`}
         message={eventSaveErrorMessage}
         onDismiss={clearEventSaveErrorToast}
       />

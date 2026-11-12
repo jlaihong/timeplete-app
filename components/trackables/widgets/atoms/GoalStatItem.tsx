@@ -1,3 +1,4 @@
+import { FontSize } from "../../../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../../../constants/colors";
@@ -26,19 +27,17 @@ export function GoalStatItem({ label, value, meta }: GoalStatItemProps) {
 }
 
 const styles = StyleSheet.create({
-  item: { alignItems: "center" },
+  item: { alignItems: "flex-start" },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     gap: 4,
   },
-  value: { fontSize: 16, fontWeight: "700", color: Colors.text },
+  value: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
   label: {
-    fontSize: 11,
+    fontSize: FontSize.caption,
     color: Colors.textTertiary,
     textTransform: "lowercase",
     marginTop: 1,
-    textAlign: "center",
   },
 });

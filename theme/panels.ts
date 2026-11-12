@@ -1,5 +1,6 @@
 import { Platform, ViewStyle } from "react-native";
 import { Colors } from "../constants/colors";
+import { Radius } from "./tokens";
 
 /**
  * Material Design 3 elevation level 1 — the exact 3-layer shadow that
@@ -40,7 +41,7 @@ export const level1Shadow = Platform.select<ViewStyle>({
  */
 export const panelStyle: ViewStyle = {
   backgroundColor: Colors.surfaceContainerLow,
-  borderRadius: 12,
+  borderRadius: Radius.lg,
   ...level1Shadow,
 };
 

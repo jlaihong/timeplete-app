@@ -23,8 +23,19 @@ function storageKeys(scope: TaskFilterScope) {
  * Persisted task filters (completion visibility + multi-assignee) shared by
  * Home and List detail. Pass `null` to disable hydration (e.g. list id loading).
  */
+/**
+ * Home shows completed tasks unless told otherwise (ticking things off for
+ * the day is the point). A list hides them unless told otherwise, so a
+ * long-lived list reads as what is left to do, not its whole history.
+ */
+function defaultShowCompleted(scope: TaskFilterScope | null): boolean {
+  return scope?.kind !== "list";
+}
+
 export function useTaskFilters(scope: TaskFilterScope | null) {
-  const [showCompleted, setShowCompletedState] = useState(true);
+  const [showCompleted, setShowCompletedState] = useState(() =>
+    defaultShowCompleted(scope),
+  );
   const [filterUserIds, setFilterUserIdsState] = useState<string[]>([]);
 
   const scopeKey =
@@ -36,7 +47,7 @@ export function useTaskFilters(scope: TaskFilterScope | null) {
     const k = storageKeys(scope);
     (async () => {
       const sc = await AsyncStorage.getItem(k.showCompleted);
-      const show = sc !== "false";
+      const show = sc == null ? defaultShowCompleted(scope) : sc !== "false";
       const raw = await AsyncStorage.getItem(k.filterUsers);
       let users: string[] = [];
       if (raw) {
@@ -87,8 +98,11 @@ export function useTaskFilters(scope: TaskFilterScope | null) {
   );
 
   const isFilterActive = useMemo(
-    () => !showCompleted || filterUserIds.length > 0,
-    [showCompleted, filterUserIds],
+    () =>
+      showCompleted !== defaultShowCompleted(scope) ||
+      filterUserIds.length > 0,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [showCompleted, filterUserIds, scopeKey],
   );
 
   return {

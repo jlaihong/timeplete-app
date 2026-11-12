@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useState, useMemo } from "react";
 import {
   View,
@@ -6,10 +7,11 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
+  Platform,
 } from "react-native";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { Colors, stackHeaderChromeOptions } from "../../constants/colors";
+import { Colors, stackHeaderChromeOptions, DEFAULT_ENTITY_COLOUR } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
@@ -18,6 +20,11 @@ import { ColorPicker } from "../../components/ui/ColorPicker";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Stack } from "expo-router";
 import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
+import {
+  DesktopPageHeader,
+  pageColumnStyle,
+} from "../../components/layout/DesktopPageHeader";
+import { SectionHeadingAddButton } from "../../components/ui/SectionHeadingAddButton";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useAuth } from "../../hooks/useAuth";
 
@@ -53,6 +60,14 @@ export default function TagsScreen() {
   };
 
   const handleDeleteTag = (tagId: string) => {
+    // `Alert.alert` does nothing on web, so the bin icon was dead there.
+    if (Platform.OS === "web") {
+      // eslint-disable-next-line no-alert
+      if (window.confirm("Delete this tag? This cannot be undone.")) {
+        void removeTag({ id: tagId as any });
+      }
+      return;
+    }
     Alert.alert("Delete Tag", "Are you sure? This cannot be undone.", [
       { text: "Cancel" },
       {
@@ -73,8 +88,18 @@ export default function TagsScreen() {
           headerLeft: () => <DrawerMenuButton />,
         }}
       />
+      <DesktopPageHeader
+        column
+        title="Tags"
+        right={
+          <SectionHeadingAddButton
+            onPress={() => setEditing({ name: "", colour: DEFAULT_ENTITY_COLOUR })}
+            accessibilityLabel="Add tag"
+          />
+        }
+      />
 
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, pageColumnStyle]}>
         <TouchableOpacity
           style={[styles.tab, !showArchived && styles.activeTab]}
           onPress={() => setShowArchived(false)}
@@ -94,6 +119,7 @@ export default function TagsScreen() {
       </View>
 
       {editing && (
+        <View style={pageColumnStyle}>
         <Card style={styles.editCard}>
           <Input
             label="Tag Name"
@@ -115,6 +141,7 @@ export default function TagsScreen() {
             <Button title="Save" onPress={handleSaveTag} />
           </View>
         </Card>
+        </View>
       )}
 
       {!filteredTags ? (
@@ -156,16 +183,23 @@ export default function TagsScreen() {
               </TouchableOpacity>
             </Card>
           )}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, pageColumnStyle]}
         />
       )}
 
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => setEditing({ name: "", colour: "#4A90D9" })}
-      >
-        <Ionicons name="add" size={24} color={Colors.white} />
-      </TouchableOpacity>
+      {/* Desktop adds from the header; phones keep the floating button. */}
+      {!isDesktop && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() =>
+            setEditing({ name: "", colour: DEFAULT_ENTITY_COLOUR })
+          }
+          accessibilityRole="button"
+          accessibilityLabel="Add tag"
+        >
+          <Ionicons name="add" size={24} color={Colors.white} />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -182,15 +216,15 @@ const styles = StyleSheet.create({
   tab: {
     paddingVertical: 8,
     paddingHorizontal: 16,
-    borderRadius: 20,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.surfaceVariant,
   },
   activeTab: { backgroundColor: Colors.primary },
-  tabText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
+  tabText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.textSecondary },
   activeTabText: { color: Colors.white },
   editCard: { marginHorizontal: 16, marginBottom: 16 },
   colorLabel: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     marginBottom: 8,
@@ -206,18 +240,18 @@ const styles = StyleSheet.create({
   tagRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 14,
+    padding: 12,
     gap: 12,
   },
-  tagDot: { width: 14, height: 14, borderRadius: 7 },
-  tagName: { flex: 1, fontSize: 15, fontWeight: "500", color: Colors.text },
+  tagDot: { width: 14, height: 14, borderRadius: Radius.pill },
+  tagName: { flex: 1, fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
   fab: {
     position: "absolute",
     right: 20,
     bottom: 20,
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",

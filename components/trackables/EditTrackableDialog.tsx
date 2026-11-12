@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -11,10 +12,11 @@ import {
   type ViewStyle,
 } from "react-native";
 import { useMutation, useQuery } from "convex/react";
+import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { api } from "../../convex/_generated/api";
-import { Colors } from "../../constants/colors";
+import { Colors, DEFAULT_ENTITY_COLOUR } from "../../constants/colors";
 import { Id } from "../../convex/_generated/dataModel";
 import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
@@ -33,7 +35,10 @@ import {
 } from "./goal/GoalAccountabilityForm";
 import { EditTrackableHistoryTab } from "./EditTrackableHistoryTab";
 import { EditTrackableProgressTab } from "./EditTrackableProgressTab";
+import { EditTrackableTasksTab } from "./EditTrackableTasksTab";
 import { useAuth } from "../../hooks/useAuth";
+import { homeHiddenReason } from "../../lib/trackableHomeVisibility";
+import { todayYYYYMMDD } from "../../lib/dates";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
 
@@ -51,15 +56,17 @@ type TrackableType =
 
 type GoalEditTab =
   | "progress"
+  | "tasks"
   | "time_tracked"
   | "commitment"
   | "motivations"
   | "accountability";
 
-type TrackerEditTab = "details" | "progress" | "tracking_history";
+type TrackerEditTab = "details" | "progress" | "tasks" | "tracking_history";
 
 const GOAL_TAB_DEFS: { key: GoalEditTab; label: string }[] = [
   { key: "progress", label: "Progress" },
+  { key: "tasks", label: "Tasks" },
   { key: "time_tracked", label: "Time Tracked" },
   { key: "commitment", label: "My Commitment" },
   { key: "motivations", label: "My Motivations" },
@@ -69,6 +76,7 @@ const GOAL_TAB_DEFS: { key: GoalEditTab; label: string }[] = [
 const TRACKER_TAB_DEFS: { key: TrackerEditTab; label: string }[] = [
   { key: "details", label: "Details" },
   { key: "progress", label: "Progress" },
+  { key: "tasks", label: "Tasks" },
   { key: "tracking_history", label: "Tracking History" },
 ];
 
@@ -92,14 +100,21 @@ export function EditTrackableDialog({
     profileReady ? {} : "skip",
   );
   const trackable = trackables?.find((t) => t._id === trackableId);
+  // The trackable's own task list. The sidebar no longer lists these (it
+  // only shows hand-made lists), so this dialog is the way in.
+  const allLists = useQuery(api.lists.search, profileReady ? {} : "skip");
+  const ownListId = allLists?.find(
+    (l) => l.trackableId === trackableId && l.isGoalList && !l.archived,
+  )?._id;
   const upsertTrackable = useMutation(api.trackables.upsert);
   const archiveTrackable = useMutation(api.trackables.archive);
+  const setShowOnHome = useMutation(api.trackables.setShowOnHome);
   const deleteTrackable = useMutation(api.trackables.remove);
 
   const [goalTab, setGoalTab] = useState<GoalEditTab>("progress");
   const [trackerTab, setTrackerTab] = useState<TrackerEditTab>("details");
   const [name, setName] = useState("");
-  const [colour, setColour] = useState("#4A90D9");
+  const [colour, setColour] = useState(DEFAULT_ENTITY_COLOUR);
   const [startDay, setStartDay] = useState("");
   const [endDay, setEndDay] = useState("");
   const [targetCount, setTargetCount] = useState("");
@@ -480,6 +495,8 @@ export function EditTrackableDialog({
     switch (goalTab) {
       case "progress":
         return renderProgressTabPane();
+      case "tasks":
+        return <EditTrackableTasksTab trackableId={trackableId} />;
       case "time_tracked":
         return (
           <View style={styles.historyTabPane}>
@@ -562,6 +579,9 @@ export function EditTrackableDialog({
     if (trackerTab === "progress") {
       return renderProgressTabPane();
     }
+    if (trackerTab === "tasks") {
+      return <EditTrackableTasksTab trackableId={trackableId} />;
+    }
     return (
       <View style={styles.historyTabPane}>
         <EditTrackableHistoryTab
@@ -578,22 +598,58 @@ export function EditTrackableDialog({
   // destructive Delete has moved to the footer's leading slot for parity
   // with `ListDialog` / `TaskDetailSheet` (see the confirmation dialog
   // in `confirmDelete` below for the actual guard rail).
+  // Mirrors the home column's own rule, so a goal that dropped off home
+  // because it ended reads as "not on home" and one tap brings it back.
+  const isOnHome = homeHiddenReason(trackable, todayYYYYMMDD()) === null;
   const headerActions = (
-    <Pressable
-      style={styles.headerIconBtn}
-      onPress={handleArchive}
-      accessibilityRole="button"
-      accessibilityLabel={
-        trackable.archived ? "Unarchive trackable" : "Archive trackable"
-      }
-      hitSlop={6}
-    >
-      <Ionicons
-        name="archive-outline"
-        size={22}
-        color={Colors.textSecondary}
-      />
-    </Pressable>
+    <>
+      {ownListId && (
+        <Pressable
+          style={styles.headerIconBtn}
+          onPress={() => {
+            onClose();
+            router.push(`/(app)/lists/${ownListId}`);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Open task list"
+          hitSlop={6}
+        >
+          <Ionicons name="list-outline" size={22} color={Colors.textSecondary} />
+        </Pressable>
+      )}
+      {!trackable.archived && (
+        <Pressable
+          style={styles.headerIconBtn}
+          onPress={() =>
+            void setShowOnHome({ id: trackableId, showOnHome: !isOnHome })
+          }
+          accessibilityRole="button"
+          accessibilityLabel={isOnHome ? "Hide from home" : "Show on home"}
+          hitSlop={6}
+        >
+          <Ionicons
+            name={isOnHome ? "home" : "home-outline"}
+            size={22}
+            color={isOnHome ? Colors.primary : Colors.textSecondary}
+          />
+        </Pressable>
+      )}
+      <Pressable
+        style={styles.headerIconBtn}
+        onPress={handleArchive}
+        accessibilityRole="button"
+        accessibilityLabel={
+          trackable.archived ? "Unarchive trackable" : "Archive trackable"
+        }
+        hitSlop={6}
+      >
+        <Ionicons
+          name="archive-outline"
+          size={22}
+          color={Colors.textSecondary}
+        />
+      </Pressable>
+    </>
   );
 
   return (
@@ -780,7 +836,7 @@ const styles = StyleSheet.create({
   headerIconBtn: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: Radius.pill,
     alignItems: "center",
     justifyContent: "center",
     ...Platform.select({
@@ -803,15 +859,15 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 1,
     paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     alignItems: "center",
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
   tabActive: { borderBottomColor: Colors.primary },
   tabText: {
-    fontSize: 12,
-    fontWeight: "500",
+    fontSize: FontSize.caption,
+    fontWeight: "600",
     color: Colors.textSecondary,
     textAlign: "center",
   },
@@ -835,7 +891,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: 12, marginBottom: 4 },
   flex1: { flex: 1 },
   subsectionTitle: {
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     marginBottom: 8,
@@ -843,19 +899,19 @@ const styles = StyleSheet.create({
   trackerBlock: {
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     padding: 10,
     gap: 10,
     marginTop: 4,
   },
   checkboxRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  checkboxLabel: { color: Colors.text, fontSize: 14, flex: 1 },
-  indent: { marginLeft: 28, gap: 10 },
-  groupLabel: { color: Colors.textSecondary, fontSize: 13, fontWeight: "600" },
+  checkboxLabel: { color: Colors.text, fontSize: FontSize.body, flex: 1 },
+  indent: { marginLeft: 24, gap: 10 },
+  groupLabel: { color: Colors.textSecondary, fontSize: FontSize.body, fontWeight: "600" },
   choiceRow: { flexDirection: "row", gap: 8 },
   choiceChip: {
     flex: 1,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outline,
     backgroundColor: Colors.surfaceContainer,
@@ -866,8 +922,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
     backgroundColor: Colors.primaryContainer,
   },
-  choiceChipTitle: { color: Colors.text, fontWeight: "600", fontSize: 13 },
+  choiceChipTitle: { color: Colors.text, fontWeight: "600", fontSize: FontSize.body },
   choiceChipTitleSelected: { color: Colors.onPrimaryContainer },
-  choiceChipSubtitle: { color: Colors.textSecondary, fontSize: 12 },
+  choiceChipSubtitle: { color: Colors.textSecondary, fontSize: FontSize.caption },
   choiceChipSubtitleSelected: { color: Colors.onPrimaryContainer },
 });

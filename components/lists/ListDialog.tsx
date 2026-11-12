@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useContext, useEffect, useState } from "react";
 import {
   View,
@@ -15,7 +16,7 @@ import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
 import { Ionicons } from "@expo/vector-icons";
-import { Colors } from "../../constants/colors";
+import { Colors, DEFAULT_ENTITY_COLOUR } from "../../constants/colors";
 import { useAuth } from "../../hooks/useAuth";
 import { useArchiveList } from "../../hooks/useArchiveList";
 import { Button } from "../ui/Button";
@@ -84,7 +85,7 @@ export function ListDialog({
     list.userId === profile._id;
 
   const [name, setName] = useState(list?.name ?? "");
-  const [colour, setColour] = useState(list?.colour ?? "#4A90D9");
+  const [colour, setColour] = useState(list?.colour ?? DEFAULT_ENTITY_COLOUR);
   const [showInSidebar, setShowInSidebar] = useState(
     list?.showInSidebar ?? true,
   );
@@ -99,7 +100,7 @@ export function ListDialog({
   // Refresh form state if the parent re-opens the dialog with a different list.
   useEffect(() => {
     setName(list?.name ?? "");
-    setColour(list?.colour ?? "#4A90D9");
+    setColour(list?.colour ?? DEFAULT_ENTITY_COLOUR);
     setShowInSidebar(list?.showInSidebar ?? true);
     setTrackableId(list?.trackableId ?? null);
     setDetailsTab("details");
@@ -378,7 +379,7 @@ const styles = StyleSheet.create({
   },
   title: {
     flex: 1,
-    fontSize: 20,
+    fontSize: FontSize.title,
     fontWeight: "700",
     color: Colors.text,
   },
@@ -394,7 +395,7 @@ const styles = StyleSheet.create({
   },
   tab: {
     paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     marginBottom: -StyleSheet.hairlineWidth,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
@@ -403,7 +404,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.primary,
   },
   tabLabel: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.textSecondary,
   },
@@ -417,20 +418,20 @@ const styles = StyleSheet.create({
   },
   scrollContent: { paddingBottom: 8 },
   fieldLabel: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
-    fontWeight: "500",
+    fontWeight: "600",
     marginBottom: 6,
     marginTop: 4,
   },
   notice: {
     backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     padding: 12,
     marginBottom: 12,
     marginTop: 8,
   },
-  noticeText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 18 },
+  noticeText: { fontSize: FontSize.body, color: Colors.textSecondary, lineHeight: 18 },
   toggleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -438,7 +439,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginTop: 4,
   },
-  toggleLabel: { fontSize: 14, color: Colors.text, fontWeight: "500" },
+  toggleLabel: { fontSize: FontSize.body, color: Colors.text, fontWeight: "600" },
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -454,7 +455,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   spacer: { flex: 0 },
-  deleteButton: { paddingHorizontal: 14 },
+  deleteButton: { paddingHorizontal: 12 },
   primaryActions: {
     flexDirection: "row",
     gap: 12,

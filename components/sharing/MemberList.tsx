@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
@@ -382,13 +383,13 @@ export function MemberList({ listId }: MemberListProps) {
 const styles = StyleSheet.create({
   container: {},
   title: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 12,
   },
   ownerHint: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     lineHeight: 18,
     color: Colors.textSecondary,
     marginBottom: 12,
@@ -404,28 +405,28 @@ const styles = StyleSheet.create({
   avatar: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { color: Colors.white, fontWeight: "700", fontSize: 14 },
+  avatarText: { color: Colors.white, fontWeight: "700", fontSize: FontSize.body },
   info: { flex: 1, minWidth: 0 },
-  name: { fontSize: 14, fontWeight: "600", color: Colors.text },
-  email: { fontSize: 12, color: Colors.textSecondary },
+  name: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
+  email: { fontSize: FontSize.caption, color: Colors.textSecondary },
   pendingLabel: {
-    fontSize: 11,
+    fontSize: FontSize.caption,
     color: Colors.textTertiary,
     marginTop: 2,
   },
   badge: {
-    fontSize: 11,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.textTertiary,
     backgroundColor: Colors.surfaceVariant,
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
+    paddingVertical: 4,
+    borderRadius: Radius.sm,
     overflow: "hidden",
   },
   roleBadge: {
@@ -434,7 +435,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.primary,
     backgroundColor: Colors.surfaceContainerHighest,
@@ -444,7 +445,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   roleBadgeText: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.textSecondary,
   },

@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 /**
  * Calendar event creation / edit dialog.
  *
@@ -625,11 +626,11 @@ export function EventDialog({
                     style: {
                       width: "100%",
                       padding: "10px 12px",
-                      borderRadius: 8,
+                      borderRadius: Radius.md,
                       border: `1px solid ${Colors.border}`,
                       backgroundColor: Colors.surface,
                       color: Colors.text,
-                      fontSize: 14,
+                      fontSize: FontSize.body,
                     },
                   },
                   timeZoneOptions.map((tz) =>
@@ -886,26 +887,26 @@ const styles = StyleSheet.create({
   },
   recurringToggleLabel: {
     color: Colors.text,
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
   },
   tzField: { marginBottom: 16 },
   tzLabel: {
     color: Colors.textSecondary,
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     marginBottom: 6,
   },
   recurringBadge: {
     backgroundColor: Colors.primaryContainer,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     paddingHorizontal: 10,
     paddingVertical: 8,
     marginBottom: 12,
   },
   recurringBadgeText: {
     color: Colors.onPrimaryContainer,
-    fontSize: 12,
+    fontSize: FontSize.caption,
   },
   scopeOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -918,18 +919,18 @@ const styles = StyleSheet.create({
     width: 380,
     maxWidth: "92%",
     backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     padding: 16,
     gap: 10,
   },
   scopeTitle: {
     color: Colors.text,
-    fontSize: 18,
+    fontSize: FontSize.title,
     fontWeight: "700",
   },
   scopeBody: {
     color: Colors.textSecondary,
-    fontSize: 13,
+    fontSize: FontSize.body,
     marginBottom: 4,
   },
 });

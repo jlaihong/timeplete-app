@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, {
   useState,
   useMemo,
@@ -53,6 +54,7 @@ import {
   resolveTaskDropIndex,
 } from "../../lib/taskDragReorder";
 import { EmptyState } from "../ui/EmptyState";
+import { SkeletonRows } from "../ui/SkeletonRows";
 import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import {
   TaskRowDesktop,
@@ -69,10 +71,18 @@ import {
 } from "../../lib/taskFilters";
 import { useTaskTimeSpentEditor } from "./useTaskTimeSpentEditor";
 import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
+import {
+  nextOverdueWeeksLoaded,
+  overdueCutoffDay,
+  splitOverdueByCutoff,
+} from "../../lib/overdueWindow";
 
 const isWeb = Platform.OS === "web";
 const LOAD_MORE_DAYS = 7;
-const OVERDUE_GROUP_ID = "overdue";
+/** True for a dated group that falls before the first day of the home window. */
+function isPastDayGroup(groupId: string, earliestDay: string): boolean {
+  return /^\d/.test(groupId) && groupId < earliestDay;
+}
 const UNSCHEDULED_GROUP_ID = "unscheduled";
 
 interface DesktopTaskListProps {
@@ -232,11 +242,12 @@ function DroppableGroupBody({
       ref={setNodeRef}
       style={{
         width: "100%",
-        ...(isEmpty
+        // A group you cannot drop into (Overdue) takes no space when empty.
+        ...(isEmpty && !disabled
           ? {
               minHeight: 60,
               padding: 4,
-              borderRadius: 8,
+              borderRadius: Radius.md,
               transition: "background-color 120ms ease",
               backgroundColor: isOver
                 ? "rgba(0, 218, 245, 0.08)"
@@ -469,6 +480,8 @@ export function DesktopTaskList({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
   );
+  /** Weeks of overdue history shown; older tasks sit behind "Load previous week". */
+  const [overdueWeeksLoaded, setOverdueWeeksLoaded] = useState(1);
   const [contextMenu, setContextMenu] = useState<{
     taskId: Id<"tasks">;
     x: number;
@@ -538,6 +551,20 @@ export function DesktopTaskList({
    * optional backward gap). Day buckets span retained `[retainedEarliestDay, retainedRangeEndDay]`;
    * OVERDUE = incomplete tasks scheduled **before** `retainedEarliestDay`.
    */
+  const overdueCutoff = overdueCutoffDay(retainedEarliestDay, overdueWeeksLoaded);
+
+  /** Overdue tasks older than the loaded window — counted, not rendered. */
+  const olderOverdue = useMemo(() => {
+    const overdue = ((tasks as any as TaskRowTask[] | undefined) ?? []).filter(
+      (t) => !t.dateCompleted && !!t.taskDay && t.taskDay < retainedEarliestDay,
+    );
+    const { hiddenCount, newestHiddenDay } = splitOverdueByCutoff(
+      overdue,
+      overdueCutoff,
+    );
+    return { hiddenCount, newestHiddenDay };
+  }, [tasks, retainedEarliestDay, overdueCutoff]);
+
   const serverGroups = useMemo(() => {
     if (!tasks) return [] as { id: string; tasks: TaskRowTask[] }[];
     const groups = new Map<string, TaskRowTask[]>();
@@ -559,10 +586,10 @@ export function DesktopTaskList({
         continue;
       }
 
-      if (scheduleDay < retainedEarliestDay) {
-        if (!groups.has(OVERDUE_GROUP_ID))
-          groups.set(OVERDUE_GROUP_ID, []);
-        groups.get(OVERDUE_GROUP_ID)!.push(task);
+      // Overdue tasks sit under their own date, like any other day. Days
+      // older than the loaded window stay behind "Load previous week".
+      if (scheduleDay < retainedEarliestDay && scheduleDay < overdueCutoff) {
+        continue;
       } else {
         if (!groups.has(scheduleDay)) groups.set(scheduleDay, []);
         groups.get(scheduleDay)!.push(task);
@@ -576,8 +603,6 @@ export function DesktopTaskList({
     }
 
     const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
-      if (a === OVERDUE_GROUP_ID) return -1;
-      if (b === OVERDUE_GROUP_ID) return 1;
       if (a === UNSCHEDULED_GROUP_ID) return 1;
       if (b === UNSCHEDULED_GROUP_ID) return -1;
       return a.localeCompare(b);
@@ -592,7 +617,7 @@ export function DesktopTaskList({
       id,
       tasks: (groups.get(id) ?? []).sort(compareTasksForDay),
     }));
-  }, [tasks, retainedEarliestDay, retainedRangeEndDay]);
+  }, [tasks, retainedEarliestDay, retainedRangeEndDay, overdueCutoff]);
 
   /* Local optimistic state — mirrors serverGroups but is mutated during drag. */
   const [localGroups, setLocalGroups] = useState<
@@ -619,7 +644,7 @@ export function DesktopTaskList({
   /* Build display groups (parity with Lists: assignee filter → header counts; then completed) */
   const displayGroups = useMemo(() => {
     const hasUser = filterUserIds.length > 0;
-    return localGroups.map((g) => {
+    return localGroups.flatMap((g) => {
       const allTasks = g.tasks;
       let forUserFilter = allTasks;
       if (hasUser) {
@@ -643,12 +668,17 @@ export function DesktopTaskList({
 
       const dndUnlocked = !hasUser;
 
-      return {
+      const isPastDay = isPastDayGroup(g.id, retainedEarliestDay);
+      // Past days only exist to hold their tasks: no empty placeholders.
+      if (isPastDay && visibleTasks.length === 0) return [];
+
+      return [{
         id: g.id,
+        isPastDay,
+        /** A past day that still has open tasks: its date reads as overdue. */
+        isOverdueDay: isPastDay && visibleTasks.some((t) => !t.dateCompleted),
         label:
-          g.id === OVERDUE_GROUP_ID
-            ? "Overdue"
-            : g.id === UNSCHEDULED_GROUP_ID
+          g.id === UNSCHEDULED_GROUP_ID
               ? "Unscheduled"
               : isToday(g.id)
                 ? "Today"
@@ -658,12 +688,10 @@ export function DesktopTaskList({
         totalCount,
         canDrag: dndUnlocked && g.id !== UNSCHEDULED_GROUP_ID,
         canDropInto:
-          dndUnlocked &&
-          g.id !== OVERDUE_GROUP_ID &&
-          g.id !== UNSCHEDULED_GROUP_ID,
-      };
+          dndUnlocked && !isPastDay && g.id !== UNSCHEDULED_GROUP_ID,
+      }];
     });
-  }, [localGroups, showCompleted, filterUserIds]);
+  }, [localGroups, showCompleted, filterUserIds, retainedEarliestDay]);
 
   /* ───── Mutations ───── */
   const toggleComplete = useCallback(
@@ -827,7 +855,7 @@ export function DesktopTaskList({
       }
 
       if (
-        targetGroupId === OVERDUE_GROUP_ID ||
+        isPastDayGroup(targetGroupId, retainedEarliestDay) ||
         targetGroupId === UNSCHEDULED_GROUP_ID
       ) {
         return;
@@ -906,7 +934,7 @@ export function DesktopTaskList({
         }
 
         if (
-          toDay === OVERDUE_GROUP_ID ||
+          isPastDayGroup(toDay, retainedEarliestDay) ||
           toDay === UNSCHEDULED_GROUP_ID
         ) {
           setLocalGroups(serverGroups);
@@ -962,9 +990,7 @@ export function DesktopTaskList({
 
         const draggedTask = startInfo.task;
         const persistenceFromDay =
-          startInfo.fromGroupId === OVERDUE_GROUP_ID
-            ? draggedTask.taskDay!
-            : draggedTask.dateCompleted && draggedTask.taskDay
+          draggedTask.dateCompleted && draggedTask.taskDay
               ? draggedTask.taskDay
               : startInfo.fromGroupId;
 
@@ -980,7 +1006,7 @@ export function DesktopTaskList({
         }
         // Disallow drop targets
         if (
-          persistenceToDay === OVERDUE_GROUP_ID ||
+          isPastDayGroup(persistenceToDay, retainedEarliestDay) ||
           persistenceToDay === UNSCHEDULED_GROUP_ID
         ) {
           // Revert local state by re-syncing on next query update.
@@ -1072,7 +1098,7 @@ export function DesktopTaskList({
         const ls = listMap.get(task.listId);
         if (ls?.colour) return ls.colour;
       }
-      return "#6b7280";
+      return Colors.neutral;
     },
     [trackableMap, listMap]
   );
@@ -1102,12 +1128,18 @@ export function DesktopTaskList({
     setRangeEndDays((d) => d + LOAD_MORE_DAYS);
   }, []);
 
-  if (!tasks) {
-    return (
-      <View style={styles.loading}>
-        <Text style={styles.loadingText}>Loading tasks...</Text>
-      </View>
+  const handleLoadPreviousOverdueWeek = useCallback(() => {
+    setOverdueWeeksLoaded((weeks) =>
+      nextOverdueWeeksLoaded(
+        retainedEarliestDay,
+        weeks,
+        olderOverdue.newestHiddenDay,
+      ),
     );
+  }, [retainedEarliestDay, olderOverdue.newestHiddenDay]);
+
+  if (!tasks) {
+    return <SkeletonRows count={8} accessibilityLabel="Loading tasks" />;
   }
 
   const Wrapper: any = isWeb ? "div" : View;
@@ -1165,6 +1197,19 @@ export function DesktopTaskList({
               onDragEnd={onDragEnd}
               onDragCancel={onDragCancel}
             />
+            {/* Older overdue days load a week at a time, mirroring "Load More"
+                at the bottom of the list. */}
+            {olderOverdue.hiddenCount > 0 && (
+              <Pressable
+                style={styles.loadPreviousWeek}
+                onPress={handleLoadPreviousOverdueWeek}
+                accessibilityRole="button"
+              >
+                <Text style={styles.loadMoreText}>
+                  Load previous week ({olderOverdue.hiddenCount} older)
+                </Text>
+              </Pressable>
+            )}
             {displayGroups.map((group) => {
                 const isCollapsed = collapsedGroups.has(group.id);
                 return (
@@ -1185,7 +1230,7 @@ export function DesktopTaskList({
                       <Text
                         style={[
                           styles.groupLabel,
-                          group.id === OVERDUE_GROUP_ID && styles.overdueLabel,
+                          group.isOverdueDay && styles.overdueLabel,
                         ]}
                       >
                         {group.label}
@@ -1196,7 +1241,7 @@ export function DesktopTaskList({
                             : `${group.completedCount}/${group.totalCount}`}
                         </Text>
                       </Text>
-                      {group.id !== OVERDUE_GROUP_ID && onAddTask && (
+                      {!group.isPastDay && onAddTask && (
                         <SectionHeadingAddButton
                           onPress={() =>
                             onAddTask(
@@ -1247,6 +1292,7 @@ export function DesktopTaskList({
                         </DroppableGroupBody>
                       </SortableContext>
                     )}
+
                   </View>
                 );
               })}
@@ -1292,7 +1338,7 @@ function ContextMenuPopover({ x, y, onDelete }: ContextMenuPopoverProps) {
         zIndex: 9999,
         background: Colors.surfaceContainerHigh,
         border: `1px solid ${Colors.outlineVariant}`,
-        borderRadius: 8,
+        borderRadius: Radius.md,
         boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
         minWidth: 180,
         padding: 4,
@@ -1313,10 +1359,10 @@ function ContextMenuPopover({ x, y, onDelete }: ContextMenuPopoverProps) {
           background: "transparent",
           border: "none",
           color: Colors.text,
-          fontSize: 14,
+          fontSize: FontSize.body,
           textAlign: "left",
           cursor: "pointer",
-          borderRadius: 6,
+          borderRadius: Radius.md,
         }}
         onMouseEnter={(e) => {
           (e.currentTarget as HTMLButtonElement).style.background =
@@ -1342,7 +1388,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: Colors.background,
   },
-  loadingText: { color: Colors.textSecondary, fontSize: 16 },
+  loadingText: { color: Colors.textSecondary, fontSize: FontSize.bodyLarge },
   // Flat header — no surface fill, no bottom rule. Section identity comes
   // from the title typography + spacing (Req 1: single-surface layout).
   sectionHeader: {
@@ -1351,10 +1397,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
+    minHeight: 60,
     gap: 12,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: FontSize.title,
     fontWeight: "700",
     color: Colors.text,
     flex: 1,
@@ -1385,33 +1432,34 @@ const styles = StyleSheet.create({
   },
   groupLabel: {
     flex: 1,
-    fontSize: 15,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
   },
   overdueLabel: { color: Colors.error },
+  loadPreviousWeek: { alignItems: "center", paddingVertical: 8, marginBottom: 8 },
   taskCount: {
     fontWeight: "400",
     color: Colors.textTertiary,
-    fontSize: 13,
+    fontSize: FontSize.body,
   },
   divider: {
     height: 1,
-    backgroundColor: Colors.outlineVariant,
-    marginBottom: 8,
+    backgroundColor: Colors.borderLight,
+    marginBottom: 4,
     marginTop: 4,
   },
   emptyDropZone: {
     borderWidth: 2,
     borderColor: "rgba(255,255,255,0.2)",
     borderStyle: "dashed",
-    borderRadius: 8,
+    borderRadius: Radius.md,
     padding: 12,
     alignItems: "center",
     marginBottom: 6,
   },
   emptyDropZoneText: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontStyle: "italic",
     color: Colors.textTertiary,
   },
@@ -1420,8 +1468,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   loadMoreText: {
-    color: Colors.primary,
-    fontSize: 14,
-    fontWeight: "500",
+    color: Colors.textSecondary,
+    fontSize: FontSize.caption,
   },
 });

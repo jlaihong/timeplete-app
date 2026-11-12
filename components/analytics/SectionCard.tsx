@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../constants/colors";
@@ -36,7 +37,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   title: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "700",
     color: Colors.text,
   },

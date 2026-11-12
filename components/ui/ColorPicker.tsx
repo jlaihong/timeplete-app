@@ -1,6 +1,7 @@
+import { Radius } from "../../theme/tokens";
 import React from "react";
 import { View, TouchableOpacity, StyleSheet, Platform } from "react-native";
-import { TRACKABLE_COLORS } from "../../constants/colors";
+import { Colors, TRACKABLE_COLORS } from "../../constants/colors";
 
 interface ColorPickerProps {
   selectedColor: string;
@@ -39,11 +40,11 @@ const styles = StyleSheet.create({
   swatch: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: Radius.pill,
   },
   selected: {
     borderWidth: 3,
-    borderColor: "#FFFFFF",
+    borderColor: Colors.white,
     elevation: 4,
     ...Platform.select({
       web: { boxShadow: "0 2px 3px rgba(0,0,0,0.3)" } as any,

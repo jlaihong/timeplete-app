@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -207,8 +208,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.outlineVariant,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     backgroundColor: Colors.surfaceContainer,
   },
-  loadMoreLabel: { fontSize: 13, fontWeight: "600", color: Colors.text },
+  loadMoreLabel: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
 });

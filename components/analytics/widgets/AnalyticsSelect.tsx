@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 import React, { useState } from "react";
 import {
   View,
@@ -111,7 +112,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 10,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainerHigh,
@@ -119,7 +120,7 @@ const styles = StyleSheet.create({
   shellPressed: { opacity: 0.88 },
   shellText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     marginRight: 6,
@@ -135,7 +136,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.45)",
   },
   sheet: {
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     maxHeight: 280,
     backgroundColor: Colors.surfaceContainer,
     borderWidth: 1,
@@ -145,9 +146,9 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   sheetTitle: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "700",
     color: Colors.textSecondary,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -157,12 +158,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.borderLight,
   },
   optionActive: { backgroundColor: Colors.surfaceContainerHigh },
-  optionText: { fontSize: 15, fontWeight: "500", color: Colors.text },
+  optionText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
   optionTextActive: { fontWeight: "700", color: Colors.primary },
 });

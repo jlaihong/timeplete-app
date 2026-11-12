@@ -1,6 +1,6 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 import React from "react";
-import { View, Text, StyleSheet, Pressable, TouchableOpacity } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { router } from "expo-router";
 import { Card } from "../../ui/Card";
 import { Colors } from "../../../constants/colors";
@@ -10,7 +10,7 @@ import {
 } from "../../../lib/dates";
 import { useTimer } from "../../../hooks/useTimer";
 import type { WidgetGoal } from "./types";
-import { shouldIgnoreTrackablePress, stopTrackableDrag } from "./dragSafe";
+import { shouldIgnoreTrackablePress } from "./dragSafe";
 
 interface TrackableWidgetCardProps {
   goal: WidgetGoal;
@@ -51,46 +51,32 @@ export function TrackableWidgetCard({
 
   return (
     <Card style={[styles.card, isTicking && styles.cardTicking]}>
-      <View style={styles.header}>
-        <Ionicons
-          name="locate"
-          size={18}
-          color={goal.colour}
-          style={{ marginRight: 6 }}
-        />
-        <Pressable
-          style={styles.titleBlock}
-          onPress={openEdit}
-          accessibilityRole="button"
-          accessibilityLabel="Open trackable details"
-        >
-          <Text style={styles.title}>{goal.name}</Text>
-          {dueCopy && (
-            <Text
-              style={[
-                styles.dueCopy,
-                dueCopy.tone === "overdue" && styles.dueCopyOverdue,
-                dueCopy.tone === "due-today" && styles.dueCopyDueToday,
-              ]}
-            >
-              {dueCopy.label}
-            </Text>
-          )}
-        </Pressable>
-
-        <TouchableOpacity
-          style={styles.headerBtn}
-          onPress={openEdit}
-          onPointerDown={stopTrackableDrag}
-          accessibilityLabel="Expand trackable details"
-        >
-          <Ionicons
-            name="open-outline"
-            size={18}
-            color={Colors.textSecondary}
-          />
-        </TouchableOpacity>
-      </View>
+      {/* The whole header opens the trackable; no separate "open" button. */}
+      <Pressable
+        style={styles.header}
+        onPress={openEdit}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${goal.name} details`}
+      >
+        <View style={styles.titleRow}>
+          <View style={[styles.dot, { backgroundColor: goal.colour }]} />
+          <Text style={styles.title} numberOfLines={2}>
+            {goal.name}
+          </Text>
+        </View>
+        {dueCopy && (
+          <Text
+            style={[
+              styles.dueCopy,
+              dueCopy.tone === "overdue" && styles.dueCopyOverdue,
+              dueCopy.tone === "due-today" && styles.dueCopyDueToday,
+            ]}
+            numberOfLines={1}
+          >
+            {dueCopy.label}
+          </Text>
+        )}
+      </Pressable>
 
       <View style={styles.body}>{children}</View>
     </Card>
@@ -120,31 +106,31 @@ function formatDueCopy(endDayYYYYMMDD: string): DueCopy | null {
 
 const styles = StyleSheet.create({
   card: { marginBottom: 12 },
-  cardTicking: {
-    // Mirror productivity-one's `goal-widget--ticking` 2px green border.
-    borderWidth: 2,
-    borderColor: Colors.success,
+  // The running trackable gets the accent wash, the same "live" cue the
+  // ticking task row uses, instead of a coloured border.
+  cardTicking: { backgroundColor: Colors.accentWash },
+  header: { marginBottom: 12, gap: 2 },
+  titleRow: { flexDirection: "row", alignItems: "baseline", gap: 8 },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: Radius.pill,
+    flexShrink: 0,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  titleBlock: { flex: 1, flexDirection: "column", alignItems: "center" },
   title: {
-    fontSize: 16,
-    fontWeight: "700",
+    flex: 1,
+    minWidth: 0,
+    fontSize: FontSize.body,
+    fontWeight: "600",
     color: Colors.text,
-    textAlign: "center",
   },
   dueCopy: {
-    fontSize: 11,
+    fontSize: FontSize.caption,
     color: Colors.textTertiary,
-    marginTop: 1,
-    textAlign: "center",
+    // Lines up under the title, past the 8px dot and its gap.
+    marginLeft: 16,
   },
   dueCopyDueToday: { color: Colors.warning },
   dueCopyOverdue: { color: Colors.error },
-  headerBtn: { padding: 4, marginLeft: 4 },
-  body: { gap: 10, alignItems: "center" },
+  body: { gap: 10, alignItems: "stretch" },
 });

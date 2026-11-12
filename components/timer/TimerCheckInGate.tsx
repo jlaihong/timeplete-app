@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 /**
  * Long-running-timer check-ins. Mounted ONCE in the (app) layout so the
  * prompts appear over whatever screen the user is on.
@@ -223,13 +224,13 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   taskName: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 6,
   },
   detail: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     lineHeight: 20,
     color: Colors.textSecondary,
   },

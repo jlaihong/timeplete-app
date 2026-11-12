@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 import React, { useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -97,7 +98,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   label: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "700",
     color: Colors.textSecondary,
     marginBottom: 8,
@@ -117,7 +118,7 @@ const styles = StyleSheet.create({
     paddingLeft: 12,
     paddingRight: 4,
     gap: 4,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainerHigh,
@@ -125,13 +126,13 @@ const styles = StyleSheet.create({
   levelChipText: {
     flex: 1,
     flexShrink: 1,
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
   },
   removeHit: {
     padding: 4,
-    borderRadius: 6,
+    borderRadius: Radius.md,
     justifyContent: "center",
     alignItems: "center",
   },

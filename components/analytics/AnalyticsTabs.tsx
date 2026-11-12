@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Colors } from "../../constants/colors";
@@ -43,10 +44,10 @@ const styles = StyleSheet.create({
   tab: {
     paddingVertical: 8,
     paddingHorizontal: 16,
-    borderRadius: 20,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.surfaceVariant,
   },
   tabActive: { backgroundColor: Colors.primary },
-  label: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
+  label: { fontSize: FontSize.body, fontWeight: "600", color: Colors.textSecondary },
   labelActive: { color: Colors.onPrimary },
 });

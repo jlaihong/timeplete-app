@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useEffect, useState } from "react";
 import { Colors } from "../../constants/colors";
 import type { ListPermissionPortalArgs } from "./listPermissionPortal.types";
@@ -57,7 +58,7 @@ export function WebListPermissionPopover(props: {
           minWidth,
           zIndex: 520001,
           backgroundColor: Colors.surfaceContainerHigh,
-          borderRadius: 8,
+          borderRadius: Radius.md,
           border: `1px solid ${Colors.border}`,
           padding: 4,
           boxShadow: "0 10px 30px rgba(0,0,0,0.55)",
@@ -95,8 +96,8 @@ export function WebListPermissionPopover(props: {
               background:
                 perm === current ? `${Colors.primary}22` : "transparent",
               color: Colors.text,
-              borderRadius: 6,
-              fontSize: 15,
+              borderRadius: Radius.md,
+              fontSize: FontSize.body,
               fontWeight: 600,
               textAlign: "left",
               fontFamily: "system-ui,sans-serif",
@@ -105,7 +106,7 @@ export function WebListPermissionPopover(props: {
           >
             <span>{label}</span>
             {perm === current ? (
-              <span style={{ color: Colors.primary, fontSize: 18 }}>✓</span>
+              <span style={{ color: Colors.primary, fontSize: FontSize.title }}>✓</span>
             ) : null}
           </button>
         ))}
@@ -130,8 +131,8 @@ export function WebListPermissionPopover(props: {
             cursor: "pointer",
             background: "transparent",
             color: Colors.error,
-            borderRadius: 6,
-            fontSize: 15,
+            borderRadius: Radius.md,
+            fontSize: FontSize.body,
             fontWeight: 600,
             textAlign: "left",
             fontFamily: "system-ui,sans-serif",

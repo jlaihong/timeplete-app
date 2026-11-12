@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 /**
  * Faithful reconstruction of the productivity-one **Add Trackable** flow.
  *
@@ -833,7 +834,7 @@ const styles = StyleSheet.create({
     width: 640,
     maxWidth: "94%",
     maxHeight: "90%",
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     padding: 24,
   },
   closeBtn: {
@@ -842,7 +843,7 @@ const styles = StyleSheet.create({
     right: 8,
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: Radius.xl,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 10,
@@ -852,7 +853,7 @@ const styles = StyleSheet.create({
     }),
   },
   headingCentered: {
-    fontSize: 22,
+    fontSize: FontSize.heading,
     fontWeight: "600",
     color: Colors.text,
     textAlign: "center",
@@ -862,14 +863,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   dialogTitle: {
-    fontSize: 22,
+    fontSize: FontSize.heading,
     fontWeight: "600",
     color: Colors.text,
     marginBottom: 16,
     paddingRight: 24,
   },
   subheading: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     textAlign: "center",
     marginBottom: 24,
@@ -893,11 +894,11 @@ const styles = StyleSheet.create({
   formContent: { paddingBottom: 8, gap: 16 },
   field: { gap: 6 },
   fieldLabel: {
-    fontSize: 14,
-    fontWeight: "500",
+    fontSize: FontSize.body,
+    fontWeight: "600",
     color: Colors.textSecondary,
   },
-  errorText: { fontSize: 12, color: Colors.error, marginTop: 2 },
+  errorText: { fontSize: FontSize.caption, color: Colors.error, marginTop: 2 },
   checkboxStack: { gap: 12 },
   indent: { marginLeft: 32, gap: 12 },
   checkboxRow: {
@@ -912,7 +913,7 @@ const styles = StyleSheet.create({
   checkboxBox: {
     width: 20,
     height: 20,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     borderWidth: 2,
     borderColor: Colors.outline,
     alignItems: "center",
@@ -923,14 +924,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
-  checkboxLabel: { flex: 1, fontSize: 14, color: Colors.text },
+  checkboxLabel: { flex: 1, fontSize: FontSize.body, color: Colors.text },
   valueTypeBlock: { gap: 6 },
   valueTypeRow: { flexDirection: "row", gap: 8 },
   valueTypeButton: {
     flex: 1,
     minHeight: 80,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     backgroundColor: Colors.surfaceContainer,
     borderWidth: 2,
     borderColor: "transparent",
@@ -947,16 +948,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainerHighest,
   },
   valueTypeTitle: {
-    fontSize: 14,
-    fontWeight: "500",
+    fontSize: FontSize.body,
+    fontWeight: "600",
     color: Colors.text,
     marginBottom: 4,
   },
   valueTypeTitleSelected: { color: Colors.onPrimaryContainer },
-  valueTypeSubtitle: { fontSize: 12, color: Colors.textSecondary, opacity: 0.85 },
+  valueTypeSubtitle: { fontSize: FontSize.caption, color: Colors.textSecondary, opacity: 0.85 },
   valueTypeSubtitleSelected: { color: Colors.onPrimaryContainer, opacity: 0.9 },
   valueTypeDetail: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.textTertiary,
     opacity: 0.7,
     marginTop: 2,

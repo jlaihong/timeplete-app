@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -29,7 +30,7 @@ export function TimerDisplay() {
   return (
     <View style={[styles.container, { paddingTop: 8 + insets.top }]}>
       <View style={styles.indicator} />
-      <Ionicons name="timer" size={18} color={Colors.white} />
+      <Ionicons name="timer" size={18} color={Colors.primary} />
       {/* Task / trackable name so it's clear what is being tracked.
           Truncates so the elapsed time and stop button never get pushed
           off-screen by a long name. */}
@@ -46,7 +47,7 @@ export function TimerDisplay() {
         style={styles.stopButton}
         onPress={() => timer.stop()}
       >
-        <Ionicons name="stop" size={16} color={Colors.primaryDark} />
+        <Ionicons name="stop" size={14} color={Colors.onPrimary} />
       </TouchableOpacity>
     </View>
   );
@@ -56,7 +57,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.primaryDark,
+    backgroundColor: Colors.accentWash,
     paddingVertical: 8,
     paddingHorizontal: 16,
     gap: 8,
@@ -64,28 +65,28 @@ const styles = StyleSheet.create({
   indicator: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     backgroundColor: Colors.primary,
   },
   // Name fills the row (and truncates); the time keeps its intrinsic
   // width so the ticking digits stay put next to the stop button.
   title: {
     flex: 1,
-    color: Colors.white,
-    fontSize: 14,
+    color: Colors.text,
+    fontSize: FontSize.body,
     fontWeight: "600",
   },
   time: {
-    color: Colors.white,
-    fontSize: 16,
-    fontWeight: "700",
+    color: Colors.text,
+    fontSize: FontSize.bodyLarge,
+    fontWeight: "600",
     fontVariant: ["tabular-nums"],
   },
   stopButton: {
     width: 28,
     height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.white,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },

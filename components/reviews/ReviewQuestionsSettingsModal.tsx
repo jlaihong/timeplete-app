@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 /**
  * productivity-one `ReviewQuestionsSettingsComponent` — dialog title
  * "Review questions", Active / Archived tabs, table with drag reorder,
@@ -499,7 +500,7 @@ function WebQuestionSortRow({
         style={{
           flex: 1,
           minWidth: 0,
-          fontSize: 14,
+          fontSize: FontSize.body,
           color: Colors.text,
         }}
       >
@@ -642,7 +643,7 @@ const styles = StyleSheet.create({
     }),
   },
   muted: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.textTertiary,
     marginBottom: 8,
     fontStyle: "italic",
@@ -656,7 +657,7 @@ const styles = StyleSheet.create({
   tab: { paddingVertical: 10, paddingHorizontal: 16 },
   tabOn: { borderBottomWidth: 2, borderBottomColor: Colors.primary },
   tabDisabled: { opacity: 0.4 },
-  tabText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
+  tabText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.textSecondary },
   tabTextOn: { color: Colors.primary },
   tabTextDis: { color: Colors.textTertiary },
   // Pinned below the scroll region (never under the fold of a long list).
@@ -675,7 +676,7 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     flexShrink: 0,
   },
-  addQuestionBtnText: { fontSize: 14, fontWeight: "600", color: Colors.primary },
+  addQuestionBtnText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.primary },
   nativeRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -687,7 +688,7 @@ const styles = StyleSheet.create({
   nativeReorder: { width: 28, alignItems: "center" },
   nudge: { padding: 2 },
   nudgeOff: { opacity: 0.35 },
-  cellQuestion: { flex: 1, fontSize: 14, color: Colors.text, minWidth: 0 },
+  cellQuestion: { flex: 1, fontSize: FontSize.body, color: Colors.text, minWidth: 0 },
   rowActions: { flexDirection: "row", gap: 4, flexShrink: 0 },
   archivedRow: {
     flexDirection: "row",

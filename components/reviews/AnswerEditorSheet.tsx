@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 /**
  * Full-screen answer editor for review questions on native.
  *
@@ -123,9 +124,9 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     padding: 12,
-    fontSize: 15,
+    fontSize: FontSize.body,
     lineHeight: 22,
     color: Colors.text,
     backgroundColor: Colors.surfaceContainer,

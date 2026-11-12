@@ -1,3 +1,4 @@
+import { FontSize } from "../../../theme/tokens";
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../../constants/colors";
@@ -60,7 +61,7 @@ interface ChartWidgetProps extends AnalyticsWidgetProps {
  * stands apart from any trackable's own colour and is unambiguously
  * "the line you're trying to hit". A legend in `LineChart` explains
  * the meaning so the colour isn't doing all the work alone. */
-const REQUIRED_LINE_COLOUR = "#EF4444";
+const REQUIRED_LINE_COLOUR = Colors.danger;
 
 export function AnalyticsLineChartWidget({ goal, mode }: ChartWidgetProps) {
   const buckets = useMemo(
@@ -82,8 +83,8 @@ export function AnalyticsLineChartWidget({ goal, mode }: ChartWidgetProps) {
   const cumulative = goal.isCumulative;
   const isRating = isTracker && goal.isRatingTracker;
 
-  const countColour = showBoth ? "#3B82F6" : goal.colour;
-  const timeColour = showBoth ? "#10B981" : goal.colour;
+  const countColour = showBoth ? Colors.chartCount : goal.colour;
+  const timeColour = showBoth ? Colors.chartTime : goal.colour;
 
   // Required-progress overlay needs the right reference dates. For
   // monthly the per-day bucket date is the YYYYMMDD itself; for
@@ -475,7 +476,7 @@ function monthLabels(buckets: Bucket[]): string[] {
 const styles = StyleSheet.create({
   footerBlock: { gap: 6, marginTop: 6 },
   footerLine: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
     textAlign: "center",

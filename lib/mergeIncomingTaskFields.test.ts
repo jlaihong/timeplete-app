@@ -52,4 +52,18 @@ describe("mergeIncomingTaskFields", () => {
     assert.equal(next[0]?.tasks[1]?._id, "gone");
     assert.equal(next[0]?.tasks[0]?.name, "Keep");
   });
+
+  it("drops a local row the incoming list no longer contains", () => {
+    const local = [
+      { id: "s", tasks: [{ _id: "keep" }, { _id: "checked" }] },
+    ];
+    const incoming = [{ id: "s", tasks: [{ _id: "keep", name: "Keep" }] }];
+
+    const next = mergeIncomingTaskFields(local, incoming, undefined, {
+      dropMissing: true,
+    });
+    assert.equal(next[0]?.tasks.length, 1);
+    assert.equal(next[0]?.tasks[0]?._id, "keep");
+    assert.equal(next[0]?.tasks[0]?.name, "Keep");
+  });
 });

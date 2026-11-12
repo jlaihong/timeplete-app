@@ -41,7 +41,7 @@ export function TimeTrackWidget({
 
   return (
     <View
-      style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "center" }}
+      style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "stretch" }}
     >
       <View style={styles.actionsRow}>
         <WidgetTimerRow trackableId={goal._id} />
@@ -51,8 +51,9 @@ export function TimeTrackWidget({
           onPress={() =>
             onRequestLog({ kind: "time", goal, dayYYYYMMDD: today })
           }
-          icon={<Ionicons name="add" size={20} color={Colors.primary} />}
+          icon={<Ionicons name="add" size={16} color={Colors.textSecondary} />}
           style={styles.addBtn}
+          size="small"
           onPointerDown={stopTrackableDrag}
         />
       </View>
@@ -104,20 +105,21 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     gap: 10,
     alignSelf: "stretch",
   },
   addBtn: {
+    alignSelf: "flex-start",
     paddingVertical: 6,
     paddingHorizontal: 12,
     flexShrink: 1,
   },
   statsRow: {
     flexDirection: "row",
-    gap: 18,
+    gap: 16,
     flexWrap: "wrap",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     alignSelf: "stretch",
   },
 });

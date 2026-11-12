@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Link, router } from "expo-router";
@@ -44,14 +45,14 @@ const styles = StyleSheet.create({
   },
   icon: { fontSize: 64, marginBottom: 16 },
   title: {
-    fontSize: 22,
+    fontSize: FontSize.heading,
     fontWeight: "700",
     color: Colors.text,
     textAlign: "center",
     marginBottom: 12,
   },
   message: {
-    fontSize: 15,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     textAlign: "center",
     lineHeight: 22,
@@ -60,7 +61,7 @@ const styles = StyleSheet.create({
   button: { width: "100%" },
   landingLink: {
     marginTop: 20,
-    fontSize: 15,
+    fontSize: FontSize.body,
     color: Colors.primary,
     textDecorationLine: "underline",
   },

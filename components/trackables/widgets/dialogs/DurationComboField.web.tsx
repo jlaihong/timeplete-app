@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../../theme/tokens";
 import React, {
   useCallback,
   useEffect,
@@ -194,7 +195,7 @@ export function DurationComboField({
           border: `1px solid ${
             errText ? Colors.error : Colors.outlineVariant
           }`,
-          borderRadius: 10,
+          borderRadius: Radius.md,
           minHeight: 44,
           paddingRight: 8,
           width: "100%",
@@ -228,7 +229,7 @@ export function DurationComboField({
             outline: "none",
             background: "transparent",
             color: Colors.text,
-            fontSize: 14,
+            fontSize: FontSize.body,
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
             fontVariantNumeric: "tabular-nums",
             padding: "10px 12px",
@@ -238,7 +239,7 @@ export function DurationComboField({
         <span
           style={{
             color: Colors.textSecondary,
-            fontSize: 12,
+            fontSize: FontSize.caption,
             userSelect: "none",
             pointerEvents: "none",
           }}
@@ -264,7 +265,7 @@ export function DurationComboField({
               overflowY: "auto",
               background: Colors.surfaceContainerHigh,
               border: `1px solid ${Colors.outlineVariant}`,
-              borderRadius: 8,
+              borderRadius: Radius.md,
               boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
               padding: 4,
             }}
@@ -283,11 +284,11 @@ export function DurationComboField({
                   style={{
                     padding: "8px 12px",
                     cursor: "pointer",
-                    borderRadius: 6,
+                    borderRadius: Radius.md,
                     fontFamily:
                       "ui-monospace, SFMono-Regular, Menlo, monospace",
                     fontVariantNumeric: "tabular-nums",
-                    fontSize: 14,
+                    fontSize: FontSize.body,
                     color: Colors.text,
                     background: isHighlighted
                       ? "rgba(255,255,255,0.08)"
@@ -308,18 +309,18 @@ export function DurationComboField({
 const styles = StyleSheet.create({
   block: { width: "100%", marginBottom: 0 },
   fieldLabel: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.textSecondary,
     marginBottom: 6,
   },
   errorSmall: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.error,
     marginTop: 6,
   },
   helperSmall: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.textTertiary,
     marginTop: 6,
   },

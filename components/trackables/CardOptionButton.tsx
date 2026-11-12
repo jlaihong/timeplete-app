@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React from "react";
 import { Pressable, View, Text, StyleSheet, Platform } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -79,7 +80,7 @@ const styles = StyleSheet.create({
   card: {
     width: "100%",
     padding: 16,
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     backgroundColor: Colors.surfaceContainerHigh,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
@@ -126,7 +127,7 @@ const styles = StyleSheet.create({
   },
   copy: { flex: 1, minWidth: 0 },
   name: {
-    fontSize: 20,
+    fontSize: FontSize.title,
     fontWeight: "600",
     color: Colors.text,
     marginBottom: 2,
@@ -134,11 +135,11 @@ const styles = StyleSheet.create({
   // Mobile: slightly smaller title so common option names fit on one line
   // in the narrower single-column card.
   nameCompact: {
-    fontSize: 17,
-    marginBottom: 3,
+    fontSize: FontSize.bodyLarge,
+    marginBottom: 4,
   },
   caption: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     lineHeight: 18,
   },

@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../../theme/tokens";
 import React, { useMemo, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { Colors } from "../../../constants/colors";
@@ -313,16 +314,16 @@ function BarColumn({
 
 const styles = StyleSheet.create({
   empty: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textTertiary,
     paddingVertical: 12,
     textAlign: "center",
   },
   totalLabel: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.textSecondary,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   barsRow: {
     flexDirection: "row",
@@ -345,7 +346,7 @@ const styles = StyleSheet.create({
     width: "100%",
     flex: 1,
     backgroundColor: Colors.surfaceVariant,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     justifyContent: "flex-end",
     overflow: "hidden",
   },
@@ -355,7 +356,7 @@ const styles = StyleSheet.create({
     flexDirection: "column-reverse",
   },
   barLabel: {
-    fontSize: 10,
+    fontSize: FontSize.micro,
     color: Colors.textTertiary,
     marginTop: 4,
   },
@@ -372,14 +373,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendDot: { width: 10, height: 10, borderRadius: Radius.pill },
   legendLabel: {
     flex: 1,
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.text,
   },
   legendValue: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.textSecondary,
   },

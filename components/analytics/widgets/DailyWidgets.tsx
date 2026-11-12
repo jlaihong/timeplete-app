@@ -1,3 +1,4 @@
+import { FontSize } from "../../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../../constants/colors";
@@ -153,13 +154,13 @@ function formatNumber(n: number, digits: number): string {
 const styles = StyleSheet.create({
   center: { alignItems: "center" },
   bigGlyph: {
-    fontSize: 32,
+    fontSize: FontSize.display,
     fontWeight: "700",
     color: Colors.textTertiary,
     lineHeight: 36,
   },
   bigNumber: {
-    fontSize: 22,
+    fontSize: FontSize.heading,
     fontWeight: "700",
     color: Colors.text,
   },
@@ -168,9 +169,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "baseline",
   },
-  statTotal: { fontSize: 12, color: Colors.textSecondary },
-  statToday: { fontSize: 12, color: Colors.textTertiary },
+  statTotal: { fontSize: FontSize.caption, color: Colors.textSecondary },
+  statToday: { fontSize: FontSize.caption, color: Colors.textTertiary },
   statTodayPos: { color: Colors.success },
-  statAvg: { fontSize: 11, color: Colors.textTertiary },
-  empty: { fontSize: 12, color: Colors.textTertiary, textAlign: "center" },
+  statAvg: { fontSize: FontSize.caption, color: Colors.textTertiary },
+  empty: { fontSize: FontSize.caption, color: Colors.textTertiary, textAlign: "center" },
 });

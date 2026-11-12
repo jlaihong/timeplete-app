@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../constants/colors";
@@ -67,7 +68,7 @@ export function BreakdownList({
 const styles = StyleSheet.create({
   container: { marginBottom: 16 },
   title: {
-    fontSize: 16,
+    fontSize: FontSize.bodyLarge,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 12,
@@ -83,19 +84,19 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-  label: { fontSize: 14, fontWeight: "500", color: Colors.text, flex: 1 },
+  dot: { width: 10, height: 10, borderRadius: Radius.pill },
+  label: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text, flex: 1 },
   valueRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   barContainer: {
     flex: 1,
     height: 4,
     backgroundColor: Colors.surfaceVariant,
-    borderRadius: 2,
+    borderRadius: Radius.sm,
   },
-  bar: { height: 4, borderRadius: 2 },
-  value: { fontSize: 13, fontWeight: "600", color: Colors.text, width: 50 },
+  bar: { height: 4, borderRadius: Radius.sm },
+  value: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text, width: 50 },
   pct: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.textTertiary,
     width: 32,
     textAlign: "right",

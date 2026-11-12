@@ -1,3 +1,4 @@
+import { FontSize } from "../../theme/tokens";
 import React, { useState } from "react";
 import {
   View,
@@ -119,25 +120,25 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 1, justifyContent: "center", padding: 24 },
   header: { alignItems: "center", marginBottom: 32 },
   logo: {
-    fontSize: 36,
-    fontWeight: "800",
+    fontSize: FontSize.display,
+    fontWeight: "700",
     color: Colors.primary,
     letterSpacing: -1,
   },
   card: { maxWidth: 400, width: "100%", alignSelf: "center" },
   title: {
-    fontSize: 24,
+    fontSize: FontSize.heading,
     fontWeight: "700",
     color: Colors.text,
     marginBottom: 24,
   },
   error: {
     color: Colors.error,
-    fontSize: 14,
+    fontSize: FontSize.body,
     marginBottom: 16,
     textAlign: "center",
   },
   button: { marginTop: 8 },
   linkContainer: { alignItems: "center", marginTop: 20 },
-  link: { color: Colors.primary, fontSize: 14, fontWeight: "500" },
+  link: { color: Colors.primary, fontSize: FontSize.body, fontWeight: "600" },
 });

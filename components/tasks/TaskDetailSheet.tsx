@@ -1,3 +1,4 @@
+import { FontSize, Radius } from "../../theme/tokens";
 /**
  * TaskDetailSheet — controlled-form task editor.
  *
@@ -347,7 +348,7 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
     }
 
     const persistedList = (task.listId as Id<"lists"> | undefined) ?? null;
-    if ((form.listId ?? null) !== persistedList && !form.trackableId) {
+    if ((form.listId ?? null) !== persistedList) {
       const inboxId = lists?.find((l) => l.isInbox)?._id as
         | Id<"lists">
         | undefined;
@@ -687,32 +688,30 @@ export function TaskDetailSheet({ taskId, onClose }: TaskDetailSheetProps) {
         />
       </View>
 
-      {/* Trackable assignment — productivity-one's `<mat-select>`
-          parity. Selecting a trackable hides the manual list picker
-          but leaves the list value alone in form state until save. */}
+      {/* Where the task lives. */}
+      <ListPicker
+        mode="edit"
+        value={form.listId}
+        onChange={(id) =>
+          setForm((f) => (f ? { ...f, listId: id as Id<"lists"> | null } : f))
+        }
+      />
+
+      {/* What the task counts toward — follows the list unless overridden. */}
       <TrackablePicker
         value={form.trackableId}
+        inheritedTrackableId={
+          (lists?.find(
+            (l) =>
+              l._id === (form.listId ?? lists?.find((x) => x.isInbox)?._id),
+          )?.trackableId ?? null) as Id<"trackables"> | null
+        }
         onChange={(id) =>
           setForm((f) =>
             f ? { ...f, trackableId: id as Id<"trackables"> | null } : f,
           )
         }
       />
-
-      {/* List assignment — only shown when no trackable is selected,
-          mirroring P1 `task-details.html`:
-            @if (!hasGoalSelected()) { <mat-form-field>List</mat-form-field> } */}
-      {!form.trackableId && (
-        <ListPicker
-          mode="edit"
-          value={form.listId}
-          onChange={(id) =>
-            setForm((f) =>
-              f ? { ...f, listId: id as Id<"lists"> | null } : f,
-            )
-          }
-        />
-      )}
 
       {task.isRecurringInstance && !!task.recurringTaskId && (
         <View style={styles.stopRecurringBadge}>
@@ -1139,7 +1138,7 @@ const styles = StyleSheet.create({
   },
   dialogPanel: {
     backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     overflow: "hidden",
     ...Platform.select({
       web: { boxShadow: "0 8px 32px rgba(0,0,0,0.5)" } as any,
@@ -1169,7 +1168,7 @@ const styles = StyleSheet.create({
   // the right stays vertically anchored to the title row.
   headerMain: { flex: 1, flexDirection: "column", gap: 10 },
   headerChipRow: { flexDirection: "row" },
-  taskName: { fontSize: 18, fontWeight: "600", color: Colors.text },
+  taskName: { fontSize: FontSize.title, fontWeight: "600", color: Colors.text },
   taskNameCompleted: {
     textDecorationLine: "line-through",
     color: Colors.textTertiary,
@@ -1179,7 +1178,7 @@ const styles = StyleSheet.create({
     // the input's height grow from a 0 basis with nothing to grow into,
     // collapsing it to just the underline. Width comes from the default
     // cross-axis stretch.
-    fontSize: 18,
+    fontSize: FontSize.title,
     fontWeight: "600",
     color: Colors.text,
     borderBottomWidth: 1,
@@ -1200,7 +1199,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "transparent",
   },
   tabActive: { borderBottomColor: Colors.primary },
-  tabText: { fontSize: 13, fontWeight: "500", color: Colors.textSecondary },
+  tabText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.textSecondary },
   tabTextActive: { color: Colors.primary, fontWeight: "600" },
 
   contentScroll: { flex: 1 },
@@ -1223,7 +1222,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 12,
     padding: 10,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     gap: 8,
     backgroundColor: Colors.primary + "1A",
     borderWidth: 1,
@@ -1235,7 +1234,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   stopRecurringBadgeText: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     lineHeight: 18,
     color: Colors.text,
     flex: 1,
@@ -1247,13 +1246,13 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.error + "AA",
     backgroundColor: Colors.errorContainer + "33",
   },
   stopRecurringButtonText: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.error,
   },
@@ -1271,7 +1270,7 @@ const styles = StyleSheet.create({
   scopeModalCard: {
     width: "100%",
     maxWidth: 520,
-    borderRadius: 12,
+    borderRadius: Radius.lg,
     padding: 16,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
@@ -1279,12 +1278,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   scopeModalTitle: {
-    fontSize: 18,
+    fontSize: FontSize.title,
     fontWeight: "700",
     color: Colors.text,
   },
   scopeModalSubtitle: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.textSecondary,
     marginBottom: 4,
   },
@@ -1294,7 +1293,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.outlineVariant,
     backgroundColor: Colors.surfaceContainer,
@@ -1304,12 +1303,12 @@ const styles = StyleSheet.create({
   },
   scopeOptionText: { flex: 1, gap: 2 },
   scopeOptionTitle: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
   },
   scopeOptionDescription: {
-    fontSize: 12,
+    fontSize: FontSize.caption,
     lineHeight: 16,
     color: Colors.textSecondary,
   },
@@ -1332,9 +1331,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     backgroundColor: Colors.surfaceContainer,
-    borderRadius: 6,
+    borderRadius: Radius.md,
   },
-  metaChipText: { fontSize: 12, color: Colors.textSecondary },
+  metaChipText: { fontSize: FontSize.caption, color: Colors.textSecondary },
 
   tagsRow: {
     flexDirection: "row",
@@ -1348,12 +1347,12 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 10,
     marginTop: 16,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     backgroundColor: Colors.primary + "15",
   },
   instanceBadgeText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: FontSize.caption,
     color: Colors.text,
     lineHeight: 18,
   },
@@ -1363,11 +1362,11 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: Radius.md,
     borderWidth: 1,
   },
-  tagDot: { width: 8, height: 8, borderRadius: 4 },
-  tagText: { fontSize: 12, color: Colors.text },
+  tagDot: { width: 8, height: 8, borderRadius: Radius.sm },
+  tagText: { fontSize: FontSize.caption, color: Colors.text },
 
   timeTabOuter: {
     flex: 1,
@@ -1393,20 +1392,20 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 6,
     paddingHorizontal: 8,
-    borderRadius: 6,
+    borderRadius: Radius.md,
     marginBottom: 2,
   },
   sessionRowActive: { backgroundColor: Colors.success + "15" },
   sessionDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: Radius.sm,
     backgroundColor: Colors.success,
   },
-  sessionTime: { fontSize: 13, color: Colors.textSecondary },
+  sessionTime: { fontSize: FontSize.body, color: Colors.textSecondary },
   sessionTimeActive: { color: Colors.success, fontWeight: "600" },
   sessionDuration: {
-    fontSize: 13,
+    fontSize: FontSize.body,
     color: Colors.text,
     fontVariant: ["tabular-nums"] as any,
   },
@@ -1421,10 +1420,10 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 8,
+    borderRadius: Radius.md,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.text,
   },
   comment: {
@@ -1438,10 +1437,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 8,
   },
-  commentText: { fontSize: 14, color: Colors.text, flex: 1 },
+  commentText: { fontSize: FontSize.body, color: Colors.text, flex: 1 },
 
   emptyText: {
-    fontSize: 14,
+    fontSize: FontSize.body,
     color: Colors.textTertiary,
     textAlign: "center",
     paddingVertical: 24,

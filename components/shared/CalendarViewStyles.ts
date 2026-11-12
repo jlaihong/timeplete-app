@@ -1,5 +1,6 @@
 import { Platform, StyleSheet } from "react-native";
 import { Colors } from "../../constants/colors";
+import { FontSize, Radius } from "../../theme/tokens";
 import {
   CURRENT_TIME_LINE_COLOR,
   HOUR_HEIGHT,
@@ -19,20 +20,62 @@ export const calendarViewStyles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
+    minHeight: 60,
   },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
+  sectionTitle: {
+    fontSize: FontSize.title,
+    fontWeight: "700",
+    color: Colors.text,
+  },
+  // One row: the day (and its summary) on the left, navigation on the
+  // right. Left-aligned so it lines up with the section title above it.
   dayNav: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    gap: 16,
+    paddingLeft: 16,
+    paddingRight: 8,
+    paddingTop: 4,
+    paddingBottom: 12,
+    gap: 2,
   },
-  dayLabel: { fontSize: 16, fontWeight: "600", color: Colors.text },
-  summary: { alignItems: "center", paddingBottom: 8, paddingTop: 4 },
-  summaryText: { fontSize: 13, color: Colors.textSecondary },
+  /** Without a section title above it, the row needs its own top room. */
+  dayNavNoTitle: { paddingTop: 14 },
+  dayHeading: { flex: 1, minWidth: 0, gap: 2 },
+  dayLabel: {
+    fontSize: FontSize.bodyLarge,
+    fontWeight: "600",
+    color: Colors.text,
+  },
+  summaryText: { fontSize: FontSize.caption, color: Colors.textTertiary },
+  dayNavButton: {
+    padding: 6,
+    borderRadius: Radius.pill,
+    ...Platform.select({
+      web: { cursor: "pointer" } as any,
+      default: {},
+    }),
+  },
+  todayButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginRight: 4,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    ...Platform.select({
+      web: { cursor: "pointer" } as any,
+      default: {},
+    }),
+  },
+  todayButtonText: {
+    fontSize: FontSize.caption,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
   timeline: { flex: 1 },
-  timelineContent: { paddingHorizontal: 16, paddingBottom: 80 },
+  // Top padding leaves room for the "12 AM" label, which is centred on
+  // the first hour line and so pokes above the grid.
+  timelineContent: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 80 },
 
   // Timeline surface = labels column + grid column, side by side.
   timelineSurface: {
@@ -44,39 +87,48 @@ export const calendarViewStyles = StyleSheet.create({
     position: "absolute",
     left: HOUR_LABEL_WIDTH,
     right: 0,
-    height: 1,
+    height: 2,
+    marginTop: -1,
     backgroundColor: CURRENT_TIME_LINE_COLOR,
     zIndex: 20,
-    ...Platform.select({
-      web: {
-        boxShadow: `0 0 1px ${CURRENT_TIME_LINE_COLOR}`,
-      } as any,
-      default: {},
-    }),
+  },
+  /** Dot at the start of the now line, so it reads as a marker, not a rule. */
+  nowDot: {
+    position: "absolute",
+    left: -4,
+    top: -3,
+    width: 8,
+    height: 8,
+    borderRadius: Radius.pill,
+    backgroundColor: CURRENT_TIME_LINE_COLOR,
   },
   labelsColumn: { width: HOUR_LABEL_WIDTH },
   hourLabelRow: {
     height: HOUR_HEIGHT,
     justifyContent: "flex-start",
     alignItems: "flex-end",
-    paddingTop: 2,
-    paddingRight: 8,
+    paddingRight: 10,
   },
-  hourLabel: { fontSize: 12, color: Colors.textTertiary },
+  // Centred on its hour line (half the line height pulled up), the way
+  // every calendar labels a time axis.
+  hourLabel: {
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: -7,
+    color: Colors.textTertiary,
+  },
 
   gridColumn: {
     flex: 1,
     position: "relative",
-    borderLeftWidth: 1,
-    borderLeftColor: Colors.outlineVariant,
   },
-  hourSlot: { height: HOUR_HEIGHT, paddingLeft: 12, position: "relative" },
+  hourSlot: { height: HOUR_HEIGHT, position: "relative" },
   hourSlotDropTarget: {
     backgroundColor: Colors.primary + "10",
   },
   hourLine: {
     height: 1,
-    backgroundColor: Colors.outlineVariant,
+    backgroundColor: Colors.borderLight,
   },
   /** Lighter mid-hour guide; no time label (hourly labels stay as-is). */
   halfHourLine: {
@@ -85,14 +137,16 @@ export const calendarViewStyles = StyleSheet.create({
     right: 0,
     top: HOUR_HEIGHT / 2,
     height: 1,
-    backgroundColor: withAlpha(Colors.outlineVariant, "33"),
+    backgroundColor: withAlpha(Colors.borderLight, "80"),
   },
 
   eventsLayer: {
     position: "absolute",
     top: 0,
-    left: 12,
-    right: 4,
+    // The right gutter stays empty so there is always bare grid to drag
+    // on to create an event, even on a full day.
+    left: 4,
+    right: 12,
     bottom: 0,
   },
 
@@ -111,7 +165,7 @@ export const calendarViewStyles = StyleSheet.create({
   eventBlock: {
     flex: 1,
     position: "relative",
-    borderRadius: 4,
+    borderRadius: 6,
     // Android (Fabric): a clipping view whose bounds change every frame
     // during drag/resize permanently stops painting its Text children
     // after the gesture ends (views survive with correct bounds in the
@@ -120,27 +174,22 @@ export const calendarViewStyles = StyleSheet.create({
     // move/resize; with `visible` they persist. Web keeps `hidden` for
     // rounded-corner clipping.
     overflow: Platform.OS === "web" ? "hidden" : "visible",
-    ...Platform.select({
-      web: {
-        boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
-      } as any,
-      default: {},
-    }),
   },
   eventBlockLive: {
-    // Green outline + glow pulse (web); fill and left stripe stay normal
-    // event colours from `displayColor` / `secondaryColor`.
+    // Accent outline + glow pulse (web), the same "live" colour the
+    // ticking task row and timer banner use; fill and left stripe stay
+    // normal event colours from `displayColor` / `secondaryColor`.
     ...Platform.select({
       web: {
         outlineStyle: "solid" as const,
         outlineWidth: 2,
         outlineOffset: 0,
-        outlineColor: Colors.success,
+        outlineColor: Colors.primary,
         animation: "calLiveTimerOutlinePulse 2.4s ease-in-out infinite",
       } as any,
       default: {
         // Native: soft ring without replacing the list/trackable stripe.
-        shadowColor: Colors.success,
+        shadowColor: Colors.primary,
         shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 0.45,
         shadowRadius: 5,
@@ -153,7 +202,7 @@ export const calendarViewStyles = StyleSheet.create({
   eventBlockDragging: {
     ...Platform.select({
       web: {
-        boxShadow: "0 4px 12px rgba(0,0,0,0.18)",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
       } as any,
       default: {},
     }),
@@ -272,8 +321,8 @@ export const calendarViewStyles = StyleSheet.create({
   },
   liveBadge: {
     fontSize: 10,
-    color: Colors.background,
-    backgroundColor: Colors.success,
+    color: Colors.onPrimary,
+    backgroundColor: Colors.primary,
     fontWeight: "700",
     marginTop: 2,
     paddingHorizontal: 4,
