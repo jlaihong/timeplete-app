@@ -13,6 +13,8 @@ import {
   parseReadReviewsInput,
   parseRescheduleInput,
   parseAddToCalendarInput,
+  parseDeleteTaskInput,
+  parseRenameTaskInput,
   parseSearchTasksInput,
   parseWriteReviewsInput,
   taskDropDurationSeconds,
@@ -33,6 +35,7 @@ import {
   onTimeWindowPatched,
 } from "./_helpers/taskTimeSpent";
 import {
+  deleteTimeWindowWithSideEffects,
   onAttributedWindowInserted,
   onAttributedWindowPatched,
   onTaskCompletionAttribution,
@@ -1057,6 +1060,168 @@ async function runCompleteTask(
   return ok(await taskResult(ctx, user._id, updated ?? task));
 }
 
+async function deleteTaskRow(
+  ctx: MutationCtx,
+  task: Doc<"tasks">,
+): Promise<void> {
+  const tags = await ctx.db
+    .query("taskTags")
+    .withIndex("by_task", (q) => q.eq("taskId", task._id))
+    .collect();
+  for (const tag of tags) await ctx.db.delete(tag._id);
+
+  const comments = await ctx.db
+    .query("taskComments")
+    .withIndex("by_task", (q) => q.eq("taskId", task._id))
+    .collect();
+  for (const comment of comments) await ctx.db.delete(comment._id);
+
+  const windows = await ctx.db
+    .query("timeWindows")
+    .withIndex("by_task", (q) => q.eq("taskId", task._id))
+    .collect();
+  for (const window of windows) {
+    await deleteTimeWindowWithSideEffects(ctx, window);
+  }
+
+  if (task.dateCompleted) {
+    await onTaskCompletionAttribution(
+      ctx,
+      {
+        userId: task.userId,
+        dateCompleted: task.dateCompleted,
+        trackableId: task.trackableId,
+        listId: task.listId,
+      },
+      null,
+    );
+  }
+
+  await ctx.db.delete(task._id);
+}
+
+async function runRenameTask(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  input: Record<string, unknown>,
+): Promise<ApiOutcome> {
+  const parsed = parseRenameTaskInput(input);
+  if (!parsed.ok) return fail(400, "bad_input", parsed.message);
+  const found = await findTask(ctx, user, parsed.value);
+  if (!found.ok) return found.outcome;
+  const task = found.task;
+  const { newName, occurrence } = parsed.value;
+
+  if (occurrence === "series") {
+    if (!task.recurringTaskId) {
+      return fail(
+        400,
+        "bad_input",
+        'This task is not repeating. Omit occurrence, or pass "this".',
+      );
+    }
+    const rule = await ctx.db.get(task.recurringTaskId);
+    if (!rule || rule.userId !== user._id) {
+      return fail(404, "not_found", "Repeating task not found.");
+    }
+    const previousName = rule.name;
+    if (rule.name !== newName) {
+      await ctx.db.patch(rule._id, { name: newName });
+    }
+    const instances = await ctx.db
+      .query("tasks")
+      .withIndex("by_recurring", (q) =>
+        q.eq("recurringTaskId", task.recurringTaskId!),
+      )
+      .collect();
+    for (const instance of instances) {
+      if (instance.userId !== user._id) continue;
+      const followsSeries =
+        instance._id === task._id || instance.name === previousName;
+      if (followsSeries && instance.name !== newName) {
+        await ctx.db.patch(instance._id, { name: newName });
+      }
+    }
+    const updated = await ctx.db.get(task._id);
+    return ok({
+      ...(await taskResult(ctx, user._id, updated ?? { ...task, name: newName })),
+      occurrence: "series",
+    });
+  }
+
+  const patch: {
+    name?: string;
+    isException?: boolean;
+    originalTaskDay?: string;
+    seriesId?: Id<"recurringTasks">;
+    isRecurringInstance?: boolean;
+  } = {};
+  if (task.name !== newName) patch.name = newName;
+  if (task.recurringTaskId && task.name !== newName) {
+    patch.isException = true;
+    const originalDay = task.originalTaskDay ?? task.taskDay;
+    if (originalDay) patch.originalTaskDay = originalDay;
+    patch.seriesId = task.recurringTaskId;
+    patch.isRecurringInstance = true;
+  }
+  if (Object.keys(patch).length > 0) {
+    await ctx.db.patch(task._id, patch);
+  }
+  const updated = await ctx.db.get(task._id);
+  return ok({
+    ...(await taskResult(ctx, user._id, updated ?? task)),
+    occurrence: "this",
+  });
+}
+
+async function runDeleteTask(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  input: Record<string, unknown>,
+): Promise<ApiOutcome> {
+  const parsed = parseDeleteTaskInput(input);
+  if (!parsed.ok) return fail(400, "bad_input", parsed.message);
+  const found = await findTask(ctx, user, parsed.value);
+  if (!found.ok) return found.outcome;
+  const task = found.task;
+  const snapshot = await taskResult(ctx, user._id, task);
+
+  if (task.isRecurringInstance && task.recurringTaskId && task.taskDay) {
+    const rule = await ctx.db.get(task.recurringTaskId);
+    if (rule && rule.userId === user._id) {
+      const existingSkip = await ctx.db
+        .query("deletedRecurringOccurrences")
+        .withIndex("by_recurring_date", (q) =>
+          q
+            .eq("recurringTaskId", task.recurringTaskId!)
+            .eq("deletedDateYYYYMMDD", task.taskDay!),
+        )
+        .first();
+      if (!existingSkip) {
+        await ctx.db.insert("deletedRecurringOccurrences", {
+          recurringTaskId: task.recurringTaskId,
+          deletedDateYYYYMMDD: task.taskDay,
+          userId: user._id,
+        });
+      }
+    }
+    await deleteTaskRow(ctx, task);
+    return ok({ ...snapshot, deleted: true });
+  }
+
+  const children = await ctx.db
+    .query("tasks")
+    .withIndex("by_root", (q) => q.eq("rootTaskId", task._id))
+    .collect();
+  for (const child of children) {
+    if (child._id !== task._id && child.userId === user._id) {
+      await deleteTaskRow(ctx, child);
+    }
+  }
+  await deleteTaskRow(ctx, task);
+  return ok({ ...snapshot, deleted: true });
+}
+
 async function dispatch(
   ctx: MutationCtx,
   user: Doc<"users">,
@@ -1084,6 +1249,10 @@ async function dispatch(
       return await runAddToCalendar(ctx, user, input);
     case "complete_task":
       return await runCompleteTask(ctx, user, input);
+    case "rename_task":
+      return await runRenameTask(ctx, user, input);
+    case "delete_task":
+      return await runDeleteTask(ctx, user, input);
   }
 }
 

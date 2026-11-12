@@ -17,6 +17,8 @@ export const AGENT_ACTION_NAMES = [
   "write_reviews",
   "add_to_calendar",
   "complete_task",
+  "rename_task",
+  "delete_task",
 ] as const;
 
 export type AgentActionName = (typeof AGENT_ACTION_NAMES)[number];
@@ -156,6 +158,33 @@ export const AGENT_ACTIONS: readonly AgentActionSpec[] = [
         "Optional completion date, YYYY-MM-DD. Used when completed is true. Defaults to today in timeZone.",
       timeZone:
         "Optional IANA time zone used only when completedOn is omitted. Defaults to UTC.",
+    },
+  },
+  {
+    name: "rename_task",
+    label: "Rename tasks",
+    description:
+      "Change a task's name. A repeating task changes only the occurrence you matched unless you pass series.",
+    input: {
+      taskId: "Optional id from search_tasks. Required when name is omitted.",
+      name: "Optional current task name. Required when taskId is omitted.",
+      list: "Optional list name. Narrows the search when several tasks share a name.",
+      day: "Optional current scheduled date, YYYY-MM-DD. Narrows the search.",
+      newName: "Required. The name to save.",
+      occurrence:
+        'Optional "this" (default) or "series". Series renames the repeating task and every occurrence that still has the current series name. This marks one occurrence as an exception so later days keep the old name.',
+    },
+  },
+  {
+    name: "delete_task",
+    label: "Delete tasks",
+    description:
+      "Delete a task. A repeating task deletes only that occurrence, and records a skip so it is not created again. Subtasks of a one-off task are deleted with it.",
+    input: {
+      taskId: "Optional id from search_tasks. Required when name is omitted.",
+      name: "Optional task name. Required when taskId is omitted.",
+      list: "Optional list name. Narrows the search when several tasks share a name.",
+      day: "Optional current scheduled date, YYYY-MM-DD. Narrows the search.",
     },
   },
 ];
@@ -897,6 +926,42 @@ export function parseAddToCalendarInput(
       timeZone: zone,
     },
   };
+}
+
+export type RenameTaskInput = TaskLocator & {
+  newName: string;
+  occurrence: "this" | "series";
+};
+
+export function parseRenameTaskInput(
+  input: Record<string, unknown>,
+): ParseResult<RenameTaskInput> {
+  const locator = parseTaskLocator(input);
+  if (!locator.ok) return locator;
+  const newName = requiredString(input, "newName", 500);
+  if (!newName.ok) return newName;
+  const occurrenceRaw = optionalString(input, "occurrence");
+  if (!occurrenceRaw.ok) return occurrenceRaw;
+  const occurrenceToken = (occurrenceRaw.value ?? "this").toLowerCase();
+  const occurrence =
+    occurrenceToken === "this" || occurrenceToken === "this_occurrence"
+      ? "this"
+      : occurrenceToken === "series"
+        ? "series"
+        : null;
+  if (!occurrence) {
+    return { ok: false, message: 'occurrence must be "this" or "series".' };
+  }
+  return {
+    ok: true,
+    value: { ...locator.value, newName: newName.value, occurrence },
+  };
+}
+
+export function parseDeleteTaskInput(
+  input: Record<string, unknown>,
+): ParseResult<TaskLocator> {
+  return parseTaskLocator(input);
 }
 
 export function parseCompleteTaskInput(

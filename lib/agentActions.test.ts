@@ -7,6 +7,8 @@ import {
   daySpan,
   normalizeScopes,
   parseCompleteTaskInput,
+  parseDeleteTaskInput,
+  parseRenameTaskInput,
   parseCreateEventInput,
   parseHHMM,
   parseListEventsInput,
@@ -250,6 +252,31 @@ describe("agent action parsing", () => {
     });
     assert.equal(cleared.ok, true);
     if (cleared.ok) assert.equal(cleared.value.completed, false);
+
+    const renamed = parseRenameTaskInput({
+      name: "test",
+      newName: "  Renamed  ",
+    });
+    assert.equal(renamed.ok, true);
+    if (renamed.ok) {
+      assert.equal(renamed.value.newName, "Renamed");
+      assert.equal(renamed.value.occurrence, "this");
+    }
+    const series = parseRenameTaskInput({
+      taskId: "abc",
+      newName: "Standup",
+      occurrence: "series",
+    });
+    assert.equal(series.ok, true);
+    if (series.ok) assert.equal(series.value.occurrence, "series");
+    assert.equal(parseRenameTaskInput({ name: "test" }).ok, false);
+    assert.equal(
+      parseRenameTaskInput({ name: "test", newName: "Next", occurrence: "all" })
+        .ok,
+      false,
+    );
+    assert.equal(parseDeleteTaskInput({ name: "test", day: "2026-11-10" }).ok, true);
+    assert.equal(parseDeleteTaskInput({}).ok, false);
 
     const now = Date.parse("2026-11-11T04:00:00Z");
     assert.equal(todayInTimeZone("UTC", now), "20261111");
