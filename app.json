@@ -35,7 +35,8 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/siri-add-to-list/withSiriAddToList.js"
     ],
     "extra": {
       "eas": {

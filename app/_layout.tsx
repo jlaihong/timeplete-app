@@ -12,6 +12,8 @@ import { authClient } from "@/lib/auth-client";
 import { getExpoPublicConvexUrl } from "@/lib/convexEnv";
 import { convexPublicUrlForClient } from "@/lib/convexPublicUrl";
 import { installWebScrollbarStyles } from "@/lib/webScrollbarStyles";
+import { reportAddToListUrl } from "@/lib/pendingAddToList";
+import * as Linking from "expo-linking";
 
 /**
  * Silence React 19 StrictMode deprecation warnings emitted from inside
@@ -41,6 +43,14 @@ const convex = new ConvexReactClient(convexUrl, {
 export default function RootLayout() {
   useEffect(() => {
     return installWebScrollbarStyles();
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const onUrl = (url: string | null) => reportAddToListUrl(url);
+    const sub = Linking.addEventListener("url", ({ url }) => onUrl(url));
+    void Linking.getInitialURL().then(onUrl);
+    return () => sub.remove();
   }, []);
 
   // Keyboard controller wraps the whole app to publish keyboard height events
