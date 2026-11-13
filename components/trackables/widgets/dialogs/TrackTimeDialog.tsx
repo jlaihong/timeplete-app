@@ -109,9 +109,13 @@ export function TrackTimeDialog({
     <TrackDialogShell
       onClose={onClose}
       title={trackableName}
+      day={day}
+      onDayChange={setDay}
+      note={comments}
+      onNoteChange={setComments}
+      notePlaceholder="Notes for this entry"
       colour={trackableColour}
       subtitle="Log time"
-      maxWidth={480}
       actions={
         <>
           <Button
@@ -131,9 +135,6 @@ export function TrackTimeDialog({
       }
     >
 
-            <View style={styles.dateBlock}>
-              <DateField label="Date" value={day} onChange={setDay} />
-            </View>
 
             <TrackableLogDurationBlock
               value={durationHhmm}
@@ -145,15 +146,6 @@ export function TrackTimeDialog({
               onChange={onStartTimeChange}
             />
 
-            <Text style={styles.fieldLabel}>Comments</Text>
-            <TextInput
-              style={styles.commentInput}
-              value={comments}
-              onChangeText={(t) => setComments(t.slice(0, 1024))}
-              placeholder="What did you do?"
-              placeholderTextColor={Colors.textTertiary}
-              multiline
-            />
 
             {error && <Text style={styles.error}>{error}</Text>}
     </TrackDialogShell>

@@ -116,9 +116,13 @@ export function TrackCountDialog({
     <TrackDialogShell
       onClose={onClose}
       title={trackableName}
+      day={day}
+      onDayChange={setDay}
+      note={comments}
+      onNoteChange={setComments}
+      notePlaceholder="Notes for this entry"
       colour={trackableColour}
       subtitle="Log count"
-      maxWidth={420}
       actions={
         <>
           <Button
@@ -137,10 +141,8 @@ export function TrackCountDialog({
       }
     >
 
-          <View style={styles.dateBlock}>
-            <DateField label="Date" value={day} onChange={setDay} />
-          </View>
 
+          <Text style={styles.fieldLabel}>Total for the day</Text>
           <View style={styles.stepperRow}>
             <TouchableOpacity
               style={styles.stepperBtn}
@@ -194,15 +196,6 @@ export function TrackCountDialog({
             </View>
           )}
 
-          <Text style={styles.fieldLabel}>Comments</Text>
-          <TextInput
-            style={styles.commentInput}
-            value={comments}
-            onChangeText={(t) => setComments(t.slice(0, 1024))}
-            placeholder="Notes for this entry"
-            placeholderTextColor={Colors.textTertiary}
-            multiline
-          />
 
     </TrackDialogShell>
   );

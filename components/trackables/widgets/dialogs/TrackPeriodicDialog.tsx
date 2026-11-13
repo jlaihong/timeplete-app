@@ -112,9 +112,13 @@ export function TrackPeriodicDialog({
     <TrackDialogShell
       onClose={onClose}
       title={trackableName}
+      day={day}
+      onDayChange={setDay}
+      note={comments}
+      onNoteChange={setComments}
+      notePlaceholder="What did you do?"
       colour={trackableColour}
       subtitle="Log progress"
-      maxWidth={420}
       actions={
         <>
           <Button
@@ -132,9 +136,6 @@ export function TrackPeriodicDialog({
         </>
       }
     >
-          <View style={styles.dateBlock}>
-            <DateField label="Date" value={day} onChange={setDay} />
-          </View>
 
           <TouchableOpacity
             style={styles.checkboxRow}
@@ -176,16 +177,6 @@ export function TrackPeriodicDialog({
             </View>
           )}
 
-          <Text style={styles.fieldLabel}>Comments</Text>
-          <TextInput
-            style={styles.commentInput}
-            value={comments}
-            onChangeText={(t) => setComments(t.slice(0, 1024))}
-            placeholder="What did you do?"
-            placeholderTextColor={Colors.textTertiary}
-            multiline
-            numberOfLines={3}
-          />
 
     </TrackDialogShell>
   );

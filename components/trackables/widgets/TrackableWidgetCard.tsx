@@ -10,12 +10,15 @@ import {
 } from "../../../lib/dates";
 import { useTimer } from "../../../hooks/useTimer";
 import type { WidgetGoal } from "./types";
-import { shouldIgnoreTrackablePress } from "./dragSafe";
+import { shouldIgnoreTrackablePress, stopTrackableDrag } from "./dragSafe";
+import { Ionicons } from "@expo/vector-icons";
 
 interface TrackableWidgetCardProps {
   goal: WidgetGoal;
   children: React.ReactNode;
   onRequestEditTrackable?: (trackableId: string) => void;
+  /** Open the full log dialog (date, custom amount, note). */
+  onRequestLogDetails?: () => void;
 }
 
 /**
@@ -33,6 +36,7 @@ export function TrackableWidgetCard({
   goal,
   children,
   onRequestEditTrackable,
+  onRequestLogDetails,
 }: TrackableWidgetCardProps) {
   const timer = useTimer();
   const isTicking = timer.isRunning && timer.trackableId === goal._id;
@@ -51,6 +55,7 @@ export function TrackableWidgetCard({
 
   return (
     <Card style={[styles.card, isTicking && styles.cardTicking]}>
+      <View style={styles.headerRow}>
       {/* The whole header opens the trackable; no separate "open" button. */}
       <Pressable
         style={styles.header}
@@ -77,6 +82,32 @@ export function TrackableWidgetCard({
           </Text>
         )}
       </Pressable>
+      {/* The card logs the usual amount in one press; this opens the full
+          dialog for another day, a custom amount or a note. */}
+      {onRequestLogDetails ? (
+        <Pressable
+          onPress={() => {
+            if (shouldIgnoreTrackablePress()) return;
+            onRequestLogDetails();
+          }}
+          onPointerDown={stopTrackableDrag as never}
+          accessibilityRole="button"
+          accessibilityLabel={`Log ${goal.name} with a date or note`}
+          hitSlop={6}
+          style={(state) => [
+            styles.detailsBtn,
+            ((state as { hovered?: boolean }).hovered || state.pressed) &&
+              styles.detailsBtnHover,
+          ]}
+        >
+          <Ionicons
+            name="ellipsis-horizontal"
+            size={16}
+            color={Colors.textTertiary}
+          />
+        </Pressable>
+      ) : null}
+      </View>
 
       <View style={styles.body}>{children}</View>
     </Card>
@@ -109,7 +140,23 @@ const styles = StyleSheet.create({
   // The running trackable gets the accent wash, the same "live" cue the
   // ticking task row uses, instead of a coloured border.
   cardTicking: { backgroundColor: Colors.accentWash },
-  header: { marginBottom: 12, gap: 2 },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 4,
+    marginBottom: 12,
+  },
+  header: { flex: 1, minWidth: 0, gap: 2 },
+  detailsBtn: {
+    width: 28,
+    height: 28,
+    marginTop: -4,
+    marginRight: -6,
+    borderRadius: Radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  detailsBtnHover: { backgroundColor: Colors.surfaceContainerHigh },
   titleRow: { flexDirection: "row", alignItems: "baseline", gap: 8 },
   dot: {
     width: 8,

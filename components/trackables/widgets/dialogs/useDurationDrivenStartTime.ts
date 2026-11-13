@@ -54,7 +54,7 @@ export function useDurationDrivenStartTime(
 
 /** HH:MM for (now − durationSeconds), clamped to today's midnight so the
  *  derived start never wraps into the previous day. */
-function startTimeEndingNow(durationSeconds: number): string {
+export function startTimeEndingNow(durationSeconds: number): string {
   const tz = deviceTimeZone();
   const now = Date.now();
   const today = wallClockInTimeZone(now, tz).startDayYYYYMMDD;

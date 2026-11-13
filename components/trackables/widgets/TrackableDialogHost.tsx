@@ -4,6 +4,7 @@ import { TrackTimeDialog } from "./dialogs/TrackTimeDialog";
 import { TrackCountDialog } from "./dialogs/TrackCountDialog";
 import { TrackTrackerDialog } from "./dialogs/TrackTrackerDialog";
 import type { LogRequest } from "./types";
+import { QuickLogToastHost } from "./quickLog";
 
 interface TrackableDialogHostProps {
   request: LogRequest | null;
@@ -21,8 +22,16 @@ export function TrackableDialogHost({
   request,
   onClose,
 }: TrackableDialogHostProps) {
-  if (!request) return null;
+  return (
+    <>
+      {request ? renderDialog(request, onClose) : null}
+      {/* The "Logged · Undo" message for one-click logs from the cards. */}
+      <QuickLogToastHost />
+    </>
+  );
+}
 
+function renderDialog(request: LogRequest, onClose: () => void) {
   switch (request.kind) {
     case "periodic":
       return (

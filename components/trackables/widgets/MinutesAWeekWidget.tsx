@@ -5,6 +5,12 @@ import { DayOfWeekCompletion } from "./atoms/DayOfWeekCompletion";
 import { WidgetTimerRow } from "./atoms/WidgetTimerRow";
 import { getPeriodicCommittedWeekCount } from "../../../lib/requiredProgress";
 import type { WidgetBodyProps } from "./types";
+import {
+  QUICK_TIME_SECONDS,
+  QuickChip,
+  formatQuickDuration,
+  useQuickLog,
+} from "./quickLog";
 
 const minutesFormat = (n: number) => `${Math.round(n)}m`;
 
@@ -18,6 +24,7 @@ const minutesFormat = (n: number) => `${Math.round(n)}m`;
  * Tapping a day opens `TrackTimeDialog` for that day.
  */
 export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
+  const quickLog = useQuickLog();
   const targetMinutes = goal.targetNumberOfMinutesAWeek ?? 0;
   const weekMinutes = Math.floor(goal.weeklySeconds / 60);
   const overallWeeksDenom = getPeriodicCommittedWeekCount({
@@ -36,7 +43,18 @@ export function MinutesAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
 
   return (
     <View style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "stretch" }}>
-      <WidgetTimerRow trackableId={goal._id} />
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <WidgetTimerRow trackableId={goal._id} />
+        {/* Time already spent today, ending now: one press. */}
+        {QUICK_TIME_SECONDS.map((seconds) => (
+          <QuickChip
+            key={seconds}
+            label={formatQuickDuration(seconds)}
+            accessibilityLabel={`Log ${formatQuickDuration(seconds)} to ${goal.name}`}
+            onPress={() => void quickLog.addTime(goal, seconds)}
+          />
+        ))}
+      </View>
       <DayOfWeekCompletion
         days={goal.weeklyDayCompletion}
         colour={goal.colour}

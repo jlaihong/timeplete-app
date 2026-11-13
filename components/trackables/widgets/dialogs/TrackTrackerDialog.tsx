@@ -175,9 +175,13 @@ export function TrackTrackerDialog({
     <TrackDialogShell
       onClose={onClose}
       title={trackableName}
+      day={day}
+      onDayChange={setDay}
+      note={comments}
+      onNoteChange={setComments}
+      notePlaceholder="Notes for this entry"
       colour={trackableColour}
       subtitle="Log entry"
-      maxWidth={isRatingTracker ? 600 : 480}
       actions={
         <>
           <Button
@@ -196,13 +200,10 @@ export function TrackTrackerDialog({
         </>
       }
     >
-          <View style={styles.dateBlock}>
-            <DateField label="Date" value={day} onChange={setDay} />
-          </View>
 
           {trackCount && isRatingTracker && (
             <View style={styles.ratingBlock}>
-              <Text style={styles.ratingLabel}>Rate from 1 – 10</Text>
+              <Text style={styles.fieldLabel}>Rating, 1 to 10</Text>
               <View style={styles.ratingRow}>
                 {RATING_VALUES.map((r) => {
                   const selected = count === r;
@@ -277,15 +278,6 @@ export function TrackTrackerDialog({
             </>
           )}
 
-          <Text style={styles.fieldLabel}>Comments</Text>
-          <TextInput
-            style={styles.commentInput}
-            value={comments}
-            onChangeText={(t) => setComments(t.slice(0, 1024))}
-            placeholder="Notes for this entry"
-            placeholderTextColor={Colors.textTertiary}
-            multiline
-          />
 
           {error && <Text style={styles.error}>{error}</Text>}
     </TrackDialogShell>
@@ -307,15 +299,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 8,
   },
-  ratingRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    justifyContent: "center",
-  },
+  // One row of ten equal buttons, whatever the dialog's width.
+  ratingRow: { flexDirection: "row", gap: 4 },
   ratingBtn: {
-    minWidth: 36,
-    paddingHorizontal: 10,
+    flex: 1,
+    minWidth: 0,
     paddingVertical: 8,
     borderRadius: Radius.md,
     backgroundColor: Colors.surfaceContainerHighest,

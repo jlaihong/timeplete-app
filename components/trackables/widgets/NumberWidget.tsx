@@ -1,11 +1,8 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { ProgressBarWithText } from "./atoms/ProgressBarWithText";
 import { GoalStatItem } from "./atoms/GoalStatItem";
 import { CompletedBadge } from "./atoms/CompletedBadge";
-import { Button } from "../../ui/Button";
-import { Colors } from "../../../constants/colors";
 import {
   computeRequiredRate,
   formatRate,
@@ -13,7 +10,7 @@ import {
   rateLabel,
 } from "./widgetMath";
 import type { WidgetBodyProps } from "./types";
-import { stopTrackableDrag } from "./dragSafe";
+import { QuickChip, useQuickLog } from "./quickLog";
 
 /**
  * Mirror of productivity-one's default `goal-widget` block with
@@ -27,7 +24,8 @@ import { stopTrackableDrag } from "./dragSafe";
  * swapped for a `CompletedBadge`, mirroring P1's `@if (isCompleted())`
  * branch in `goal-widget.html`.
  */
-export function NumberWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
+export function NumberWidget({ goal, today }: WidgetBodyProps) {
+  const quickLog = useQuickLog();
   const target = goal.targetCount ?? 0;
   const todayEntry = goal.weeklyDayCompletion.find(
     (d) => d.dayYYYYMMDD === today
@@ -41,23 +39,16 @@ export function NumberWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
     <View
       style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "stretch" }}
     >
-      <Button
-        title="Add progress"
-        variant="secondary"
-        onPress={() =>
-          onRequestLog({
-            kind: "count",
-            goal,
-            dayYYYYMMDD: today,
-            initialCount: todayEntry?.numCompleted ?? 0,
-            initialComments: todayEntry?.comments ?? "",
-          })
-        }
-        icon={<Ionicons name="add" size={16} color={Colors.textSecondary} />}
-        style={styles.addBtn}
-          size="small"
-        onPointerDown={stopTrackableDrag}
-      />
+      {/* One press adds to today's total. A different amount, day or a
+          note goes through the card's "⋯" button. */}
+      <View style={styles.quickRow}>
+        <QuickChip
+          label="+1"
+          wide
+          accessibilityLabel={`Add 1 to ${goal.name}`}
+          onPress={() => void quickLog.addCount(goal, todayEntry)}
+        />
+      </View>
 
       {target > 0 && (
         <ProgressBarWithText
@@ -103,10 +94,12 @@ function fmt(n: number, decimals = 0): string {
 }
 
 const styles = StyleSheet.create({
-  addBtn: {
-    alignSelf: "flex-start",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+  // Centred: a lone button hugging the left edge looked stranded.
+  quickRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
   },
   statsRow: {
     flexDirection: "row",

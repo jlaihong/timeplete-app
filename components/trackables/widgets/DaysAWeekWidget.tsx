@@ -4,6 +4,7 @@ import { ProgressBarWithText } from "./atoms/ProgressBarWithText";
 import { DayOfWeekCompletion } from "./atoms/DayOfWeekCompletion";
 import { getPeriodicCommittedWeekCount } from "../../../lib/requiredProgress";
 import type { WidgetBodyProps } from "./types";
+import { useQuickLog } from "./quickLog";
 
 /**
  * Mirror of productivity-one's `GoalWidgetPeriodic` with the
@@ -14,7 +15,8 @@ import type { WidgetBodyProps } from "./types";
  * weeks succeeded vs `targetNumberOfWeeks` (P1 `currentValue / targetValue`).
  * Tapping a day opens `TrackPeriodicDialog` for that day.
  */
-export function DaysAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
+export function DaysAWeekWidget({ goal }: WidgetBodyProps) {
+  const quickLog = useQuickLog();
   const target = goal.targetNumberOfDaysAWeek ?? 0;
   /** Same as P1 `GoalWidgetPeriodic.countWeeklyTotal` — sum of `numCompleted` across the week. */
   const weeklyCompletionSum = goal.weeklyDayCompletion.reduce(
@@ -39,17 +41,13 @@ export function DaysAWeekWidget({ goal, onRequestLog }: WidgetBodyProps) {
       <DayOfWeekCompletion
         days={goal.weeklyDayCompletion}
         colour={goal.colour}
+        // One press marks the day done (or clears it); no dialog. A note
+        // or another week goes through the card's "⋯" button.
         onDayPress={(day) => {
           const entry = goal.weeklyDayCompletion.find(
             (d) => d.dayYYYYMMDD === day
           );
-          onRequestLog({
-            kind: "periodic",
-            goal,
-            dayYYYYMMDD: day,
-            initialNumCompleted: entry?.numCompleted ?? 0,
-            initialComments: entry?.comments ?? "",
-          });
+          if (entry) void quickLog.toggleDay(goal, entry);
         }}
       />
       <ProgressBarWithText

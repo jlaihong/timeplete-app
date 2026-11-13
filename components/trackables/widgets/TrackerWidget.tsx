@@ -1,12 +1,14 @@
 import React from "react";
 import { View, StyleSheet } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { GoalStatItem } from "./atoms/GoalStatItem";
 import { WidgetTimerRow } from "./atoms/WidgetTimerRow";
-import { Button } from "../../ui/Button";
-import { Colors } from "../../../constants/colors";
 import type { WidgetBodyProps } from "./types";
-import { stopTrackableDrag } from "./dragSafe";
+import {
+  QUICK_TIME_SECONDS,
+  QuickChip,
+  formatQuickDuration,
+  useQuickLog,
+} from "./quickLog";
 
 /**
  * Mirror of productivity-one's default `goal-widget` block with
@@ -16,7 +18,10 @@ import { stopTrackableDrag } from "./dragSafe";
  * Stats rows are conditional on `trackCount` / `trackTime` flags — same as
  * productivity-one. NO main `currentValue` progress bar.
  */
-export function TrackerWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
+const RATING_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+export function TrackerWidget({ goal }: WidgetBodyProps) {
+  const quickLog = useQuickLog();
   const trackTime = goal.trackTime !== false;
   const trackCount = goal.trackCount !== false;
 
@@ -28,20 +33,46 @@ export function TrackerWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
     <View
       style={{ gap: 12, width: "100%", alignSelf: "stretch", alignItems: "stretch" }}
     >
-      <View style={styles.actionsRow}>
-        {trackTime && <WidgetTimerRow trackableId={goal._id} />}
-        <Button
-          title="Add progress"
-          variant="secondary"
-          onPress={() =>
-            onRequestLog({ kind: "tracker", goal, dayYYYYMMDD: today })
-          }
-          icon={<Ionicons name="add" size={16} color={Colors.textSecondary} />}
-          style={styles.addBtn}
-          size="small"
-          onPointerDown={stopTrackableDrag}
-        />
-      </View>
+      {/* One-press logging. A rating tracker shows its 1–10 scale right on
+          the card; a counter gets "+1"; time gets the usual presets. */}
+      {trackCount && goal.isRatingTracker ? (
+        <View style={styles.ratingRow}>
+          {RATING_VALUES.map((value) => (
+            <QuickChip
+              key={value}
+              compact
+              label={String(value)}
+              accessibilityLabel={`Rate ${goal.name} ${value} out of 10`}
+              onPress={() => void quickLog.addEntry(goal, value, true)}
+            />
+          ))}
+        </View>
+      ) : null}
+      {trackTime || (trackCount && !goal.isRatingTracker) ? (
+        <View
+          style={[styles.actionsRow, !trackTime && styles.actionsRowCentred]}
+        >
+          {trackTime && <WidgetTimerRow trackableId={goal._id} />}
+          {trackCount && !goal.isRatingTracker ? (
+            <QuickChip
+              label="+1"
+              wide={!trackTime}
+              accessibilityLabel={`Add 1 to ${goal.name}`}
+              onPress={() => void quickLog.addEntry(goal, 1, false)}
+            />
+          ) : null}
+          {trackTime
+            ? QUICK_TIME_SECONDS.map((seconds) => (
+                <QuickChip
+                  key={seconds}
+                  label={formatQuickDuration(seconds)}
+                  accessibilityLabel={`Log ${formatQuickDuration(seconds)} to ${goal.name}`}
+                  onPress={() => void quickLog.addTime(goal, seconds)}
+                />
+              ))
+            : null}
+        </View>
+      ) : null}
 
       {trackCount && (
         <View style={styles.statsRow}>
@@ -96,15 +127,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-start",
-    gap: 10,
+    gap: 6,
+    flexWrap: "wrap",
     alignSelf: "stretch",
   },
-  addBtn: {
-    alignSelf: "flex-start",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    flexShrink: 1,
-  },
+  actionsRowCentred: { justifyContent: "center" },
+  ratingRow: { flexDirection: "row", gap: 3, alignSelf: "stretch" },
   statsRow: {
     flexDirection: "row",
     gap: 16,
