@@ -8,11 +8,11 @@ import {
   useAnalyticsState,
 } from "./AnalyticsState";
 
-export function AnalyticsTabs() {
+export function AnalyticsTabs({ inline = false }: { inline?: boolean }) {
   const { selectedTab, setTab } = useAnalyticsState();
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, inline && styles.rowInline]}>
       {ANALYTICS_TABS.map((t) => {
         const active = selectedTab === t.id;
         return (
@@ -34,20 +34,25 @@ export function AnalyticsTabs() {
 }
 
 const styles = StyleSheet.create({
+  // A segmented control: one quiet track, the chosen period raised on it.
+  // The accent colour is left for the data below.
   row: {
     flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    gap: 6,
-    flexWrap: "wrap",
-  },
-  tab: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    alignSelf: "flex-start",
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 3,
+    gap: 2,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.surfaceVariant,
+    backgroundColor: Colors.surfaceContainer,
   },
-  tabActive: { backgroundColor: Colors.primary },
+  rowInline: { marginHorizontal: 0, marginTop: 0, alignSelf: "center" },
+  tab: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: Radius.pill,
+  },
+  tabActive: { backgroundColor: Colors.surfaceContainerHighest },
   label: { fontSize: FontSize.body, fontWeight: "600", color: Colors.textSecondary },
-  labelActive: { color: Colors.onPrimary },
+  labelActive: { color: Colors.text },
 });

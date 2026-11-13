@@ -225,6 +225,9 @@ export function TimeSpendSection() {
           <Text style={styles.totalLabel}>
             Total: {formatSecondsAsHM(dataset.totalSeconds)}
           </Text>
+          {/* The key comes first: below a 24-hour timeline it sat a full
+              screen away from the colours it explains. */}
+          {legend.length > 0 && <SummaryLegend legend={legend} />}
           <TimeSpendTimelineChart
             days={timelineDays}
             timeWindows={dataset.timeWindows}
@@ -234,7 +237,6 @@ export function TimeSpendSection() {
             fallbackColour={FALLBACK_COLOUR}
             dayLabel={dayColumnCaption}
           />
-          {legend.length > 0 && <SummaryLegend legend={legend} />}
         </>
       )}
     </SectionCard>

@@ -24,7 +24,12 @@ import { useAnalyticsState } from "./AnalyticsState";
  *   `< [date input] >` so chevrons align with the picker, not the label.
  * - Yearly / native: `< label >` between chevrons (no separate picker).
  */
-export function AnalyticsDateNavigator() {
+export function AnalyticsDateNavigator({
+  inline = false,
+}: {
+  /** One compact row (desktop toolbar) instead of label above picker. */
+  inline?: boolean;
+}) {
   const {
     selectedTab,
     selectedDate,
@@ -58,6 +63,25 @@ export function AnalyticsDateNavigator() {
 
   const prevBtn = <NavChevron direction="back" onPress={goPrev} />;
   const nextBtn = <NavChevron direction="forward" onPress={goNext} />;
+
+  if (inline) {
+    return (
+      <View style={styles.inlineRow}>
+        <TouchableOpacity
+          onPress={goToday}
+          accessibilityRole="button"
+          accessibilityLabel={`${middleLabel}. Go to today`}
+        >
+          <Text style={styles.middleLabel}>{middleLabel}</Text>
+        </TouchableOpacity>
+        {prevBtn}
+        {hasWebPicker ? (
+          <DateInputWeb value={selectedDate} onChange={setSelectedDate} />
+        ) : null}
+        {nextBtn}
+      </View>
+    );
+  }
 
   if (hasWebPicker) {
     return (
@@ -109,8 +133,8 @@ function NavChevron({
     >
       <Ionicons
         name={direction === "back" ? "chevron-back" : "chevron-forward"}
-        size={22}
-        color={Colors.primary}
+        size={20}
+        color={Colors.textSecondary}
       />
     </Pressable>
   );
@@ -153,6 +177,7 @@ const styles = StyleSheet.create({
     maxWidth: "100%",
     alignSelf: "center",
   },
+  inlineRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   pickerRow: {
     flexDirection: "row",
     alignItems: "center",

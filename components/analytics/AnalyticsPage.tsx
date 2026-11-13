@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import { Colors } from "../../constants/colors";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
-import { DesktopPageHeader } from "../layout/DesktopPageHeader";
 import { AnalyticsStateProvider } from "./AnalyticsState";
 import { AnalyticsTabs } from "./AnalyticsTabs";
 import { AnalyticsDateNavigator } from "./AnalyticsDateNavigator";
@@ -59,13 +58,40 @@ function AnalyticsHeavyBodyGate({ children }: { children: React.ReactNode }) {
   return children;
 }
 
+/**
+ * Title, period tabs and date navigation. One row on desktop (they used to
+ * be three stacked rows, ~150px before any chart); stacked on phones,
+ * where the native header already shows the title.
+ */
+function AnalyticsToolbar({ title }: { title?: string }) {
+  const isDesktop = useIsDesktop();
+  if (!isDesktop) {
+    return (
+      <>
+        <AnalyticsTabs />
+        <AnalyticsDateNavigator />
+      </>
+    );
+  }
+  return (
+    <View style={styles.toolbar}>
+      {title ? (
+        <Text style={styles.toolbarTitle} accessibilityRole="header">
+          {title}
+        </Text>
+      ) : null}
+      <AnalyticsTabs inline />
+      <View style={styles.toolbarSpacer} />
+      <AnalyticsDateNavigator inline />
+    </View>
+  );
+}
+
 export function AnalyticsPage({ title }: { title?: string }) {
   return (
     <AnalyticsStateProvider>
       <View style={styles.container}>
-        {title ? <DesktopPageHeader title={title} /> : null}
-        <AnalyticsTabs />
-        <AnalyticsDateNavigator />
+        <AnalyticsToolbar title={title} />
         <AnalyticsHeavyBodyGate>
           <AnalyticsBody />
         </AnalyticsHeavyBodyGate>
@@ -80,20 +106,20 @@ function AnalyticsBody() {
   const useColumns = isDesktop && width >= 1280;
 
   if (useColumns) {
+    // Each column scrolls on its own. As one long page, the tallest column
+    // (trackables) left the other two blank once you scrolled past them.
     return (
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.columns}>
-          <View style={styles.col}>
-            <TrackableProgressionSection />
-          </View>
-          <View style={styles.col}>
-            <TimeBreakdownSection />
-          </View>
-          <View style={styles.col}>
-            <TimeSpendSection />
-          </View>
-        </View>
-      </ScrollView>
+      <View style={styles.columns}>
+        <ScrollView style={styles.col} contentContainerStyle={styles.colContent}>
+          <TrackableProgressionSection />
+        </ScrollView>
+        <ScrollView style={styles.col} contentContainerStyle={styles.colContent}>
+          <TimeBreakdownSection />
+        </ScrollView>
+        <ScrollView style={styles.col} contentContainerStyle={styles.colContent}>
+          <TimeSpendSection />
+        </ScrollView>
+      </View>
     );
   }
 
@@ -118,9 +144,26 @@ const styles = StyleSheet.create({
   },
   scrollContent: { padding: 16, paddingBottom: 40 },
   columns: {
+    flex: 1,
+    minHeight: 0,
     flexDirection: "row",
     gap: 16,
-    alignItems: "flex-start",
+    paddingHorizontal: 16,
   },
   col: { flex: 1, minWidth: 0 },
+  colContent: { paddingTop: 8, paddingBottom: 40 },
+  // Desktop: title, period tabs and date navigation share one row.
+  toolbar: {
+    minHeight: 60,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    paddingHorizontal: 16,
+  },
+  toolbarTitle: {
+    fontSize: FontSize.title,
+    fontWeight: "600",
+    color: Colors.text,
+  },
+  toolbarSpacer: { flex: 1 },
 });

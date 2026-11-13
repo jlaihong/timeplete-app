@@ -1,6 +1,7 @@
 import { FontSize } from "../../../theme/tokens";
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Colors } from "../../../constants/colors";
@@ -69,6 +70,25 @@ export function TrackableProgressionSection() {
       ? series
       : null;
 
+  // On the Daily tab most trackables have nothing for the day, and each
+  // drew a full card holding only a dash. Those fold under one toggle so
+  // the day's actual activity is what you see. Longer periods keep every
+  // card: their charts are worth reading even when the period is quiet.
+  const foldInactive = selectedTab === "DAILY";
+  const [showInactive, setShowInactive] = React.useState(false);
+  const all = fresh?.trackables ?? [];
+  const activeGoals = foldInactive ? all.filter(hasActivity) : all;
+  const inactiveGoals = foldInactive ? all.filter((g) => !hasActivity(g)) : [];
+  const renderGoal = (goal: (typeof all)[number]) => (
+    <AnalyticsTrackableWidgetFactory
+      key={goal._id}
+      goal={goal}
+      tab={selectedTab}
+      windowStart={windowStart}
+      windowEnd={windowEnd}
+    />
+  );
+
   return (
     <SectionCard title="Trackable Progression">
       {!fresh ? (
@@ -79,22 +99,59 @@ export function TrackableProgressionSection() {
         </Text>
       ) : (
         <View>
-          {fresh.trackables.map((goal) => (
-            <AnalyticsTrackableWidgetFactory
-              key={goal._id}
-              goal={goal}
-              tab={selectedTab}
-              windowStart={windowStart}
-              windowEnd={windowEnd}
-            />
-          ))}
+          {activeGoals.map(renderGoal)}
+          {foldInactive && activeGoals.length === 0 ? (
+            <Text style={styles.empty}>Nothing logged on this day.</Text>
+          ) : null}
+          {inactiveGoals.length > 0 ? (
+            <>
+              <Pressable
+                onPress={() => setShowInactive((v) => !v)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showInactive }}
+                style={styles.inactiveToggle}
+              >
+                <Ionicons
+                  name={showInactive ? "chevron-down" : "chevron-forward"}
+                  size={14}
+                  color={Colors.textTertiary}
+                />
+                <Text style={styles.inactiveToggleText}>
+                  No activity ({inactiveGoals.length})
+                </Text>
+              </Pressable>
+              {showInactive ? inactiveGoals.map(renderGoal) : null}
+            </>
+          ) : null}
         </View>
       )}
     </SectionCard>
   );
 }
 
+/** Whether a trackable has anything recorded in the loaded period. */
+function hasActivity(goal: { days: ReadonlyArray<Record<string, unknown>> }) {
+  return goal.days.some((day) =>
+    ["daysCompleted", "secondsAttributed", "trackerCount"].some(
+      (key) => typeof day[key] === "number" && (day[key] as number) > 0,
+    ),
+  );
+}
+
 const styles = StyleSheet.create({
+  inactiveToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  inactiveToggleText: {
+    fontSize: FontSize.caption,
+    fontWeight: "600",
+    color: Colors.textTertiary,
+  },
   empty: {
     fontSize: FontSize.body,
     color: Colors.textTertiary,
