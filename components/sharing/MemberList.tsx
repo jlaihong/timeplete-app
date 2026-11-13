@@ -276,15 +276,6 @@ export function MemberList({ listId }: MemberListProps) {
   return (
     <>
       <View style={styles.container}>
-      <Text style={styles.title}>Members ({members.length})</Text>
-
-      {isOwnerViewer && hasCollaborators ? (
-        <Text style={styles.ownerHint}>
-          Tap a collaborator&apos;s role (Viewer / Editor) to change their
-          permission or remove their access.
-        </Text>
-      ) : null}
-
       {members.map((member) => {
         const editablePerm =
           member.permission === "VIEWER" || member.permission === "EDITOR"
@@ -305,10 +296,21 @@ export function MemberList({ listId }: MemberListProps) {
               </Text>
             </View>
             <View style={styles.info}>
-              <Text style={styles.name}>{member.name}</Text>
-              <Text style={styles.email}>{member.email}</Text>
-              {member.shareStatus === "PENDING" ? (
-                <Text style={styles.pendingLabel}>Invitation pending</Text>
+              <Text style={styles.name} numberOfLines={1}>
+                {member.name}
+              </Text>
+              {/* Someone with no display name is listed by their email;
+                  don't repeat it on the second line. */}
+              {member.name !== member.email ||
+              member.shareStatus === "PENDING" ? (
+                <Text style={styles.email} numberOfLines={1}>
+                  {[
+                    member.name !== member.email ? member.email : null,
+                    member.shareStatus === "PENDING" ? "invite pending" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </Text>
               ) : null}
             </View>
             {canEditRole && editablePerm ? (
@@ -341,7 +343,7 @@ export function MemberList({ listId }: MemberListProps) {
                     <Ionicons
                       name="chevron-down"
                       size={14}
-                      color={Colors.primary}
+                      color={Colors.textSecondary}
                     />
                   </TouchableOpacity>
                 </View>
@@ -362,7 +364,7 @@ export function MemberList({ listId }: MemberListProps) {
                   <Ionicons
                     name="chevron-down"
                     size={14}
-                    color={Colors.primary}
+                    color={Colors.textSecondary}
                   />
                 </TouchableOpacity>
               )
@@ -382,71 +384,50 @@ export function MemberList({ listId }: MemberListProps) {
 
 const styles = StyleSheet.create({
   container: {},
-  title: {
-    fontSize: FontSize.bodyLarge,
-    fontWeight: "700",
-    color: Colors.text,
-    marginBottom: 12,
-  },
-  ownerHint: {
-    fontSize: FontSize.body,
-    lineHeight: 18,
-    color: Colors.textSecondary,
-    marginBottom: 12,
-  },
+  // One quiet line per person: no dividers, a small neutral avatar, and
+  // the role as plain text (a bordered chip only where it can be changed).
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    paddingVertical: 6,
+    gap: 10,
   },
   avatar: {
-    width: 36,
-    height: 36,
+    width: 28,
+    height: 28,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.surfaceContainerHighest,
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { color: Colors.white, fontWeight: "700", fontSize: FontSize.body },
-  info: { flex: 1, minWidth: 0 },
-  name: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
-  email: { fontSize: FontSize.caption, color: Colors.textSecondary },
-  pendingLabel: {
+  avatarText: {
+    color: Colors.textSecondary,
+    fontWeight: "600",
     fontSize: FontSize.caption,
-    color: Colors.textTertiary,
-    marginTop: 2,
   },
+  info: { flex: 1, minWidth: 0 },
+  name: { fontSize: FontSize.body, color: Colors.text },
+  email: { fontSize: FontSize.caption, color: Colors.textTertiary },
   badge: {
     fontSize: FontSize.caption,
-    fontWeight: "600",
     color: Colors.textTertiary,
-    backgroundColor: Colors.surfaceVariant,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: Radius.sm,
-    overflow: "hidden",
+    paddingHorizontal: 10,
   },
   roleBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    height: 32,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.primary,
-    backgroundColor: Colors.surfaceContainerHighest,
-    maxWidth: 200,
-    alignSelf: "center",
-    minHeight: 36,
+    borderColor: Colors.outline,
+    backgroundColor: Colors.surfaceContainer,
     justifyContent: "center",
   },
   roleBadgeText: {
-    fontSize: FontSize.body,
+    fontSize: FontSize.caption,
     fontWeight: "600",
-    color: Colors.textSecondary,
+    color: Colors.text,
   },
 });

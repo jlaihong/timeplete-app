@@ -1,26 +1,32 @@
-import React, { useState } from "react";
-import { Alert, Platform, Text, StyleSheet, useWindowDimensions } from "react-native";
+import React, { useRef, useState } from "react";
+import { Alert, Platform, StyleSheet, View, useWindowDimensions } from "react-native";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
-import { Colors, DEFAULT_ENTITY_COLOUR } from "../../constants/colors";
-import { FontSize } from "../../theme/tokens";
+import { DEFAULT_ENTITY_COLOUR } from "../../constants/colors";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
 import { ColorPicker } from "../ui/ColorPicker";
 import {
   DialogOverlay,
   DialogCard,
-  DialogHeader,
   DialogFooter,
   DialogMenu,
 } from "../ui/DialogScaffold";
+import {
+  EntityTitle,
+  InlineError,
+  SectionLabel,
+} from "../ui/EntityDialogParts";
 import { useDiscardGuard } from "../../hooks/useDiscardGuard";
 
 /**
- * Create or edit a tag. Same shell as every other dialog: name and colour
- * in the body, Cancel and Save in the footer, archive and delete in the
- * header's "more" menu.
+ * Create or edit a tag. Same shape as the list dialog: the name is the
+ * title, the dot beside it shows the colour, and editing saves as you go
+ * (a colour at once, the name on Enter or when you leave the field), so
+ * the only button is "Done". Creating keeps an explicit "Create".
+ *
+ * A tag's colour is its only setting, so the palette is laid out in the
+ * body instead of behind the dot.
  */
 export function TagDialog({
   tag,
@@ -36,30 +42,68 @@ export function TagDialog({
   const [name, setName] = useState(tag?.name ?? "");
   const [colour, setColour] = useState(tag?.colour ?? DEFAULT_ENTITY_COLOUR);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const savedNameRef = useRef(tag?.name ?? "");
 
-  const isDirty =
-    name !== (tag?.name ?? "") ||
-    colour !== (tag?.colour ?? DEFAULT_ENTITY_COLOUR);
-  const requestClose = useDiscardGuard(isDirty, onClose);
+  /** Edit mode: save the current fields, with `patch` applied on top. */
+  const saveNow = (patch: { name?: string; colour?: string }) => {
+    if (!tag) return;
+    const nextName = (patch.name ?? name).trim() || savedNameRef.current;
+    setError(null);
+    upsertTag({
+      id: tag._id,
+      name: nextName,
+      colour: patch.colour ?? colour,
+    }).then(
+      () => {
+        savedNameRef.current = nextName;
+      },
+      (e) =>
+        setError(e instanceof Error ? e.message : "Couldn't save. Try again."),
+    );
+  };
 
-  const save = async () => {
+  const commitName = () => {
+    if (!tag) return;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setName(savedNameRef.current);
+      return;
+    }
+    if (trimmed !== savedNameRef.current) saveNow({ name: trimmed });
+  };
+
+  const closeEdit = () => {
+    commitName();
+    onClose();
+  };
+
+  const create = async () => {
     const trimmed = name.trim();
     if (!trimmed || saving) return;
     setSaving(true);
+    setError(null);
     try {
-      await upsertTag({ id: tag?._id, name: trimmed, colour });
+      await upsertTag({ name: trimmed, colour });
       onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't create the tag.");
     } finally {
       setSaving(false);
     }
   };
 
+  const isCreateDirty =
+    !tag && (name !== "" || colour !== DEFAULT_ENTITY_COLOUR);
+  const requestCloseCreate = useDiscardGuard(isCreateDirty, onClose);
+  const requestClose = tag ? closeEdit : requestCloseCreate;
+
   const toggleArchived = async () => {
     if (!tag) return;
     await upsertTag({
       id: tag._id,
-      name: tag.name,
-      colour: tag.colour,
+      name: savedNameRef.current || tag.name,
+      colour,
       archived: !tag.archived,
     });
     onClose();
@@ -88,9 +132,14 @@ export function TagDialog({
       onBackdropPress={requestClose}
       align={width >= 768 ? "center" : "bottom"}
     >
-      <DialogCard desktopWidth={440}>
-        <DialogHeader
-          title={tag ? "Edit tag" : "New tag"}
+      <DialogCard desktopWidth={460}>
+        <EntityTitle
+          name={name}
+          onNameChange={setName}
+          onNameCommit={tag ? commitName : () => void create()}
+          placeholder="Tag name"
+          autoFocus={!tag}
+          colour={colour}
           onClose={requestClose}
           headerActions={
             tag ? (
@@ -112,25 +161,37 @@ export function TagDialog({
             ) : undefined
           }
         />
-        <Input
-          label="Name"
-          value={name}
-          onChangeText={setName}
-          placeholder="Tag name"
-          autoFocus
-          onSubmitEditing={() => void save()}
-        />
-        <Text style={styles.fieldLabel}>Colour</Text>
-        <ColorPicker selectedColor={colour} onColorSelect={setColour} />
-        <DialogFooter>
-          <Button title="Cancel" variant="ghost" onPress={onClose} size="small" />
-          <Button
-            title={tag ? "Save" : "Create"}
-            onPress={() => void save()}
-            loading={saving}
-            disabled={!name.trim()}
-            size="small"
+        <View style={styles.colours}>
+          <SectionLabel>Colour</SectionLabel>
+          <ColorPicker
+            selectedColor={colour}
+            onColorSelect={(c) => {
+              setColour(c);
+              if (tag) saveNow({ colour: c });
+            }}
           />
+        </View>
+        <InlineError message={error} />
+        <DialogFooter>
+          {tag ? (
+            <Button title="Done" onPress={closeEdit} size="small" />
+          ) : (
+            <>
+              <Button
+                title="Cancel"
+                variant="ghost"
+                onPress={onClose}
+                size="small"
+              />
+              <Button
+                title="Create"
+                onPress={() => void create()}
+                loading={saving}
+                disabled={!name.trim()}
+                size="small"
+              />
+            </>
+          )}
         </DialogFooter>
       </DialogCard>
     </DialogOverlay>
@@ -138,10 +199,6 @@ export function TagDialog({
 }
 
 const styles = StyleSheet.create({
-  fieldLabel: {
-    fontSize: FontSize.caption,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-    marginBottom: 8,
-  },
+  // The section label brings its own top margin; pull it up under the title.
+  colours: { marginTop: -12, gap: 4 },
 });

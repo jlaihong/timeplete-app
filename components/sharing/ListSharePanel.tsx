@@ -3,17 +3,16 @@ import React, { useState } from "react";
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   Platform,
-  Alert,
 } from "react-native";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
 import { MemberList } from "./MemberList";
 
 interface ListSharePanelProps {
@@ -22,51 +21,39 @@ interface ListSharePanelProps {
   onInviteSent?: () => void;
 }
 
+type Permission = "VIEWER" | "EDITOR";
+
 /**
- * List invite + members — embedded in Edit List (sharing tab) or ShareDialog.
+ * Who a list is shared with, and one line to invite someone: email, role,
+ * "Invite". Used inside the list dialog and the standalone ShareDialog.
+ * The result of an invite is said under the line rather than in an alert.
  */
 export function ListSharePanel({ listId, onInviteSent }: ListSharePanelProps) {
   const [email, setEmail] = useState("");
-  const [permission, setPermission] = useState<"VIEWER" | "EDITOR">("VIEWER");
+  const [permission, setPermission] = useState<Permission>("VIEWER");
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<{
+    text: string;
+    isError: boolean;
+  } | null>(null);
 
   const shareList = useMutation(api.sharing.shareList);
 
   const handleShare = async () => {
-    if (!email.trim()) {
-      if (Platform.OS === "web") {
-        // eslint-disable-next-line no-alert
-        window.alert("Please enter an email address");
-      } else {
-        Alert.alert("Error", "Please enter an email address");
-      }
-      return;
-    }
-
+    const address = email.trim();
+    if (!address || loading) return;
     setLoading(true);
+    setStatus(null);
     try {
-      await shareList({
-        listId,
-        email: email.trim(),
-        permission,
-      });
+      await shareList({ listId, email: address, permission });
       setEmail("");
-      if (Platform.OS === "web") {
-        // eslint-disable-next-line no-alert
-        window.alert("Invite sent successfully");
-      } else {
-        Alert.alert("Shared!", "Invite sent successfully");
-      }
+      setStatus({ text: `Invite sent to ${address}`, isError: false });
       onInviteSent?.();
     } catch (e: unknown) {
-      const message =
-        e instanceof Error ? e.message : "Failed to share";
-      if (Platform.OS === "web") {
-        // eslint-disable-next-line no-alert
-        window.alert(message);
-      } else {
-        Alert.alert("Error", message);
-      }
+      setStatus({
+        text: e instanceof Error ? e.message : "Couldn't send the invite",
+        isError: true,
+      });
     } finally {
       setLoading(false);
     }
@@ -74,91 +61,110 @@ export function ListSharePanel({ listId, onInviteSent }: ListSharePanelProps) {
 
   return (
     <View>
-      <Text style={styles.sectionTitle}>People with access</Text>
       <MemberList listId={listId} />
-      <Text style={[styles.sectionTitle, styles.inviteHeading]}>
-        Invite someone
-      </Text>
-      <Input
-        label="Email address"
-        value={email}
-        onChangeText={setEmail}
-        placeholder="colleague@example.com"
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
 
-      <Text style={styles.permLabel}>Permission</Text>
-      <View style={styles.permRow}>
-        <TouchableOpacity
+      <View style={styles.inviteRow}>
+        <TextInput
+          value={email}
+          onChangeText={(text) => {
+            setEmail(text);
+            if (status) setStatus(null);
+          }}
+          onSubmitEditing={() => void handleShare()}
+          placeholder="Invite by email"
+          placeholderTextColor={Colors.textTertiary}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          accessibilityLabel="Email address to invite"
           style={[
-            styles.permOption,
-            permission === "VIEWER" && styles.permSelected,
+            styles.email,
+            Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : null,
           ]}
-          onPress={() => setPermission("VIEWER")}
-        >
-          <Text
-            style={[
-              styles.permText,
-              permission === "VIEWER" && styles.permTextSelected,
-            ]}
-          >
-            Viewer
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.permOption,
-            permission === "EDITOR" && styles.permSelected,
-          ]}
-          onPress={() => setPermission("EDITOR")}
-        >
-          <Text
-            style={[
-              styles.permText,
-              permission === "EDITOR" && styles.permTextSelected,
-            ]}
-          >
-            Editor
-          </Text>
-        </TouchableOpacity>
+        />
+        <View style={styles.roles} accessibilityRole="radiogroup">
+          {(["VIEWER", "EDITOR"] as Permission[]).map((p) => {
+            const selected = permission === p;
+            return (
+              <Pressable
+                key={p}
+                onPress={() => setPermission(p)}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selected }}
+                style={[styles.role, selected && styles.roleSelected]}
+              >
+                <Text
+                  style={[styles.roleText, selected && styles.roleTextSelected]}
+                >
+                  {p === "VIEWER" ? "Viewer" : "Editor"}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Button
+          title="Invite"
+          size="small"
+          onPress={() => void handleShare()}
+          loading={loading}
+          disabled={!email.trim()}
+        />
       </View>
-
-      <Button title="Send invite" onPress={handleShare} loading={loading} />
+      {status ? (
+        <Text
+          style={[styles.status, status.isError && styles.statusError]}
+          accessibilityLiveRegion="polite"
+        >
+          {status.text}
+        </Text>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  sectionTitle: {
-    fontSize: FontSize.body,
-    fontWeight: "700",
-    color: Colors.text,
-    marginBottom: 12,
+  inviteRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
   },
-  inviteHeading: {
-    marginTop: 20,
-  },
-  permLabel: {
-    fontSize: FontSize.body,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 8,
-    marginTop: 4,
-  },
-  permRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
-  permOption: {
+  email: {
     flex: 1,
-    paddingVertical: 10,
+    minWidth: 150,
+    height: 36,
+    paddingHorizontal: 12,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: "center",
+    borderColor: Colors.outline,
+    backgroundColor: Colors.surfaceContainer,
+    fontSize: FontSize.body,
+    color: Colors.text,
   },
-  permSelected: {
-    borderColor: Colors.primary,
-    backgroundColor: Colors.primary + "10",
+  roles: {
+    flexDirection: "row",
+    padding: 2,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceContainer,
   },
-  permText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.textSecondary },
-  permTextSelected: { color: Colors.primary },
+  role: {
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: Radius.sm,
+    justifyContent: "center",
+  },
+  roleSelected: { backgroundColor: Colors.surfaceContainerHighest },
+  roleText: {
+    fontSize: FontSize.caption,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  roleTextSelected: { color: Colors.text },
+  status: {
+    fontSize: FontSize.caption,
+    color: Colors.textSecondary,
+    marginTop: 6,
+  },
+  statusError: { color: Colors.error },
 });

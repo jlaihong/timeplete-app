@@ -38,6 +38,11 @@ interface TrackablePickerProps {
    * a compact dropdown trigger that opens an overlay menu. Default: true.
    */
   compact?: boolean;
+  /**
+   * For a settings row that supplies its own label: no label, no bottom
+   * margin, and a fixed-width trigger that sits at the row's right edge.
+   */
+  inline?: boolean;
 }
 
 /**
@@ -54,6 +59,7 @@ export function TrackablePicker({
   inheritedTrackableId,
   editable = true,
   compact = true,
+  inline = false,
 }: TrackablePickerProps) {
   const { profileReady } = useAuth();
   const [open, setOpen] = useState(false);
@@ -87,7 +93,11 @@ export function TrackablePicker({
 
   const readonlyBody = (
     <View
-      style={[styles.trigger, styles.triggerReadonly]}
+      style={[
+        styles.trigger,
+        styles.triggerReadonly,
+        inline && styles.triggerInline,
+      ]}
       accessibilityRole="text"
       accessibilityLabel={
         shown ? `${label}: ${shown.name}` : `${label}: nothing`
@@ -101,7 +111,7 @@ export function TrackablePicker({
 
   const renderTrigger = () => (
     <TouchableOpacity
-      style={styles.trigger}
+      style={[styles.trigger, inline && styles.triggerInline]}
       onPress={() => setOpen((v) => !v)}
       accessibilityLabel={`${label} picker`}
       accessibilityRole="button"
@@ -115,16 +125,16 @@ export function TrackablePicker({
 
   if (!editable) {
     return (
-      <View style={styles.container}>
-        {label ? <Text style={styles.label}>{label}</Text> : null}
+      <View style={inline ? undefined : styles.container}>
+        {label && !inline ? <Text style={styles.label}>{label}</Text> : null}
         {readonlyBody}
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      {label ? <Text style={styles.label}>{label}</Text> : null}
+    <View style={inline ? undefined : styles.container}>
+      {label && !inline ? <Text style={styles.label}>{label}</Text> : null}
       {renderTrigger()}
 
       <Modal
@@ -224,6 +234,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainer,
     gap: 8,
   },
+  triggerInline: { width: 210, paddingVertical: 7 },
   triggerReadonly: {
     justifyContent: "flex-start",
     opacity: 0.92,

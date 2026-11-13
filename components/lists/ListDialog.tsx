@@ -1,10 +1,7 @@
-import { FontSize, Radius } from "../../theme/tokens";
-import React, { useContext, useEffect, useState } from "react";
+import { FontSize } from "../../theme/tokens";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
   StyleSheet,
-  Pressable,
   Switch,
   Alert,
   Platform,
@@ -15,23 +12,25 @@ import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Doc, Id } from "../../convex/_generated/dataModel";
-import { Ionicons } from "@expo/vector-icons";
 import { Colors, DEFAULT_ENTITY_COLOUR } from "../../constants/colors";
 import { useAuth } from "../../hooks/useAuth";
 import { useArchiveList } from "../../hooks/useArchiveList";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
-import { ColorPicker } from "../ui/ColorPicker";
 import { Card } from "../ui/Card";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { ListSharePanel } from "../sharing/ListSharePanel";
 import {
   DialogOverlay,
-  DialogHeader,
   DialogFooter,
   DialogMenu,
   dialogSurfaceStyle,
 } from "../ui/DialogScaffold";
+import {
+  EntityTitle,
+  InlineError,
+  SectionLabel,
+  SettingRow,
+} from "../ui/EntityDialogParts";
 import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 import { useDiscardGuard } from "../../hooks/useDiscardGuard";
 
@@ -54,14 +53,18 @@ interface ListDialogProps {
 }
 
 /**
- * Mirrors productivity-one's `list-dialog`: a single dialog used for both
- * creating and editing a list, with fields for Name, Colour, "Linked
- * Trackable" (the headline feature requested here), and "Show in sidebar".
+ * Create or edit a list, on one page.
  *
- * The "Linked Trackable" picker reuses our existing `TrackablePicker`
- * (the same control surfaced on tasks). Backend-side, `lists.upsert`
- * keeps `listTrackableLinks` and `trackable.listId` in sync — see the
- * `setListTrackableLink` helper in `convex/lists.ts`.
+ * The list's name is the dialog title and its colour is the dot beside
+ * it. Below sit the settings ("Counts toward", "Show in sidebar") and,
+ * for an existing list, who it is shared with.
+ *
+ * Editing saves as you go: a colour, switch or trackable change is saved
+ * at once, the name when you leave the field or press Enter, so the only
+ * button is "Done". Creating keeps an explicit "Create".
+ *
+ * The linked trackable is kept in sync server-side (`setListTrackableLink`
+ * in `convex/lists.ts`).
  */
 export function ListDialog({
   list,
@@ -79,6 +82,7 @@ export function ListDialog({
     Platform.OS === "web" && vvHeight != null ? vvHeight : windowHeight;
   /** Must match `padding` in `styles.overlay` (24 × 2 vertically). */
   const overlayVerticalPaddingPx = 48;
+
   const isEditMode = !!list;
   const isInbox = !!list?.isInbox;
   const isGoalList = !!list?.isGoalList;
@@ -99,47 +103,105 @@ export function ListDialog({
   const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(
     list?.trackableId ?? null,
   );
-  // Backdrop, Escape and the header ✕ ask before discarding edits.
-  const isDirty =
-    name !== (list?.name ?? "") ||
-    colour !== (list?.colour ?? DEFAULT_ENTITY_COLOUR) ||
-    showInSidebar !== (list?.showInSidebar ?? true) ||
-    trackableId !== (list?.trackableId ?? null);
-  const requestClose = useDiscardGuard(isDirty, onClose);
   const [saving, setSaving] = useState(false);
-  const [detailsTab, setDetailsTab] = useState<"details" | "sharing">(
-    "details",
-  );
+  const [error, setError] = useState<string | null>(null);
 
-  // Refresh form state if the parent re-opens the dialog with a different list.
+  // Start from the list's values when the dialog opens for a different
+  // list. Not on every server update: while editing, the fields here are
+  // the source of truth and each change is saved from them.
+  const listId = list?._id;
   useEffect(() => {
     setName(list?.name ?? "");
     setColour(list?.colour ?? DEFAULT_ENTITY_COLOUR);
     setShowInSidebar(list?.showInSidebar ?? true);
     setTrackableId(list?.trackableId ?? null);
-    setDetailsTab("details");
-  }, [list?._id, list?.name, list?.colour, list?.showInSidebar, list?.trackableId]);
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listId, visibleProp]);
 
   const upsertList = useMutation(api.lists.upsert);
   const removeList = useMutation(api.lists.remove);
 
-  const handleSave = async () => {
-    if (!name.trim()) return;
+  /** The name last saved, to fall back on if the field is left empty. */
+  const savedNameRef = useRef(list?.name ?? "");
+  useEffect(() => {
+    savedNameRef.current = list?.name ?? "";
+  }, [list?.name]);
+
+  /** Edit mode: save the current fields, with `patch` applied on top. */
+  const saveNow = (patch: {
+    name?: string;
+    colour?: string;
+    showInSidebar?: boolean;
+    trackableId?: Id<"trackables"> | null;
+  }) => {
+    if (!list) return;
+    const nextName = (patch.name ?? name).trim() || savedNameRef.current;
+    setError(null);
+    upsertList({
+      id: list._id,
+      name: nextName,
+      colour: patch.colour ?? colour,
+      showInSidebar: patch.showInSidebar ?? showInSidebar,
+      // Only touch the trackable link when it is the thing being changed.
+      ...(patch.trackableId !== undefined
+        ? { trackableId: patch.trackableId }
+        : {}),
+    }).then(
+      () => {
+        savedNameRef.current = nextName;
+      },
+      (e) =>
+        setError(
+          e instanceof Error ? e.message : "Couldn't save. Try again.",
+        ),
+    );
+  };
+
+  const commitName = () => {
+    if (!list || isInbox) return;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setName(savedNameRef.current);
+      return;
+    }
+    if (trimmed !== savedNameRef.current) saveNow({ name: trimmed });
+  };
+
+  /** Close an edit: a name still being typed is saved, not thrown away. */
+  const closeEdit = () => {
+    commitName();
+    onClose();
+  };
+
+  const handleCreate = async () => {
+    if (!name.trim() || saving) return;
     setSaving(true);
+    setError(null);
     try {
       await upsertList({
-        id: list?._id,
         name: name.trim(),
         colour,
         showInSidebar,
-        // `null` explicitly clears the link; `undefined` would leave it alone.
         trackableId: trackableId ?? null,
       });
       onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't create the list.");
     } finally {
       setSaving(false);
     }
   };
+
+  // Creating: backdrop, Escape and ✕ ask before discarding what was typed.
+  const isCreateDirty =
+    !isEditMode &&
+    (name !== "" ||
+      colour !== DEFAULT_ENTITY_COLOUR ||
+      !showInSidebar ||
+      trackableId !== null);
+  const requestCloseCreate = useDiscardGuard(isCreateDirty, onClose);
+  const requestClose = isEditMode ? closeEdit : requestCloseCreate;
 
   const handleDelete = async () => {
     if (!list || isInbox) return;
@@ -158,12 +220,10 @@ export function ListDialog({
     ]);
   };
 
-  /** Approx. title/tabs/footer + inner card padding (`theme/panels` 16 × 2 + gaps). */
-  const webBodyChromeReservePx =
-    (isEditMode && list ? 296 : 220) + overlayVerticalPaddingPx;
+  /** Approx. title + footer + card padding around the scrolling body. */
   const scrollMaxHeightWeb = Math.max(
     160,
-    Math.round(effectiveHeight - webBodyChromeReservePx),
+    Math.round(effectiveHeight - 200 - overlayVerticalPaddingPx),
   );
 
   if (!visibleProp) return null;
@@ -175,172 +235,133 @@ export function ListDialog({
     // keyboard. High zIndex mirrors the previous Modal stacking on web.
     <DialogOverlay onBackdropPress={requestClose} align="center" zIndex={2000}>
       <ListDialogCard>
-            <DialogHeader
-              title={isEditMode ? "Edit list" : "Create list"}
-              onClose={requestClose}
-              headerActions={
-                isEditMode && list ? (
-                  <DialogMenu
-                    items={[
-                      ...(canArchive
-                        ? [
-                            {
-                              label: list.archived
-                                ? "Unarchive list"
-                                : "Archive list",
-                              icon: "archive-outline" as const,
-                              onPress: () =>
-                                confirmArchive({
-                                  _id: list._id,
-                                  name: list.name,
-                                  archived: list.archived,
-                                  onArchived: onClose,
-                                }),
-                            },
-                          ]
-                        : []),
-                      ...(!isInbox
-                        ? [
-                            {
-                              label: "Delete list",
-                              icon: "trash-outline" as const,
-                              onPress: handleDelete,
-                              destructive: true,
-                            },
-                          ]
-                        : []),
-                    ]}
-                  />
-                ) : undefined
-              }
+        <EntityTitle
+          name={name}
+          onNameChange={setName}
+          onNameCommit={isEditMode ? commitName : undefined}
+          placeholder="List name"
+          nameEditable={!isInbox}
+          autoFocus={!isEditMode}
+          colour={colour}
+          onColourChange={(c) => {
+            setColour(c);
+            if (isEditMode) saveNow({ colour: c });
+          }}
+          onClose={requestClose}
+          headerActions={
+            isEditMode && list ? (
+              <DialogMenu
+                items={[
+                  ...(canArchive
+                    ? [
+                        {
+                          label: list.archived
+                            ? "Unarchive list"
+                            : "Archive list",
+                          icon: "archive-outline" as const,
+                          onPress: () =>
+                            confirmArchive({
+                              _id: list._id,
+                              name: list.name,
+                              archived: list.archived,
+                              onArchived: onClose,
+                            }),
+                        },
+                      ]
+                    : []),
+                  ...(!isInbox
+                    ? [
+                        {
+                          label: "Delete list",
+                          icon: "trash-outline" as const,
+                          onPress: handleDelete,
+                          destructive: true,
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            ) : undefined
+          }
+        />
+
+        <KeyboardAwareScrollView
+          style={[
+            styles.scroll,
+            Platform.OS === "web" && { maxHeight: scrollMaxHeightWeb },
+          ]}
+          contentContainerStyle={styles.scrollContent}
+          // Hide the vertical scrollbar so it doesn't overlap inputs
+          // below (RN draws the indicator inside the viewport).
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          bottomOffset={120}
+        >
+          <SettingRow
+            label="Counts toward"
+            note={
+              isGoalList
+                ? "Set by the trackable this list belongs to"
+                : "Tasks here add to this trackable"
+            }
+          >
+            <TrackablePicker
+              inline
+              editable={!isGoalList}
+              value={trackableId}
+              onChange={(id) => {
+                setTrackableId(id);
+                if (isEditMode) saveNow({ trackableId: id });
+              }}
             />
+          </SettingRow>
+          <SettingRow label="Show in sidebar">
+            <Switch
+              value={showInSidebar}
+              onValueChange={(v) => {
+                setShowInSidebar(v);
+                if (isEditMode) saveNow({ showInSidebar: v });
+              }}
+              accessibilityLabel="Show in sidebar"
+              trackColor={{
+                false: Colors.surfaceContainerHighest,
+                true: Colors.primary,
+              }}
+              thumbColor={Colors.white}
+            />
+          </SettingRow>
 
-            {isEditMode && list ? (
-              <View style={styles.tabsRow}>
-                <Pressable
-                  style={[
-                    styles.tab,
-                    detailsTab === "details" && styles.tabActive,
-                  ]}
-                  onPress={() => setDetailsTab("details")}
-                >
-                  <Text
-                    style={[
-                      styles.tabLabel,
-                      detailsTab === "details" && styles.tabLabelActive,
-                    ]}
-                  >
-                    Details
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.tab,
-                    detailsTab === "sharing" && styles.tabActive,
-                  ]}
-                  onPress={() => setDetailsTab("sharing")}
-                >
-                  <Text
-                    style={[
-                      styles.tabLabel,
-                      detailsTab === "sharing" && styles.tabLabelActive,
-                    ]}
-                  >
-                    Sharing
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
+          <InlineError message={error} />
 
-            <KeyboardAwareScrollView
-              style={[
-                styles.scroll,
-                Platform.OS === "web" && { maxHeight: scrollMaxHeightWeb },
-              ]}
-              contentContainerStyle={styles.scrollContent}
-              // Hide the vertical scrollbar so it doesn't overlap inputs
-              // below (RN draws the indicator inside the viewport).
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              bottomOffset={120}
-            >
-              {isEditMode && list && detailsTab === "sharing" ? (
-                <ListSharePanel listId={list._id} />
-              ) : (
-                <>
-                  <Input
-                    label="Name"
-                    value={name}
-                    onChangeText={setName}
-                    placeholder="List name"
-                    editable={!isInbox}
-                  />
+          {isEditMode && list ? (
+            <>
+              <SectionLabel>Shared with</SectionLabel>
+              <ListSharePanel listId={list._id} />
+            </>
+          ) : null}
+        </KeyboardAwareScrollView>
 
-                  <Text style={styles.fieldLabel}>Colour</Text>
-                  <View style={styles.colourBlock}>
-                    <ColorPicker
-                      selectedColor={colour}
-                      onColorSelect={setColour}
-                    />
-                  </View>
-
-                  {isGoalList ? (
-                    <View style={styles.notice}>
-                      <Text style={styles.noticeText}>
-                        This is a goal list. Its linked trackable is managed
-                        automatically and can&apos;t be changed here.
-                      </Text>
-                    </View>
-                  ) : (
-                    <TrackablePicker
-                      label="Counts toward"
-                      value={trackableId}
-                      onChange={setTrackableId}
-                    />
-                  )}
-
-                  <View style={styles.toggleRow}>
-                    <Text style={styles.toggleLabel}>Show in sidebar</Text>
-                    <Switch
-                      value={showInSidebar}
-                      onValueChange={setShowInSidebar}
-                      trackColor={{
-                        false: Colors.surfaceContainerHigh,
-                        true: Colors.primary,
-                      }}
-                      thumbColor={Colors.white}
-                    />
-                  </View>
-                </>
-              )}
-            </KeyboardAwareScrollView>
-
-            <DialogFooter>
-              {isEditMode && list && detailsTab === "sharing" ? (
-                <Button
-                  title="Close"
-                  variant="ghost"
-                  onPress={onClose}
-                  size="small"
-                />
-              ) : (
-                <>
-                  <Button
-                    title="Cancel"
-                    variant="ghost"
-                    onPress={onClose}
-                    size="small"
-                  />
-                  <Button
-                    title={isEditMode ? "Save" : "Create"}
-                    onPress={handleSave}
-                    loading={saving}
-                    disabled={!name.trim()}
-                    size="small"
-                  />
-                </>
-              )}
-            </DialogFooter>
+        <DialogFooter>
+          {isEditMode ? (
+            <Button title="Done" onPress={closeEdit} size="small" />
+          ) : (
+            <>
+              <Button
+                title="Cancel"
+                variant="ghost"
+                onPress={onClose}
+                size="small"
+              />
+              <Button
+                title="Create"
+                onPress={handleCreate}
+                loading={saving}
+                disabled={!name.trim()}
+                size="small"
+              />
+            </>
+          )}
+        </DialogFooter>
       </ListDialogCard>
     </DialogOverlay>
   );
@@ -373,102 +394,18 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     // 92% (not 100%) keeps the old Modal-era side insets on phones.
     width: "92%",
-    maxWidth: 440,
+    maxWidth: 460,
     maxHeight: "90%",
     ...Platform.select({
       web: { alignSelf: "center", maxHeight: "min(90vh, 90%)" } as object,
       default: {},
     }),
   },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    marginBottom: 16,
-  },
-  title: {
-    flex: 1,
-    fontSize: FontSize.title,
-    fontWeight: "700",
-    color: Colors.text,
-  },
-  archiveButton: {
-    padding: 4,
-  },
-  tabsRow: {
-    flexDirection: "row",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.outlineVariant,
-    marginBottom: 12,
-    gap: 4,
-  },
-  tab: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: -StyleSheet.hairlineWidth,
-    borderBottomWidth: 2,
-    borderBottomColor: "transparent",
-  },
-  tabActive: {
-    borderBottomColor: Colors.primary,
-  },
-  tabLabel: {
-    fontSize: FontSize.body,
-    fontWeight: "600",
-    color: Colors.textSecondary,
-  },
-  tabLabelActive: {
-    color: Colors.primary,
-  },
   scroll: {
     flexGrow: 0,
     flexShrink: 1,
     width: "100%",
   },
-  scrollContent: { paddingBottom: 8 },
-  fieldLabel: {
-    fontSize: FontSize.caption,
-    color: Colors.textSecondary,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  colourBlock: { marginBottom: 20 },
-  notice: {
-    backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: Radius.md,
-    padding: 12,
-    marginBottom: 12,
-    marginTop: 8,
-  },
-  noticeText: { fontSize: FontSize.body, color: Colors.textSecondary, lineHeight: 18 },
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-    marginTop: 4,
-  },
-  toggleLabel: { fontSize: FontSize.body, color: Colors.text, fontWeight: "600" },
-  actionsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 16,
-    gap: 12,
-  },
-  /** Keep Save/Cancel inside the card when the scroll body is height-capped on web. */
-  actionsFooter: {
-    flexShrink: 0,
-  },
-  actionsRowSharing: {
-    justifyContent: "flex-end",
-  },
-  spacer: { flex: 0 },
-  deleteButton: { paddingHorizontal: 12 },
-  primaryActions: {
-    flexDirection: "row",
-    gap: 12,
-    marginLeft: "auto",
-  },
+  scrollContent: { paddingBottom: 4 },
+  note: { fontSize: FontSize.caption, color: Colors.textTertiary },
 });
