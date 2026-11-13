@@ -277,10 +277,12 @@ export function ListDialog({
                   />
 
                   <Text style={styles.fieldLabel}>Colour</Text>
-                  <ColorPicker
-                    selectedColor={colour}
-                    onColorSelect={setColour}
-                  />
+                  <View style={styles.colourBlock}>
+                    <ColorPicker
+                      selectedColor={colour}
+                      onColorSelect={setColour}
+                    />
+                  </View>
 
                   {isGoalList ? (
                     <View style={styles.notice}>
@@ -291,7 +293,7 @@ export function ListDialog({
                     </View>
                   ) : (
                     <TrackablePicker
-                      label="Linked Trackable"
+                      label="Counts toward"
                       value={trackableId}
                       onChange={setTrackableId}
                     />
@@ -426,12 +428,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: { paddingBottom: 8 },
   fieldLabel: {
-    fontSize: FontSize.body,
+    fontSize: FontSize.caption,
     color: Colors.textSecondary,
     fontWeight: "600",
-    marginBottom: 6,
-    marginTop: 4,
+    marginBottom: 8,
   },
+  colourBlock: { marginBottom: 20 },
   notice: {
     backgroundColor: Colors.surfaceContainerHigh,
     borderRadius: Radius.md,

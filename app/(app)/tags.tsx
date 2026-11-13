@@ -1,82 +1,65 @@
-import { FontSize, Radius } from "../../theme/tokens";
-import React, { useState, useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  Alert,
-  Platform,
-} from "react-native";
+import React, { useMemo, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "../../convex/_generated/api";
-import { Colors, stackHeaderChromeOptions, DEFAULT_ENTITY_COLOUR } from "../../constants/colors";
-import { Ionicons } from "@expo/vector-icons";
-import { Card } from "../../components/ui/Card";
-import { Button } from "../../components/ui/Button";
-import { Input } from "../../components/ui/Input";
-import { ColorPicker } from "../../components/ui/ColorPicker";
-import { EmptyState } from "../../components/ui/EmptyState";
 import { Stack } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { api } from "../../convex/_generated/api";
+import type { Doc } from "../../convex/_generated/dataModel";
+import { Colors, stackHeaderChromeOptions } from "../../constants/colors";
+import { FontSize, Radius } from "../../theme/tokens";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { DrawerMenuButton } from "../../components/layout/DrawerMenuButton";
 import {
   DesktopPageHeader,
   pageColumnStyle,
 } from "../../components/layout/DesktopPageHeader";
 import { SectionHeadingAddButton } from "../../components/ui/SectionHeadingAddButton";
+import { EntityRow } from "../../components/ui/EntityRow";
+import {
+  SortableRows,
+  SORTABLE_ROWS_DRAGGABLE,
+} from "../../components/ui/SortableRows";
+import { TagDialog } from "../../components/tags/TagDialog";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useAuth } from "../../hooks/useAuth";
 
+/**
+ * Tags: flat rows you can drag into order. Clicking a row opens the tag
+ * dialog, where archive and delete live.
+ */
 export default function TagsScreen() {
   const isDesktop = useIsDesktop();
   const { profileReady } = useAuth();
   const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
-  const upsertTag = useMutation(api.tags.upsert);
-  const removeTag = useMutation(api.tags.remove);
+  const moveTag = useMutation(api.tags.move);
   const [showArchived, setShowArchived] = useState(false);
-  const [editing, setEditing] = useState<{
-    id?: string;
-    name: string;
-    colour: string;
-  } | null>(null);
+  // `null` = closed, `"new"` = create, otherwise the tag being edited.
+  const [dialog, setDialog] = useState<null | "new" | Doc<"tags">>(null);
 
-  const filteredTags = useMemo(
+  const active = useMemo(
     () =>
-      tags
-        ?.filter((t) => (showArchived ? t.archived : !t.archived))
+      (tags ?? [])
+        .filter((t) => !t.archived)
         .sort((a, b) => a.orderIndex - b.orderIndex),
-    [tags, showArchived],
+    [tags],
+  );
+  const archived = useMemo(
+    () =>
+      (tags ?? [])
+        .filter((t) => t.archived)
+        .sort((a, b) => a.orderIndex - b.orderIndex),
+    [tags],
   );
 
-  const handleSaveTag = async () => {
-    if (!editing || !editing.name.trim()) return;
-    await upsertTag({
-      id: editing.id as any,
-      name: editing.name.trim(),
-      colour: editing.colour,
-    });
-    setEditing(null);
-  };
-
-  const handleDeleteTag = (tagId: string) => {
-    // `Alert.alert` does nothing on web, so the bin icon was dead there.
-    if (Platform.OS === "web") {
-      // eslint-disable-next-line no-alert
-      if (window.confirm("Delete this tag? This cannot be undone.")) {
-        void removeTag({ id: tagId as any });
-      }
-      return;
-    }
-    Alert.alert("Delete Tag", "Are you sure? This cannot be undone.", [
-      { text: "Cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => removeTag({ id: tagId as any }),
-      },
-    ]);
-  };
+  const renderRow = (tag: Doc<"tags">, draggable: boolean) => (
+    <EntityRow
+      colour={tag.colour}
+      name={tag.name}
+      onPress={() => setDialog(tag)}
+      pressLabel={`Edit tag ${tag.name}`}
+      showGrip={draggable && SORTABLE_ROWS_DRAGGABLE}
+    />
+  );
 
   return (
     <View style={styles.container}>
@@ -93,158 +76,106 @@ export default function TagsScreen() {
         title="Tags"
         right={
           <SectionHeadingAddButton
-            onPress={() => setEditing({ name: "", colour: DEFAULT_ENTITY_COLOUR })}
+            onPress={() => setDialog("new")}
             accessibilityLabel="Add tag"
           />
         }
       />
 
-      <View style={[styles.tabs, pageColumnStyle]}>
-        <TouchableOpacity
-          style={[styles.tab, !showArchived && styles.activeTab]}
-          onPress={() => setShowArchived(false)}
-        >
-          <Text style={[styles.tabText, !showArchived && styles.activeTabText]}>
-            Active
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, showArchived && styles.activeTab]}
-          onPress={() => setShowArchived(true)}
-        >
-          <Text style={[styles.tabText, showArchived && styles.activeTabText]}>
-            Archived
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {editing && (
-        <View style={pageColumnStyle}>
-        <Card style={styles.editCard}>
-          <Input
-            label="Tag Name"
-            value={editing.name}
-            onChangeText={(name) => setEditing({ ...editing, name })}
-            placeholder="Tag name"
-          />
-          <Text style={styles.colorLabel}>Color</Text>
-          <ColorPicker
-            selectedColor={editing.colour}
-            onColorSelect={(colour) => setEditing({ ...editing, colour })}
-          />
-          <View style={styles.editActions}>
-            <Button
-              title="Cancel"
-              variant="outline"
-              onPress={() => setEditing(null)}
-            />
-            <Button title="Save" onPress={handleSaveTag} />
-          </View>
-        </Card>
-        </View>
-      )}
-
-      {!filteredTags ? (
-        <Text style={styles.loading}>Loading...</Text>
-      ) : filteredTags.length === 0 ? (
+      {!tags ? (
+        <Text style={styles.loading}>Loading…</Text>
+      ) : tags.length === 0 ? (
         <EmptyState
           title="No tags yet"
           message="Create tags to organize your tasks"
         />
       ) : (
-        <FlatList
-          data={filteredTags}
-          keyExtractor={(item) => item._id}
-          renderItem={({ item }) => (
-            <Card style={styles.tagCard} padded={false}>
-              <TouchableOpacity
-                style={styles.tagRow}
-                onPress={() =>
-                  setEditing({
-                    id: item._id,
-                    name: item.name,
-                    colour: item.colour,
-                  })
-                }
-              >
-                <View
-                  style={[styles.tagDot, { backgroundColor: item.colour }]}
-                />
-                <Text style={styles.tagName}>{item.name}</Text>
-                <TouchableOpacity
-                  onPress={() => handleDeleteTag(item._id)}
-                >
-                  <Ionicons
-                    name="trash-outline"
-                    size={18}
-                    color={Colors.textTertiary}
-                  />
-                </TouchableOpacity>
-              </TouchableOpacity>
-            </Card>
+        <ScrollView contentContainerStyle={[styles.content, pageColumnStyle]}>
+          {active.length === 0 ? (
+            <Text style={styles.loading}>No active tags</Text>
+          ) : (
+            <SortableRows
+              items={active}
+              onMove={(id, toIndex) => void moveTag({ id, toIndex })}
+              renderRow={(tag) => renderRow(tag, true)}
+            />
           )}
-          contentContainerStyle={[styles.listContent, pageColumnStyle]}
-        />
+
+          {/* Archived tags fold away under a quiet toggle, not a second tab. */}
+          {archived.length > 0 ? (
+            <>
+              <Pressable
+                onPress={() => setShowArchived((v) => !v)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showArchived }}
+                style={styles.archivedToggle}
+              >
+                <Ionicons
+                  name={showArchived ? "chevron-down" : "chevron-forward"}
+                  size={14}
+                  color={Colors.textTertiary}
+                />
+                <Text style={styles.archivedToggleText}>
+                  Archived ({archived.length})
+                </Text>
+              </Pressable>
+              {showArchived
+                ? archived.map((tag) => (
+                    <React.Fragment key={tag._id}>
+                      {renderRow(tag, false)}
+                    </React.Fragment>
+                  ))
+                : null}
+            </>
+          ) : null}
+        </ScrollView>
       )}
 
       {/* Desktop adds from the header; phones keep the floating button. */}
       {!isDesktop && (
-        <TouchableOpacity
+        <Pressable
           style={styles.fab}
-          onPress={() =>
-            setEditing({ name: "", colour: DEFAULT_ENTITY_COLOUR })
-          }
+          onPress={() => setDialog("new")}
           accessibilityRole="button"
           accessibilityLabel="Add tag"
         >
-          <Ionicons name="add" size={24} color={Colors.white} />
-        </TouchableOpacity>
+          <Ionicons name="add" size={24} color={Colors.onPrimary} />
+        </Pressable>
       )}
+
+      {dialog ? (
+        <TagDialog
+          tag={dialog === "new" ? null : dialog}
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  loading: { textAlign: "center", marginTop: 40, color: Colors.textSecondary },
-  tabs: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  tab: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.surfaceVariant,
-  },
-  activeTab: { backgroundColor: Colors.primary },
-  tabText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.textSecondary },
-  activeTabText: { color: Colors.white },
-  editCard: { marginHorizontal: 16, marginBottom: 16 },
-  colorLabel: {
+  loading: {
+    textAlign: "center",
+    marginTop: 40,
     fontSize: FontSize.body,
-    fontWeight: "600",
-    color: Colors.text,
-    marginBottom: 8,
+    color: Colors.textSecondary,
   },
-  editActions: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 16,
-    justifyContent: "flex-end",
-  },
-  listContent: { padding: 16, paddingBottom: 80 },
-  tagCard: { marginBottom: 6 },
-  tagRow: {
+  content: { paddingHorizontal: 16, paddingBottom: 96 },
+  archivedToggle: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    gap: 12,
+    gap: 6,
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    marginTop: 16,
   },
-  tagDot: { width: 14, height: 14, borderRadius: Radius.pill },
-  tagName: { flex: 1, fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
+  archivedToggleText: {
+    fontSize: FontSize.caption,
+    fontWeight: "600",
+    color: Colors.textTertiary,
+  },
   fab: {
     position: "absolute",
     right: 20,
@@ -255,6 +186,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 6,
+    elevation: 4,
   },
 });

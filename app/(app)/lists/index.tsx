@@ -1,21 +1,14 @@
-import { FontSize, Radius } from "../../../theme/tokens";
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-} from "react-native";
-import { useQuery } from "convex/react";
+import React, { useMemo, useState } from "react";
+import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
+import { useMutation, useQuery } from "convex/react";
+import { Stack, router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../../convex/_generated/api";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
 import { Colors } from "../../../constants/colors";
-import { Ionicons } from "@expo/vector-icons";
-import { Card } from "../../../components/ui/Card";
+import { FontSize, Radius } from "../../../theme/tokens";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { ListDialog } from "../../../components/lists/ListDialog";
-import { Stack, router } from "expo-router";
 import { useAuth } from "../../../hooks/useAuth";
 import { useArchiveList } from "../../../hooks/useArchiveList";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
@@ -24,37 +17,92 @@ import {
   pageColumnStyle,
 } from "../../../components/layout/DesktopPageHeader";
 import { SectionHeadingAddButton } from "../../../components/ui/SectionHeadingAddButton";
+import {
+  EntityGroupHeading,
+  EntityRow,
+  type EntityRowAction,
+} from "../../../components/ui/EntityRow";
+import {
+  SortableRows,
+  SORTABLE_ROWS_DRAGGABLE,
+} from "../../../components/ui/SortableRows";
 
 type ListDoc = Doc<"lists"> & { trackableId?: Id<"trackables"> | null };
 
+const byOrder = (a: ListDoc, b: ListDoc) => a.orderIndex - b.orderIndex;
+
+/**
+ * Lists: flat rows in three groups.
+ *   - Your lists: the ones you made, which you can drag into order. This is
+ *     the order the sidebar shows them in.
+ *   - Trackable lists: one per trackable, created with it.
+ *   - Archived: folded away under a toggle.
+ * Clicking a row opens the list; the pencil opens its settings.
+ */
 export default function ListsScreen() {
   const { profileReady } = useAuth();
   const isDesktop = useIsDesktop();
-  const canQueryLists = profileReady;
-  const lists = useQuery(api.lists.search, canQueryLists ? {} : "skip");
+  const lists = useQuery(api.lists.search, profileReady ? {} : "skip") as
+    | ListDoc[]
+    | undefined;
+  const moveList = useMutation(api.lists.move);
   const [showArchived, setShowArchived] = useState(false);
   // `null` = closed, `"new"` = create mode, otherwise the list being edited.
   const [dialogState, setDialogState] = useState<null | "new" | ListDoc>(null);
   const confirmArchive = useArchiveList();
 
-  const activeCount = useMemo(
-    () => lists?.filter((l) => !l.archived).length ?? 0,
-    [lists],
-  );
-  const archivedCount = useMemo(
-    () => lists?.filter((l) => l.archived).length ?? 0,
-    [lists],
-  );
+  const groups = useMemo(() => {
+    const all = lists ?? [];
+    const live = all.filter((l) => !l.archived);
+    return {
+      inbox: live.filter((l) => l.isInbox).sort(byOrder),
+      own: live.filter((l) => !l.isInbox && !l.isGoalList).sort(byOrder),
+      trackable: live.filter((l) => l.isGoalList).sort(byOrder),
+      archived: all.filter((l) => l.archived).sort(byOrder),
+    };
+  }, [lists]);
 
-  useEffect(() => {
-    if (showArchived && lists && archivedCount === 0) {
-      setShowArchived(false);
+  const openList = (list: ListDoc) => router.push(`/(app)/lists/${list._id}`);
+
+  const renderRow = (list: ListDoc, draggable: boolean) => {
+    const actions: EntityRowAction[] = [];
+    // Goal-backed lists are managed from the trackable, not here.
+    if (!list.isGoalList) {
+      actions.push({
+        icon: "pencil-outline",
+        label: `Edit list ${list.name}`,
+        onPress: () => setDialogState(list),
+      });
     }
-  }, [showArchived, lists, archivedCount]);
-
-  const filteredLists = lists
-    ?.filter((l) => (showArchived ? l.archived : !l.archived))
-    .sort((a, b) => a.orderIndex - b.orderIndex);
+    if (!list.isInbox) {
+      actions.push({
+        icon: "archive-outline",
+        label: list.archived
+          ? `Unarchive list ${list.name}`
+          : `Archive list ${list.name}`,
+        onPress: () =>
+          confirmArchive({
+            _id: list._id,
+            name: list.name,
+            archived: list.archived,
+          }),
+      });
+    }
+    return (
+      <EntityRow
+        colour={list.colour}
+        name={list.name}
+        note={
+          list.trackableId && !list.isGoalList ? "Linked to a trackable" : undefined
+        }
+        onPress={() => openList(list)}
+        pressLabel={`Open list ${list.name}`}
+        actions={actions}
+        showGrip={draggable && SORTABLE_ROWS_DRAGGABLE}
+        showChevron
+      />
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -72,139 +120,88 @@ export default function ListsScreen() {
         }
       />
 
-      <View style={[styles.tabs, pageColumnStyle]}>
-        <TouchableOpacity
-          style={[styles.tab, !showArchived && styles.activeTab]}
-          onPress={() => setShowArchived(false)}
-        >
-          <Text style={[styles.tabText, !showArchived && styles.activeTabText]}>
-            Active ({activeCount})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            showArchived && styles.activeTab,
-            archivedCount === 0 && styles.tabDisabled,
-          ]}
-          onPress={() => setShowArchived(true)}
-          disabled={archivedCount === 0}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              showArchived && styles.activeTabText,
-              archivedCount === 0 && styles.tabTextDisabled,
-            ]}
-          >
-            Archived ({archivedCount})
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {!filteredLists ? (
-        <Text style={styles.loading}>Loading...</Text>
-      ) : filteredLists.length === 0 ? (
+      {!lists ? (
+        <Text style={styles.loading}>Loading…</Text>
+      ) : lists.length === 0 ? (
         <EmptyState
-          title={showArchived ? "No archived lists" : "No lists"}
-          message={
-            showArchived
-              ? "Archive a list to hide it from the sidebar without deleting it"
-              : "Create a list to organize your tasks"
-          }
+          title="No lists"
+          message="Create a list to organize your tasks"
         />
       ) : (
-        <FlatList
-          data={filteredLists}
-          keyExtractor={(item) => item._id}
-          renderItem={({ item }) => (
-            <Card style={styles.listCard} padded={false}>
-              <View style={styles.listRow}>
-                <TouchableOpacity
-                  style={styles.listRowLeft}
-                  onPress={() => router.push(`/(app)/lists/${item._id}`)}
-                >
-                  <View
-                    style={[styles.listDot, { backgroundColor: item.colour }]}
-                  />
-                  <View style={styles.listInfo}>
-                    <Text style={styles.listName}>{item.name}</Text>
-                    {item.isInbox && (
-                      <Text style={styles.badge}>Inbox</Text>
-                    )}
-                    {item.isGoalList && (
-                      <Text style={styles.badge}>Trackable</Text>
-                    )}
-                    {!!item.trackableId && !item.isGoalList && (
-                      <Text style={styles.badge}>Linked</Text>
-                    )}
-                  </View>
-                </TouchableOpacity>
-                {/* Goal-backed lists are managed from the trackable, not here. */}
-                {!item.isGoalList && (
-                  <TouchableOpacity
-                    style={styles.editButton}
-                    onPress={() => setDialogState(item)}
-                    accessibilityLabel={`Edit list ${item.name}`}
-                  >
-                    <Ionicons
-                      name="settings-outline"
-                      size={18}
-                      color={Colors.textSecondary}
-                    />
-                  </TouchableOpacity>
-                )}
-                {!item.isInbox && (
-                  <TouchableOpacity
-                    style={styles.editButton}
-                    onPress={() =>
-                      confirmArchive({
-                        _id: item._id,
-                        name: item.name,
-                        archived: item.archived,
-                      })
-                    }
-                    accessibilityLabel={
-                      item.archived
-                        ? `Unarchive list ${item.name}`
-                        : `Archive list ${item.name}`
-                    }
-                  >
-                    <Ionicons
-                      name="archive-outline"
-                      size={18}
-                      color={Colors.textSecondary}
-                    />
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={styles.openButton}
-                  onPress={() => router.push(`/(app)/lists/${item._id}`)}
-                  accessibilityLabel={`Open list ${item.name}`}
-                >
-                  <Ionicons
-                    name="chevron-forward"
-                    size={18}
-                    color={Colors.textTertiary}
-                  />
-                </TouchableOpacity>
-              </View>
-            </Card>
+        <ScrollView contentContainerStyle={[styles.content, pageColumnStyle]}>
+          {groups.inbox.map((list) => (
+            <React.Fragment key={list._id}>
+              {renderRow(list, false)}
+            </React.Fragment>
+          ))}
+
+          <EntityGroupHeading title="Your lists" count={groups.own.length} />
+          {groups.own.length === 0 ? (
+            <Text style={styles.emptyGroup}>
+              Lists you create appear here and in the sidebar.
+            </Text>
+          ) : (
+            <SortableRows
+              items={groups.own}
+              onMove={(id, toIndex) => void moveList({ id, toIndex })}
+              renderRow={(list) => renderRow(list, true)}
+            />
           )}
-          contentContainerStyle={[styles.listContent, pageColumnStyle]}
-        />
+
+          {groups.trackable.length > 0 ? (
+            <>
+              <EntityGroupHeading
+                title="Trackable lists"
+                count={groups.trackable.length}
+              />
+              {groups.trackable.map((list) => (
+                <React.Fragment key={list._id}>
+                  {renderRow(list, false)}
+                </React.Fragment>
+              ))}
+            </>
+          ) : null}
+
+          {/* Archived lists fold away under a quiet toggle, not a second tab. */}
+          {groups.archived.length > 0 ? (
+            <>
+              <Pressable
+                onPress={() => setShowArchived((v) => !v)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showArchived }}
+                style={styles.archivedToggle}
+              >
+                <Ionicons
+                  name={showArchived ? "chevron-down" : "chevron-forward"}
+                  size={14}
+                  color={Colors.textTertiary}
+                />
+                <Text style={styles.archivedToggleText}>
+                  Archived ({groups.archived.length})
+                </Text>
+              </Pressable>
+              {showArchived
+                ? groups.archived.map((list) => (
+                    <React.Fragment key={list._id}>
+                      {renderRow(list, false)}
+                    </React.Fragment>
+                  ))
+                : null}
+            </>
+          ) : null}
+        </ScrollView>
       )}
 
       {/* Desktop adds from the header; phones keep the floating button. */}
       {!isDesktop && (
-        <TouchableOpacity
+        <Pressable
           style={styles.fab}
           onPress={() => setDialogState("new")}
           accessibilityRole="button"
           accessibilityLabel="Create list"
         >
-          <Ionicons name="add" size={24} color={Colors.white} />
-        </TouchableOpacity>
+          <Ionicons name="add" size={24} color={Colors.onPrimary} />
+        </Pressable>
       )}
 
       {dialogState && (
@@ -219,60 +216,32 @@ export default function ListsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  loading: { textAlign: "center", marginTop: 40, color: Colors.textSecondary },
-  tabs: {
-    flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
+  loading: {
+    textAlign: "center",
+    marginTop: 40,
+    fontSize: FontSize.body,
+    color: Colors.textSecondary,
   },
-  tab: {
+  content: { paddingHorizontal: 16, paddingBottom: 96 },
+  emptyGroup: {
+    fontSize: FontSize.body,
+    color: Colors.textTertiary,
+    paddingHorizontal: 8,
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.surfaceVariant,
   },
-  activeTab: { backgroundColor: Colors.primary },
-  tabDisabled: { opacity: 0.45 },
-  tabText: { fontSize: FontSize.body, fontWeight: "600", color: Colors.textSecondary },
-  activeTabText: { color: Colors.white },
-  tabTextDisabled: { color: Colors.textTertiary },
-  listContent: { padding: 16, paddingBottom: 80 },
-  listCard: { marginBottom: 6 },
-  listRow: {
+  archivedToggle: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 4,
-    paddingHorizontal: 6,
+    gap: 6,
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    marginTop: 16,
   },
-  listRowLeft: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 10,
-    paddingLeft: 8,
-  },
-  editButton: {
-    padding: 10,
-    borderRadius: Radius.md,
-  },
-  openButton: {
-    padding: 10,
-    borderRadius: Radius.md,
-  },
-  listDot: { width: 14, height: 14, borderRadius: Radius.pill },
-  listInfo: { flex: 1, flexDirection: "row", alignItems: "center", gap: 8 },
-  listName: { fontSize: FontSize.body, fontWeight: "600", color: Colors.text },
-  badge: {
-    fontSize: FontSize.micro,
+  archivedToggleText: {
+    fontSize: FontSize.caption,
     fontWeight: "600",
     color: Colors.textTertiary,
-    backgroundColor: Colors.surfaceVariant,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: Radius.sm,
-    overflow: "hidden",
   },
   fab: {
     position: "absolute",
@@ -284,6 +253,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 6,
+    elevation: 4,
   },
 });
