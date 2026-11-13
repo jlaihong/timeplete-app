@@ -81,6 +81,28 @@ function setTitleAttribute(label: string) {
   };
 }
 
+/**
+ * Web: set by a sidebar row when it is Cmd/Ctrl-clicked or middle-clicked,
+ * and read (then cleared) by `go`, which opens the page in a new browser
+ * tab instead of navigating this one.
+ */
+let openNextInNewTab = false;
+
+function wantsNewTab(e: unknown): boolean {
+  if (Platform.OS !== "web") return false;
+  const ev = e as {
+    metaKey?: boolean;
+    ctrlKey?: boolean;
+    nativeEvent?: { metaKey?: boolean; ctrlKey?: boolean };
+  } | null;
+  return !!(
+    ev?.metaKey ||
+    ev?.ctrlKey ||
+    ev?.nativeEvent?.metaKey ||
+    ev?.nativeEvent?.ctrlKey
+  );
+}
+
 const NavRow = React.memo(function NavRow({
   label,
   focused,
@@ -90,11 +112,32 @@ const NavRow = React.memo(function NavRow({
   rail = false,
   touch = false,
 }: NavRowProps) {
-  const titleRef = useMemo(() => setTitleAttribute(label), [label]);
+  const onPressRef = useRef(onPress);
+  onPressRef.current = onPress;
+  const titleRef = useMemo(() => {
+    const setTitle = setTitleAttribute(label);
+    return (node: unknown) => {
+      setTitle(node);
+      if (Platform.OS !== "web" || !node) return;
+      const el = node as HTMLElement & { __auxClickBound?: boolean };
+      if (el.__auxClickBound) return;
+      el.__auxClickBound = true;
+      // Middle-click opens in a new tab, as it does for a link.
+      (node as HTMLElement).addEventListener("auxclick", (e) => {
+        if ((e as MouseEvent).button !== 1) return;
+        e.preventDefault();
+        openNextInNewTab = true;
+        onPressRef.current();
+      });
+    };
+  }, [label]);
   return (
     <Pressable
       ref={titleRef as never}
-      onPress={onPress}
+      onPress={(e) => {
+        openNextInNewTab = wantsNewTab(e);
+        onPress();
+      }}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: focused }}
@@ -194,6 +237,13 @@ type DrawerGoEnv = {
  */
 function buildStableGo(envRef: { current: DrawerGoEnv }): (href: Href) => void {
   return (href: Href) => {
+    if (openNextInNewTab) {
+      openNextInNewTab = false;
+      if (Platform.OS === "web" && typeof href === "string") {
+        window.open(expoHrefToBrowserPath(href), "_blank");
+        return;
+      }
+    }
     const { segments, isDesktop, navigation, expoRouter, navigationContainerRef } =
       envRef.current;
     const traceSeq = typeof href === "string" ? traceSidebarClick(href) : 0;
@@ -324,6 +374,8 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       (l) =>
         !l.archived &&
         !l.isInbox &&
+        // The list's own "Show in sidebar" switch.
+        (l.showInSidebar !== false || l._id === activeListId) &&
         (!l.isGoalList || l._id === activeListId),
     );
   }, [lists, activeListId]);
