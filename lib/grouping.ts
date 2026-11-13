@@ -312,16 +312,15 @@ export const GROUP_BY_LABEL: Record<GroupByMode, string> = {
  */
 export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
   switch (tab) {
+    // Two rings by default: what the time went to, then the tasks inside
+    // it. The list ring mostly repeated the trackable ring, and a date
+    // ring split every task into slivers; both can still be added.
     case "DAILY":
-      return ["trackable", "list", "task"];
     case "WEEKLY":
-      return ["trackable", "list", "task", "date"];
     case "MONTHLY":
-      return ["trackable", "list", "task", "date"];
     case "YEARLY":
-      return ["trackable", "list", "task", "month"];
     default:
-      return ["trackable", "list", "task"];
+      return ["trackable", "task"];
   }
 }
 

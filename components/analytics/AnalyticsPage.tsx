@@ -81,7 +81,6 @@ function AnalyticsToolbar({ title }: { title?: string }) {
         </Text>
       ) : null}
       <AnalyticsTabs inline />
-      <View style={styles.toolbarSpacer} />
       <AnalyticsDateNavigator inline />
     </View>
   );

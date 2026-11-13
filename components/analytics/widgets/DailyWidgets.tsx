@@ -2,6 +2,7 @@ import { FontSize } from "../../../theme/tokens";
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Colors } from "../../../constants/colors";
+import { formatSecondsAsHM } from "../../../lib/dates";
 import { AnalyticsTrackableCard } from "./AnalyticsTrackableCard";
 import { AvgComparisonRow } from "./AvgComparisonRow";
 import type { AnalyticsWidgetProps } from "./types";
@@ -15,12 +16,21 @@ import type { AnalyticsWidgetProps } from "./types";
 export function AnalyticsDailyDaysAWeekWidget({ goal }: AnalyticsWidgetProps) {
   const day = goal.days[0];
   const completed = (day?.daysCompleted ?? 0) > 0;
+  // Time can be logged on a day that isn't ticked off yet; say so instead
+  // of showing a bare dash.
+  const seconds = day?.secondsAttributed ?? 0;
   return (
     <AnalyticsTrackableCard goal={goal}>
       <View style={styles.center}>
         <Text style={[styles.bigGlyph, completed && { color: Colors.success }]}>
           {completed ? "✓" : "–"}
         </Text>
+        {seconds > 0 ? (
+          <Text style={styles.timeNote}>
+            {formatSecondsAsHM(seconds)} logged
+            {completed ? "" : ", not marked done"}
+          </Text>
+        ) : null}
       </View>
     </AnalyticsTrackableCard>
   );
@@ -158,6 +168,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.textTertiary,
     lineHeight: 36,
+  },
+  timeNote: {
+    fontSize: FontSize.caption,
+    color: Colors.textSecondary,
+    marginTop: 2,
   },
   bigNumber: {
     fontSize: FontSize.heading,

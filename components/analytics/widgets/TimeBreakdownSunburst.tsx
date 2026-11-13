@@ -222,7 +222,12 @@ export function TimeBreakdownSunburst({
 
   return (
     <View style={styles.wrap}>
-      <View style={styles.breadcrumbRow}>
+      {/* Only once zoomed in: at the top level the centre already says
+          "Total", so a lone "Total" crumb above the chart repeated it. */}
+      <View
+        style={[styles.breadcrumbRow, zoomStack.length <= 1 && { opacity: 0 }]}
+        pointerEvents={zoomStack.length <= 1 ? "none" : "auto"}
+      >
         <View style={styles.crumbRow}>
           {zoomStack.map((z, i) => {
             const label =

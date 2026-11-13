@@ -16,6 +16,12 @@ import {
   parseYYYYMMDD,
   yyyymmddToIsoDate,
 } from "../../lib/dates";
+import { todayYYYYMMDD } from "../../lib/dates";
+import {
+  currentPeriodName,
+  reviewPeriodLabel,
+  reviewPeriodStart,
+} from "../../lib/reviewPeriod";
 import { useAnalyticsState } from "./AnalyticsState";
 
 /**
@@ -65,20 +71,35 @@ export function AnalyticsDateNavigator({
   const nextBtn = <NavChevron direction="forward" onPress={goNext} />;
 
   if (inline) {
+    // Same shape as the Reviews header: ‹ period ›, a link back to the
+    // current period once you step away, then the date picker.
+    const isCurrent =
+      reviewPeriodStart(selectedTab, selectedDate) ===
+      reviewPeriodStart(selectedTab, todayYYYYMMDD());
     return (
       <View style={styles.inlineRow}>
-        <TouchableOpacity
-          onPress={goToday}
-          accessibilityRole="button"
-          accessibilityLabel={`${middleLabel}. Go to today`}
-        >
-          <Text style={styles.middleLabel}>{middleLabel}</Text>
-        </TouchableOpacity>
         {prevBtn}
+        <Text style={[styles.middleLabel, styles.inlineLabel]}>
+          {reviewPeriodLabel(
+            selectedTab,
+            reviewPeriodStart(selectedTab, selectedDate),
+          )}
+        </Text>
+        {nextBtn}
+        {!isCurrent ? (
+          <TouchableOpacity
+            onPress={goToday}
+            accessibilityRole="button"
+            style={styles.currentLink}
+          >
+            <Text style={styles.currentLinkText}>
+              {currentPeriodName(selectedTab)}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
         {hasWebPicker ? (
           <DateInputWeb value={selectedDate} onChange={setSelectedDate} />
         ) : null}
-        {nextBtn}
       </View>
     );
   }
@@ -178,6 +199,13 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   inlineRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  inlineLabel: { minWidth: 96, textAlign: "center" },
+  currentLink: { marginHorizontal: 6 },
+  currentLinkText: {
+    fontSize: FontSize.body,
+    fontWeight: "600",
+    color: Colors.primary,
+  },
   pickerRow: {
     flexDirection: "row",
     alignItems: "center",

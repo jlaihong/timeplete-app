@@ -19,29 +19,50 @@ import {
 import { TimeSpendTimelineBlock } from "./TimeSpendTimelineBlock";
 
 /**
- * Vertical wall-clock strip shared across calendar days — productivity-one
- * analytics parity: top = 00:00, bottom = 24:00; sessions positioned from
- * clipped window bounds inside each calendar-day column. One shared time
- * axis on the left; overlaps stack per column like the single-day view.
+ * Vertical wall-clock strip shared across calendar days: sessions are
+ * positioned from clipped window bounds inside each calendar-day column,
+ * with one shared time axis on the left; overlaps stack per column.
+ *
+ * The axis covers only the hours that have activity (plus an hour either
+ * side), not the whole 00:00–24:00 day, so the chart is not mostly empty
+ * night. Day labels sit above the columns so they are visible without
+ * scrolling to the bottom.
  *
  * Monthly uses horizontal scroll when packed columns would shrink below
  * MIN_COLUMN_WIDTH_DP.
  */
 
-const HOUR_BOUNDARIES = Array.from({ length: 25 }, (_, i) => i);
+/** Shown when the period has nothing tracked at all. */
+const EMPTY_RANGE = { startHour: 8, endHour: 18 };
+/** Never show less than this many hours, so one short entry isn't huge. */
+const MIN_HOURS_SHOWN = 6;
+const DAY_LABEL_HEIGHT = 34;
+
+/** Whole-hour window around the tracked time, padded by an hour each side. */
+function visibleHourRange(blocks: TimelineBlock[]): {
+  startHour: number;
+  endHour: number;
+} {
+  if (blocks.length === 0) return EMPTY_RANGE;
+  let minSec = SECONDS_PER_DAY;
+  let maxSec = 0;
+  for (const b of blocks) {
+    if (b.startSec < minSec) minSec = b.startSec;
+    if (b.endSec > maxSec) maxSec = b.endSec;
+  }
+  let startHour = Math.max(0, Math.floor(minSec / 3600) - 1);
+  let endHour = Math.min(24, Math.ceil(maxSec / 3600) + 1);
+  while (endHour - startHour < MIN_HOURS_SHOWN) {
+    if (startHour > 0) startHour -= 1;
+    if (endHour - startHour < MIN_HOURS_SHOWN && endHour < 24) endHour += 1;
+  }
+  return { startHour, endHour };
+}
 
 const AXIS_W_NARROW = 46;
 const AXIS_W_WIDE = 54;
 const MIN_COLUMN_WIDTH_DP = 42;
 const COLUMN_GAP = 4;
-
-const AXIS_UNDER_TRACK_RESERVE =
-  Platform.select<number>({
-    ios: 40,
-    android: 42,
-    default: 40,
-    web: 40,
-  }) ?? 40;
 
 function formatHourBoundary(h: number): string {
   if (h <= 0) return "00:00";
@@ -49,16 +70,14 @@ function formatHourBoundary(h: number): string {
   return `${String(h).padStart(2, "0")}:00`;
 }
 
-function axisTickTranslateY(h: number): number {
-  if (h === 0) return 0;
-  if (h === 24) return -11;
+function axisTickTranslateY(h: number, first: number, last: number): number {
+  if (h === first) return 0;
+  if (h === last) return -11;
   return -6;
 }
 
-function trackHeightForWidth(chartWidthDp: number): number {
-  const pxPerHour =
-    chartWidthDp < 380 ? 32 : chartWidthDp < 720 ? 36 : 42;
-  return pxPerHour * 24;
+function pxPerHourForWidth(chartWidthDp: number): number {
+  return chartWidthDp < 380 ? 32 : chartWidthDp < 720 ? 36 : 42;
 }
 
 function sortBlocksForOverlapDraw(blocks: TimelineBlock[]): TimelineBlock[] {
@@ -123,9 +142,25 @@ export function TimeSpendTimelineChart({
     getCalendarDisplayTitle,
   ]);
 
+  const { startHour, endHour } = useMemo(
+    () => visibleHourRange(dayColumnsData.flatMap((d) => d.blocks)),
+    [dayColumnsData],
+  );
+
   if (!days.length) {
     return null;
   }
+
+  const hoursShown = endHour - startHour;
+  const rangeStartSec = startHour * 3600;
+  const rangeSec = hoursShown * 3600;
+  const hourBoundaries = Array.from(
+    { length: hoursShown + 1 },
+    (_, i) => startHour + i,
+  );
+  const hourPct = (h: number) => ((h - startHour) / hoursShown) * 100;
+  // One day needs no column label: the page header already names it.
+  const dayLabelHeight = days.length > 1 ? DAY_LABEL_HEIGHT : 0;
 
   const chartOuterW =
     typeof layoutW === "number" && layoutW > 0 ? layoutW : winW;
@@ -133,7 +168,7 @@ export function TimeSpendTimelineChart({
   const axisPadRight = 8;
   const axisStripW = axisW + axisPadRight;
 
-  const trackHeight = trackHeightForWidth(chartOuterW);
+  const trackHeight = pxPerHourForWidth(chartOuterW) * hoursShown;
   const compactAxis = chartOuterW < 400;
 
   const nCols = Math.max(days.length, 1);
@@ -179,6 +214,14 @@ export function TimeSpendTimelineChart({
               : { flex: 1, flexBasis: 0, minWidth: 0 },
           ]}
         >
+          {dayLabelHeight > 0 ? (
+            <Text
+              style={[styles.columnLabel, { height: dayLabelHeight }]}
+              numberOfLines={2}
+            >
+              {dayLabel(day)}
+            </Text>
+          ) : null}
           <View
             style={[
               styles.timelineInner,
@@ -192,13 +235,13 @@ export function TimeSpendTimelineChart({
               accessibilityLabel={`Timeline ${day}`}
             >
               <View style={styles.grid} pointerEvents="none">
-                {HOUR_BOUNDARIES.map((h) => (
+                {hourBoundaries.map((h) => (
                   <View
                     key={`g-${day}-${h}`}
                     style={[
                       styles.hourLine,
                       {
-                        top: `${(h / 24) * 100}%`,
+                        top: `${hourPct(h)}%`,
                         opacity: h % 6 === 0 ? 0.14 : 0.09,
                       },
                     ]}
@@ -211,9 +254,9 @@ export function TimeSpendTimelineChart({
                   0.09,
                 );
                 const span = Math.max(b.endSec - b.startSec, 0);
-                const topPct = (b.startSec / SECONDS_PER_DAY) * 100;
+                const topPct = ((b.startSec - rangeStartSec) / rangeSec) * 100;
                 const heightPct = Math.max(
-                  (span / SECONDS_PER_DAY) * 100,
+                  (span / rangeSec) * 100,
                   minHeightPct,
                 );
                 return (
@@ -236,9 +279,6 @@ export function TimeSpendTimelineChart({
               })}
             </View>
           </View>
-          <Text style={styles.columnFooterLabel} numberOfLines={2}>
-            {dayLabel(day)}
-          </Text>
         </View>
       ))}
     </View>
@@ -248,18 +288,21 @@ export function TimeSpendTimelineChart({
     <View style={styles.wrap} onLayout={onWrapLayout}>
       <View style={styles.chartRow}>
         <View style={{ width: axisStripW, flexShrink: 0 }}>
+          <View style={{ height: dayLabelHeight }} />
           <View
             style={[styles.axisCol, { width: axisStripW, height: trackHeight }]}
           >
-            {HOUR_BOUNDARIES.map((h) => (
+            {hourBoundaries.map((h) => (
               <Text
                 key={h}
                 style={[
                   styles.axisTick,
                   compactAxis && styles.axisTickCompact,
                   {
-                    top: `${(h / 24) * 100}%`,
-                    transform: [{ translateY: axisTickTranslateY(h) }],
+                    top: `${hourPct(h)}%`,
+                    transform: [
+                      { translateY: axisTickTranslateY(h, startHour, endHour) },
+                    ],
                   },
                 ]}
               >
@@ -267,7 +310,7 @@ export function TimeSpendTimelineChart({
               </Text>
             ))}
           </View>
-          <View style={{ height: AXIS_UNDER_TRACK_RESERVE }} />
+          <View style={{ height: 12 }} />
         </View>
 
         {needsHorizontalScroll ? (
@@ -360,14 +403,12 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     opacity: 0.84,
   },
-  columnFooterLabel: {
+  columnLabel: {
     fontSize: 11,
     fontWeight: "500",
     color: Colors.textTertiary,
     textAlign: "center",
-    marginTop: 6,
-    lineHeight: 16,
-    minHeight: 18,
+    lineHeight: 15,
     paddingHorizontal: 2,
   },
 });
