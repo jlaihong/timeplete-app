@@ -51,6 +51,9 @@ const NO_FILTER_USERS: string[] = [];
 const NO_FILTER_MEMBERS: TaskFilterMember[] = [];
 const noopToggleUserFilter = () => {};
 import { TaskTimeSpentButton } from "../tasks/TaskTimeSpentButton";
+import { useTaskDaySeconds } from "../../hooks/useTaskDaySeconds";
+import { useCompleteWithFeedback } from "../../hooks/useCompleteWithFeedback";
+import { CompleteCheckIcon } from "../tasks/CompleteCheckIcon";
 import { useTaskTimeSpentEditor } from "../tasks/useTaskTimeSpentEditor";
 import { Id } from "../../convex/_generated/dataModel";
 import {
@@ -334,19 +337,27 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
     );
   }, [today, olderOverdue.newestHiddenDay]);
 
+  const { completingIds, complete: completeWithFeedback } =
+    useCompleteWithFeedback();
   const toggleComplete = useCallback(
     async (taskId: Id<"tasks">, taskName: string, isCompleted: boolean) => {
-      if (!isCompleted && timer.isRunning && timer.taskId === taskId) {
-        timer.stop();
-      }
-      await upsertTask({
-        id: taskId,
-        name: taskName,
-        // `null` clears the field server-side; omitted/`undefined` leaves it unchanged.
-        dateCompleted: isCompleted ? null : todayYYYYMMDD(),
-      });
+      const save = async () => {
+        if (!isCompleted && timer.isRunning && timer.taskId === taskId) {
+          timer.stop();
+        }
+        await upsertTask({
+          id: taskId,
+          name: taskName,
+          // `null` clears the field server-side; omitted/`undefined` leaves it unchanged.
+          dateCompleted: isCompleted ? null : todayYYYYMMDD(),
+        });
+      };
+      // Completing ticks in place first; the save (which moves the row)
+      // follows a moment later.
+      if (!isCompleted) completeWithFeedback(taskId, () => void save());
+      else await save();
     },
-    [upsertTask, timer]
+    [upsertTask, timer, completeWithFeedback]
   );
 
   const handleToggleTimer = useCallback(
@@ -403,6 +414,10 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       }
     | { kind: "empty-placeholder"; day: string }
     | { kind: "load-previous-overdue"; day: string; hiddenCount: number };
+
+  const taskDaySeconds = useTaskDaySeconds(
+    useMemo(() => groupedTasks.map((g) => g.day), [groupedTasks]),
+  );
 
   const flatRows = useMemo<FlatRow[]>(() => {
     const out: FlatRow[] = [];
@@ -665,11 +680,15 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       const { isValidDropDay, onLongPressDrag, isActive } = opts;
       const isTimerActive =
         timer.isRunning && timer.taskId === task._id;
-      const timeSpent = task.timeSpentInSecondsUnallocated ?? 0;
+      // Home shows the time logged on the row's own day, not the total.
+      const totalTimeSpent = task.timeSpentInSecondsUnallocated ?? 0;
+      const dayTimeSpent = taskDaySeconds(task._id, group.day);
+      const timeSpent = dayTimeSpent ?? totalTimeSpent;
       const isDragTarget =
         dragOverTarget?.day === group.day &&
         dragOverTarget?.index === taskIndex;
-      const isCompleted = !!task.dateCompleted;
+      const isSavedCompleted = !!task.dateCompleted;
+      const isCompleted = isSavedCompleted || completingIds.has(task._id);
       const trackable = task.trackableId
         ? trackableMap.get(task.trackableId)
         : null;
@@ -697,7 +716,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
               does not wait on the list pan or the 300ms drag timer. */}
           <GesturePressable
             onPress={() => {
-              toggleComplete(task._id, task.name, isCompleted);
+              toggleComplete(task._id, task.name, isSavedCompleted);
             }}
             hitSlop={8}
             accessibilityRole="checkbox"
@@ -707,11 +726,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
             }
             style={styles.checkBtn}
           >
-            <Ionicons
-              name={isCompleted ? "checkmark-circle" : "ellipse-outline"}
-              size={22}
-              color={isCompleted ? Colors.success : Colors.textTertiary}
-            />
+            <CompleteCheckIcon checked={isCompleted} size={22} />
           </GesturePressable>
           <TouchableOpacity
             style={styles.taskMain}
@@ -755,6 +770,10 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                   taskId={task._id}
                   taskName={task.name}
                   seconds={timeSpent}
+                  totalSeconds={
+                    dayTimeSpent === undefined ? undefined : totalTimeSpent
+                  }
+                  readOnly={dayTimeSpent !== undefined && group.day !== today}
                   isTicking={isTimerActive}
                   timerStartTime={timer.startTime}
                   onEdit={openTimeSpentEditor}
@@ -836,6 +855,9 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       toggleComplete,
       handleToggleTimer,
       openTimeSpentEditor,
+      taskDaySeconds,
+      today,
+      completingIds,
       setDragAttrs,
       deleteTask,
     ],

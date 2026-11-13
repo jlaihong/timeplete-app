@@ -1,3 +1,5 @@
+import { CompleteCheckIcon } from "../tasks/CompleteCheckIcon";
+import { useCompleteWithFeedback } from "../../hooks/useCompleteWithFeedback";
 import React, { useState } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
 import { useQuery } from "convex/react";
@@ -33,6 +35,7 @@ export function EditTrackableTasksTab({
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const upsertTask = useTaskUpsertMutation();
   const [showAdd, setShowAdd] = useState(false);
+  const { completingIds, complete } = useCompleteWithFeedback();
 
   const listName = (listId: string | null) => {
     if (!listId) return null;
@@ -73,29 +76,36 @@ export function EditTrackableTasksTab({
             ]
               .filter(Boolean)
               .join(" · ");
+            const completing = completingIds.has(task._id);
             return (
               <View key={task._id} style={styles.row}>
                 <Pressable
                   onPress={() =>
-                    void upsertTask({
-                      id: task._id,
-                      name: task.name,
-                      dateCompleted: todayYYYYMMDD(),
-                    })
+                    complete(task._id, () =>
+                      void upsertTask({
+                        id: task._id,
+                        name: task.name,
+                        dateCompleted: todayYYYYMMDD(),
+                      }),
+                    )
                   }
                   hitSlop={8}
                   accessibilityRole="checkbox"
-                  accessibilityState={{ checked: false }}
+                  accessibilityState={{ checked: completing }}
                   accessibilityLabel={`Complete ${task.name}`}
                 >
-                  <Ionicons
-                    name="ellipse-outline"
+                  <CompleteCheckIcon
+                    checked={completing}
                     size={22}
-                    color={Colors.textSecondary}
+                    uncheckedColor={Colors.textSecondary}
                   />
                 </Pressable>
                 <View style={styles.rowText}>
-                  <Text style={styles.taskName}>{task.name}</Text>
+                  <Text
+                    style={[styles.taskName, completing && styles.taskNameDone]}
+                  >
+                    {task.name}
+                  </Text>
                   <Text style={styles.taskMeta}>{meta}</Text>
                 </View>
                 {task.isRecurringInstance && (
@@ -155,6 +165,10 @@ const styles = StyleSheet.create({
   },
   rowText: { flex: 1, minWidth: 0 },
   taskName: { fontSize: FontSize.body, color: Colors.text },
+  taskNameDone: {
+    textDecorationLine: "line-through",
+    color: Colors.textTertiary,
+  },
   taskMeta: {
     fontSize: FontSize.caption,
     color: Colors.textTertiary,

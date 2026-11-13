@@ -94,6 +94,7 @@ interface SortableRowProps {
   canDrag: boolean;
   displayColor: string;
   durationSec: number;
+  completing?: boolean;
   onSelect?: (id: Id<"tasks">) => void;
   onToggleComplete?: (id: Id<"tasks">) => void;
   onToggleTimer?: (id: Id<"tasks">) => void;
@@ -110,6 +111,7 @@ function SortableRow({
   canDrag,
   displayColor,
   durationSec,
+  completing,
   onSelect,
   onToggleComplete,
   onToggleTimer,
@@ -148,6 +150,7 @@ function SortableRow({
           meta={meta}
           isTicking={isTicking}
           timerStartTime={timerStartTime}
+          completing={completing}
           showDate
           onSelect={onSelect}
           onToggleComplete={onToggleComplete}
@@ -228,6 +231,8 @@ export interface ListDetailWebDndProps {
   isTicking: (taskId: Id<"tasks">) => boolean;
   /** `useTimer().startTime` — see TaskRowDesktop for how rows tick. */
   timerStartTime: number | null;
+  /** Tasks just ticked, shown completed until the save lands. */
+  completingIds?: ReadonlySet<string>;
   onSelectTask?: (id: Id<"tasks">) => void;
   onToggleComplete?: (id: Id<"tasks">) => void;
   onToggleTimer?: (id: Id<"tasks">) => void;
@@ -319,6 +324,7 @@ export function ListDetailWebDnd({
   canDrag,
   isTicking,
   timerStartTime,
+  completingIds,
   onSelectTask,
   onToggleComplete,
   onToggleTimer,
@@ -749,6 +755,7 @@ export function ListDetailWebDnd({
                                 groupId={group.id}
                                 isTicking={tick}
                                 timerStartTime={timerStartTime}
+                                completing={completingIds?.has(task._id)}
                                 canDrag={canDrag}
                                 displayColor={deriveDisplayColor(task, meta)}
                                 durationSec={deriveDurationSec(task)}

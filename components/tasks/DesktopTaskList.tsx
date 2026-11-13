@@ -70,6 +70,8 @@ import {
   taskMatchesUserFilter,
 } from "../../lib/taskFilters";
 import { useTaskTimeSpentEditor } from "./useTaskTimeSpentEditor";
+import { useTaskDaySeconds } from "../../hooks/useTaskDaySeconds";
+import { useCompleteWithFeedback } from "../../hooks/useCompleteWithFeedback";
 import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
 import {
   nextOverdueWeeksLoaded,
@@ -134,6 +136,10 @@ interface SortableRowProps {
   groupId: string;
   isTicking: boolean;
   timerStartTime: number | null;
+  /** Seconds logged on this row's day; `undefined` shows the task total. */
+  daySeconds?: number;
+  dayEditable?: boolean;
+  completing?: boolean;
   canDrag: boolean;
   /** Resolved display colour (trackable → list → default grey). */
   displayColor: string;
@@ -152,6 +158,9 @@ function SortableRow({
   groupId,
   isTicking,
   timerStartTime,
+  daySeconds,
+  dayEditable,
+  completing,
   canDrag,
   displayColor,
   durationSec,
@@ -202,6 +211,9 @@ function SortableRow({
           meta={meta}
           isTicking={isTicking}
           timerStartTime={timerStartTime}
+          daySeconds={daySeconds}
+          dayEditable={dayEditable}
+          completing={completing}
           onSelect={onSelect}
           onToggleComplete={onToggleComplete}
           onToggleTimer={onToggleTimer}
@@ -694,6 +706,8 @@ export function DesktopTaskList({
   }, [localGroups, showCompleted, filterUserIds, retainedEarliestDay]);
 
   /* ───── Mutations ───── */
+  const { completingIds, complete: completeWithFeedback } =
+    useCompleteWithFeedback();
   const toggleComplete = useCallback(
     (taskId: Id<"tasks">) => {
       const task = (tasks as any as TaskRowTask[] | undefined)?.find(
@@ -702,6 +716,22 @@ export function DesktopTaskList({
       if (!task) return;
 
       const wasCompleted = !!task.dateCompleted;
+      if (!wasCompleted) {
+        // Tick in place first; the save (which moves the row) follows.
+        completeWithFeedback(taskId, () => {
+          void (async () => {
+            if (timer.isRunning && timer.taskId === taskId) {
+              await timer.stop();
+            }
+            await upsertTask({
+              id: taskId,
+              name: task.name,
+              dateCompleted: todayYYYYMMDD(),
+            });
+          })();
+        });
+        return;
+      }
 
       // Diagnostic timing – remove or guard with a flag once verified.
       // Logs the wall-clock time from click → optimistic patch returning
@@ -736,7 +766,7 @@ export function DesktopTaskList({
         }
       })();
     },
-    [tasks, timer, upsertTask]
+    [tasks, timer, upsertTask, completeWithFeedback]
   );
 
   const handleToggleTimer = useCallback(
@@ -772,6 +802,11 @@ export function DesktopTaskList({
   );
 
   const handleSetTimeSpent = saveTimeSpent;
+
+  // Each row shows the time logged on its own day, not the task total.
+  const taskDaySeconds = useTaskDaySeconds(
+    useMemo(() => displayGroups.map((g) => g.id), [displayGroups]),
+  );
 
   /* ───── DnD ─────
    * Sensors, the DndContext, the DragOverlay, and the custom collision
@@ -1278,6 +1313,9 @@ export function DesktopTaskList({
                                 groupId={group.id}
                                 isTicking={isTicking}
                                 timerStartTime={timer.startTime}
+                                daySeconds={taskDaySeconds(task._id, group.id)}
+                                dayEditable={group.id === clockToday}
+                                completing={completingIds.has(task._id)}
                                 canDrag={group.canDrag}
                                 displayColor={deriveDisplayColor(task)}
                                 durationSec={deriveDurationSec(task)}

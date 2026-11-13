@@ -43,6 +43,12 @@ export interface TimeSpentEditTarget {
   id: Id<"tasks">;
   name: string;
   seconds: number;
+  /**
+   * Set when `seconds` is one day's share of the task (home rows): the
+   * task's full total, so a change to the day moves the total by the
+   * same amount.
+   */
+  totalSeconds?: number;
 }
 
 interface TimeSpentEditorHostHandle {
@@ -75,7 +81,14 @@ const TimeSpentEditorHost = forwardRef<
       taskName={editing.name}
       initialSeconds={editing.seconds}
       onClose={() => setEditing(null)}
-      onSave={(secs) => onSave(editing.id, secs)}
+      onSave={(secs) =>
+        onSave(
+          editing.id,
+          editing.totalSeconds === undefined
+            ? secs
+            : Math.max(0, editing.totalSeconds + secs - editing.seconds),
+        )
+      }
     />
   );
 });

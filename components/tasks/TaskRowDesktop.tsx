@@ -1,3 +1,4 @@
+import { CompleteCheckIcon } from "./CompleteCheckIcon";
 import { FontSize, Radius } from "../../theme/tokens";
 import React, { forwardRef, useCallback, useState } from "react";
 import {
@@ -98,6 +99,15 @@ export interface TaskRowDesktopProps {
    * only THIS row re-renders each second — not the whole list.
    */
   timerStartTime: number | null;
+  /**
+   * Home only: seconds logged on the day this row sits under. When set,
+   * the row shows this instead of the task's running total.
+   */
+  daySeconds?: number;
+  /** With `daySeconds`: false makes the time read-only (not today). */
+  dayEditable?: boolean;
+  /** Just ticked: show the completed look now, before the save lands. */
+  completing?: boolean;
   showDate?: boolean;
   isDragging?: boolean;
   isOverlay?: boolean;
@@ -142,6 +152,9 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
       meta,
       isTicking,
       timerStartTime,
+      daySeconds,
+      dayEditable,
+      completing,
       showDate,
       isDragging,
       isOverlay,
@@ -153,8 +166,13 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
       dragHandleProps,
     } = props;
 
-    const isCompleted = !!task.dateCompleted;
-    const baseSeconds = task.timeSpentInSecondsUnallocated ?? 0;
+    const isCompleted = !!task.dateCompleted || !!completing;
+    const taskTotalSeconds = task.timeSpentInSecondsUnallocated ?? 0;
+    const showsDay = daySeconds !== undefined;
+    const baseSeconds = showsDay ? daySeconds : taskTotalSeconds;
+    // Edits to a day's figure change the total by the same amount. New
+    // time is logged as ending now, so only today's figure can be edited.
+    const canEditTime = !!onSetTimeSpent && (!showsDay || dayEditable !== false);
     // Only the ticking row subscribes to the 1s tick (null pauses it),
     // so the rest of the list is untouched while a timer runs.
     const liveElapsed = useTimerElapsed(isTicking ? timerStartTime : null);
@@ -282,11 +300,7 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
               ]}
               {...(dragSafePressProps ?? {})}
             >
-              <MaterialIcons
-                name={isCompleted ? "check-circle" : "radio-button-unchecked"}
-                size={20}
-                color={isCompleted ? Colors.success : Colors.textTertiary}
-              />
+              <CompleteCheckIcon checked={isCompleted} size={20} />
             </Pressable>
           </StopRowDrag>
 
@@ -364,10 +378,15 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
                   showSeconds={isTicking}
                   /* While the timer is ticking, the value is live-driven —
                      don't let the user edit a moving target. */
-                  readonly={isTicking || !onSetTimeSpent}
+                  readonly={isTicking || !canEditTime}
                   active={isTicking}
                   onDurationChanged={(secs) =>
-                    onSetTimeSpent?.(task._id, secs)
+                    onSetTimeSpent?.(
+                      task._id,
+                      showsDay
+                        ? Math.max(0, taskTotalSeconds + secs - baseSeconds)
+                        : secs,
+                    )
                   }
                 />
               ) : (

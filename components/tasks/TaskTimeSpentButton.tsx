@@ -31,6 +31,10 @@ interface TaskTimeSpentButtonProps {
   taskName: string;
   /** Logged seconds for the row (`timeSpentInSecondsUnallocated ?? 0`). */
   seconds: number;
+  /** Task total, when `seconds` is only one day's share (home rows). */
+  totalSeconds?: number;
+  /** Show the time but don't open the editor (a day other than today). */
+  readOnly?: boolean;
   /** True when the running timer belongs to this task — becomes read-only. */
   isTicking: boolean;
   /** `useTimer().startTime`; only read while `isTicking`. */
@@ -43,18 +47,20 @@ export function TaskTimeSpentButton({
   taskId,
   taskName,
   seconds,
+  totalSeconds,
+  readOnly = false,
   isTicking,
   timerStartTime,
   onEdit,
 }: TaskTimeSpentButtonProps) {
   return (
     <TouchableOpacity
-      disabled={isTicking}
+      disabled={isTicking || readOnly}
       onPress={(e) => {
         // Rows wrap this control in their own touchable (open task
         // detail) — don't let the tap bubble up to it.
         e.stopPropagation?.();
-        onEdit({ id: taskId, name: taskName, seconds });
+        onEdit({ id: taskId, name: taskName, seconds, totalSeconds });
       }}
       hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
       accessibilityLabel={`Edit time spent on ${taskName}`}

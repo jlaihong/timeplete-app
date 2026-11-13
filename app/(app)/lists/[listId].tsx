@@ -32,6 +32,8 @@ import { ListDialog } from "../../../components/lists/ListDialog";
 import { AddTaskSheet } from "../../../components/tasks/AddTaskSheet";
 import { TaskDetailSheet } from "../../../components/tasks/TaskDetailSheet";
 import { TaskTimeSpentButton } from "../../../components/tasks/TaskTimeSpentButton";
+import { CompleteCheckIcon } from "../../../components/tasks/CompleteCheckIcon";
+import { useCompleteWithFeedback } from "../../../hooks/useCompleteWithFeedback";
 import { useTaskTimeSpentEditor } from "../../../components/tasks/useTaskTimeSpentEditor";
 import {
   type TaskRowMeta,
@@ -519,19 +521,27 @@ export default function ListDetailScreen() {
     }));
   }, [filteredSections]);
 
+  const { completingIds, complete: completeWithFeedback } =
+    useCompleteWithFeedback();
   const toggleComplete = useCallback(
     async (taskId: Id<"tasks">, taskName: string, isCompleted: boolean) => {
-      if (!isCompleted && timer.isRunning && timer.taskId === taskId) {
-        timer.stop();
-      }
-      await upsertTask({
-        id: taskId,
-        name: taskName,
-        // `null` clears the field server-side; omitted/`undefined` leaves it unchanged.
-        dateCompleted: isCompleted ? null : todayYYYYMMDD(),
-      });
+      const save = async () => {
+        if (!isCompleted && timer.isRunning && timer.taskId === taskId) {
+          timer.stop();
+        }
+        await upsertTask({
+          id: taskId,
+          name: taskName,
+          // `null` clears the field server-side; omitted/`undefined` leaves it unchanged.
+          dateCompleted: isCompleted ? null : todayYYYYMMDD(),
+        });
+      };
+      // Completing ticks in place first; the save (which hides the row
+      // when completed tasks are hidden) follows a moment later.
+      if (!isCompleted) completeWithFeedback(taskId, () => void save());
+      else await save();
     },
-    [upsertTask, timer],
+    [upsertTask, timer, completeWithFeedback],
   );
 
   const handleToggleTimer = useCallback(
@@ -648,7 +658,8 @@ export default function ListDetailScreen() {
     const { onLongPressDrag, isActive } = opts;
     const isTicking = timer.isRunning && timer.taskId === task._id;
 
-    const isCompleted = !!task.dateCompleted;
+    const isSavedCompleted = !!task.dateCompleted;
+    const isCompleted = isSavedCompleted || completingIds.has(task._id);
     const timeSpent = task.timeSpentInSecondsUnallocated ?? 0;
     const trackable = task.trackableId
       ? trackableMap.get(task.trackableId)
@@ -667,7 +678,7 @@ export default function ListDetailScreen() {
                 long-press before the check paints. */}
             <GesturePressable
               onPress={() => {
-                void toggleComplete(task._id, task.name, isCompleted);
+                void toggleComplete(task._id, task.name, isSavedCompleted);
               }}
               hitSlop={8}
               accessibilityRole="checkbox"
@@ -677,11 +688,7 @@ export default function ListDetailScreen() {
               }
               style={styles.checkBtn}
             >
-              <Ionicons
-                name={isCompleted ? "checkmark-circle" : "ellipse-outline"}
-                size={24}
-                color={isCompleted ? Colors.success : Colors.textTertiary}
-              />
+              <CompleteCheckIcon checked={isCompleted} size={24} />
             </GesturePressable>
             <TouchableOpacity
               style={styles.taskMain}
@@ -1079,6 +1086,7 @@ export default function ListDetailScreen() {
             canDrag={canDragReorder}
             isTicking={(id) => timer.isRunning && timer.taskId === id}
             timerStartTime={timer.startTime}
+            completingIds={completingIds}
             onSelectTask={setSelectedTaskId}
             onToggleComplete={(id) => {
               const task = allTasksInPage.find((t) => t._id === id);
