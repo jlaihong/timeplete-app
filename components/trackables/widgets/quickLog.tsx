@@ -19,6 +19,7 @@ import { formatYYYYMMDDtoDDMMM, todayYYYYMMDD } from "../../../lib/dates";
 import { startTimeEndingNow } from "./dialogs/useDurationDrivenStartTime";
 import { stopTrackableDrag } from "./dragSafe";
 import type { WidgetGoal } from "./types";
+import { useIsDesktop } from "../../../hooks/useIsDesktop";
 
 // ─── Toast (module-level, so any card can raise it) ─────────────────────
 
@@ -214,6 +215,8 @@ export function QuickChip({
   /** A bigger target, for a card's only button. */
   wide?: boolean;
 }) {
+  // Fingers need more than a 28-30px target; the mouse keeps the dense one.
+  const touch = !useIsDesktop();
   return (
     <Pressable
       onPress={onPress}
@@ -223,7 +226,10 @@ export function QuickChip({
       style={(state) => [
         styles.chip,
         compact && styles.chipCompact,
+        touch && styles.chipTouch,
         wide && styles.chipWide,
+        touch && wide && styles.chipWideTouch,
+        touch && compact && styles.chipCompactTouch,
         ((state as { hovered?: boolean }).hovered || state.pressed) &&
           styles.chipHover,
       ]}
@@ -250,6 +256,16 @@ const styles = StyleSheet.create({
   },
   chipCompact: { flex: 1, minWidth: 0, paddingHorizontal: 0, height: 28 },
   chipWide: { minWidth: 96, height: 32 },
+  chipTouch: { height: 38, minWidth: 48 },
+  chipWideTouch: { height: 40, minWidth: 120 },
+  // Five to a row, so the 1-10 rating becomes two rows of real buttons.
+  chipCompactTouch: {
+    height: 40,
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 0,
+    flexBasis: "17%",
+  },
   chipHover: { backgroundColor: Colors.surfaceContainerHighest },
   chipText: {
     fontSize: FontSize.caption,

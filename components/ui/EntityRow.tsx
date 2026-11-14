@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
 import { FontSize, Radius } from "../../theme/tokens";
+import { useIsDesktop } from "../../hooks/useIsDesktop";
 
 export interface EntityRowAction {
   icon: keyof typeof Ionicons.glyphMap;
@@ -36,6 +37,9 @@ export function EntityRow({
   showGrip?: boolean;
   showChevron?: boolean;
 }) {
+  // Phones: a taller row, the note under the name (beside it, the name was
+  // cut to a few letters), and finger-sized actions.
+  const touch = !useIsDesktop();
   return (
     <Pressable
       onPress={onPress}
@@ -43,6 +47,7 @@ export function EntityRow({
       accessibilityLabel={pressLabel}
       style={(state) => [
         styles.row,
+        touch && styles.rowTouch,
         ((state as { hovered?: boolean }).hovered || state.pressed) &&
           styles.rowHover,
       ]}
@@ -56,14 +61,29 @@ export function EntityRow({
         />
       ) : null}
       <View style={[styles.dot, { backgroundColor: colour }]} />
-      <Text style={styles.name} numberOfLines={1}>
-        {name}
-      </Text>
-      {note ? (
-        <Text style={styles.note} numberOfLines={1}>
-          {note}
-        </Text>
-      ) : null}
+      {touch ? (
+        <View style={styles.textStack}>
+          <Text style={[styles.name, styles.nameTouch]} numberOfLines={1}>
+            {name}
+          </Text>
+          {note ? (
+            <Text style={styles.note} numberOfLines={1}>
+              {note}
+            </Text>
+          ) : null}
+        </View>
+      ) : (
+        <>
+          <Text style={styles.name} numberOfLines={1}>
+            {name}
+          </Text>
+          {note ? (
+            <Text style={styles.note} numberOfLines={1}>
+              {note}
+            </Text>
+          ) : null}
+        </>
+      )}
       <View style={styles.spacer} />
       {actions.map((action) => (
         <Pressable
@@ -77,6 +97,7 @@ export function EntityRow({
           hitSlop={6}
           style={(state) => [
             styles.action,
+            touch && styles.actionTouch,
             ((state as { hovered?: boolean }).hovered || state.pressed) &&
               styles.actionHover,
           ]}
@@ -126,6 +147,10 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  rowTouch: { minHeight: 56, gap: 12 },
+  textStack: { flexShrink: 1, minWidth: 0, gap: 1 },
+  nameTouch: { fontSize: FontSize.bodyLarge },
+  actionTouch: { width: 44, height: 44, marginRight: -8 },
   rowHover: { backgroundColor: Colors.surfaceContainerLow },
   grip: { marginRight: -2 },
   dot: { width: 8, height: 8, borderRadius: Radius.pill, flexShrink: 0 },

@@ -163,6 +163,9 @@ export function TrackableList({
       <SkeletonRows
         count={4}
         rowHeight={120}
+        // The Trackables page pads its own shell; padding again here made
+        // the placeholders narrower than the cards that replace them.
+        flush={variant === "trackables-page"}
         accessibilityLabel="Loading trackables"
       />
     );
@@ -230,6 +233,11 @@ export function TrackableList({
             />
           }
         >
+          {/* Phones already show "Trackables" in the navigation header and
+              add from the floating button, so the title, the "Current
+              trackables" heading and the rule are desktop-only. */}
+          {isDesktop ? (
+            <>
           <View style={styles.trackablesPageTitleRow}>
             <Text style={styles.trackablesPageTitle}>{pageTitle}</Text>
             <SectionHeadingAddButton
@@ -243,6 +251,8 @@ export function TrackableList({
           </Text>
           <View style={styles.trackablesPageDivider} />
           <View style={styles.trackablesPageSectionSpacer} />
+            </>
+          ) : null}
 
           {goalDetails.active.length === 0 ? (
             <Text style={styles.trackablesPageEmpty}>No active trackables</Text>
@@ -312,7 +322,19 @@ export function TrackableList({
           )}
 
           <View style={styles.trackablesPageBottomSpacer} />
+          {!isDesktop ? <View style={{ height: 72 }} /> : null}
         </ScrollView>
+
+        {!isDesktop && (
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={openAddTrackable}
+            accessibilityRole="button"
+            accessibilityLabel="Add trackable"
+          >
+            <Ionicons name="add" size={24} color={Colors.onPrimary} />
+          </TouchableOpacity>
+        )}
 
         {localShowAdd && (
           <AddTrackableFlow onClose={() => setLocalShowAdd(false)} />

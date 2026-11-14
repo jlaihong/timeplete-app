@@ -23,6 +23,7 @@ import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import { Ionicons } from "@expo/vector-icons";
+import { CalendarWeekStrip } from "./CalendarWeekStrip";
 import {
   todayYYYYMMDD,
   addDays,
@@ -1161,6 +1162,14 @@ export function CalendarView({
         </TouchableOpacity>
       </View>
 
+      {!isDesktop && (
+        <CalendarWeekStrip
+          selectedDay={selectedDay}
+          today={todayInGridZone}
+          onSelectDay={setSelectedDay}
+        />
+      )}
+
       <ScrollView
         ref={scrollViewRef}
         style={styles.timeline}
@@ -1396,7 +1405,24 @@ export function CalendarView({
       {!isDesktop && onAddEvent && (
         <TouchableOpacity
           style={styles.fab}
-          onPress={() => onAddEvent(selectedDay)}
+          onPress={() => {
+            // Adding to today starts at the next half hour, not at 09:00
+            // regardless of the time; other days keep the dialog's default.
+            if (currentTimeMinutesSinceMidnight == null) {
+              onAddEvent(selectedDay);
+              return;
+            }
+            const start = Math.min(
+              23 * 60,
+              Math.ceil((currentTimeMinutesSinceMidnight + 1) / 30) * 30,
+            );
+            onAddEvent(selectedDay, {
+              startTimeHHMM: `${String(Math.floor(start / 60)).padStart(2, "0")}:${String(start % 60).padStart(2, "0")}`,
+              durationMinutes: 60,
+            });
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Add event"
         >
           <Ionicons name="add" size={24} color={Colors.onPrimary} />
         </TouchableOpacity>

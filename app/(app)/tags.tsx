@@ -58,6 +58,8 @@ export default function TagsScreen() {
       onPress={() => setDialog(tag)}
       pressLabel={`Edit tag ${tag.name}`}
       showGrip={draggable && SORTABLE_ROWS_DRAGGABLE}
+      // The row opens the tag for editing; the chevron says it is tappable.
+      showChevron={!isDesktop}
     />
   );
 

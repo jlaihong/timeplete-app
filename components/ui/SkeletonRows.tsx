@@ -9,6 +9,8 @@ interface SkeletonRowsProps {
   /** Height of each block — roughly the content it stands in for. */
   rowHeight?: number;
   accessibilityLabel?: string;
+  /** No padding of its own, for a parent that already pads. */
+  flush?: boolean;
 }
 
 /**
@@ -20,6 +22,7 @@ export function SkeletonRows({
   count = 5,
   rowHeight = 44,
   accessibilityLabel = "Loading",
+  flush = false,
 }: SkeletonRowsProps) {
   const opacity = useRef(new Animated.Value(0.45)).current;
 
@@ -44,7 +47,7 @@ export function SkeletonRows({
 
   return (
     <View
-      style={styles.container}
+      style={[styles.container, flush && styles.flush]}
       accessibilityRole="progressbar"
       accessibilityLabel={accessibilityLabel}
     >
@@ -60,6 +63,7 @@ export function SkeletonRows({
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, gap: 12 },
+  flush: { padding: 0 },
   row: {
     borderRadius: Radius.lg,
     backgroundColor: Colors.surfaceContainer,

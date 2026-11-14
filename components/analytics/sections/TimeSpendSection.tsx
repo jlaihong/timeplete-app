@@ -1,5 +1,6 @@
 import { FontSize, Radius } from "../../../theme/tokens";
 import React, { useMemo, useCallback } from "react";
+import { SkeletonRows } from "../../ui/SkeletonRows";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { Colors } from "../../../constants/colors";
 import {
@@ -181,7 +182,12 @@ export function TimeSpendSection() {
   return (
     <SectionCard title="Time Spend">
       {dataset.isLoading ? (
-        <Text style={styles.empty}>Loading…</Text>
+        <SkeletonRows
+          flush
+          count={1}
+          rowHeight={320}
+          accessibilityLabel="Loading time spend"
+        />
       ) : isYearly ? (
         maxYearlyBucketSeconds === 0 ? (
           <Text style={styles.empty}>No time recorded in this period.</Text>

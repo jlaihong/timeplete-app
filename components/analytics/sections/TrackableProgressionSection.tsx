@@ -1,5 +1,6 @@
 import { FontSize } from "../../../theme/tokens";
 import React from "react";
+import { SkeletonRows } from "../../ui/SkeletonRows";
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "convex/react";
@@ -92,7 +93,12 @@ export function TrackableProgressionSection() {
   return (
     <SectionCard title="Trackable Progression">
       {!fresh ? (
-        <Text style={styles.empty}>Loading…</Text>
+        <SkeletonRows
+          flush
+          count={3}
+          rowHeight={84}
+          accessibilityLabel="Loading trackable progression"
+        />
       ) : fresh.trackables.length === 0 ? (
         <Text style={styles.empty}>
           No active trackables. Add one from the Trackables tab.

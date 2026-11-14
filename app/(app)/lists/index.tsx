@@ -9,6 +9,7 @@ import { Colors } from "../../../constants/colors";
 import { FontSize, Radius } from "../../../theme/tokens";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { ListDialog } from "../../../components/lists/ListDialog";
+import { HeaderAccountButton } from "../../../components/layout/HeaderAccountButton";
 import { useAuth } from "../../../hooks/useAuth";
 import { useArchiveList } from "../../../hooks/useArchiveList";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
@@ -67,26 +68,38 @@ export default function ListsScreen() {
   const renderRow = (list: ListDoc, draggable: boolean) => {
     const actions: EntityRowAction[] = [];
     // Goal-backed lists are managed from the trackable, not here.
-    if (!list.isGoalList) {
+    const canEdit = !list.isGoalList;
+    const archiveAction: EntityRowAction = {
+      icon: "archive-outline",
+      label: list.archived
+        ? `Unarchive list ${list.name}`
+        : `Archive list ${list.name}`,
+      onPress: () =>
+        confirmArchive({
+          _id: list._id,
+          name: list.name,
+          archived: list.archived,
+        }),
+    };
+    if (isDesktop) {
+      if (canEdit) {
+        actions.push({
+          icon: "pencil-outline",
+          label: `Edit list ${list.name}`,
+          onPress: () => setDialogState(list),
+        });
+      }
+      if (!list.isInbox) actions.push(archiveAction);
+    } else if (canEdit) {
+      // Phones: one "more" button. It opens the list's details, where
+      // rename, colour and archive live, so a stray tap can't archive.
       actions.push({
-        icon: "pencil-outline",
-        label: `Edit list ${list.name}`,
+        icon: "ellipsis-horizontal",
+        label: `List details, ${list.name}`,
         onPress: () => setDialogState(list),
       });
-    }
-    if (!list.isInbox) {
-      actions.push({
-        icon: "archive-outline",
-        label: list.archived
-          ? `Unarchive list ${list.name}`
-          : `Archive list ${list.name}`,
-        onPress: () =>
-          confirmArchive({
-            _id: list._id,
-            name: list.name,
-            archived: list.archived,
-          }),
-      });
+    } else if (!list.isInbox) {
+      actions.push(archiveAction);
     }
     return (
       <EntityRow
@@ -99,7 +112,7 @@ export default function ListsScreen() {
         pressLabel={`Open list ${list.name}`}
         actions={actions}
         showGrip={draggable && SORTABLE_ROWS_DRAGGABLE}
-        showChevron
+        showChevron={isDesktop}
       />
     );
   };
@@ -108,7 +121,13 @@ export default function ListsScreen() {
     <View style={styles.container}>
       {/* Desktop hides the navigator header (it only carried a second menu
           button there) and shows the shared page title instead. */}
-      <Stack.Screen options={{ headerShown: !isDesktop, title: "All Lists" }} />
+      <Stack.Screen
+        options={{
+          headerShown: !isDesktop,
+          title: "Lists",
+          headerRight: () => <HeaderAccountButton />,
+        }}
+      />
       <DesktopPageHeader
         column
         title="Lists"

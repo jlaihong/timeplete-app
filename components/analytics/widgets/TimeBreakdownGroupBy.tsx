@@ -124,7 +124,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainerHigh,
   },
   levelChipText: {
-    flex: 1,
+    // Natural width, shrinking only when the row is full. `flex: 1` gave
+    // the text a zero basis, so on native the chip collapsed to its
+    // minimum and the label read "T…".
     flexShrink: 1,
     fontSize: FontSize.body,
     fontWeight: "600",

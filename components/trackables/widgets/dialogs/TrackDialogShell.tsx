@@ -31,10 +31,11 @@ import {
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Card } from "../../../ui/Card";
 import {
-  DialogOverlay,
   DialogHeader,
   DialogFooter,
   dialogSurfaceStyle,
+  SheetOverlay,
+  usePhoneSheet,
 } from "../../../ui/DialogScaffold";
 import { DialogMaxHeightContext } from "../../../ui/useDialogKeyboardShift";
 import { MentionTextInput } from "../../../mentions/MentionTextInput";
@@ -83,7 +84,7 @@ export function TrackDialogShell({
   const [dateOpen, setDateOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(() => note.trim() !== "");
   return (
-    <DialogOverlay onBackdropPress={onClose} align="center">
+    <SheetOverlay onBackdropPress={onClose}>
       <ShellCard maxWidth={maxWidth}>
         <DialogHeader
           title={title}
@@ -166,7 +167,7 @@ export function TrackDialogShell({
         </KeyboardAwareScrollView>
         <DialogFooter>{actions}</DialogFooter>
       </ShellCard>
-    </DialogOverlay>
+    </SheetOverlay>
   );
 }
 
@@ -191,11 +192,13 @@ function ShellCard({
   children: React.ReactNode;
 }) {
   const keyboardMax = useContext(DialogMaxHeightContext);
+  const sheet = usePhoneSheet();
   return (
     <Card
       style={[
         styles.dialog,
         { maxWidth },
+        sheet.cardStyle,
         keyboardMax != null ? { maxHeight: keyboardMax } : null,
       ]}
     >

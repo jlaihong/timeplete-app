@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Platform,
+  Alert,
 } from "react-native";
 import {
   NestableScrollContainer,
@@ -39,17 +40,12 @@ import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
 import { useTaskMoveMutations } from "../../hooks/useTaskMoveMutations";
 import { SwipeableTaskRow } from "../tasks/SwipeableTaskRow";
-import { TaskFilterModal } from "../tasks/TaskFilterModal";
-import type { TaskFilterMember } from "../../lib/taskFilters";
 
 /** True for a dated group that falls before today (it holds overdue tasks). */
 function isPastDayGroup(day: string, today: string): boolean {
   return /^\d/.test(day) && day < today;
 }
 
-const NO_FILTER_USERS: string[] = [];
-const NO_FILTER_MEMBERS: TaskFilterMember[] = [];
-const noopToggleUserFilter = () => {};
 import { TaskTimeSpentButton } from "../tasks/TaskTimeSpentButton";
 import { useTaskDaySeconds } from "../../hooks/useTaskDaySeconds";
 import { useCompleteWithFeedback } from "../../hooks/useCompleteWithFeedback";
@@ -181,7 +177,6 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   const timer = useTimer();
 
   const [showCompleted, setShowCompleted] = useState(true);
-  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set()
@@ -338,6 +333,77 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       nextOverdueWeeksLoaded(today, weeks, olderOverdue.newestHiddenDay),
     );
   }, [today, olderOverdue.newestHiddenDay]);
+
+  /**
+   * Move every overdue task to today in one go. Recurring instances keep
+   * their occurrence date (as when a timer starts on one), so they stay.
+   */
+  const handleMoveOverdueToToday = useCallback(() => {
+    const overdue = (tasks ?? []).filter(
+      (t) =>
+        !t.dateCompleted &&
+        !!t.taskDay &&
+        t.taskDay < today &&
+        !t.isRecurringInstance,
+    );
+    if (overdue.length === 0) return;
+    const run = () => {
+      let toIndex = maxOrderPlusOne(
+        (tasks ?? [])
+          .filter((t) => t.taskDay === today)
+          .map((t) => t.taskDayOrderIndex),
+      );
+      for (const task of overdue) {
+        void moveBetweenDays({
+          taskId: task._id,
+          fromDay: task.taskDay!,
+          toDay: today,
+          insertAboveTaskId: null,
+          toIndex: toIndex++,
+        });
+      }
+    };
+    const message = `Move ${overdue.length} overdue ${
+      overdue.length === 1 ? "task" : "tasks"
+    } to today?`;
+    if (Platform.OS === "web") {
+      if (window.confirm(message)) run();
+    } else {
+      Alert.alert("Move to today", message, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Move", onPress: run },
+      ]);
+    }
+  }, [tasks, today, moveBetweenDays]);
+
+  /** Overdue tasks from before the loaded window: say so, and offer a fix. */
+  const renderOlderOverdueBanner = useCallback(
+    (hiddenCount: number) => (
+      <View style={styles.overdueBanner}>
+        <Ionicons name="alert-circle-outline" size={18} color={Colors.error} />
+        <Text style={styles.overdueBannerText} numberOfLines={1}>
+          {hiddenCount} older overdue
+        </Text>
+        <TouchableOpacity
+          onPress={handleLoadPreviousOverdueWeek}
+          accessibilityRole="button"
+          accessibilityLabel="Show older overdue tasks"
+          style={styles.overdueBannerBtn}
+        >
+          <Text style={styles.overdueBannerBtnText}>Show</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={handleMoveOverdueToToday}
+          accessibilityRole="button"
+          accessibilityLabel="Move all overdue tasks to today"
+          style={styles.overdueBannerBtn}
+        >
+          <Text style={styles.overdueBannerBtnText}>Move to today</Text>
+        </TouchableOpacity>
+      </View>
+    ),
+    [handleLoadPreviousOverdueWeek, handleMoveOverdueToToday],
+  );
 
   const { completingIds, complete: completeWithFeedback } =
     useCompleteWithFeedback();
@@ -832,6 +898,10 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
            * swipeable's horizontal panel. */}
           <SwipeableTaskRow
             enabled={!isActive}
+            completed={isSavedCompleted}
+            onToggleComplete={() =>
+              toggleComplete(task._id, task.name, isSavedCompleted)
+            }
             onDelete={() =>
               deleteTask({
                 taskId: task._id,
@@ -1000,7 +1070,9 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                   {item.completedCount}/{item.totalCount}
                 </Text>
               </Text>
-              {!item.isPastDay && onAddTask && (
+              {!item.isPastDay &&
+                onAddTask &&
+                (isDesktop || item.day !== today) && (
                 <SectionHeadingAddButton
                   onPress={() =>
                     onAddTask(
@@ -1016,17 +1088,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         );
       }
       if (item.kind === "load-previous-overdue") {
-        return (
-          <TouchableOpacity
-            style={styles.loadPreviousWeek}
-            onPress={handleLoadPreviousOverdueWeek}
-            accessibilityRole="button"
-          >
-            <Text style={styles.loadMoreText}>
-              Load previous week ({item.hiddenCount} older)
-            </Text>
-          </TouchableOpacity>
-        );
+        return renderOlderOverdueBanner(item.hiddenCount);
       }
       if (item.kind === "empty-placeholder") {
         return (
@@ -1051,7 +1113,9 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
       renderTaskCard,
       toggleGroupExpansion,
       onAddTask,
-      handleLoadPreviousOverdueWeek,
+      renderOlderOverdueBanner,
+      isDesktop,
+      today,
     ],
   );
 
@@ -1081,33 +1145,6 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
           )}
         </View>
       )}
-
-      {/* "Show completed" is rarely changed, so it lives behind a quiet
-          filter icon instead of a permanent bar above the list. */}
-      <View style={styles.filterBar}>
-        <TouchableOpacity
-          onPress={() => setFilterMenuOpen(true)}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="Task filters"
-        >
-          <Ionicons
-            name="options-outline"
-            size={20}
-            color={showCompleted ? Colors.textTertiary : Colors.primary}
-          />
-        </TouchableOpacity>
-      </View>
-      <TaskFilterModal
-        visible={filterMenuOpen}
-        onClose={() => setFilterMenuOpen(false)}
-        showCompleted={showCompleted}
-        onPersistShowCompleted={setShowCompleted}
-        filterUserIds={NO_FILTER_USERS}
-        onToggleUserFilter={noopToggleUserFilter}
-        assignableMembers={NO_FILTER_MEMBERS}
-        showCollaboratorFilter={false}
-      />
 
       {groupedTasks.length === 0 ? (
         <EmptyState
@@ -1171,17 +1208,9 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
               renderItem={renderFlatRow}
             />
           )}
-          {isWeb && olderOverdue.hiddenCount > 0 && (
-            <TouchableOpacity
-              style={styles.loadPreviousWeek}
-              onPress={handleLoadPreviousOverdueWeek}
-              accessibilityRole="button"
-            >
-              <Text style={styles.loadMoreText}>
-                Load previous week ({olderOverdue.hiddenCount} older)
-              </Text>
-            </TouchableOpacity>
-          )}
+          {isWeb &&
+            olderOverdue.hiddenCount > 0 &&
+            renderOlderOverdueBanner(olderOverdue.hiddenCount)}
           {isWeb && groupedTasks.map((group) => {
             const isValidDropDay =
               !group.isPastDay && group.day !== "unscheduled";
@@ -1230,7 +1259,9 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                       {group.completedCount}/{group.totalCount}
                     </Text>
                   </Text>
-                  {!group.isPastDay && onAddTask && (
+                  {!group.isPastDay &&
+                    onAddTask &&
+                    (isDesktop || group.day !== today) && (
                     <SectionHeadingAddButton
                       onPress={() =>
                         onAddTask(
@@ -1326,12 +1357,38 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
             );
           })}
 
-          <TouchableOpacity
-            style={styles.loadMore}
-            onPress={handleLoadMore}
-          >
-            <Text style={styles.loadMoreText}>Load More</Text>
-          </TouchableOpacity>
+          <View style={styles.footerLinks}>
+            <TouchableOpacity
+              style={styles.footerLink}
+              onPress={handleLoadMore}
+              accessibilityRole="button"
+            >
+              <Ionicons
+                name="chevron-down"
+                size={14}
+                color={Colors.textSecondary}
+              />
+              <Text style={styles.loadMoreText}>
+                Show next {LOAD_MORE_DAYS} days
+              </Text>
+            </TouchableOpacity>
+            {/* Rarely changed, so it sits quietly at the foot of the list
+                rather than behind a filter sheet with one switch in it. */}
+            <TouchableOpacity
+              style={styles.footerLink}
+              onPress={() => setShowCompleted((v) => !v)}
+              accessibilityRole="button"
+            >
+              <Ionicons
+                name={showCompleted ? "eye-off-outline" : "eye-outline"}
+                size={14}
+                color={Colors.textSecondary}
+              />
+              <Text style={styles.loadMoreText}>
+                {showCompleted ? "Hide completed" : "Show completed"}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </OuterScroll>
       )}
 
@@ -1398,7 +1455,46 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
   overdueLabel: { color: Colors.error },
-  loadPreviousWeek: { alignItems: "center", paddingVertical: 8 },
+  overdueBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    minHeight: 44,
+    paddingLeft: 12,
+    paddingRight: 4,
+    marginBottom: 12,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceContainerLow,
+  },
+  overdueBannerText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: FontSize.body,
+    color: Colors.error,
+  },
+  overdueBannerBtn: {
+    minHeight: 44,
+    paddingHorizontal: 8,
+    justifyContent: "center",
+  },
+  overdueBannerBtnText: {
+    fontSize: FontSize.body,
+    fontWeight: "600",
+    color: Colors.primary,
+  },
+  footerLinks: {
+    flexDirection: "row",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    columnGap: 20,
+    paddingVertical: 8,
+  },
+  footerLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minHeight: 44,
+  },
   taskCount: {
     fontWeight: "400",
     color: Colors.textTertiary,
@@ -1537,7 +1633,7 @@ const styles = StyleSheet.create({
   },
   loadMoreText: {
     color: Colors.textSecondary,
-    fontSize: FontSize.caption,
+    fontSize: FontSize.body,
   },
   fab: {
     position: "absolute",

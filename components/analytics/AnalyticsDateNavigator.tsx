@@ -105,16 +105,21 @@ export function AnalyticsDateNavigator({
   }
 
   if (hasWebPicker) {
+    // Phone-width web: one row. The label is the date; an invisible date
+    // input lies over it, so tapping the label opens the browser's picker
+    // (the old layout stacked the label above a raw "2026-11-14" field).
     return (
-      <View style={styles.outer}>
-        <TouchableOpacity onPress={goToday} style={styles.labelTap}>
+      <View style={styles.row}>
+        {prevBtn}
+        <View style={styles.labelPicker}>
           <Text style={styles.middleLabel}>{middleLabel}</Text>
-        </TouchableOpacity>
-        <View style={styles.pickerRow}>
-          {prevBtn}
-          <DateInputWeb value={selectedDate} onChange={setSelectedDate} />
-          {nextBtn}
+          <DateInputWeb
+            value={selectedDate}
+            onChange={setSelectedDate}
+            overlay
+          />
         </View>
+        {nextBtn}
       </View>
     );
   }
@@ -164,10 +169,42 @@ function NavChevron({
 function DateInputWeb({
   value,
   onChange,
+  overlay = false,
 }: {
   value: string;
   onChange: (yyyymmdd: string) => void;
+  /** Invisible, stretched over its parent: the parent's text is the label. */
+  overlay?: boolean;
 }) {
+  if (overlay) {
+    return (
+      <input
+        type="date"
+        aria-label="Pick a date"
+        value={yyyymmddToIsoDate(value)}
+        onChange={(e) => {
+          const v = (e.target as HTMLInputElement).value;
+          if (v) onChange(isoDateToYyyymmdd(v));
+        }}
+        onClick={(e) => {
+          try {
+            (e.target as HTMLInputElement).showPicker?.();
+          } catch {
+            /* unsupported: the input's own behaviour applies */
+          }
+        }}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          opacity: 0,
+          cursor: "pointer",
+          colorScheme: "dark",
+        }}
+      />
+    );
+  }
   return (
     <input
       type="date"
@@ -246,6 +283,15 @@ const styles = StyleSheet.create({
       } as Record<string, unknown>,
       default: {},
     }),
+  },
+  labelPicker: {
+    position: "relative",
+    minHeight: 36,
+    minWidth: 150,
+    paddingHorizontal: 12,
+    justifyContent: "center",
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surfaceContainer,
   },
   labelTap: {
     alignSelf: "stretch",

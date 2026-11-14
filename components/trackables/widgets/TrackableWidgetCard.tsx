@@ -93,17 +93,19 @@ export function TrackableWidgetCard({
           onPointerDown={stopTrackableDrag as never}
           accessibilityRole="button"
           accessibilityLabel={`Log ${goal.name} with a date or note`}
-          hitSlop={6}
+          hitSlop={8}
           style={(state) => [
             styles.detailsBtn,
             ((state as { hovered?: boolean }).hovered || state.pressed) &&
               styles.detailsBtnHover,
           ]}
         >
+          {/* A "write an entry" glyph: this opens the log form, not a menu,
+              which is what the old "…" suggested. */}
           <Ionicons
-            name="ellipsis-horizontal"
-            size={16}
-            color={Colors.textTertiary}
+            name="create-outline"
+            size={18}
+            color={Colors.textSecondary}
           />
         </Pressable>
       ) : null}
@@ -148,10 +150,10 @@ const styles = StyleSheet.create({
   },
   header: { flex: 1, minWidth: 0, gap: 2 },
   detailsBtn: {
-    width: 28,
-    height: 28,
-    marginTop: -4,
-    marginRight: -6,
+    width: 36,
+    height: 36,
+    marginTop: -8,
+    marginRight: -8,
     borderRadius: Radius.pill,
     alignItems: "center",
     justifyContent: "center",

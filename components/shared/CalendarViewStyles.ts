@@ -48,7 +48,7 @@ export const calendarViewStyles = StyleSheet.create({
   },
   summaryText: { fontSize: FontSize.caption, color: Colors.textTertiary },
   dayNavButton: {
-    padding: 6,
+    padding: 10,
     borderRadius: Radius.pill,
     ...Platform.select({
       web: { cursor: "pointer" } as any,

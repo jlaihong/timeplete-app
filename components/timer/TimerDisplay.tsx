@@ -1,11 +1,19 @@
 import { FontSize, Radius } from "../../theme/tokens";
-import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Pressable,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "../../constants/colors";
 import { useTimer } from "../../hooks/useTimer";
 import { LiveElapsedText } from "./LiveElapsedText";
+import { TaskDetailSheet } from "../tasks/TaskDetailSheet";
+import type { Id } from "../../convex/_generated/dataModel";
 
 function formatClock(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
@@ -25,31 +33,60 @@ export function TimerDisplay() {
   // (insets.top is 0 on web, so this is a no-op there.)
   const insets = useSafeAreaInsets();
 
-  if (!timer.isRunning) return null;
+  /** Task whose details were opened by tapping the bar. */
+  const [openTaskId, setOpenTaskId] = useState<Id<"tasks"> | null>(null);
+
+  const sheet = openTaskId ? (
+    <TaskDetailSheet taskId={openTaskId} onClose={() => setOpenTaskId(null)} />
+  ) : null;
+
+  if (!timer.isRunning) return sheet;
+
+  const taskId = timer.taskId as Id<"tasks"> | null;
 
   return (
-    <View style={[styles.container, { paddingTop: 8 + insets.top }]}>
-      <View style={styles.indicator} />
-      <Ionicons name="timer" size={18} color={Colors.primary} />
-      {/* Task / trackable name so it's clear what is being tracked.
-          Truncates so the elapsed time and stop button never get pushed
-          off-screen by a long name. */}
-      <Text style={styles.title} numberOfLines={1}>
-        {timer.displayTitle ?? ""}
-      </Text>
-      {/* Leaf component owns the 1s tick — this bar renders once. */}
-      <LiveElapsedText
-        startTime={timer.startTime}
-        format={formatClock}
-        style={styles.time}
-      />
-      <TouchableOpacity
-        style={styles.stopButton}
-        onPress={() => timer.stop()}
-      >
-        <Ionicons name="stop" size={14} color={Colors.onPrimary} />
-      </TouchableOpacity>
-    </View>
+    <>
+      <View style={[styles.container, { paddingTop: 6 + insets.top }]}>
+        {/* The bar is the way back to what is being timed: tapping it
+            opens the running task. (A trackable timer has no task.) */}
+        <Pressable
+          style={styles.main}
+          disabled={!taskId}
+          onPress={() => taskId && setOpenTaskId(taskId)}
+          accessibilityRole={taskId ? "button" : undefined}
+          accessibilityLabel={
+            taskId
+              ? `Timer running on ${timer.displayTitle ?? "task"}. Open task`
+              : undefined
+          }
+        >
+          <View style={styles.indicator} />
+          <Ionicons name="timer" size={18} color={Colors.primary} />
+          {/* Task / trackable name so it's clear what is being tracked.
+              Truncates so the elapsed time and stop button never get
+              pushed off-screen by a long name. */}
+          <Text style={styles.title} numberOfLines={1}>
+            {timer.displayTitle ?? ""}
+          </Text>
+          {/* Leaf component owns the 1s tick — this bar renders once. */}
+          <LiveElapsedText
+            startTime={timer.startTime}
+            format={formatClock}
+            style={styles.time}
+          />
+        </Pressable>
+        <TouchableOpacity
+          style={styles.stopButton}
+          onPress={() => timer.stop()}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Stop timer"
+        >
+          <Ionicons name="stop" size={16} color={Colors.onPrimary} />
+        </TouchableOpacity>
+      </View>
+      {sheet}
+    </>
   );
 }
 
@@ -58,8 +95,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: Colors.accentWash,
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 16,
+    gap: 8,
+  },
+  main: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   indicator: {
@@ -83,8 +128,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   stopButton: {
-    width: 28,
-    height: 28,
+    width: 36,
+    height: 36,
     borderRadius: Radius.pill,
     backgroundColor: Colors.primary,
     alignItems: "center",

@@ -45,7 +45,14 @@ export default function GoalsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.shell, { maxWidth: contentMaxWidth }]}>
+      <View
+        style={[
+          styles.shell,
+          { maxWidth: contentMaxWidth },
+          // A phone can't spare 24px a side; match the other tabs' 16.
+          !isDesktop && styles.shellPhone,
+        ]}
+      >
         {!heavyReady ? (
           <View
             style={styles.pending}
@@ -91,6 +98,7 @@ const styles = StyleSheet.create({
     padding: PAGE_PADDING,
     minHeight: 0,
   },
+  shellPhone: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 0 },
   pending: {
     flex: 1,
     minHeight: 200,

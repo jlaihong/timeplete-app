@@ -35,6 +35,7 @@ import {
   SIDEBAR_WIDTH,
   useDesktopAppChrome,
 } from "../../components/layout/DesktopAppChrome";
+import { MobileTabBar } from "../../components/layout/MobileTabBar";
 import { NavPathTrace } from "../../components/debug/NavPathTrace";
 import { NavTreeProfiler } from "../../components/debug/NavTreeProfiler";
 import { flushExpoRouterNavigationQueue } from "../../lib/flushExpoRouterNavigationQueue";
@@ -644,7 +645,9 @@ function AppDrawer({ isDesktop }: { isDesktop: boolean }) {
       screenOptions={{
         headerShown: false,
         drawerType: isDesktop ? "permanent" : "slide",
-        swipeEnabled: !isDesktop,
+        // Phones navigate with the bottom tab bar; the drawer is the
+        // desktop sidebar only and never opens on a phone.
+        swipeEnabled: false,
         overlayColor: "transparent",
         drawerStyle: {
           backgroundColor: Colors.sidenav,
@@ -660,7 +663,7 @@ function AppDrawer({ isDesktop }: { isDesktop: boolean }) {
       <Drawer.Screen name="lists" options={{ title: "Lists" }} />
       <Drawer.Screen name="shared" options={{ title: "Shared" }} />
       <Drawer.Screen name="settings" options={{ title: "Settings" }} />
-      <Drawer.Screen name="agent" options={{ title: "Settings" }} />
+      <Drawer.Screen name="agent" options={{ title: "Agent access" }} />
       <Drawer.Screen
         name="edit-trackable"
         options={{ title: "Edit Trackable" }}
@@ -692,9 +695,15 @@ export default function AppLayout() {
     profile != null ? {} : "skip",
   );
   const timerBarVisible = !!timerRow;
+  // The phone's tab bar sits below the navigators and pads itself by the
+  // bottom inset, so screens above it must not add that inset again.
   const insetsBelowTimerBar = useMemo(
-    () => (timerBarVisible ? { ...insets, top: 0 } : insets),
-    [timerBarVisible, insets],
+    () => ({
+      ...insets,
+      top: timerBarVisible ? 0 : insets.top,
+      bottom: isDesktop ? insets.bottom : 0,
+    }),
+    [timerBarVisible, insets, isDesktop],
   );
 
   // Auth guard: without redirects below, screens inside (app) render after
@@ -744,6 +753,7 @@ export default function AppLayout() {
         </View>
       </DesktopAppChromeProvider>
       </SafeAreaInsetsContext.Provider>
+      {!isDesktop && <MobileTabBar />}
       {/* Durable mutation outbox replay after auth (renders nothing). */}
       {profile != null && isApproved ? <OutboxReplayHost /> : null}
       {profile != null && isApproved ? <SiriAddToListHost /> : null}

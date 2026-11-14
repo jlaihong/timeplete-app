@@ -8,10 +8,11 @@ import { Id } from "../../convex/_generated/dataModel";
 import { ListSharePanel } from "./ListSharePanel";
 import { TrackableSharePanel } from "./TrackableSharePanel";
 import {
-  DialogOverlay,
   DialogHeader,
   DialogFooter,
   dialogSurfaceStyle,
+  SheetOverlay,
+  usePhoneSheet,
 } from "../ui/DialogScaffold";
 import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 
@@ -26,7 +27,7 @@ export function ShareDialog({ type, entityId, onClose }: ShareDialogProps) {
     // `DialogOverlay` supplies the backdrop, ESC-to-close (web) and — on
     // native — the keyboard shift that keeps the card (with its email
     // input and Close button) above the soft keyboard.
-    <DialogOverlay onBackdropPress={onClose} align="center">
+    <SheetOverlay onBackdropPress={onClose}>
       <ShareDialogCard>
         <DialogHeader
           title={type === "list" ? "Share list" : "Share trackable"}
@@ -54,7 +55,7 @@ export function ShareDialog({ type, entityId, onClose }: ShareDialogProps) {
           />
         </DialogFooter>
       </ShareDialogCard>
-    </DialogOverlay>
+    </SheetOverlay>
   );
 }
 
@@ -64,10 +65,12 @@ export function ShareDialog({ type, entityId, onClose }: ShareDialogProps) {
  */
 function ShareDialogCard({ children }: { children: React.ReactNode }) {
   const keyboardMax = useContext(DialogMaxHeightContext);
+  const sheet = usePhoneSheet();
   return (
     <Card
       style={[
         styles.dialog,
+        sheet.cardStyle,
         keyboardMax != null ? { maxHeight: keyboardMax } : null,
       ]}
     >

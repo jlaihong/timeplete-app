@@ -196,8 +196,13 @@ export function TimeBreakdownSunburst({
 
   if (isLoading) {
     return (
-      <View style={styles.wrap}>
-        <Text style={styles.muted}>Loading chart…</Text>
+      // Same footprint as the chart, so the page doesn't jump when it lands.
+      <View
+        style={[styles.wrap, { minHeight: CHART }]}
+        accessibilityRole="progressbar"
+        accessibilityLabel="Loading chart"
+      >
+        <View style={styles.loadingRing} />
       </View>
     );
   }
@@ -360,7 +365,16 @@ export function TimeBreakdownSunburst({
 
 const CENTER_W = 112;
 
+
 const styles = StyleSheet.create({
+  loadingRing: {
+    width: CHART - 12,
+    height: CHART - 12,
+    borderRadius: 999,
+    borderWidth: 36,
+    borderColor: Colors.surfaceContainer,
+    alignSelf: "center",
+  },
   wrap: {
     alignItems: "center",
     marginBottom: 8,

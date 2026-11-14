@@ -4,35 +4,24 @@ import { Ionicons } from "@expo/vector-icons";
 import { Colors, stackHeaderChromeOptions } from "../../../constants/colors";
 import { Platform } from "react-native";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
-import { DrawerMenuButton } from "../../../components/layout/DrawerMenuButton";
+import { HeaderAccountButton } from "../../../components/layout/HeaderAccountButton";
 
 export default function TabsLayout() {
   const isDesktop = useIsDesktop();
 
-  const headerLeft = () => <DrawerMenuButton />;
+  const headerRight = () => <HeaderAccountButton />;
 
   return (
     <Tabs
+      // The phone's tab bar is drawn by the app layout (`MobileTabBar`) so
+      // it also shows on screens outside this group; desktop has a sidebar.
+      tabBar={() => null}
       screenOptions={() => ({
         tabBarActiveTintColor: Colors.tab.active,
         tabBarInactiveTintColor: Colors.tab.inactive,
-        tabBarStyle: isDesktop
-          ? { display: "none" }
-          : {
-              backgroundColor: Colors.surfaceContainer,
-              borderTopColor: Colors.outlineVariant,
-              height: Platform.OS === "ios" ? 88 : 64,
-              paddingBottom: Platform.OS === "ios" ? 28 : 8,
-              paddingTop: 8,
-            },
         headerShown: !isDesktop,
         ...stackHeaderChromeOptions,
-        // `DrawerMenuButton` is symmetric on iOS (so it centers inside the
-        // native-header capsule on Stack screens); this JS tab header draws
-        // no capsule, so restore the left inset at the container level.
-        headerLeftContainerStyle:
-          Platform.OS === "ios" ? { paddingLeft: 8 } : undefined,
-        headerLeft,
+        headerRight,
       })}
     >
       <Tabs.Screen
@@ -75,9 +64,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="reviews"
         options={{
-          // Hidden from the tab bar (reached via the drawer), but still
-          // needs a title — the header falls back to the lowercase route
-          // name ("reviews") without one.
+          // Shares the Insights tab with Analytics (see `InsightsSwitch`).
           title: "Reviews",
           href: null,
         }}

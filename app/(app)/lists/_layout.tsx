@@ -7,11 +7,15 @@ export default function ListsLayout() {
   const isDesktop = useIsDesktop();
   return (
     <Stack
-      screenOptions={{
+      screenOptions={({ route }) => ({
         ...stackHeaderChromeOptions,
         headerShown: !isDesktop,
-        headerLeft: () => <DrawerMenuButton />,
-      }}
+        // The index is a tab root with nothing to go back to. It must not
+        // define `headerLeft` at all: iOS draws an empty glass capsule for
+        // a header item that renders nothing.
+        headerLeft:
+          route.name === "index" ? undefined : () => <DrawerMenuButton />,
+      })}
     />
   );
 }

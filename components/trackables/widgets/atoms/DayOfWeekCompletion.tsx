@@ -55,9 +55,9 @@ export function DayOfWeekCompletion({
             ]}
             onPress={() => onDayPress(d.dayYYYYMMDD)}
             onPointerDown={stopTrackableDrag}
-            accessibilityLabel={`${getDayOfWeekLetter(d.dayYYYYMMDD)} ${
-              isComplete ? "completed" : "not completed"
-            }`}
+            accessibilityLabel={`${getDayOfWeekLetter(d.dayYYYYMMDD)}${
+              isToday ? ", today," : ""
+            } ${isComplete ? "completed" : "not completed"}`}
           >
             <Text
               style={[
@@ -67,6 +67,15 @@ export function DayOfWeekCompletion({
             >
               {getDayOfWeekLetter(d.dayYYYYMMDD)}
             </Text>
+            {/* Marks today, so the outlined day explains itself. */}
+            {isToday ? (
+              <View
+                style={[
+                  styles.todayDot,
+                  isComplete && styles.todayDotComplete,
+                ]}
+              />
+            ) : null}
           </TouchableOpacity>
         );
       })}
@@ -91,7 +100,7 @@ const styles = StyleSheet.create({
   },
   segment: {
     flex: 1,
-    minHeight: 32,
+    minHeight: 38,
     borderRadius: Radius.pill,
     alignItems: "center",
     justifyContent: "center",
@@ -102,6 +111,15 @@ const styles = StyleSheet.create({
   segmentToday: {
     borderColor: Colors.primary,
   },
+  todayDot: {
+    position: "absolute",
+    bottom: 4,
+    width: 4,
+    height: 4,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.primary,
+  },
+  todayDotComplete: { backgroundColor: Colors.onPrimary },
   segmentLabel: {
     fontSize: FontSize.caption,
     fontWeight: "700",

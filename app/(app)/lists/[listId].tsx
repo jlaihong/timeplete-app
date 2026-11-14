@@ -405,7 +405,9 @@ export default function ListDetailScreen() {
       return {
         sectionKey,
         sectionId: block.section._id,
-        title: block.section.name,
+        // Older lists have an unnamed default section; a bare "3/12"
+        // heading reads as broken, so give it a plain name.
+        title: block.section.name?.trim() || "Tasks",
         isDefault: block.section.isDefaultSection,
         totalTasks: block.totalTasks,
         loadedTasks: block.tasks.length,
@@ -711,6 +713,9 @@ export default function ListDetailScreen() {
                     e.stopPropagation?.();
                     handleToggleTimer(task._id);
                   }}
+                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={isTicking ? "Pause timer" : "Start timer"}
                 >
                   <Ionicons
                     name={isTicking ? "pause" : "play-outline"}
@@ -722,14 +727,16 @@ export default function ListDetailScreen() {
               {/* Tap-to-edit time spent. The same control as the home
                   screen's TaskList. Read-only while the timer drives the
                   value. */}
-              <TaskTimeSpentButton
-                taskId={task._id}
-                taskName={plainMentions(task.name)}
-                seconds={timeSpent}
-                isTicking={isTicking}
-                timerStartTime={timer.startTime}
-                onEdit={openTimeSpentEditor}
-              />
+              {(timeSpent > 0 || isTicking) && (
+                <TaskTimeSpentButton
+                  taskId={task._id}
+                  taskName={plainMentions(task.name)}
+                  seconds={timeSpent}
+                  isTicking={isTicking}
+                  timerStartTime={timer.startTime}
+                  onEdit={openTimeSpentEditor}
+                />
+              )}
             </View>
             </TouchableOpacity>
           </View>
@@ -962,10 +969,46 @@ export default function ListDetailScreen() {
       <Stack.Screen
         options={{
           title: listTitle,
-          headerStyle: { backgroundColor: Colors.surface },
+          // Phones: the navigation header already shows the list name, so
+          // its actions live there instead of in a second title row.
+          headerRight: isDesktop
+            ? undefined
+            : () => (
+                <View style={styles.headerActions}>
+                  {showCollaboratorFilter ? (
+                    <TouchableOpacity
+                      onPress={() => setFilterMenuOpen(true)}
+                      style={styles.headerActionBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Filters"
+                    >
+                      <MaterialIcons
+                        name="filter-list"
+                        size={24}
+                        color={
+                          isFilterActive ? Colors.primary : Colors.textSecondary
+                        }
+                      />
+                    </TouchableOpacity>
+                  ) : null}
+                  <TouchableOpacity
+                    onPress={() => setShowEditDialog(true)}
+                    style={styles.headerActionBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel={`List details, ${listTitle}`}
+                  >
+                    <Ionicons
+                      name="ellipsis-horizontal"
+                      size={22}
+                      color={Colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                </View>
+              ),
         }}
       />
 
+      {isDesktop ? (
       <View
         style={[styles.toolbarOuter, isDesktop && styles.toolbarOuterDesktop]}
       >
@@ -1016,6 +1059,7 @@ export default function ListDetailScreen() {
           ) : null}
         </View>
       </View>
+      ) : null}
 
       <TaskFilterModal
         visible={filterMenuOpen}
@@ -1233,6 +1277,13 @@ export default function ListDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: "row", alignItems: "center" },
+  headerActionBtn: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   container: { flex: 1, backgroundColor: Colors.background },
   loading: {
     flex: 1,

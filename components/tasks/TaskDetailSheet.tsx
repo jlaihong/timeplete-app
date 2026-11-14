@@ -56,7 +56,13 @@ import { useAuth } from "../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
 import { useTaskDeleteMutation } from "../../hooks/useTaskDeleteMutation";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
-import { formatSecondsAsHM, formatDisplayDate, todayYYYYMMDD } from "../../lib/dates";
+import {
+  addDays,
+  formatSecondsAsHM,
+  formatDisplayDate,
+  todayYYYYMMDD,
+} from "../../lib/dates";
+import { ChoiceChips } from "../ui/ChoiceChips";
 import {
   timeWindowsToTrackerHistoryRows,
   type TrackerDetailsHistoryRow,
@@ -670,6 +676,25 @@ export function TaskDetailSheet({
     return `${m}:${String(s).padStart(2, "0")}`;
   };
 
+  const isTimerOnThisTask = timer.isRunning && timer.taskId === taskId;
+  const handleToggleTimer = () => {
+    if (isTimerOnThisTask) {
+      timer.stop();
+      return;
+    }
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    timer.startForTask(taskId, tz);
+  };
+  const handleToggleComplete = () => {
+    if (!task.dateCompleted && isTimerOnThisTask) timer.stop();
+    void upsertTask({
+      id: taskId,
+      name: task.name,
+      // `null` clears the field server-side.
+      dateCompleted: task.dateCompleted ? null : todayYYYYMMDD(),
+    });
+  };
+
   const dialogWidth = isDesktop
     ? Math.min(640, windowWidth * 0.5)
     : windowWidth;
@@ -718,6 +743,19 @@ export function TaskDetailSheet({
           }
         />
       </View>
+      {/* The common answers in one tap, without opening the picker. */}
+      <ChoiceChips
+        chips={[
+          { value: todayYYYYMMDD(), label: "Today" },
+          { value: addDays(todayYYYYMMDD(), 1), label: "Tomorrow" },
+          { value: addDays(todayYYYYMMDD(), 7), label: "Next week" },
+          { value: "", label: "No date" },
+        ]}
+        value={form.taskDay}
+        onChange={(yyyymmdd) =>
+          setForm((f) => (f ? { ...f, taskDay: yyyymmdd } : f))
+        }
+      />
 
       {/* Where the task lives. */}
       <ListPicker
@@ -918,6 +956,54 @@ export function TaskDetailSheet({
               </View>
             </View>
           )}
+          {/* The two things people open a task to do. They act at once,
+              unlike the form fields below, which wait for Save. */}
+          <View style={styles.quickActions}>
+            <TouchableOpacity
+              style={[
+                styles.quickAction,
+                !!task.dateCompleted && styles.quickActionOn,
+              ]}
+              onPress={handleToggleComplete}
+              accessibilityRole="button"
+              accessibilityLabel={
+                task.dateCompleted ? "Mark incomplete" : "Mark complete"
+              }
+            >
+              <Ionicons
+                name={
+                  task.dateCompleted ? "checkmark-circle" : "checkmark-circle-outline"
+                }
+                size={18}
+                color={task.dateCompleted ? Colors.success : Colors.text}
+              />
+              <Text style={styles.quickActionText}>
+                {task.dateCompleted ? "Completed" : "Complete"}
+              </Text>
+            </TouchableOpacity>
+            {!task.dateCompleted && (
+              <TouchableOpacity
+                style={[
+                  styles.quickAction,
+                  isTimerOnThisTask && styles.quickActionOn,
+                ]}
+                onPress={handleToggleTimer}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  isTimerOnThisTask ? "Stop timer" : "Start timer"
+                }
+              >
+                <Ionicons
+                  name={isTimerOnThisTask ? "stop" : "play"}
+                  size={16}
+                  color={isTimerOnThisTask ? Colors.primary : Colors.text}
+                />
+                <Text style={styles.quickActionText}>
+                  {isTimerOnThisTask ? "Stop timer" : "Start timer"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
         <DialogMenu
           items={[
@@ -1246,6 +1332,26 @@ const styles = StyleSheet.create({
   // the right stays vertically anchored to the title row.
   headerMain: { flex: 1, flexDirection: "column", gap: 10 },
   headerChipRow: { flexDirection: "row" },
+  quickActions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  quickAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    minHeight: 40,
+    paddingHorizontal: 14,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+  },
+  quickActionOn: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.accentWash,
+  },
+  quickActionText: {
+    fontSize: FontSize.body,
+    fontWeight: "600",
+    color: Colors.text,
+  },
   taskName: { fontSize: FontSize.title, fontWeight: "600", color: Colors.text },
   taskNameCompleted: {
     textDecorationLine: "line-through",

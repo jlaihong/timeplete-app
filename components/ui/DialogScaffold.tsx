@@ -14,7 +14,9 @@ import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
 import { DialogMaxHeightContext } from "./useDialogKeyboardShift";
 
-export { DialogOverlay, type DialogOverlayProps } from "./DialogOverlay";
+import { DialogOverlay, type DialogOverlayProps } from "./DialogOverlay";
+
+export { DialogOverlay, type DialogOverlayProps };
 
 interface DialogCardProps {
   children: React.ReactNode;
@@ -94,6 +96,49 @@ export const dialogSurfaceStyle = {
   borderRadius: Radius.lg,
   padding: 24,
 } as const;
+
+/**
+ * Phones show every form dialog as a sheet anchored to the bottom edge
+ * (near the thumb, and above the keyboard); wider screens centre it.
+ * Spread `align` onto `DialogOverlay` and `cardStyle` LAST onto the card.
+ */
+export function usePhoneSheet(): {
+  isPhone: boolean;
+  align: "bottom" | "center";
+  cardStyle: ViewStyle | null;
+} {
+  const { width } = useWindowDimensions();
+  const isPhone = width < 768;
+  return {
+    isPhone,
+    align: isPhone ? "bottom" : "center",
+    cardStyle: isPhone ? phoneSheetCardStyle : null,
+  };
+}
+
+/**
+ * `DialogOverlay` that follows `usePhoneSheet`: bottom-anchored on a
+ * phone, centred otherwise. Pair with `usePhoneSheet().cardStyle` on the
+ * card inside it.
+ */
+export function SheetOverlay(props: Omit<DialogOverlayProps, "align">) {
+  const { align } = usePhoneSheet();
+  return <DialogOverlay {...props} align={align} />;
+}
+
+const phoneSheetCardStyle: ViewStyle = {
+  width: "100%",
+  maxWidth: "100%",
+  alignSelf: "stretch",
+  borderRadius: 0,
+  borderTopLeftRadius: Radius.xl,
+  borderTopRightRadius: Radius.xl,
+  borderBottomLeftRadius: 0,
+  borderBottomRightRadius: 0,
+  paddingHorizontal: 20,
+  paddingTop: 20,
+  paddingBottom: 20,
+};
 
 export function DialogHeader({
   title,

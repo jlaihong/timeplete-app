@@ -68,10 +68,11 @@ interface DateFieldProps {
 const FIELD_HORIZONTAL_PADDING = 12;
 const FIELD_MIN_HEIGHT = 56;
 
-/** Friendly display for the native field: "Jan 2, 2026". */
+/** Friendly display for a resting field: "Fri, Jan 2, 2026". */
 function formatForDisplay(yyyymmdd: string): string {
   if (yyyymmdd.length !== 8) return "";
   return parseYYYYMMDD(yyyymmdd).toLocaleDateString(undefined, {
+    weekday: "short",
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -123,7 +124,12 @@ function WebDateField({ value, onChange, label, clearable }: DateFieldProps) {
   // placeholder (matches productivity-one's mat-form-field). Once
   // the user focuses or picks a value, the label floats up and the
   // native placeholder/value reappears in the freed-up space.
-  const showNativeText = label ? isFloating : true;
+  //
+  // At rest with a value, the browser's own rendering (often a bare
+  // "2026-09-15") is hidden too and a readable date is drawn over it; the
+  // native text returns on focus so the value can still be typed.
+  const showFriendly = hasValue && !focused;
+  const showNativeText = !showFriendly && (label ? isFloating : true);
 
   const openPicker = () => {
     const el = inputRef.current;
@@ -183,6 +189,15 @@ function WebDateField({ value, onChange, label, clearable }: DateFieldProps) {
               color: showNativeText ? Colors.text : "transparent",
             },
           })}
+          {showFriendly ? (
+            <Text
+              pointerEvents="none"
+              numberOfLines={1}
+              style={styles.webFriendlyValue}
+            >
+              {formatForDisplay(value)}
+            </Text>
+          ) : null}
           {clearable && hasValue ? (
             <ClearButton onPress={() => onChange("")} />
           ) : (
@@ -395,6 +410,14 @@ const styles = StyleSheet.create({
   webInputRow: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  webFriendlyValue: {
+    position: "absolute",
+    left: 0,
+    right: 32,
+    top: 22,
+    fontSize: FontSize.bodyLarge,
+    color: Colors.text,
   },
   trailingIcon: {
     marginLeft: 8,

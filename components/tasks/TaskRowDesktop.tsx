@@ -8,6 +8,7 @@ import {
   Pressable,
   Platform,
   GestureResponderEvent,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Colors } from "../../constants/colors";
@@ -254,7 +255,14 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
     // logged or running time stays visible because it is information,
     // not chrome.
     const showPlay = !canHover || hovered || isTicking;
-    const showDuration = showPlay || totalSeconds > 0;
+    // Phone-width web: there is no room for name, labels, play and time on
+    // one line (names were cut to a few letters), so the labels drop under
+    // the name and an empty 00:00 is left out.
+    const { width: windowWidth } = useWindowDimensions();
+    const narrow = windowWidth < 768;
+    const showDuration = narrow
+      ? totalSeconds > 0 || isTicking
+      : showPlay || totalSeconds > 0;
 
     const hasMeta =
       !!initials ||
@@ -306,8 +314,13 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
             </Pressable>
           </StopRowDrag>
 
-          {/* Title (with optional recurring-instance badge) */}
-          <View style={styles.titleRow}>
+          {/* Title (with optional recurring-instance badge), then quiet
+              metadata: a colour dot carries identity, the text stays grey.
+              Side by side on desktop, where the metadata column is the
+              same width on every row; stacked on a phone. */}
+          {narrow ? (
+            <View style={styles.stack}>
+              <View style={styles.titleRow}>
             {task.isRecurringInstance && (
               <Ionicons
                 name="repeat"
@@ -319,16 +332,15 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
             <MentionText
               text={task.name}
               numberOfLines={1}
-              style={[styles.title, isCompleted && styles.titleCompleted]}
+              style={[
+                styles.title,
+                narrow && styles.titleNarrow,
+                isCompleted && styles.titleCompleted,
+              ]}
             />
           </View>
-
-          {/* Quiet metadata: a colour dot carries identity, the text stays
-              grey. The column is the same width on every row and starts
-              with the trackable / list label, so the dots line up down
-              the list instead of floating with each label's length. */}
-          {hasMeta && (
-            <View style={styles.meta}>
+              {hasMeta && (
+            <View style={[styles.meta, narrow && styles.metaNarrow]}>
               {showTrackableTag && meta.trackable && (
                 <MetaLabel
                   colour={meta.trackable.colour}
@@ -348,6 +360,52 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
                 </View>
               )}
             </View>
+          )}
+            </View>
+          ) : (
+            <>
+              <View style={styles.titleRow}>
+            {task.isRecurringInstance && (
+              <Ionicons
+                name="repeat"
+                size={14}
+                color={Colors.textTertiary}
+                style={styles.recurringIcon}
+              />
+            )}
+            <MentionText
+              text={task.name}
+              numberOfLines={1}
+              style={[
+                styles.title,
+                narrow && styles.titleNarrow,
+                isCompleted && styles.titleCompleted,
+              ]}
+            />
+          </View>
+              {hasMeta && (
+            <View style={[styles.meta, narrow && styles.metaNarrow]}>
+              {showTrackableTag && meta.trackable && (
+                <MetaLabel
+                  colour={meta.trackable.colour}
+                  name={meta.trackable.name}
+                />
+              )}
+              {showListTag && meta.list && (
+                <MetaLabel colour={meta.list.colour} name={meta.list.name} />
+              )}
+              {meta.tags?.map((tag, i) => (
+                <MetaLabel key={i} colour={tag.colour} name={tag.name} />
+              ))}
+              {dateLabel && <Text style={styles.metaText}>{dateLabel}</Text>}
+              {initials && (
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </View>
+              )}
+            </View>
+          )}
+            </>
           )}
 
           {/* Time: play on hover, duration once there is one */}
@@ -372,7 +430,11 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
                 />
               </Pressable>
             </StopRowDrag>
-            <View style={!showDuration && styles.hidden}>
+            <View
+              style={
+                !showDuration && (narrow ? styles.gone : styles.hidden)
+              }
+            >
               {isWeb ? (
                 <DurationPickerDesktop
                   durationSeconds={totalSeconds}
@@ -477,6 +539,10 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   hidden: { opacity: 0 },
+  gone: { display: "none" },
+  stack: { flex: 1, minWidth: 0, gap: 2, paddingVertical: 4 },
+  titleNarrow: { fontSize: FontSize.bodyLarge },
+  metaNarrow: { width: "auto", minWidth: 0, maxWidth: "100%" },
   iconBtn: {
     width: 32,
     height: 32,

@@ -20,10 +20,11 @@ import { Card } from "../ui/Card";
 import { TrackablePicker } from "../tasks/TrackablePicker";
 import { ListSharePanel } from "../sharing/ListSharePanel";
 import {
-  DialogOverlay,
   DialogFooter,
   DialogMenu,
   dialogSurfaceStyle,
+  SheetOverlay,
+  usePhoneSheet,
 } from "../ui/DialogScaffold";
 import {
   EntityTitle,
@@ -233,7 +234,7 @@ export function ListDialog({
     // mobile-web visual-viewport sizing, and — on native — the keyboard
     // shift that keeps the card (and its footer buttons) above the soft
     // keyboard. High zIndex mirrors the previous Modal stacking on web.
-    <DialogOverlay onBackdropPress={requestClose} align="center" zIndex={2000}>
+    <SheetOverlay onBackdropPress={requestClose} zIndex={2000}>
       <ListDialogCard>
         <EntityTitle
           name={name}
@@ -363,7 +364,7 @@ export function ListDialog({
           )}
         </DialogFooter>
       </ListDialogCard>
-    </DialogOverlay>
+    </SheetOverlay>
   );
 }
 
@@ -376,10 +377,12 @@ export function ListDialog({
  */
 function ListDialogCard({ children }: { children: React.ReactNode }) {
   const keyboardMax = useContext(DialogMaxHeightContext);
+  const sheet = usePhoneSheet();
   return (
     <Card
       style={[
         styles.dialog,
+        sheet.cardStyle,
         keyboardMax != null ? { maxHeight: keyboardMax } : null,
       ]}
     >

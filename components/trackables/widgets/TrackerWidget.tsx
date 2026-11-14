@@ -132,7 +132,13 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
   },
   actionsRowCentred: { justifyContent: "center" },
-  ratingRow: { flexDirection: "row", gap: 3, alignSelf: "stretch" },
+  // Wraps on phones, where each chip claims a fifth of the row.
+  ratingRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+    alignSelf: "stretch",
+  },
   statsRow: {
     flexDirection: "row",
     gap: 16,

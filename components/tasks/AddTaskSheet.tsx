@@ -6,7 +6,15 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { View, Text, StyleSheet, TextInput, Platform } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  Platform,
+  type StyleProp,
+  type ViewStyle,
+} from "react-native";
 import {
   KeyboardAwareScrollView,
   KeyboardStickyView,
@@ -19,7 +27,7 @@ import { Input } from "../ui/Input";
 import { Card } from "../ui/Card";
 import { TrackablePicker } from "./TrackablePicker";
 import { ListPicker } from "./ListPicker";
-import { todayYYYYMMDD } from "../../lib/dates";
+import { addDays, formatDisplayDate, todayYYYYMMDD } from "../../lib/dates";
 import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
@@ -29,7 +37,9 @@ import {
   DialogHeader,
   DialogFooter,
   dialogSurfaceStyle,
+  usePhoneSheet,
 } from "../ui/DialogScaffold";
+import { ChoiceChips, type ChoiceChip } from "../ui/ChoiceChips";
 import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
 import {
   initialAssignmentStateFromAddTaskContext,
@@ -55,6 +65,13 @@ function flushDialogFeedback(update: () => void) {
 function deferTaskUpsert(run: () => void) {
   setTimeout(run, 0);
 }
+
+const ESTIMATE_CHIPS: ChoiceChip<number>[] = [
+  { value: 15, label: "15m" },
+  { value: 30, label: "30m" },
+  { value: 60, label: "1h" },
+  { value: 120, label: "2h" },
+];
 
 interface AddTaskSheetProps {
   day?: string;
@@ -119,6 +136,27 @@ export function AddTaskSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextualListId, defaultTrackableId, contextualListTrackableId]);
   const upsertTask = useTaskUpsertMutation();
+  const sheet = usePhoneSheet();
+
+  /** Day the task is scheduled on; `null` = no date. */
+  const today = todayYYYYMMDD();
+  const tomorrow = addDays(today, 1);
+  const [taskDay, setTaskDay] = useState<string | null>(day ?? today);
+  useEffect(() => {
+    setTaskDay(day ?? todayYYYYMMDD());
+  }, [day]);
+  const dayChips: ChoiceChip<string | null>[] = [
+    { value: today, label: "Today" },
+    { value: tomorrow, label: "Tomorrow" },
+    // The day the sheet was opened for, when it is neither of the above.
+    ...(day && day !== today && day !== tomorrow
+      ? [{ value: day, label: formatDisplayDate(day) }]
+      : []),
+    { value: null, label: "No date" },
+  ];
+
+  /** Optional time estimate in minutes; 0 = none. */
+  const [estimateMinutes, setEstimateMinutes] = useState(0);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastKey, setToastKey] = useState(0);
@@ -165,7 +203,9 @@ export function AddTaskSheet({
 
     const payload = {
       name: title,
-      taskDay: day ?? todayYYYYMMDD(),
+      taskDay: taskDay ?? undefined,
+      timeEstimatedInSecondsUnallocated:
+        estimateMinutes > 0 ? estimateMinutes * 60 : undefined,
       listId: effectiveListId,
       sectionId,
       parentId,
@@ -189,8 +229,8 @@ export function AddTaskSheet({
        * mobile-web visual-viewport sizing, and — on native — the keyboard
        * shift that keeps the card (and its footer buttons) above the soft
        * keyboard. */}
-      <DialogOverlay onBackdropPress={onClose} align="center">
-        <AddTaskCard>
+      <DialogOverlay onBackdropPress={onClose} align={sheet.align}>
+        <AddTaskCard style={sheet.cardStyle}>
           <DialogHeader
             title={parentId ? "Add subtask" : "Add task"}
             onClose={onClose}
@@ -218,6 +258,21 @@ export function AddTaskSheet({
               onSubmitEditing={handleCreate}
             />
 
+            <ChoiceChips
+              label="When"
+              chips={dayChips}
+              value={taskDay}
+              onChange={setTaskDay}
+            />
+            <ChoiceChips
+              label="Estimate"
+              chips={ESTIMATE_CHIPS}
+              value={estimateMinutes}
+              onChange={setEstimateMinutes}
+              allowClear
+              clearValue={0}
+            />
+
             {/* Where the task lives. Hidden when opened from a list page. */}
             {!hideListPicker && (
               <ListPicker
@@ -240,12 +295,12 @@ export function AddTaskSheet({
            * height-capped. */}
           <DialogFooter>
             <Button
-              title="Cancel"
+              title="Done"
               variant="ghost"
               onPress={onClose}
               size="small"
             />
-            <Button title="Create" onPress={handleCreate} size="small" />
+            <Button title="Add" onPress={handleCreate} size="small" />
           </DialogFooter>
         </AddTaskCard>
       </DialogOverlay>
@@ -270,12 +325,19 @@ export function AddTaskSheet({
  * Rendered inside `DialogOverlay` so it can read `DialogMaxHeightContext`
  * — the overlay's keyboard-aware pixel height cap on native.
  */
-function AddTaskCard({ children }: { children: React.ReactNode }) {
+function AddTaskCard({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
   const keyboardMax = useContext(DialogMaxHeightContext);
   return (
     <Card
       style={[
         styles.dialog,
+        style,
         keyboardMax != null ? { maxHeight: keyboardMax } : null,
       ]}
     >

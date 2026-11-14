@@ -40,6 +40,8 @@ import { ReviewQuestionsSettingsModal } from "../reviews/ReviewQuestionsSettings
 import { AnswerEditorSheet } from "../reviews/AnswerEditorSheet";
 import { ReviewContextPanel } from "../reviews/ReviewContextPanel";
 import { useAuth } from "../../hooks/useAuth";
+import { SkeletonRows } from "../ui/SkeletonRows";
+import { InsightsSwitch } from "../layout/InsightsSwitch";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 
 const FREQUENCIES: { id: ReviewFrequency; label: string }[] = [
@@ -356,7 +358,12 @@ export function ReviewPanel({
     ) : null;
 
   const questionList = !questions ? (
-    <Text style={styles.empty}>Loading…</Text>
+    <SkeletonRows
+      flush
+      count={3}
+      rowHeight={132}
+      accessibilityLabel="Loading review questions"
+    />
   ) : displayQs.length === 0 ? (
     <View style={styles.emptyBlock}>
       <Text style={styles.empty}>
@@ -429,6 +436,8 @@ export function ReviewPanel({
           {editQuestions}
         </View>
       ) : (
+        <>
+        <InsightsSwitch active="reviews" />
         <View style={styles.mobileHeader}>
           <View style={styles.mobileRow}>
             {tabs}
@@ -452,6 +461,7 @@ export function ReviewPanel({
             {saveStatus}
           </View>
         </View>
+        </>
       )}
 
       <View
@@ -484,6 +494,14 @@ export function ReviewPanel({
             bottomOffset={120}
           >
             {markerRow}
+            {markers.length > 0 ? (
+              <View style={styles.markerLegend}>
+                <View style={[styles.markerDot, styles.markerDotDone]} />
+                <Text style={styles.markerLegendText}>Reviewed</Text>
+                <View style={styles.markerDot} />
+                <Text style={styles.markerLegendText}>Not yet</Text>
+              </View>
+            ) : null}
             {questionList}
             <Pressable
               onPress={() => setContextOpen((v) => !v)}
@@ -639,6 +657,19 @@ const styles = StyleSheet.create({
   stackContent: { padding: 16, paddingBottom: 48 },
 
   markers: { flexDirection: "row", gap: 2, marginBottom: 20 },
+  markerLegend: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: -12,
+    marginBottom: 16,
+    paddingHorizontal: 6,
+  },
+  markerLegendText: {
+    fontSize: FontSize.caption,
+    color: Colors.textTertiary,
+    marginRight: 10,
+  },
   marker: {
     minWidth: 32,
     alignItems: "center",

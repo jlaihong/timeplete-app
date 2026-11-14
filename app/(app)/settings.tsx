@@ -1,6 +1,7 @@
 import React from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
-import { Stack } from "expo-router";
+import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
+import { Stack, router, type Href } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { Colors, stackHeaderChromeOptions } from "../../constants/colors";
 import { FontSize, Radius } from "../../theme/tokens";
 import { Card } from "../../components/ui/Card";
@@ -57,14 +58,98 @@ export default function SettingsScreen() {
           />
         </Card>
 
-        <Text style={styles.sectionLabel}>Agent access</Text>
-        <AgentAccessSection />
+        {isDesktop ? (
+          <>
+            <Text style={styles.sectionLabel}>Agent access</Text>
+            <AgentAccessSection />
+          </>
+        ) : (
+          // Phones have no sidebar: the pages that aren't on the tab bar
+          // are reached from here.
+          <>
+            <Text style={styles.sectionLabel}>Organise</Text>
+            <View style={styles.linkGroup}>
+              <LinkRow icon="pricetag-outline" label="Tags" href="/(app)/tags" />
+              <LinkRow icon="at-outline" label="Pages" href="/(app)/pages" />
+              <LinkRow
+                icon="people-outline"
+                label="Shared with me"
+                href="/(app)/shared"
+                last
+              />
+            </View>
+            <Text style={styles.sectionLabel}>Advanced</Text>
+            <View style={styles.linkGroup}>
+              <LinkRow
+                icon="key-outline"
+                label="Agent access"
+                note="API keys for AI agents"
+                href="/(app)/agent"
+                last
+              />
+            </View>
+          </>
+        )}
       </ScrollView>
     </View>
   );
 }
 
+function LinkRow({
+  icon,
+  label,
+  note,
+  href,
+  last = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  note?: string;
+  href: Href;
+  last?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={() => router.navigate(href)}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={(state) => [
+        styles.linkRow,
+        !last && styles.linkRowDivider,
+        state.pressed && styles.linkRowPressed,
+      ]}
+    >
+      <Ionicons name={icon} size={20} color={Colors.textSecondary} />
+      <View style={styles.linkText}>
+        <Text style={styles.linkLabel}>{label}</Text>
+        {note ? <Text style={styles.linkNote}>{note}</Text> : null}
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  linkGroup: {
+    borderRadius: Radius.lg,
+    backgroundColor: Colors.surfaceContainerLow,
+    overflow: "hidden",
+  },
+  linkRow: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingHorizontal: 16,
+  },
+  linkRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.outlineVariant,
+  },
+  linkRowPressed: { backgroundColor: Colors.surfaceContainerHigh },
+  linkText: { flex: 1, minWidth: 0 },
+  linkLabel: { fontSize: FontSize.bodyLarge, color: Colors.text },
+  linkNote: { fontSize: FontSize.caption, color: Colors.textTertiary },
   container: { flex: 1, backgroundColor: Colors.background },
   content: {
     paddingHorizontal: 16,

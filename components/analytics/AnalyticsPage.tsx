@@ -1,14 +1,16 @@
-import { FontSize } from "../../theme/tokens";
+import { FontSize, Radius } from "../../theme/tokens";
 import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  Pressable,
   useWindowDimensions,
   ActivityIndicator,
 } from "react-native";
 import { Colors } from "../../constants/colors";
+import { InsightsSwitch } from "../layout/InsightsSwitch";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { AnalyticsStateProvider } from "./AnalyticsState";
 import { AnalyticsTabs } from "./AnalyticsTabs";
@@ -68,6 +70,7 @@ function AnalyticsToolbar({ title }: { title?: string }) {
   if (!isDesktop) {
     return (
       <>
+        <InsightsSwitch active="analytics" />
         <AnalyticsTabs />
         <AnalyticsDateNavigator />
       </>
@@ -99,10 +102,18 @@ export function AnalyticsPage({ title }: { title?: string }) {
   );
 }
 
+type PhoneSection = "breakdown" | "timeline" | "progress";
+const PHONE_SECTIONS: { key: PhoneSection; label: string }[] = [
+  { key: "breakdown", label: "Breakdown" },
+  { key: "timeline", label: "Timeline" },
+  { key: "progress", label: "Trackables" },
+];
+
 function AnalyticsBody() {
   const { width } = useWindowDimensions();
   const isDesktop = useIsDesktop();
   const useColumns = isDesktop && width >= 1280;
+  const [phoneSection, setPhoneSection] = useState<PhoneSection>("breakdown");
 
   if (useColumns) {
     // Each column scrolls on its own. As one long page, the tallest column
@@ -119,6 +130,43 @@ function AnalyticsBody() {
           <TimeSpendSection />
         </ScrollView>
       </View>
+    );
+  }
+
+  // Phones show one section at a time. Stacked, the three made a page
+  // several screens long, with three charts loading at once.
+  if (!isDesktop) {
+    return (
+      <>
+        <View style={styles.sectionTabs} accessibilityRole="tablist">
+          {PHONE_SECTIONS.map((item) => {
+            const selected = item.key === phoneSection;
+            return (
+              <Pressable
+                key={item.key}
+                onPress={() => setPhoneSection(item.key)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                style={[styles.sectionTab, selected && styles.sectionTabActive]}
+              >
+                <Text
+                  style={[
+                    styles.sectionTabText,
+                    selected && styles.sectionTabTextActive,
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {phoneSection === "progress" ? <TrackableProgressionSection /> : null}
+          {phoneSection === "breakdown" ? <TimeBreakdownSection /> : null}
+          {phoneSection === "timeline" ? <TimeSpendSection /> : null}
+        </ScrollView>
+      </>
     );
   }
 
@@ -142,6 +190,31 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   scrollContent: { padding: 16, paddingBottom: 40 },
+  sectionTabs: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 4,
+  },
+  sectionTab: {
+    minHeight: 36,
+    paddingHorizontal: 14,
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sectionTabActive: {
+    backgroundColor: Colors.primaryContainer,
+    borderColor: Colors.primary,
+  },
+  sectionTabText: { fontSize: FontSize.body, color: Colors.textSecondary },
+  sectionTabTextActive: {
+    color: Colors.onPrimaryContainer,
+    fontWeight: "600",
+  },
   columns: {
     flex: 1,
     minHeight: 0,

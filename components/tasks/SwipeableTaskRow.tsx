@@ -11,6 +11,13 @@ const DELETE_ACTION_WIDTH = 88;
 
 interface SwipeableTaskRowProps {
   onDelete: () => void;
+  /**
+   * When given, swiping RIGHT reveals a "Done" (or "Undo") action on the
+   * leading edge that toggles the task's completion.
+   */
+  onToggleComplete?: () => void;
+  /** Whether the task is already complete; switches the label to "Undo". */
+  completed?: boolean;
   children: React.ReactNode;
   /**
    * When false, renders children with no swipe behaviour. Used on desktop
@@ -21,7 +28,8 @@ interface SwipeableTaskRowProps {
 }
 
 /**
- * Wraps a task row in a horizontal swipeable panel. Swipe LEFT reveals
+ * Wraps a task row in a horizontal swipeable panel. Swipe RIGHT reveals a
+ * green "Done" action on the leading edge; swipe LEFT reveals
  * a red "Delete" action on the trailing edge — the iOS Mail /
  * Reminders / Todoist / Google Tasks pattern.
  *
@@ -34,10 +42,37 @@ interface SwipeableTaskRowProps {
  */
 export function SwipeableTaskRow({
   onDelete,
+  onToggleComplete,
+  completed = false,
   children,
   enabled = true,
 }: SwipeableTaskRowProps) {
   if (!enabled) return <>{children}</>;
+
+  const renderLeftActions = (
+    _progress: unknown,
+    _translation: unknown,
+    swipeableMethods: SwipeableMethods,
+  ) => (
+    <View style={styles.actionContainer}>
+      <TouchableOpacity
+        style={styles.completeBtn}
+        onPress={() => {
+          swipeableMethods.close();
+          onToggleComplete?.();
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={completed ? "Mark incomplete" : "Mark complete"}
+      >
+        <Ionicons
+          name={completed ? "arrow-undo-outline" : "checkmark"}
+          size={20}
+          color={Colors.onPrimary}
+        />
+        <Text style={styles.completeText}>{completed ? "Undo" : "Done"}</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   const renderRightActions = (
     _progress: unknown,
@@ -63,6 +98,10 @@ export function SwipeableTaskRow({
   return (
     <ReanimatedSwipeable
       renderRightActions={renderRightActions}
+      renderLeftActions={onToggleComplete ? renderLeftActions : undefined}
+      leftThreshold={DELETE_ACTION_WIDTH * 0.5}
+      dragOffsetFromLeftEdge={20}
+      overshootLeft={false}
       // Reveal the action once the row is dragged more than half the
       // action width; below that, releasing snaps back closed.
       rightThreshold={DELETE_ACTION_WIDTH * 0.5}
@@ -93,6 +132,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginLeft: 8,
     gap: 2,
+  },
+  completeBtn: {
+    flex: 1,
+    backgroundColor: Colors.success,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+    gap: 2,
+  },
+  completeText: {
+    color: Colors.onPrimary,
+    fontSize: FontSize.caption,
+    fontWeight: "600",
   },
   deleteText: {
     color: Colors.white,
