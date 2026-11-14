@@ -21,7 +21,8 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
-import { AutoGrowTextInput } from "../ui/AutoGrowTextInput";
+import { MentionTextInput } from "../mentions/MentionTextInput";
+import { MentionText } from "../mentions/MentionText";
 import { todayYYYYMMDD } from "../../lib/dates";
 import {
   displayReviewQuestions,
@@ -67,7 +68,14 @@ type SaveState = "idle" | "saving" | "saved" | "error";
  * The Reviews page: a period's questions on the left, what actually
  * happened in that period on the right. Answers save as you type.
  */
-export function ReviewPanel() {
+export function ReviewPanel({
+  targetFrequency,
+  targetDay,
+}: {
+  /** A review to open, from the route (see `reviews.tsx`). */
+  targetFrequency?: string;
+  targetDay?: string;
+} = {}) {
   const { profileReady } = useAuth();
   const isDesktop = useIsDesktop();
   const today = todayYYYYMMDD();
@@ -189,6 +197,15 @@ export function ReviewPanel() {
     setFrequency(nextFrequency);
     setPeriodStart(reviewPeriodStart(nextFrequency, day));
   };
+
+  // Arriving with a review named in the route opens it.
+  useEffect(() => {
+    const target = FREQUENCIES.find((f) => f.id === targetFrequency);
+    if (target && targetDay && /^\d{8}$/.test(targetDay)) {
+      goTo(target.id, targetDay);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetFrequency, targetDay]);
 
   /* ── "Reviewed" markers for the neighbouring periods ───────────────── */
   const markers = useMemo(
@@ -366,14 +383,15 @@ export function ReviewPanel() {
               accessibilityRole="button"
               accessibilityLabel={`Answer: ${q.questionText}`}
             >
-              <Text
-                style={answer ? styles.answerPreviewText : styles.placeholder}
-              >
-                {answer || "Tap to answer"}
-              </Text>
+              {answer ? (
+                <MentionText text={answer} style={styles.answerPreviewText} />
+              ) : (
+                <Text style={styles.placeholder}>Tap to answer</Text>
+              )}
             </Pressable>
           ) : (
-            <AutoGrowTextInput
+            <MentionTextInput
+              autoGrow
               style={styles.answerInput}
               value={answer}
               onChangeText={(text) => setAnswer(q._id, text)}

@@ -23,7 +23,6 @@ import {
   Modal,
   Platform,
   StyleSheet,
-  TextInput,
   View,
 } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
@@ -31,6 +30,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
 import { DialogFooter, DialogHeader } from "../ui/DialogScaffold";
+import { MentionTextInput } from "../mentions/MentionTextInput";
 
 interface AnswerEditorSheetProps {
   questionText: string;
@@ -89,7 +89,8 @@ export function AnswerEditorSheet({
         ]}
       >
         <DialogHeader title={questionText} onClose={requestCancel} />
-        <TextInput
+        <MentionTextInput
+          containerStyle={styles.inputBox}
           style={styles.input}
           value={text}
           onChangeText={setText}
@@ -120,6 +121,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainerHigh,
     paddingHorizontal: 20,
   },
+  inputBox: { flex: 1 },
   input: {
     flex: 1,
     borderWidth: 1,

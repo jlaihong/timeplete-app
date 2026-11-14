@@ -11,6 +11,7 @@ export type DrawerSelection = {
   analytics: boolean;
   reviews: boolean;
   tags: boolean;
+  pages: boolean;
   /** Settings (the old `/agent` route redirects there). */
   settings: boolean;
   allLists: boolean;
@@ -26,6 +27,7 @@ const empty: DrawerSelection = {
   analytics: false,
   reviews: false,
   tags: false,
+  pages: false,
   settings: false,
   allLists: false,
   shared: false,
@@ -73,6 +75,10 @@ export function useDrawerSelection(): DrawerSelection {
 
     if (path === "/tags" || path.startsWith("/tags/")) {
       return { ...empty, tags: true };
+    }
+
+    if (path === "/pages" || path.startsWith("/pages/")) {
+      return { ...empty, pages: true };
     }
 
     if (

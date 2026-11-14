@@ -609,6 +609,38 @@ export default defineSchema({
     .index("by_user_frequency_day", ["userId", "frequency", "dayUnderReview"])
     .index("by_legacy", ["legacyId"]),
 
+  /**
+   * A page is anything worth linking to from text: a person, a place, a
+   * project. Text anywhere in the app links to one with a mention token
+   * (see `lib/mentions.ts`).
+   */
+  pages: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    kind: v.optional(
+      v.union(v.literal("person"), v.literal("place"), v.literal("other"))
+    ),
+    /** What the owner knows about it. Free text. */
+    notes: v.optional(v.string()),
+  }).index("by_user", ["userId"]),
+
+  /**
+   * Index of which texts mention which page, rebuilt whenever a text is
+   * saved. It is what makes a page's "mentioned in" list a lookup instead
+   * of a scan of every text, and what the rename job walks.
+   */
+  mentions: defineTable({
+    userId: v.id("users"),
+    pageId: v.id("pages"),
+    sourceType: v.union(v.literal("reviewAnswer")),
+    /** `_id` of the row holding the text, in the table `sourceType` names. */
+    sourceId: v.string(),
+    /** YYYYMMDD the text is about, for ordering a page's mentions. */
+    day: v.string(),
+  })
+    .index("by_page_day", ["pageId", "day"])
+    .index("by_source", ["sourceType", "sourceId"]),
+
   taskComments: defineTable({
     taskId: v.id("tasks"),
     userId: v.id("users"),

@@ -186,7 +186,7 @@ const NavRow = React.memo(function NavRow({
  * - `router.replace` on the drawer becomes `JUMP_TO` — avoids stacking duplicate drawer
  *   branches when moving between tabs, lists, tags, etc.
  */
-type NavDrawerGroup = "tabs" | "lists" | "tags" | "shared";
+type NavDrawerGroup = "tabs" | "lists" | "tags" | "pages" | "shared";
 
 function navDrawerGroupFromSegments(
   segments: readonly string[],
@@ -195,6 +195,7 @@ function navDrawerGroupFromSegments(
   if (top === "(tabs)") return "tabs";
   if (top === "lists") return "lists";
   if (top === "tags") return "tags";
+  if (top === "pages") return "pages";
   if (top === "shared") return "shared";
   return null;
 }
@@ -203,6 +204,7 @@ function navDrawerGroupFromHrefString(href: string): NavDrawerGroup | null {
   if (href.includes("/(tabs)")) return "tabs";
   if (href.includes("/lists")) return "lists";
   if (href.includes("/tags")) return "tags";
+  if (href.includes("/pages")) return "pages";
   if (href.includes("/shared")) return "shared";
   return null;
 }
@@ -214,6 +216,7 @@ const PREFETCH_DRAWER_HREFS: Href[] = [
   "/(app)/(tabs)/calendar",
   "/(app)/(tabs)/reviews",
   "/(app)/tags",
+  "/(app)/pages",
   "/(app)/lists",
   "/(app)/shared",
 ];
@@ -407,6 +410,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
   const onAnalytics = useCallback(() => go("/(app)/(tabs)/analytics"), [go]);
   const onReviews = useCallback(() => go("/(app)/(tabs)/reviews"), [go]);
   const onTags = useCallback(() => go("/(app)/tags"), [go]);
+  const onPages = useCallback(() => go("/(app)/pages"), [go]);
   const onSettings = useCallback(() => go("/(app)/settings"), [go]);
   const onAllLists = useCallback(() => go("/(app)/lists"), [go]);
   const onShared = useCallback(() => go("/(app)/shared"), [go]);
@@ -522,6 +526,14 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
           focused={sel.tags}
           iconName="pricetag-outline"
           onPress={onTags}
+          rail={rail}
+          touch={touch}
+        />
+        <NavRow
+          label="Pages"
+          focused={sel.pages}
+          iconName="at-outline"
+          onPress={onPages}
           rail={rail}
           touch={touch}
         />
@@ -644,6 +656,7 @@ function AppDrawer({ isDesktop }: { isDesktop: boolean }) {
       <Drawer.Screen name="(tabs)" />
       <Drawer.Screen name="inbox" options={{ title: "Inbox" }} />
       <Drawer.Screen name="tags" options={{ title: "Tags" }} />
+      <Drawer.Screen name="pages" options={{ title: "Pages" }} />
       <Drawer.Screen name="lists" options={{ title: "Lists" }} />
       <Drawer.Screen name="shared" options={{ title: "Shared" }} />
       <Drawer.Screen name="settings" options={{ title: "Settings" }} />

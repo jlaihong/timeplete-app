@@ -2,6 +2,7 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { persistBoundedOrderMove } from "./_helpers/orderShift";
+import { removeMentionsForSource, syncMentions } from "./_helpers/mentions";
 
 export const searchQuestions = query({
   args: {
@@ -113,7 +114,10 @@ export const removeQuestion = mutation({
       .query("reviewAnswers")
       .withIndex("by_question", (q) => q.eq("reviewQuestionId", args.id))
       .collect();
-    for (const a of answers) await ctx.db.delete(a._id);
+    for (const a of answers) {
+      await removeMentionsForSource(ctx, "reviewAnswer", a._id);
+      await ctx.db.delete(a._id);
+    }
     await ctx.db.delete(args.id);
   },
 });
@@ -209,16 +213,27 @@ export const bulkUpsertAnswers = mutation({
         )
         .first();
 
-      if (existing) {
-        await ctx.db.patch(existing._id, { answerText: answer.answerText });
-      } else {
-        await ctx.db.insert("reviewAnswers", {
+      const answerId =
+        existing?._id ??
+        (await ctx.db.insert("reviewAnswers", {
           reviewQuestionId: answer.reviewQuestionId,
           userId: user._id,
           answerText: answer.answerText,
           frequency: answer.frequency,
           dayUnderReview: answer.dayUnderReview,
-        });
+        }));
+
+      // Keep the mentions index in step with the text, and store the
+      // text with each linked page's current name.
+      const answerText = await syncMentions(ctx, {
+        userId: user._id,
+        sourceType: "reviewAnswer",
+        sourceId: answerId,
+        text: answer.answerText,
+        day: answer.dayUnderReview,
+      });
+      if (answerText !== (existing?.answerText ?? answer.answerText)) {
+        await ctx.db.patch(answerId, { answerText });
       }
     }
   },
