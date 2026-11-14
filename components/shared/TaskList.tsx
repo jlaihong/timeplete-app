@@ -61,6 +61,8 @@ import {
   overdueCutoffDay,
   splitOverdueByCutoff,
 } from "../../lib/overdueWindow";
+import { MentionText } from "../mentions/MentionText";
+import { plainMentions } from "../../lib/mentions";
 
 const LOAD_MORE_DAYS = 7;
 const isWeb = Platform.OS === "web";
@@ -736,12 +738,11 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
             activeOpacity={0.7}
           >
             <View style={styles.taskText}>
-              <Text
+              <MentionText
+                text={task.name}
                 style={[styles.taskName, isCompleted && styles.completedTask]}
                 numberOfLines={1}
-              >
-                {task.name}
-              </Text>
+              />
               {metaLabels.length > 0 && (
                 <View style={styles.tagsRow}>
                   {metaLabels.map((label, i) => (
@@ -768,7 +769,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                    Read-only while the timer drives the value. */
                 <TaskTimeSpentButton
                   taskId={task._id}
-                  taskName={task.name}
+                  taskName={plainMentions(task.name)}
                   seconds={timeSpent}
                   totalSeconds={
                     dayTimeSpent === undefined ? undefined : totalTimeSpent
@@ -834,7 +835,7 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
             onDelete={() =>
               deleteTask({
                 taskId: task._id,
-                taskName: task.name,
+                taskName: plainMentions(task.name),
                 isRecurringInstance: task.isRecurringInstance,
                 recurringTaskId: task.recurringTaskId,
               })

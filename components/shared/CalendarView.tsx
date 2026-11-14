@@ -75,6 +75,7 @@ import {
   withAlpha,
 } from "./CalendarViewShared";
 import { calendarViewStyles as styles } from "./CalendarViewStyles";
+import { plainMentions } from "../../lib/mentions";
 
 /**
  * Optional pre-fill values for `onAddEvent`. When the host opens the
@@ -563,7 +564,7 @@ export function CalendarView({
         taskId: String(data.task._id),
         durationSec: data.durationSec ?? DEFAULT_DROP_DURATION,
         color: data.displayColor ?? Colors.primary,
-        taskName: data.task.name,
+        taskName: plainMentions(data.task.name),
       };
       const actEvt = event.activatorEvent as { clientY?: number } | undefined;
       attachPointerTracker(

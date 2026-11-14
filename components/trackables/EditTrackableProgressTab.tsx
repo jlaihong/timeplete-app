@@ -30,6 +30,7 @@ import { TrackCountDialog } from "./widgets/dialogs/TrackCountDialog";
 import { TrackPeriodicDialog } from "./widgets/dialogs/TrackPeriodicDialog";
 import { TrackTimeDialog } from "./widgets/dialogs/TrackTimeDialog";
 import { TrackTrackerDialog } from "./widgets/dialogs/TrackTrackerDialog";
+import { plainMentions } from "../../lib/mentions";
 
 type GoalProgressType =
   | "NUMBER"
@@ -277,10 +278,10 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
           m.set(dayKey, {
             numCompleted: 0,
             comments: "",
-            completedTaskNames: [task.name],
+            completedTaskNames: [plainMentions(task.name)],
           });
         } else {
-          existing.completedTaskNames.push(task.name);
+          existing.completedTaskNames.push(plainMentions(task.name));
         }
       }
     }
@@ -504,7 +505,7 @@ export function EditTrackableProgressTab({ trackable }: { trackable: ProgressTab
                     (logged > 0 || tasksArr.length > 0)));
               const visibleTasks = tasksArr.slice(0, MAX_TASK_LINES);
               const moreTaskCount = tasksArr.length - visibleTasks.length;
-              const comment = (detail?.comments ?? "").trim();
+              const comment = plainMentions((detail?.comments ?? "").trim());
               const dom = parseInt(cell.yyyymmdd.slice(6, 8), 10);
 
               const a11yParts = [
@@ -710,7 +711,7 @@ function DayDetailModalBody({
   const logged = detail?.numCompleted ?? 0;
   const sec = detail?.secondsAttributed ?? 0;
   const tasks = detail?.completedTaskNames ?? [];
-  const comment = (detail?.comments ?? "").trim();
+  const comment = plainMentions((detail?.comments ?? "").trim());
   const hasAny =
     logged > 0 ||
     sec > 0 ||

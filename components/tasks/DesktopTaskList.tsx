@@ -78,6 +78,7 @@ import {
   overdueCutoffDay,
   splitOverdueByCutoff,
 } from "../../lib/overdueWindow";
+import { plainMentions } from "../../lib/mentions";
 
 const isWeb = Platform.OS === "web";
 const LOAD_MORE_DAYS = 7;
@@ -793,7 +794,7 @@ export function DesktopTaskList({
       const task = tasks?.find((t) => t._id === taskId);
       deleteTaskMutation({
         taskId,
-        taskName: task?.name,
+        taskName: plainMentions(task?.name),
         isRecurringInstance: task?.isRecurringInstance,
         recurringTaskId: task?.recurringTaskId,
       });

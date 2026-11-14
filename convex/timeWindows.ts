@@ -23,6 +23,10 @@ import {
   deletedOccurrenceForRecurringInstance,
   recordDeletedRecurringEventOccurrence,
 } from "./_helpers/deletedRecurringEventOccurrence";
+import {
+  removeMentionsForSource,
+  syncSourceMentions,
+} from "./_helpers/mentions";
 
 function minutesFromHHMM(hhmm: string): number {
   const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
@@ -340,6 +344,7 @@ export const upsert = mutation({
         useTimeZone,
         source: args.source ?? existing.source,
       });
+      await syncSourceMentions(ctx, "timeWindow", args.id);
       // Keep `task.timeSpentInSecondsUnallocated` in lock-step so the
       // home/list readers can serve totals from the row directly
       // without re-aggregating windows on every fetch (fix #4).
@@ -406,6 +411,7 @@ export const upsert = mutation({
       isRecurringInstance: args.isRecurringInstance ?? false,
       source: args.source,
     });
+    await syncSourceMentions(ctx, "timeWindow", insertedId, { isNew: true });
     await onTimeWindowInserted(ctx, {
       taskId: args.taskId,
       activityType: args.activityType,
@@ -432,6 +438,7 @@ export const remove = mutation({
     const user = await requireApprovedUser(ctx);
     const tw = await ctx.db.get(args.id);
     if (!tw) throw new Error("Time window not found");
+    await removeMentionsForSource(ctx, "timeWindow", args.id);
     // Same transaction as the delete. A follow-up skip write would race
     // `generateInstances`, which recreates any missing series day.
     if (tw.userId === user._id) {

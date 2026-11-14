@@ -18,6 +18,7 @@ import {
 } from "../../lib/editDialogAttributedHistory";
 import { TrackingHistoryScroller } from "./TrackingHistoryScroller";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
+import { plainMentions } from "../../lib/mentions";
 
 export interface TrackingHistoryTableProps {
   rows: TrackerDetailsHistoryRow[];
@@ -192,13 +193,15 @@ export function TrackingHistoryTable({
 
                 <View style={styles.trackerCommentsCol}>
                   <Text style={styles.cellBody} numberOfLines={4}>
-                    {row.source === "tracker_entry"
-                      ? row.comments?.trim()
-                        ? row.comments.trim()
-                        : "-"
-                      : row.commentsUnified.trim()
-                        ? row.commentsUnified
-                        : "-"}
+                    {plainMentions(
+                      row.source === "tracker_entry"
+                        ? row.comments?.trim()
+                          ? row.comments.trim()
+                          : "-"
+                        : row.commentsUnified.trim()
+                          ? row.commentsUnified
+                          : "-",
+                    )}
                   </Text>
                 </View>
 
@@ -274,10 +277,11 @@ function MobileTrackingRow({
       ? row.startTimeHHMM.trim()
       : null;
 
-  const commentsText =
+  const commentsText = plainMentions(
     row.source === "tracker_entry"
       ? row.comments?.trim() ?? ""
-      : row.commentsUnified.trim();
+      : row.commentsUnified.trim(),
+  );
 
   return (
     <View style={styles.mobileCard}>

@@ -8,6 +8,7 @@ import type { FunctionReturnType } from "convex/server";
 import { applyStopTimerOptimisticUpdate } from "./stopTimerOptimisticUpdate";
 import { applyMoveBetweenDaysOptimisticUpdate } from "./taskMoveOptimisticUpdate";
 import { wallClockInTimeZone } from "./wallClockTimeZone";
+import { plainMentions } from "./mentions";
 
 type TimerRow = NonNullable<FunctionReturnType<typeof api.timers.get>>;
 
@@ -198,7 +199,7 @@ export function applyStartTaskTimerOptimisticUpdate(
   for (const q of localStore.getAllQueries(api.tasks.getHomeTasks)) {
     const row = q.value?.find((t) => t._id === args.taskId);
     if (row) {
-      displayTitle = row.name;
+      displayTitle = plainMentions(row.name);
       userId = userId ?? (row.userId as Id<"users">);
       break;
     }
@@ -208,7 +209,7 @@ export function applyStartTaskTimerOptimisticUpdate(
       for (const sec of q.value?.sections ?? []) {
         const row = sec.tasks.find((t) => t._id === args.taskId);
         if (row) {
-          displayTitle = row.name;
+          displayTitle = plainMentions(row.name);
           userId = userId ?? (row.userId as Id<"users">);
           break;
         }
@@ -252,7 +253,7 @@ export function applyStartTrackableTimerOptimisticUpdate(
   for (const q of localStore.getAllQueries(api.trackables.search)) {
     const row = q.value?.find((t) => t._id === args.trackableId);
     if (row) {
-      displayTitle = row.name;
+      displayTitle = plainMentions(row.name);
       displayColor = row.colour;
       break;
     }

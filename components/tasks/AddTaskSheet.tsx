@@ -208,6 +208,7 @@ export function AddTaskSheet({
             <Input
               ref={titleInputRef}
               label="Task Name"
+              mentions
               value={name}
               onChangeText={setName}
               placeholder="What needs to be done?"

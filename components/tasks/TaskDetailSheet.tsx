@@ -70,6 +70,9 @@ import { DialogOverlay, DialogMenu } from "../ui/DialogScaffold";
 import { useDiscardGuard } from "../../hooks/useDiscardGuard";
 import { useRegisterEscapeClose } from "../../hooks/useRegisterEscapeClose";
 import { DialogMaxHeightContext } from "../ui/useDialogKeyboardShift";
+import { MentionTextInput } from "../mentions/MentionTextInput";
+import { MentionText } from "../mentions/MentionText";
+import { plainMentions } from "../../lib/mentions";
 
 type Tab = "details" | "time" | "comments";
 type RecurringEditScope = "THIS_INSTANCE" | "THIS_AND_FUTURE" | "ALL_INSTANCES";
@@ -243,7 +246,7 @@ export function TaskDetailSheet({
     if (!task) return;
     deleteTaskMutation({
       taskId: task._id,
-      taskName: task.name,
+      taskName: plainMentions(task.name),
       isRecurringInstance: task.isRecurringInstance,
       recurringTaskId: task.recurringTaskId,
       onDeleted: onClose,
@@ -827,7 +830,7 @@ export function TaskDetailSheet({
   const renderCommentsTab = () => (
     <>
       <View style={styles.commentInput}>
-        <TextInput
+        <MentionTextInput
           style={styles.commentField}
           value={newComment}
           onChangeText={setNewComment}
@@ -843,7 +846,7 @@ export function TaskDetailSheet({
       {comments?.map((c) => (
         <View key={c._id} style={styles.comment}>
           <View style={styles.commentRow}>
-            <Text style={styles.commentText}>{c.commentText}</Text>
+            <MentionText text={c.commentText} style={styles.commentText} />
             <TouchableOpacity
               onPress={() => removeComment({ id: c._id })}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -877,7 +880,7 @@ export function TaskDetailSheet({
       <View style={styles.header}>
         <View style={styles.headerMain}>
           {editingName ? (
-            <TextInput
+            <MentionTextInput
               style={styles.nameInput}
               value={nameDraft}
               onChangeText={handleNameDraftChange}
@@ -892,14 +895,13 @@ export function TaskDetailSheet({
                 setEditingName(true);
               }}
             >
-              <Text
+              <MentionText
+                text={form.name}
                 style={[
                   styles.taskName,
                   task.dateCompleted && styles.taskNameCompleted,
                 ]}
-              >
-                {form.name}
-              </Text>
+              />
             </TouchableOpacity>
           )}
           {totalTrackedSeconds > 0 && (

@@ -10,6 +10,7 @@ import {
   buildTaskInfoMap,
   resolveAttributedTrackableId,
 } from "./trackableAttribution";
+import { plainMentions } from "../../lib/mentions";
 
 export type ActiveTimerCalendarDisplay = {
   displayTitle: string;
@@ -29,7 +30,8 @@ export async function resolveTaskTimerCalendarDisplay(
   const listIdToTrackableId = buildListIdToTrackableId(links);
   const taskInfoMap = buildTaskInfoMap([task]);
   const taskListDoc = task.listId ? await ctx.db.get(task.listId) : null;
-  const derivedTitle = task.name || taskListDoc?.name || "Task";
+  const derivedTitle =
+    plainMentions(task.name) || taskListDoc?.name || "Task";
 
   const resolvedTrackableId = resolveAttributedTrackableId(
     {

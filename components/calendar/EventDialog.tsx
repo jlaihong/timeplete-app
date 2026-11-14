@@ -614,6 +614,7 @@ export function EventDialog({
             // clearing the field is valid and reverts to derived
             // behaviour (the placeholder shows what will render).
             label={liveDerivedName ? "Title" : "Title *"}
+            mentions
             value={title}
             onChangeText={(v) => {
               setTitle(v);
@@ -723,6 +724,7 @@ export function EventDialog({
 
           <Input
             label="Comments"
+            mentions
             value={comments}
             onChangeText={setComments}
             placeholder="Optional comments"

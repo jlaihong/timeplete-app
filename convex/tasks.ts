@@ -26,6 +26,10 @@ import {
 import { claimClientMutationId } from "./_helpers/clientMutationId";
 import { applyTillEndShift } from "./_helpers/orderShift";
 import { moveTaskBetweenDays } from "./_helpers/taskDayMove";
+import {
+  removeMentionsForSource,
+  syncSourceMentions,
+} from "./_helpers/mentions";
 
 /**
  * productivity-backend `upsert_task` sets `section_id` from `list_id` when the
@@ -532,6 +536,9 @@ export const upsert = mutation({
       if (args.tagIds !== undefined) patch.tagIds = args.tagIds;
 
       await ctx.db.patch(args.id, patch as any);
+      if (args.name !== undefined) {
+        await syncSourceMentions(ctx, "task", args.id);
+      }
 
       if (args.tagIds !== undefined) {
         const existing_tags = await ctx.db
@@ -613,6 +620,7 @@ export const upsert = mutation({
     });
 
     await ctx.db.patch(taskId, { rootTaskId: args.parentId ? undefined : taskId });
+    await syncSourceMentions(ctx, "task", taskId, { isNew: true });
 
     if (args.tagIds) {
       for (const tagId of args.tagIds) {
@@ -670,6 +678,7 @@ export const remove = mutation({
             null,
           );
         }
+        await removeMentionsForSource(ctx, "task", child._id);
         await ctx.db.delete(child._id);
       }
     }
@@ -684,7 +693,10 @@ export const remove = mutation({
       .query("taskComments")
       .withIndex("by_task", (q) => q.eq("taskId", args.id))
       .collect();
-    for (const c of comments) await ctx.db.delete(c._id);
+    for (const c of comments) {
+      await removeMentionsForSource(ctx, "taskComment", c._id);
+      await ctx.db.delete(c._id);
+    }
 
     const windows = await ctx.db
       .query("timeWindows")
@@ -707,6 +719,7 @@ export const remove = mutation({
       );
     }
 
+    await removeMentionsForSource(ctx, "task", args.id);
     await ctx.db.delete(args.id);
   },
 });

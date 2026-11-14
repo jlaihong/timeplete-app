@@ -20,6 +20,8 @@ import {
 import { Id } from "../../convex/_generated/dataModel";
 import { useTimerElapsed } from "../../hooks/useTimer";
 import { DurationPickerDesktop } from "./DurationPickerDesktop";
+import { MentionText } from "../mentions/MentionText";
+import { plainMentions } from "../../lib/mentions";
 
 const isWeb = Platform.OS === "web";
 
@@ -314,12 +316,11 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
                 style={styles.recurringIcon}
               />
             )}
-            <Text
+            <MentionText
+              text={task.name}
               numberOfLines={1}
               style={[styles.title, isCompleted && styles.titleCompleted]}
-            >
-              {task.name}
-            </Text>
+            />
           </View>
 
           {/* Quiet metadata: a colour dot carries identity, the text stays

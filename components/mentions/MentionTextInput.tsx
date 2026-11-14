@@ -103,6 +103,28 @@ const MIRRORED: (keyof TextStyle)[] = [
   "borderRightWidth",
 ];
 
+/**
+ * Parts of a field's style that place it in its parent. They go on the
+ * wrapper, so the copy of the text still sits exactly over the field.
+ */
+const LAYOUT: string[] = [
+  "margin",
+  "marginHorizontal",
+  "marginVertical",
+  "marginTop",
+  "marginBottom",
+  "marginLeft",
+  "marginRight",
+  "flex",
+  "flexGrow",
+  "flexShrink",
+  "flexBasis",
+  "alignSelf",
+  "width",
+  "minWidth",
+  "maxWidth",
+];
+
 /** Screen position of the character at `offset` in the copy of the text. */
 function rectOfCharacter(root: HTMLElement, offset: number): DOMRect | null {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -232,6 +254,18 @@ export const MentionTextInput = forwardRef<TextInput, MentionTextInputProps>(
       };
     }, [queryStart, measure, doc.text]);
 
+    /* A long one-line field scrolls sideways; the copy follows it (web). */
+    const [scrollLeft, setScrollLeft] = useState(0);
+    useIsoLayoutEffect(() => {
+      if (!isWeb) return;
+      const node = inputRef.current as unknown as HTMLInputElement | null;
+      if (!node || typeof node.scrollLeft !== "number") return;
+      const sync = () => setScrollLeft(node.scrollLeft);
+      sync();
+      node.addEventListener("scroll", sync);
+      return () => node.removeEventListener("scroll", sync);
+    });
+
     /* ── Editing ──────────────────────────────────────────────────────── */
     const handleChangeText = (text: string) => {
       const next = applyTextChange(docRef.current, text);
@@ -320,6 +354,27 @@ export const MentionTextInput = forwardRef<TextInput, MentionTextInputProps>(
 
     /* ── Drawing ──────────────────────────────────────────────────────── */
     const flat = (StyleSheet.flatten(style) ?? {}) as TextStyle;
+    const { layoutStyle, fieldStyle } = useMemo(() => {
+      const layout: Record<string, unknown> = {};
+      const field: Record<string, unknown> = {};
+      let stretches = false;
+      for (const [key, v] of Object.entries(flat)) {
+        if (LAYOUT.includes(key)) {
+          layout[key] = v;
+          if (key === "flex" || key === "flexGrow") stretches = true;
+        } else {
+          field[key] = v;
+        }
+      }
+      // A field that fills its parent still fills the wrapper.
+      if (stretches) field.flexGrow = 1;
+      return {
+        layoutStyle: layout as ViewStyle,
+        fieldStyle: field as TextStyle,
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [style]);
+    const singleLine = !autoGrow && !props.multiline;
     const hasLinks = doc.mentions.length > 0;
     const mirrorStyle = useMemo(() => {
       const out: Record<string, unknown> = {};
@@ -334,7 +389,10 @@ export const MentionTextInput = forwardRef<TextInput, MentionTextInputProps>(
     const showMirror = isWeb;
 
     return (
-      <View ref={wrapperRef} style={[styles.wrapper, containerStyle]}>
+      <View
+        ref={wrapperRef}
+        style={[styles.wrapper, layoutStyle, containerStyle]}
+      >
         <Field
           ref={inputRef}
           {...props}
@@ -353,7 +411,7 @@ export const MentionTextInput = forwardRef<TextInput, MentionTextInputProps>(
             onBlur?.(e);
           }}
           style={[
-            style,
+            fieldStyle,
             showMirror && hasLinks
               ? ({
                   color: "transparent",
@@ -375,6 +433,10 @@ export const MentionTextInput = forwardRef<TextInput, MentionTextInputProps>(
                 styles.mirrorText,
                 mirrorStyle,
                 { color: flat.color ?? Colors.text },
+                singleLine ? styles.mirrorSingleLine : null,
+                singleLine && scrollLeft
+                  ? { transform: [{ translateX: -scrollLeft }] }
+                  : null,
               ]}
             >
               {mentionSegments(doc).map((s, i) =>
@@ -458,6 +520,10 @@ const styles = StyleSheet.create({
     borderColor: "transparent",
     ...(isWeb ? ({ pointerEvents: "none" } as object) : null),
   },
+  // A one-line field never wraps; it scrolls sideways instead.
+  mirrorSingleLine: isWeb
+    ? ({ whiteSpace: "pre", alignSelf: "flex-start" } as object)
+    : {},
   mirrorLink: isWeb
     ? ({ pointerEvents: "auto", cursor: "pointer" } as object)
     : {},

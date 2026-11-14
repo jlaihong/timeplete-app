@@ -28,6 +28,7 @@ import {
   withAlpha,
 } from "./CalendarViewShared";
 import { calendarViewStyles as styles } from "./CalendarViewStyles";
+import { plainMentions } from "../../lib/mentions";
 
 /* ────────────────────────────────────────────────────────────────────────
  *  CalendarEventBlock — interactive absolute-positioned event card.
@@ -550,10 +551,11 @@ export function CalendarEventBlock({
       : tw.activityType === "TRACKABLE"
         ? "Trackable"
         : "Task";
-  const displayTitle =
+  const displayTitle = plainMentions(
     (tw.displayTitle && tw.displayTitle.trim()) ||
-    (tw.title && tw.title.trim()) ||
-    (isLive ? "Timer" : fallbackByType);
+      (tw.title && tw.title.trim()) ||
+      (isLive ? "Timer" : fallbackByType),
+  );
 
   // Per-tier text styles. Title is ALWAYS rendered (numberOfLines=1 +
   // ellipsis). Time row only when the tier flags it.

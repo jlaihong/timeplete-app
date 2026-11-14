@@ -9,6 +9,7 @@ import {
   buildTaskInfoMap,
   resolveAttributedTrackableId,
 } from "./trackableAttribution";
+import { plainMentions } from "../../lib/mentions";
 
 export type EnrichedTimeWindowDoc = Doc<"timeWindows"> & {
   displayTitle: string;
@@ -83,7 +84,7 @@ export function enrichTimeWindowsWithDisplayFields(
     );
 
     const fallback = w.activityType === "EVENT" ? "Event" : "Untitled";
-    const displayTitle = w.title ?? derivedTitle ?? fallback;
+    const displayTitle = plainMentions(w.title ?? derivedTitle) ?? fallback;
 
     return {
       ...w,

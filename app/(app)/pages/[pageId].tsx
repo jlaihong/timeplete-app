@@ -17,7 +17,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { Colors } from "../../../constants/colors";
 import { FontSize, Radius } from "../../../theme/tokens";
 import { pageColumnStyle } from "../../../components/layout/DesktopPageHeader";
-import { AutoGrowTextInput } from "../../../components/ui/AutoGrowTextInput";
+import { MentionTextInput } from "../../../components/mentions/MentionTextInput";
 import { MentionText } from "../../../components/mentions/MentionText";
 import {
   PAGE_KINDS,
@@ -25,6 +25,7 @@ import {
   type PageKind,
 } from "../../../components/mentions/pageKinds";
 import { reviewPeriodLabel } from "../../../lib/reviewPeriod";
+import { formatDisplayDate } from "../../../lib/dates";
 import { useAuth } from "../../../hooks/useAuth";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
 
@@ -36,6 +37,25 @@ const FREQUENCY_NAME = {
 } as const;
 
 const NOTES_SAVE_DELAY_MS = 800;
+
+/** Where a mention's text can be opened, if anywhere. */
+function backlinkTarget(b: {
+  sourceType: string;
+  day: string;
+  frequency?: string;
+  listId?: string;
+  pageId?: string;
+}): unknown {
+  if (b.sourceType === "reviewAnswer") {
+    return {
+      pathname: "/(app)/(tabs)/reviews",
+      params: { frequency: b.frequency ?? "DAILY", day: b.day },
+    };
+  }
+  if (b.pageId) return `/(app)/pages/${b.pageId}`;
+  if (b.listId) return `/(app)/lists/${b.listId}`;
+  return null;
+}
 
 /**
  * One page: its name, what you know about it, and every text that
@@ -132,7 +152,10 @@ export default function PageScreen() {
     return (
       <View style={styles.container}>
         <Stack.Screen options={{ title: "Page" }} />
-        <Text style={styles.quiet}>This page no longer exists.</Text>
+        <Text style={styles.quiet}>You don't have access to this page.</Text>
+        <Text style={styles.quietNote}>
+          It belongs to someone else, or it has been deleted.
+        </Text>
         <Pressable onPress={back} accessibilityRole="link">
           <Text style={styles.link}>All pages</Text>
         </Pressable>
@@ -212,7 +235,8 @@ export default function PageScreen() {
         </View>
 
         <Text style={styles.section}>Notes</Text>
-        <AutoGrowTextInput
+        <MentionTextInput
+          autoGrow
           value={notes ?? page.notes ?? ""}
           onChangeText={(text) => {
             setNotes(text);
@@ -221,7 +245,7 @@ export default function PageScreen() {
             notesTimer.current = setTimeout(flushNotes, NOTES_SAVE_DELAY_MS);
           }}
           onBlur={flushNotes}
-          placeholder="What you know about them"
+          placeholder="What you know about it"
           placeholderTextColor={Colors.textTertiary}
           accessibilityLabel="Notes"
           style={styles.notes}
@@ -233,32 +257,34 @@ export default function PageScreen() {
           <Text style={styles.quietInline}>Loading…</Text>
         ) : backlinks.length === 0 ? (
           <Text style={styles.quietInline}>
-            Nothing yet. Type @{page.name} in a review to link it here.
+            Nothing yet. Type @{page.name} in any text to link it here.
           </Text>
         ) : (
-          backlinks.map((b) => (
-            <View key={b.mentionId} style={styles.mention}>
-              <Pressable
-                onPress={() =>
-                  router.push({
-                    pathname: "/(app)/(tabs)/reviews",
-                    params: { frequency: b.frequency ?? "DAILY", day: b.day },
-                  } as never)
-                }
-                accessibilityRole="link"
-                style={styles.mentionHead}
-              >
-                <Text style={styles.mentionWhen}>
-                  {b.frequency ? reviewPeriodLabel(b.frequency, b.day) : b.day}
-                </Text>
-                <Text style={styles.mentionWhere} numberOfLines={1}>
-                  {b.frequency ? FREQUENCY_NAME[b.frequency] : "Review"} ·{" "}
-                  {b.title}
-                </Text>
-              </Pressable>
-              <MentionText text={b.text} style={styles.mentionText} />
-            </View>
-          ))
+          backlinks.map((b) => {
+            const target = backlinkTarget(b);
+            const when = b.frequency
+              ? reviewPeriodLabel(b.frequency, b.day)
+              : formatDisplayDate(b.day);
+            const where = b.frequency
+              ? `${FREQUENCY_NAME[b.frequency]} · ${b.title}`
+              : b.title;
+            return (
+              <View key={b.mentionId} style={styles.mention}>
+                <Pressable
+                  onPress={target ? () => router.push(target as never) : undefined}
+                  disabled={!target}
+                  accessibilityRole={target ? "link" : undefined}
+                  style={styles.mentionHead}
+                >
+                  <Text style={styles.mentionWhen}>{when}</Text>
+                  <Text style={styles.mentionWhere} numberOfLines={1}>
+                    {where}
+                  </Text>
+                </Pressable>
+                <MentionText text={b.text} style={styles.mentionText} />
+              </View>
+            );
+          })
         )}
       </ScrollView>
     </View>
@@ -273,6 +299,12 @@ const styles = StyleSheet.create({
     marginTop: 40,
     fontSize: FontSize.body,
     color: Colors.textSecondary,
+  },
+  quietNote: {
+    textAlign: "center",
+    marginTop: 6,
+    fontSize: FontSize.caption,
+    color: Colors.textTertiary,
   },
   quietInline: { fontSize: FontSize.body, color: Colors.textTertiary },
   link: {

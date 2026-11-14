@@ -2,7 +2,10 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { persistBoundedOrderMove } from "./_helpers/orderShift";
-import { removeMentionsForSource, syncMentions } from "./_helpers/mentions";
+import {
+  removeMentionsForSource,
+  syncSourceMentions,
+} from "./_helpers/mentions";
 
 export const searchQuestions = query({
   args: {
@@ -213,28 +216,21 @@ export const bulkUpsertAnswers = mutation({
         )
         .first();
 
-      const answerId =
-        existing?._id ??
-        (await ctx.db.insert("reviewAnswers", {
+      let answerId = existing?._id;
+      if (answerId) {
+        await ctx.db.patch(answerId, { answerText: answer.answerText });
+      } else {
+        answerId = await ctx.db.insert("reviewAnswers", {
           reviewQuestionId: answer.reviewQuestionId,
           userId: user._id,
           answerText: answer.answerText,
           frequency: answer.frequency,
           dayUnderReview: answer.dayUnderReview,
-        }));
-
-      // Keep the mentions index in step with the text, and store the
-      // text with each linked page's current name.
-      const answerText = await syncMentions(ctx, {
-        userId: user._id,
-        sourceType: "reviewAnswer",
-        sourceId: answerId,
-        text: answer.answerText,
-        day: answer.dayUnderReview,
-      });
-      if (answerText !== (existing?.answerText ?? answer.answerText)) {
-        await ctx.db.patch(answerId, { answerText });
+        });
       }
+      await syncSourceMentions(ctx, "reviewAnswer", answerId, {
+        isNew: !existing,
+      });
     }
   },
 });

@@ -29,6 +29,7 @@ import {
   deleteTimeWindowWithSideEffects,
   onTaskCompletionAttribution,
 } from "./_helpers/trackableLifetime";
+import { syncSourceMentions } from "./_helpers/mentions";
 
 function minutesFromHHMM(hhmm: string): number {
   const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
@@ -610,6 +611,7 @@ export const generateInstances = mutation({
           tagIds:
             rule.tagIds && rule.tagIds.length > 0 ? rule.tagIds : undefined,
         });
+        await syncSourceMentions(ctx, "task", taskId, { isNew: true });
         // `rootTaskId` matches the task's own id for top-level tasks
         // (mirrors `tasks.upsert` initialization).
         await ctx.db.patch(taskId, { rootTaskId: taskId });

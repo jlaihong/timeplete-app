@@ -3,9 +3,16 @@ import { internal } from "./_generated/api";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
-import { rewriteMentionSource } from "./_helpers/mentions";
+import {
+  loadMentionSource,
+  removeMentionsForSource,
+  rewriteMentionSource,
+  syncSourceMentions,
+} from "./_helpers/mentions";
 import {
   flattenMentions,
+  mentionedPageIds,
+  mentionsToPlainText,
   refreshMentionNames,
   sanitizePageName,
 } from "../lib/mentions";
@@ -62,28 +69,90 @@ export const backlinks = query({
       sourceType: Doc<"mentions">["sourceType"];
       sourceId: string;
       day: string;
-      /** What kind of text it is, e.g. the review question. */
+      /** What the text is, e.g. "Task" or the review question. */
       title: string;
-      frequency?: Doc<"reviewAnswers">["frequency"];
       text: string;
+      /** Review answers: which review to open. */
+      frequency?: Doc<"reviewAnswers">["frequency"];
+      /** Tasks and their comments: the list they are on. */
+      listId?: Doc<"lists">["_id"];
+      /** Page notes: the page they belong to. */
+      pageId?: Doc<"pages">["_id"];
     }[] = [];
     for (const row of rows) {
-      if (row.sourceType === "reviewAnswer") {
-        const answerId = ctx.db.normalizeId("reviewAnswers", row.sourceId);
-        const answer = answerId ? await ctx.db.get(answerId) : null;
-        if (!answer) continue;
-        const question = await ctx.db.get(answer.reviewQuestionId);
-        out.push({
-          mentionId: row._id,
-          sourceType: row.sourceType,
-          sourceId: row.sourceId,
-          day: row.day,
-          title: question?.questionText ?? "Review",
-          frequency: answer.frequency,
-          text: answer.answerText,
-        });
+      const source = await loadMentionSource(ctx, row.sourceType, row.sourceId);
+      if (!source) continue;
+      const text = Object.values(source.texts).join("\n");
+      // The index can lag a text changed outside the usual save paths.
+      if (!mentionedPageIds(text).includes(args.pageId)) continue;
+
+      const entry = {
+        mentionId: row._id,
+        sourceType: row.sourceType,
+        sourceId: row.sourceId,
+        day: source.day,
+        text,
+      };
+      switch (row.sourceType) {
+        case "reviewAnswer": {
+          const answer = source.doc as Doc<"reviewAnswers">;
+          const question = await ctx.db.get(answer.reviewQuestionId);
+          out.push({
+            ...entry,
+            title: question?.questionText ?? "Review",
+            frequency: answer.frequency,
+          });
+          break;
+        }
+        case "task": {
+          const task = source.doc as Doc<"tasks">;
+          out.push({ ...entry, title: "Task", listId: task.listId });
+          break;
+        }
+        case "timeWindow": {
+          const window = source.doc as Doc<"timeWindows">;
+          out.push({
+            ...entry,
+            title:
+              window.activityType === "EVENT"
+                ? `Event at ${window.startTimeHHMM}`
+                : `Time entry at ${window.startTimeHHMM}`,
+          });
+          break;
+        }
+        case "taskComment": {
+          const comment = source.doc as Doc<"taskComments">;
+          const task = await ctx.db.get(comment.taskId);
+          out.push({
+            ...entry,
+            title: task
+              ? `Comment on ${mentionsToPlainText(task.name)}`
+              : "Comment",
+            listId: task?.listId,
+          });
+          break;
+        }
+        case "trackerEntry":
+        case "trackableDay": {
+          const trackableId = (
+            source.doc as Doc<"trackerEntries"> | Doc<"trackableDays">
+          ).trackableId;
+          const trackable = await ctx.db.get(trackableId);
+          out.push({ ...entry, title: trackable?.name ?? "Trackable" });
+          break;
+        }
+        case "page": {
+          const owner = source.doc as Doc<"pages">;
+          out.push({
+            ...entry,
+            title: `Notes on ${owner.name}`,
+            pageId: owner._id,
+          });
+          break;
+        }
       }
     }
+    out.sort((a, b) => (a.day < b.day ? 1 : a.day > b.day ? -1 : 0));
     return out;
   },
 });
@@ -141,6 +210,9 @@ export const update = mutation({
       }
     }
     await ctx.db.patch(args.id, patch);
+    if (args.notes !== undefined) {
+      await syncSourceMentions(ctx, "page", args.id);
+    }
 
     // Readers show the page's current name straight away. This catches up
     // the copy of the name stored inside every text that mentions it.
@@ -164,6 +236,7 @@ export const remove = mutation({
     const user = await requireApprovedUser(ctx);
     const page = await ctx.db.get(args.id);
     if (!page || page.userId !== user._id) throw new Error("Page not found");
+    await removeMentionsForSource(ctx, "page", args.id);
     await ctx.db.delete(args.id);
     await ctx.scheduler.runAfter(0, internal.pages.flattenBatch, {
       pageId: args.id,
@@ -186,11 +259,12 @@ export const refreshNamesBatch = internalMutation({
       .withIndex("by_page_day", (q) => q.eq("pageId", args.pageId))
       .paginate({ numItems: BATCH, cursor: args.cursor });
     for (const mention of result.page) {
-      await rewriteMentionSource(ctx, mention, (text) =>
+      const found = await rewriteMentionSource(ctx, mention, (text) =>
         refreshMentionNames(text, (id) =>
           id === args.pageId ? page.name : undefined,
         ),
       );
+      if (!found) await ctx.db.delete(mention._id);
     }
     if (!result.isDone) {
       await ctx.scheduler.runAfter(0, internal.pages.refreshNamesBatch, {

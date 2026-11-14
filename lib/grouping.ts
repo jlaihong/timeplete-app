@@ -3,6 +3,7 @@ import {
   formatYYYYMMDDForDisplay,
   timeWindowBoundsMs,
 } from "./dates";
+import { plainMentions } from "./mentions";
 
 export type TimeWindowLike = {
   startDayYYYYMMDD: string;
@@ -101,7 +102,7 @@ function getGroupKeys(
     case "task":
       if (w.taskId && lookups.tasks?.[w.taskId]?.name) {
         const t = lookups.tasks[w.taskId]!;
-        return [{ key: w.taskId, label: t.name ?? "Task" }];
+        return [{ key: w.taskId, label: plainMentions(t.name) ?? "Task" }];
       }
       return [{ key: "no_task", label: "No Task" }];
 

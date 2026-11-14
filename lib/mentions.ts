@@ -37,8 +37,9 @@ export interface MentionDoc {
 
 /**
  * Looks up a page's current name. `undefined`: not known (pages still
- * loading), so the stored copy is used and the link kept. `null`: the page
- * no longer exists, so the mention is shown as plain text.
+ * loading, or the page is someone else's), so the stored copy is used and
+ * the link kept. `null`: the page no longer exists, so the mention is
+ * shown as plain text.
  */
 export type PageNameLookup = (pageId: string) => string | null | undefined;
 
@@ -242,6 +243,18 @@ export function flattenMentions(
   return stored.replace(tokenRegex(), (token, copy: string, id: string) =>
     id === pageId ? (name ?? copy) : token,
   );
+}
+
+/**
+ * Stored text as it reads, with no lookup: "Dinner with @Wesley". For the
+ * many places that only label something (a calendar block, a chart, a
+ * notification) and do not need the link.
+ */
+export function plainMentions(stored: string): string;
+export function plainMentions(stored: string | undefined): string | undefined;
+export function plainMentions(stored: string | undefined): string | undefined {
+  if (!stored || !stored.includes("@[")) return stored;
+  return stored.replace(tokenRegex(), "@$1");
 }
 
 /** Stored text as plain words, e.g. for a notification or an export. */

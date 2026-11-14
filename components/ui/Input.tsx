@@ -31,6 +31,7 @@ import {
   type StyleProp,
 } from "react-native";
 import { Colors } from "../../constants/colors";
+import { MentionTextInput } from "../mentions/MentionTextInput";
 
 interface InputProps extends TextInputProps {
   label?: string;
@@ -45,6 +46,11 @@ interface InputProps extends TextInputProps {
    */
   helperText?: string;
   containerStyle?: StyleProp<ViewStyle>;
+  /**
+   * Free text that can link to pages: typing "@" offers them, and `value`
+   * / `onChangeText` then carry mention tokens (see `MentionTextInput`).
+   */
+  mentions?: boolean;
 }
 
 const FIELD_HORIZONTAL_PADDING = 12;
@@ -69,6 +75,7 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
     placeholder,
     multiline,
     editable = true,
+    mentions = false,
     ...props
   },
   forwardedRef
@@ -171,36 +178,71 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
           </Text>
         ) : null}
 
-        <TextInput
-          ref={inputRef}
-          value={value}
-          editable={editable}
-          onFocus={(e) => {
-            setFocused(true);
-            onFocus?.(e);
-          }}
-          onBlur={(e) => {
-            setFocused(false);
-            onBlur?.(e);
-          }}
-          // When a label is present, the resting label IS the
-          // placeholder (matches P1's `mat-form-field`). The OS
-          // placeholder is only revealed once the label has lifted,
-          // so short format hints (`HH:MM`, `e.g. 100`) appear after
-          // focus instead of competing with the label.
-          // When no label is given, the input behaves like a plain
-          // text field and the placeholder is always visible.
-          placeholder={label ? (shouldFloat ? placeholder : undefined) : placeholder}
-          placeholderTextColor={Colors.textTertiary}
-          multiline={multiline}
-          style={[
-            styles.input,
-            label ? styles.inputWithLabel : null,
-            multiline && styles.inputMultiline,
-            style,
-          ]}
-          {...props}
-        />
+        {mentions ? (
+          <MentionTextInput
+            autoGrow={!!multiline}
+            onChangeText={() => {}}
+            ref={inputRef}
+            value={value ?? ""}
+            editable={editable}
+            onFocus={(e) => {
+              setFocused(true);
+              onFocus?.(e);
+            }}
+            onBlur={(e) => {
+              setFocused(false);
+              onBlur?.(e);
+            }}
+            // When a label is present, the resting label IS the
+            // placeholder (matches P1's `mat-form-field`). The OS
+            // placeholder is only revealed once the label has lifted,
+            // so short format hints (`HH:MM`, `e.g. 100`) appear after
+            // focus instead of competing with the label.
+            // When no label is given, the input behaves like a plain
+            // text field and the placeholder is always visible.
+            placeholder={label ? (shouldFloat ? placeholder : undefined) : placeholder}
+            placeholderTextColor={Colors.textTertiary}
+            multiline={multiline}
+            style={[
+              styles.input,
+              label ? styles.inputWithLabel : null,
+              multiline && styles.inputMultiline,
+              style,
+            ]}
+            {...props}
+          />
+        ) : (
+          <TextInput
+            ref={inputRef}
+            value={value}
+            editable={editable}
+            onFocus={(e) => {
+              setFocused(true);
+              onFocus?.(e);
+            }}
+            onBlur={(e) => {
+              setFocused(false);
+              onBlur?.(e);
+            }}
+            // When a label is present, the resting label IS the
+            // placeholder (matches P1's `mat-form-field`). The OS
+            // placeholder is only revealed once the label has lifted,
+            // so short format hints (`HH:MM`, `e.g. 100`) appear after
+            // focus instead of competing with the label.
+            // When no label is given, the input behaves like a plain
+            // text field and the placeholder is always visible.
+            placeholder={label ? (shouldFloat ? placeholder : undefined) : placeholder}
+            placeholderTextColor={Colors.textTertiary}
+            multiline={multiline}
+            style={[
+              styles.input,
+              label ? styles.inputWithLabel : null,
+              multiline && styles.inputMultiline,
+              style,
+            ]}
+            {...props}
+          />
+        )}
 
         <View
           style={[

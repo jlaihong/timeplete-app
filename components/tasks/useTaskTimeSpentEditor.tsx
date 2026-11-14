@@ -38,6 +38,7 @@ import { applySetTimeSpentOptimisticUpdate } from "../../lib/setTimeSpentOptimis
 import { calendarGridIANAZoneForManualEvents } from "../../lib/calendarGridTimeZone";
 import { useTimer } from "../../hooks/useTimer";
 import { EditTimeSpentDialog } from "./EditTimeSpentDialog";
+import { plainMentions } from "../../lib/mentions";
 
 export interface TimeSpentEditTarget {
   id: Id<"tasks">;
@@ -78,7 +79,7 @@ const TimeSpentEditorHost = forwardRef<
   if (!editing) return null;
   return (
     <EditTimeSpentDialog
-      taskName={editing.name}
+      taskName={plainMentions(editing.name)}
       initialSeconds={editing.seconds}
       onClose={() => setEditing(null)}
       onSave={(secs) =>

@@ -1,6 +1,10 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
+import {
+  removeMentionsForSource,
+  syncSourceMentions,
+} from "./_helpers/mentions";
 
 export const search = query({
   args: {
@@ -36,14 +40,17 @@ export const upsert = mutation({
 
     if (args.id) {
       await ctx.db.patch(args.id, { commentText: args.commentText });
+      await syncSourceMentions(ctx, "taskComment", args.id);
       return args.id;
     }
 
-    return await ctx.db.insert("taskComments", {
+    const insertedId = await ctx.db.insert("taskComments", {
       taskId: args.taskId,
       userId: user._id,
       commentText: args.commentText,
     });
+    await syncSourceMentions(ctx, "taskComment", insertedId, { isNew: true });
+    return insertedId;
   },
 });
 
@@ -53,6 +60,7 @@ export const remove = mutation({
     const user = await requireApprovedUser(ctx);
     const comment = await ctx.db.get(args.id);
     if (!comment) throw new Error("Comment not found");
+    await removeMentionsForSource(ctx, "taskComment", args.id);
     await ctx.db.delete(args.id);
   },
 });

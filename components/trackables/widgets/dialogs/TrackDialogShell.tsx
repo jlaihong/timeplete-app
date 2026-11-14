@@ -15,7 +15,6 @@ import React, { useContext, useState } from "react";
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   StyleSheet,
   Platform,
@@ -38,6 +37,7 @@ import {
   dialogSurfaceStyle,
 } from "../../../ui/DialogScaffold";
 import { DialogMaxHeightContext } from "../../../ui/useDialogKeyboardShift";
+import { MentionTextInput } from "../../../mentions/MentionTextInput";
 
 interface TrackDialogShellProps {
   onClose: () => void;
@@ -147,10 +147,15 @@ export function TrackDialogShell({
             </View>
           ) : null}
           {noteOpen ? (
-            <TextInput
+            <MentionTextInput
+              autoGrow
               style={styles.noteInput}
               value={note}
-              onChangeText={(t) => onNoteChange(t.slice(0, 1024))}
+              // Refuse an over-long note outright: trimming it could cut
+              // through the middle of a link.
+              onChangeText={(t) => {
+                if (t.length <= 1024) onNoteChange(t);
+              }}
               placeholder={notePlaceholder}
               placeholderTextColor={Colors.textTertiary}
               accessibilityLabel="Note"

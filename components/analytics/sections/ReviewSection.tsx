@@ -19,7 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../../convex/_generated/api";
 import { Colors } from "../../../constants/colors";
 import { Button } from "../../ui/Button";
-import { AutoGrowTextInput } from "../../ui/AutoGrowTextInput";
+import { MentionTextInput } from "../../mentions/MentionTextInput";
 import { useAnalyticsState } from "../AnalyticsState";
 import { ReviewReflectModal } from "../ReviewReflectModal";
 import { ReviewQuestionsSettingsModal } from "../../reviews/ReviewQuestionsSettingsModal";
@@ -182,7 +182,8 @@ export function ReviewSection() {
             {displayQs.map((q) => (
               <View key={q._id} style={styles.questionBlock}>
                 <Text style={styles.questionText}>{q.questionText}</Text>
-                <AutoGrowTextInput
+                <MentionTextInput
+                  autoGrow
                   style={styles.answerInput}
                   value={answers[q._id] ?? ""}
                   onChangeText={(text) => {

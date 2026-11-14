@@ -18,6 +18,7 @@ import {
   getReflectMeta,
   type ReviewFrequency,
 } from "../../lib/reviewParity";
+import { MentionText } from "../mentions/MentionText";
 
 const MAX_TIME_ROWS = 8;
 const MAX_TASK_ROWS = 12;
@@ -217,9 +218,11 @@ export function ReviewContextPanel({
                     <View
                       style={[styles.dot, { backgroundColor: task.colour }]}
                     />
-                    <Text style={styles.taskName} numberOfLines={2}>
-                      {task.name}
-                    </Text>
+                    <MentionText
+                      text={task.name}
+                      style={styles.taskName}
+                      numberOfLines={2}
+                    />
                   </View>
                 ))}
                 {completed.length > MAX_TASK_ROWS ? (
@@ -330,7 +333,7 @@ function EarlierReviews({
             {items.map((item, i) => (
               <View key={i} style={styles.earlierItem}>
                 <Text style={styles.earlierQuestion}>{item.question}</Text>
-                <Text style={styles.earlierAnswer}>{item.text}</Text>
+                <MentionText text={item.text} style={styles.earlierAnswer} />
               </View>
             ))}
           </View>

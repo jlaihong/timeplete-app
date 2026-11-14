@@ -46,6 +46,7 @@ import {
   buildListIdToTrackableId,
   resolveSnapshotTrackableIdForTask,
 } from "./_helpers/trackableAttribution";
+import { syncSourceMentions } from "./_helpers/mentions";
 
 const LAST_USED_MIN_GAP_MS = 5 * 60 * 1000;
 const MAX_EVENTS = 200;
@@ -422,6 +423,7 @@ async function runCreateTask(
     createdBy: user._id,
   });
   await ctx.db.patch(taskId, { rootTaskId: taskId });
+  await syncSourceMentions(ctx, "task", taskId, { isNew: true });
   return ok({
     taskId,
     name: args.name,
@@ -499,6 +501,7 @@ async function runCreateEvent(
     isRecurringInstance: false,
     source: "calendar",
   });
+  await syncSourceMentions(ctx, "timeWindow", eventId, { isNew: true });
   const inserted = {
     taskId: undefined,
     activityType: "EVENT" as const,
@@ -1140,6 +1143,7 @@ async function runRenameTask(
         instance._id === task._id || instance.name === previousName;
       if (followsSeries && instance.name !== newName) {
         await ctx.db.patch(instance._id, { name: newName });
+        await syncSourceMentions(ctx, "task", instance._id);
       }
     }
     const updated = await ctx.db.get(task._id);
@@ -1166,6 +1170,9 @@ async function runRenameTask(
   }
   if (Object.keys(patch).length > 0) {
     await ctx.db.patch(task._id, patch);
+    if (patch.name !== undefined) {
+      await syncSourceMentions(ctx, "task", task._id);
+    }
   }
   const updated = await ctx.db.get(task._id);
   return ok({

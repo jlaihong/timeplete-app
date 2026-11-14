@@ -62,6 +62,8 @@ import {
 import { useTaskDeleteMutation } from "../../../hooks/useTaskDeleteMutation";
 import { useRegisterEscapeClose } from "../../../hooks/useRegisterEscapeClose";
 import { useVisualViewportHeight } from "../../../hooks/useVisualViewportHeight";
+import { MentionText } from "../../../components/mentions/MentionText";
+import { plainMentions } from "../../../lib/mentions";
 
 /** `lists.getPaginated` enriches rows with `tagIds` like `tasks.search`. */
 type ListPageTask = Doc<"tasks"> & { tagIds?: Id<"tags">[] };
@@ -568,7 +570,7 @@ export default function ListDetailScreen() {
       const task = allTasksInPage.find((t) => t._id === taskId);
       deleteTaskMutation({
         taskId,
-        taskName: task?.name,
+        taskName: plainMentions(task?.name),
         isRecurringInstance: task?.isRecurringInstance,
         recurringTaskId: task?.recurringTaskId,
       });
@@ -697,12 +699,11 @@ export default function ListDetailScreen() {
               delayLongPress={300}
               activeOpacity={0.7}
             >
-            <Text
+            <MentionText
+              text={task.name}
               style={[styles.taskName, isCompleted && styles.completedTask]}
               numberOfLines={1}
-            >
-              {task.name}
-            </Text>
+            />
             <View style={styles.timeCol}>
               {!isCompleted && (
                 <TouchableOpacity
@@ -723,7 +724,7 @@ export default function ListDetailScreen() {
                   value. */}
               <TaskTimeSpentButton
                 taskId={task._id}
-                taskName={task.name}
+                taskName={plainMentions(task.name)}
                 seconds={timeSpent}
                 isTicking={isTicking}
                 timerStartTime={timer.startTime}

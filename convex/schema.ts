@@ -632,7 +632,16 @@ export default defineSchema({
   mentions: defineTable({
     userId: v.id("users"),
     pageId: v.id("pages"),
-    sourceType: v.union(v.literal("reviewAnswer")),
+    sourceType: v.union(
+      v.literal("reviewAnswer"),
+      v.literal("task"),
+      v.literal("timeWindow"),
+      v.literal("taskComment"),
+      v.literal("trackerEntry"),
+      v.literal("trackableDay"),
+      /** A page's notes mentioning another page. */
+      v.literal("page")
+    ),
     /** `_id` of the row holding the text, in the table `sourceType` names. */
     sourceId: v.string(),
     /** YYYYMMDD the text is about, for ordering a page's mentions. */

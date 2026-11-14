@@ -12,6 +12,7 @@ import {
   clearDeletedRecurringEventOccurrence,
   recordDeletedRecurringEventOccurrence,
 } from "./_helpers/deletedRecurringEventOccurrence";
+import { syncSourceMentions } from "./_helpers/mentions";
 
 function minutesFromHHMM(hhmm: string): number {
   const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
@@ -335,7 +336,7 @@ export const generateInstances = mutation({
         const startTimeEpochMs = useTimeZone
           ? computeStartEpochMs(date, rule.startTimeHHMM, rule.timeZone)
           : undefined;
-        await ctx.db.insert("timeWindows", {
+        const windowId = await ctx.db.insert("timeWindows", {
           startTimeHHMM: rule.startTimeHHMM,
           startDayYYYYMMDD: date,
           startTimeEpochMs,
@@ -352,6 +353,9 @@ export const generateInstances = mutation({
           recurringEventId: rule._id,
           isRecurringInstance: true,
           source: "calendar",
+        });
+        await syncSourceMentions(ctx, "timeWindow", windowId, {
+          isNew: true,
         });
         await onAttributedWindowInserted(ctx, {
           userId: user._id,

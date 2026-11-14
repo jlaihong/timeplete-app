@@ -4,6 +4,7 @@
  * Mirrors attribution + title rules from `convex/_helpers/timeWindowDisplayEnrichment.ts`.
  */
 import type { Doc, Id } from "../convex/_generated/dataModel";
+import { plainMentions } from "./mentions";
 
 type TW = Doc<"timeWindows">;
 
@@ -142,7 +143,7 @@ function displayTitleForEditHistoryWindow(
   } else if (w.activityType === "TASK") {
     const task = w.taskId ? tasksById.get(String(w.taskId)) : undefined;
     const taskListDoc = task?.listId ? listsById.get(String(task.listId)) : undefined;
-    if (task?.name) derivedTitle = task.name;
+    if (task?.name) derivedTitle = plainMentions(task.name);
     else if (directListDoc?.name) derivedTitle = directListDoc.name;
     else if (taskListDoc?.name) derivedTitle = taskListDoc.name;
   }
@@ -321,7 +322,7 @@ export function timeWindowsToTrackerHistoryRows(
         ? tw.comments.trim()
         : undefined;
     const commentsUnified =
-      titleTrim ?? commentsTrim ?? tw.displayTitle ?? "Untitled";
+      plainMentions(titleTrim ?? commentsTrim ?? tw.displayTitle) ?? "Untitled";
     rows.push({
       source: "time_window",
       id: String(tw._id),

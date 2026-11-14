@@ -21,7 +21,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
-import { AutoGrowTextInput } from "../ui/AutoGrowTextInput";
+import { MentionTextInput } from "../mentions/MentionTextInput";
 import {
   DialogCard,
   DialogFooter,
@@ -37,6 +37,7 @@ import {
 import { useAuth } from "../../hooks/useAuth";
 import { AnswerEditorSheet } from "../reviews/AnswerEditorSheet";
 import { UnsavedReviewChangesDialog } from "./UnsavedReviewChangesDialog";
+import { MentionText } from "../mentions/MentionText";
 
 type ParentTab = Exclude<ReviewFrequency, "DAILY">;
 
@@ -299,7 +300,7 @@ export function ReviewReflectModal({
               return (
                 <View key={q._id} style={styles.qaPair}>
                   <Text style={styles.questionLabel}>{q.questionText}</Text>
-                  <Text style={styles.answerText}>{answer}</Text>
+                  <MentionText text={answer} style={styles.answerText} />
                 </View>
               );
             })}
@@ -351,7 +352,7 @@ export function ReviewReflectModal({
                   accessibilityLabel={`Answer: ${q.questionText}`}
                 >
                   {answer ? (
-                    <Text style={styles.answerText}>{answer}</Text>
+                    <MentionText text={answer} style={styles.answerText} />
                   ) : (
                     <Text style={styles.currentPlaceholder}>
                       Tap to answer...
@@ -359,7 +360,8 @@ export function ReviewReflectModal({
                   )}
                 </Pressable>
               ) : (
-                <AutoGrowTextInput
+                <MentionTextInput
+                  autoGrow
                   style={styles.currentTextarea}
                   value={answer}
                   onChangeText={(t) =>

@@ -18,7 +18,12 @@ export function rememberCreatedPage(id: string, name: string) {
 
 /**
  * The user's pages, and a lookup from page id to current name for drawing
- * mentions (see `PageNameLookup` for what `undefined` and `null` mean).
+ * mentions.
+ *
+ * A page that is not in the list gives `undefined`, never "deleted": it
+ * may be someone else's (a mention on a shared list), so the link is kept
+ * and shown with the name stored in the text. A page that really was
+ * deleted has its links turned into plain words by the backend.
  */
 export function usePages() {
   const { profileReady } = useAuth();
@@ -29,9 +34,7 @@ export function usePages() {
     for (const p of pages ?? []) byId.set(p._id, p);
     const nameFor: PageNameLookup = (id) => {
       const page = byId.get(id);
-      if (page) return page.name;
-      if (pages === undefined) return undefined;
-      return createdHere.get(id) ?? null;
+      return page ? page.name : createdHere.get(id);
     };
     const sorted = [...(pages ?? [])].sort((a, b) =>
       a.name.localeCompare(b.name),

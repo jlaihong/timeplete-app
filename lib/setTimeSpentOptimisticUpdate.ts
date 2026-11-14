@@ -10,6 +10,7 @@ import type { FunctionReturnType } from "convex/server";
 import { DEFAULT_EVENT_COLOR } from "./eventColors";
 import { validatedOptionalIANATimeZone } from "./calendarGridTimeZone";
 import { wallClockInTimeZone } from "./wallClockTimeZone";
+import { plainMentions } from "./mentions";
 
 type TrackedWindow = {
   id: string;
@@ -297,7 +298,7 @@ function patchTimeWindowsSearchForManualIncrease(
   const oid = optimisticManualTimeSpentWindowId(params.taskId);
   const label =
     typeof task.name === "string" && task.name.trim().length > 0
-      ? task.name.trim()
+      ? plainMentions(task.name.trim())
       : "Task";
 
   const endWall = wallClockInTimeZone(nowMs, tz);

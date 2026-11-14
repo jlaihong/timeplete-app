@@ -3,6 +3,10 @@ import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { onTrackerEntryWrite } from "./_helpers/trackableLifetime";
 import { toCompactYYYYMMDD } from "./_helpers/compactYYYYMMDD";
+import {
+  removeMentionsForSource,
+  syncSourceMentions,
+} from "./_helpers/mentions";
 
 export const search = query({
   args: {
@@ -82,6 +86,7 @@ export const upsert = mutation({
         startTimeHHMM: args.startTimeHHMM,
         comments: args.comments,
       });
+      await syncSourceMentions(ctx, "trackerEntry", args.id);
       // Sync the denormalized trackable totals + daily-average
       // aggregates from the before/after snapshots (handles value
       // diffs, day moves, and `firstActivityDayYYYYMMDD` pull-down).
@@ -111,6 +116,7 @@ export const upsert = mutation({
       startTimeHHMM: args.startTimeHHMM,
       comments: args.comments,
     });
+    await syncSourceMentions(ctx, "trackerEntry", insertedId, { isNew: true });
     await onTrackerEntryWrite(ctx, {
       trackableId: args.trackableId,
       entryId: insertedId,
@@ -131,6 +137,7 @@ export const remove = mutation({
     const user = await requireApprovedUser(ctx);
     const entry = await ctx.db.get(args.id);
     if (!entry) throw new Error("Entry not found");
+    await removeMentionsForSource(ctx, "trackerEntry", args.id);
     await ctx.db.delete(args.id);
     await onTrackerEntryWrite(ctx, {
       trackableId: entry.trackableId,

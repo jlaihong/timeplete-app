@@ -5,6 +5,7 @@ import {
   onTrackableDayDelta,
   setTrackableWeekDayActive,
 } from "./_helpers/trackableLifetime";
+import { syncSourceMentions } from "./_helpers/mentions";
 
 export const search = query({
   args: {
@@ -62,6 +63,9 @@ export const upsert = mutation({
         numCompleted: args.numCompleted,
         comments: args.comments ?? existing.comments,
       });
+      if (args.comments !== undefined) {
+        await syncSourceMentions(ctx, "trackableDay", existing._id);
+      }
       // Keep the denormalized lifetime day count in step with the
       // numCompleted delta (fix #1).
       await onTrackableDayDelta(ctx, {
@@ -91,6 +95,7 @@ export const upsert = mutation({
       numCompleted: args.numCompleted,
       comments: args.comments ?? "",
     });
+    await syncSourceMentions(ctx, "trackableDay", insertedId, { isNew: true });
     await onTrackableDayDelta(ctx, {
       trackableId: args.trackableId,
       deltaNumCompleted: args.numCompleted,
