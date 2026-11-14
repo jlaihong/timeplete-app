@@ -304,9 +304,16 @@ export const acknowledgeCheckpoint = mutation({
     if (!timer) return null;
 
     const elapsed = Math.max(0, Date.now() - timer.startTime);
+    // The device decides a check-in is due from its own clock. If that
+    // clock runs fast, it asks about a boundary the server has not reached
+    // yet; capping at `elapsed` then recorded less than the boundary, so
+    // the device kept asking and "Yes" appeared to do nothing. Allow one
+    // interval of slack: enough for a badly set clock, never more than
+    // the next boundary.
+    const ceiling = elapsed + CHECK_IN_INTERVAL_MS;
     const next = Math.max(
       timer.acknowledgedUpToMs ?? 0,
-      Math.min(Math.max(0, args.checkpointMs), elapsed),
+      Math.min(Math.max(0, args.checkpointMs), ceiling),
     );
     await ctx.db.patch(timer._id, { acknowledgedUpToMs: next });
     return null;

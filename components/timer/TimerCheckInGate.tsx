@@ -72,6 +72,11 @@ export function TimerCheckInGate() {
 
   /** Elapsed-ms boundary awaiting a Yes/No, or null when nothing is due. */
   const [dueCheckpointMs, setDueCheckpointMs] = useState<number | null>(null);
+  /**
+   * Latest boundary answered "Yes" on this device. The popup goes away on
+   * the tap itself, without waiting for the server to confirm.
+   */
+  const [answeredMs, setAnsweredMs] = useState(0);
   /** True while the duration dialog is open for the RUNNING timer ("No" path). */
   const [reviewingRunning, setReviewingRunning] = useState(false);
   /** Pending review the user closed without resolving — hidden until next launch. */
@@ -93,7 +98,8 @@ export function TimerCheckInGate() {
       const boundary =
         Math.floor(elapsed / CHECK_IN_INTERVAL_MS) * CHECK_IN_INTERVAL_MS;
       setDueCheckpointMs(
-        boundary >= CHECK_IN_INTERVAL_MS && boundary > acknowledgedMs
+        boundary >= CHECK_IN_INTERVAL_MS &&
+          boundary > Math.max(acknowledgedMs, answeredMs)
           ? boundary
           : null,
       );
@@ -109,7 +115,18 @@ export function TimerCheckInGate() {
       clearInterval(id);
       sub.remove();
     };
-  }, [startTime, acknowledgedMs]);
+  }, [startTime, acknowledgedMs, answeredMs]);
+
+  // A different timer starts with nothing answered.
+  useEffect(() => setAnsweredMs(0), [startTime]);
+
+  const stillWorking = (checkpointMs: number) => {
+    setAnsweredMs(checkpointMs);
+    setDueCheckpointMs(null);
+    acknowledgeCheckpoint({ checkpointMs }).catch((e) => {
+      console.error("[timer] could not record the check-in:", e);
+    });
+  };
 
   // ── 24h auto-stop review (takes priority: the timer is already gone) ──
   if (pending && pending._id !== dismissedPendingId) {
@@ -185,9 +202,7 @@ export function TimerCheckInGate() {
       <DialogCard desktopWidth={420}>
         <DialogHeader
           title="Still working on this?"
-          onClose={() =>
-            void acknowledgeCheckpoint({ checkpointMs: dueCheckpointMs })
-          }
+          onClose={() => stillWorking(dueCheckpointMs)}
         />
         <View style={styles.body}>
           <Text style={styles.taskName} numberOfLines={2}>
@@ -207,9 +222,7 @@ export function TimerCheckInGate() {
           />
           <Button
             title="Yes, still working"
-            onPress={() =>
-              void acknowledgeCheckpoint({ checkpointMs: dueCheckpointMs })
-            }
+            onPress={() => stillWorking(dueCheckpointMs)}
             size="small"
           />
         </DialogFooter>
