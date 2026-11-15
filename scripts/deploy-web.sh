@@ -33,12 +33,21 @@ if [[ "$DO_BUILD" == "1" ]]; then
 
   rm -rf "$DIST_DIR" .expo node_modules/.cache
 
+  # A worktree's `.workspace-label` must not reach the production site.
+  TIMEPLETE_NO_WORKSPACE_LABEL=1 \
   EXPO_PUBLIC_CONVEX_URL="$PROD_CONVEX_URL" \
   EXPO_PUBLIC_CONVEX_SITE_URL="$PROD_CONVEX_SITE_URL" \
   npx expo export --platform web --output-dir "$DIST_DIR" --clear
 
   if ! grep -q "${PROD_CONVEX_URL#https://}" "$DIST_DIR"/_expo/static/js/web/*.js 2>/dev/null; then
     echo "ERROR: prod Convex URL not found in built bundle. Aborting before upload." >&2
+    exit 1
+  fi
+
+  WORKSPACE_LABEL="$(head -1 .workspace-label 2>/dev/null | tr -d '[:space:]' || true)"
+  if [[ -n "$WORKSPACE_LABEL" ]] &&
+    grep -qF "workspaceLabel\":\"$WORKSPACE_LABEL" "$DIST_DIR"/_expo/static/js/web/*.js 2>/dev/null; then
+    echo "ERROR: this checkout's workspace label found in built bundle. Aborting before upload." >&2
     exit 1
   fi
 
