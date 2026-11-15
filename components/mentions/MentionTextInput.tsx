@@ -40,13 +40,15 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import type { Doc } from "../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
 import { FontSize, Radius } from "../../theme/tokens";
 import { AutoGrowTextInput } from "../ui/AutoGrowTextInput";
 import {
   applyTextChange,
   findMentionQuery,
+  findTrackableQuery,
+  removeTypedQuery,
   insertMention,
   matchPages,
   mentionSegments,
@@ -56,6 +58,7 @@ import {
   type MentionDoc,
 } from "../../lib/mentions";
 import { rememberCreatedPage, usePages } from "../../hooks/usePages";
+import { useTrackableTags } from "../../hooks/useTrackableTags";
 import { openPage } from "../../lib/openPage";
 import { mentionStyles } from "./MentionText";
 import { PAGE_KIND_ICON } from "./pageKinds";
@@ -74,10 +77,17 @@ export interface MentionTextInputProps
   autoGrow?: boolean;
   /** Layout of the field within its parent (flex, margins). */
   containerStyle?: StyleProp<ViewStyle>;
+  /**
+   * Turns on the "#" shortcut: typing "#" offers the user's trackables,
+   * and choosing one calls this and removes the "#name" from the text.
+   * The caller adds the trackable to its "Tracks to" field.
+   */
+  onPickTrackable?: (trackableId: Id<"trackables">) => void;
 }
 
 type Option =
   | { kind: "page"; page: Doc<"pages"> }
+  | { kind: "trackable"; trackable: Doc<"trackables">; path: string }
   | { kind: "create"; name: string };
 
 /** The text-shaping parts of a field's style, for the copy laid over it. */
@@ -149,6 +159,7 @@ export const MentionTextInput = forwardRef<TextInput, MentionTextInputProps>(
       onChangeText,
       autoGrow = false,
       containerStyle,
+      onPickTrackable,
       style,
       onFocus,
       onBlur,
@@ -165,6 +176,7 @@ export const MentionTextInput = forwardRef<TextInput, MentionTextInputProps>(
 
     const { pages, nameFor } = usePages();
     const createPage = useMutation(api.pages.create);
+    const tags = useTrackableTags();
 
     const doc = useMemo(() => parseMentions(value, nameFor), [value, nameFor]);
     const docRef = useRef(doc);
@@ -195,12 +207,26 @@ export const MentionTextInput = forwardRef<TextInput, MentionTextInputProps>(
     };
 
     /* ── What is being typed after an "@" ─────────────────────────────── */
-    const found =
+    const foundPage =
       focused && caret != null
         ? findMentionQuery(doc.text, caret, doc.mentions)
         : null;
+    /** A "#name" being typed, when this field offers the shortcut. */
+    const foundTrackable =
+      !foundPage && onPickTrackable && focused && caret != null
+        ? findTrackableQuery(doc.text, caret, doc.mentions)
+        : null;
+    const found = foundPage ?? foundTrackable;
+    const isTrackableQuery = foundTrackable !== null;
     const options = useMemo<Option[]>(() => {
       if (!found) return [];
+      if (isTrackableQuery) {
+        return matchPages(tags.options, found.query).map((o) => ({
+          kind: "trackable" as const,
+          trackable: o.trackable,
+          path: o.path,
+        }));
+      }
       const matches = matchPages(pages, found.query);
       const name = sanitizePageName(found.query);
       const exact = pages.some(
@@ -214,7 +240,7 @@ export const MentionTextInput = forwardRef<TextInput, MentionTextInputProps>(
       }
       return out;
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [found?.query, found?.start, pages]);
+    }, [found?.query, found?.start, pages, isTrackableQuery, tags.options]);
     const query =
       found && found.start !== dismissedAt && (options.length > 0 || !found.query)
         ? found
@@ -287,6 +313,21 @@ export const MentionTextInput = forwardRef<TextInput, MentionTextInputProps>(
     }, [doc.text]);
 
     const choose = async (option: Option) => {
+      if (option.kind === "trackable") {
+        // The "#name" was only a way to reach the picker: take it out of
+        // the text and hand the trackable to the "Tracks to" field.
+        const current = docRef.current;
+        const at = readCaret() ?? current.text.length;
+        const live = findTrackableQuery(current.text, at, current.mentions);
+        if (!live) return;
+        const result = removeTypedQuery(current, live.start, at);
+        pendingCaret.current = result.caret;
+        docRef.current = result.doc;
+        setCaret(result.caret);
+        emit(result.doc);
+        onPickTrackable?.(option.trackable._id);
+        return;
+      }
       let page: { id: string; name: string };
       if (option.kind === "page") {
         page = { id: option.page._id, name: option.page.name };
@@ -466,31 +507,52 @@ export const MentionTextInput = forwardRef<TextInput, MentionTextInputProps>(
           <MentionPickerPortal anchor={anchor}>
             <View style={styles.picker} accessibilityRole="menu">
               {options.length === 0 ? (
-                <Text style={styles.hint}>Type a name to link a page</Text>
+                <Text style={styles.hint}>
+                  {isTrackableQuery
+                    ? "Type a trackable's name"
+                    : "Type a name to link a page"}
+                </Text>
               ) : (
                 options.map((option, i) => {
                   const active = i === activeIndex;
                   return (
                     <Pressable
-                      key={option.kind === "page" ? option.page._id : "create"}
+                      key={
+                        option.kind === "page"
+                          ? option.page._id
+                          : option.kind === "trackable"
+                            ? option.trackable._id
+                            : "create"
+                      }
                       onPress={() => void choose(option)}
                       onHoverIn={() => setActiveIndex(i)}
                       accessibilityRole="menuitem"
                       style={[styles.option, active && styles.optionActive]}
                     >
-                      <Ionicons
-                        name={
-                          option.kind === "create"
-                            ? "add"
-                            : PAGE_KIND_ICON[option.page.kind ?? "other"]
-                        }
-                        size={16}
-                        color={Colors.textSecondary}
-                      />
+                      {option.kind === "trackable" ? (
+                        <View
+                          style={[
+                            styles.trackableDot,
+                            { backgroundColor: option.trackable.colour },
+                          ]}
+                        />
+                      ) : (
+                        <Ionicons
+                          name={
+                            option.kind === "create"
+                              ? "add"
+                              : PAGE_KIND_ICON[option.page.kind ?? "other"]
+                          }
+                          size={16}
+                          color={Colors.textSecondary}
+                        />
+                      )}
                       <Text style={styles.optionText} numberOfLines={1}>
                         {option.kind === "create"
                           ? `Create “${option.name}”`
-                          : option.page.name}
+                          : option.kind === "trackable"
+                            ? option.path
+                            : option.page.name}
                       </Text>
                     </Pressable>
                   );
@@ -549,6 +611,7 @@ const styles = StyleSheet.create({
   },
   optionActive: { backgroundColor: Colors.surfaceContainerHigh },
   optionText: { flex: 1, fontSize: FontSize.body, color: Colors.text },
+  trackableDot: { width: 10, height: 10, borderRadius: 5, marginHorizontal: 3 },
   hint: {
     paddingVertical: 7,
     paddingHorizontal: 8,

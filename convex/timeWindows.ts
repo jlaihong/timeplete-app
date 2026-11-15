@@ -16,7 +16,7 @@ import {
 } from "./_helpers/taskTimeSpent";
 import {
   onAttributedWindowInserted,
-  onAttributedWindowPatched,
+  syncWindowAttribution,
   deleteTimeWindowWithSideEffects,
 } from "./_helpers/trackableLifetime";
 import {
@@ -205,9 +205,13 @@ export const search = query({
 
     const allTrackableIds = new Set<string>(trackableIds);
     for (const w of filtered) {
+      // A window tagged only by an "@Trackable" mention (or a rule) has no
+      // `trackableId`; its first tag still gives it a colour.
+      const primary = w.attributedTrackableIds?.[0];
+      if (primary) allTrackableIds.add(primary);
       if (w.activityType !== "TASK") continue;
       const resolved = resolveAttributedTrackableId(
-        { trackableId: w.trackableId, taskId: w.taskId, listId: w.listId },
+        w,
         taskInfoMap,
         listIdToTrackableId
       );
@@ -259,6 +263,8 @@ export const upsert = mutation({
     ),
     taskId: v.optional(v.id("tasks")),
     trackableId: v.optional(v.id("trackables")),
+    /** "Tracks to": every trackable the event is allocated to. */
+    trackableIds: v.optional(v.array(v.id("trackables"))),
     listId: v.optional(v.id("lists")),
     title: v.optional(v.string()),
     comments: v.optional(v.string()),
@@ -297,7 +303,26 @@ export const upsert = mutation({
     // Auto-snapshot the resolved trackableId when a task window is created
     // without one (e.g. CalendarView drag-drop). This keeps trackable totals
     // in sync without requiring every call site to resolve the link itself.
-    let resolvedTrackableId = args.trackableId;
+    // "Tracks to": what the window is allocated to by hand. Older callers
+    // send a single `trackableId`.
+    // A caller that only moves or resizes a window sends the single
+    // `trackableId` it read back; that must not drop the rest of the list.
+    // For a window on a task the single id is a copy of the task's
+    // trackable, never an allocation of the window's own.
+    const before = args.id ? await ctx.db.get(args.id) : null;
+    const allocated: Id<"trackables">[] | undefined =
+      args.trackableIds !== undefined
+        ? [...new Set(args.trackableIds)]
+        : args.taskId ||
+            (before?.trackableIds &&
+              (args.trackableId ?? undefined) === before.trackableId)
+          ? before?.trackableIds
+          : args.trackableId
+            ? [args.trackableId]
+            : undefined;
+    const trackableIds =
+      allocated && allocated.length > 0 ? allocated : undefined;
+    let resolvedTrackableId = trackableIds?.[0];
     if (!resolvedTrackableId && args.taskId) {
       const task = await ctx.db.get(args.taskId);
       const links = await ctx.db
@@ -335,6 +360,7 @@ export const upsert = mutation({
         activityType: args.activityType,
         taskId: args.taskId,
         trackableId: resolvedTrackableId,
+        trackableIds,
         listId: args.listId,
         title: normalizedTitle,
         comments: args.comments,
@@ -363,29 +389,7 @@ export const upsert = mutation({
       );
       // And keep the trackable lifetime totals aligned so
       // `getGoalDetails` can serve all-time numbers off the row (fix #1).
-      await onAttributedWindowPatched(
-        ctx,
-        {
-          userId: existing.userId,
-          trackableId: existing.trackableId,
-          taskId: existing.taskId,
-          listId: existing.listId,
-          budgetType: existing.budgetType,
-          durationSeconds: existing.durationSeconds,
-          startDayYYYYMMDD: existing.startDayYYYYMMDD,
-          activityType: existing.activityType,
-        },
-        {
-          userId: existing.userId,
-          trackableId: resolvedTrackableId,
-          taskId: args.taskId,
-          listId: args.listId,
-          budgetType: args.budgetType,
-          durationSeconds: args.durationSeconds,
-          startDayYYYYMMDD: args.startDayYYYYMMDD,
-          activityType: args.activityType,
-        },
-      );
+      await syncWindowAttribution(ctx, args.id, existing);
       return args.id;
     }
 
@@ -399,6 +403,7 @@ export const upsert = mutation({
       activityType: args.activityType,
       taskId: args.taskId,
       trackableId: resolvedTrackableId,
+      trackableIds,
       listId: args.listId,
       title: normalizedTitle,
       comments: args.comments,
@@ -415,16 +420,7 @@ export const upsert = mutation({
       budgetType: args.budgetType,
       durationSeconds: args.durationSeconds,
     });
-    await onAttributedWindowInserted(ctx, {
-      userId: user._id,
-      trackableId: resolvedTrackableId,
-      taskId: args.taskId,
-      listId: args.listId,
-      budgetType: args.budgetType,
-      durationSeconds: args.durationSeconds,
-      startDayYYYYMMDD: args.startDayYYYYMMDD,
-      activityType: args.activityType,
-    });
+    await onAttributedWindowInserted(ctx, insertedId);
     return insertedId;
   },
 });

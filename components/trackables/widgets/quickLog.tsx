@@ -144,6 +144,31 @@ export function useQuickLog() {
           );
         }),
 
+      /**
+       * Set the number of manual check-ins on a day ("did it": +1, or a
+       * day toggled on or off). `before` is what the day has now.
+       */
+      setCheckIns: (
+        goal: Pick<WidgetGoal, "_id" | "name">,
+        day: { dayYYYYMMDD: string; checkIns: number; comments: string },
+        next: number,
+      ) =>
+        run(async () => {
+          const write = (numCompleted: number) =>
+            upsertDay({
+              trackableId: goal._id,
+              dayYYYYMMDD: day.dayYYYYMMDD,
+              numCompleted,
+              comments: day.comments,
+            });
+          await write(next);
+          const delta = next - day.checkIns;
+          showQuickLogToast(
+            `${goal.name}: ${delta > 0 ? `+${delta}` : "cleared"} ${dayLabel(day.dayYYYYMMDD)}`,
+            () => void write(day.checkIns),
+          );
+        }),
+
       /** Tracker: one new entry with a count (a rating, or +1). */
       addEntry: (goal: WidgetGoal, countValue: number, isRating: boolean) =>
         run(async () => {
@@ -165,29 +190,21 @@ export function useQuickLog() {
         run(async () => {
           const day = todayYYYYMMDD();
           const startTimeHHMM = startTimeEndingNow(seconds);
-          let undo: () => void;
-          if (goal.trackableType === "TRACKER") {
-            const id = await upsertEntry({
-              trackableId: goal._id,
-              dayYYYYMMDD: day,
-              durationSeconds: seconds,
-              startTimeHHMM,
-            });
-            undo = () => void removeEntry({ id: id as Id<"trackerEntries"> });
-          } else {
-            const id = await upsertWindow({
-              startTimeHHMM,
-              startDayYYYYMMDD: day,
-              durationSeconds: seconds,
-              budgetType: "ACTUAL",
-              activityType: "TRACKABLE",
-              trackableId: goal._id,
-              title: goal.name,
-              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-              source: "manual",
-            });
-            undo = () => void removeWindow({ id: id as Id<"timeWindows"> });
-          }
+          // Always an event on the calendar, allocated to the trackable,
+          // so the time also counts toward everything above it.
+          const id = await upsertWindow({
+            startTimeHHMM,
+            startDayYYYYMMDD: day,
+            durationSeconds: seconds,
+            budgetType: "ACTUAL",
+            activityType: "TRACKABLE",
+            trackableIds: [goal._id],
+            title: goal.name,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            source: "manual",
+          });
+          const undo = () =>
+            void removeWindow({ id: id as Id<"timeWindows"> });
           showQuickLogToast(
             `${goal.name}: +${formatQuickDuration(seconds)}`,
             undo,

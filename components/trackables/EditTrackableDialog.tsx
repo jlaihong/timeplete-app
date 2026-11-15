@@ -22,6 +22,8 @@ import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { DateField } from "../ui/DateField";
 import { ColourSwatchPicker } from "./ColourSwatchPicker";
+import { TrackableForm, TrackableFormDialog } from "./TrackableForm";
+import { SubTrackablesSection } from "./SubTrackablesSection";
 import {
   DialogOverlay,
   DialogCard,
@@ -37,7 +39,6 @@ import {
 } from "./goal/GoalAccountabilityForm";
 import { EditTrackableHistoryTab } from "./EditTrackableHistoryTab";
 import { EditTrackableProgressTab } from "./EditTrackableProgressTab";
-import { EditTrackableTasksTab } from "./EditTrackableTasksTab";
 import { useAuth } from "../../hooks/useAuth";
 import { homeHiddenReason } from "../../lib/trackableHomeVisibility";
 import { todayYYYYMMDD } from "../../lib/dates";
@@ -57,11 +58,8 @@ interface EditTrackableDialogProps {
   presentation?: "dialog" | "page" | "settings";
 }
 
-const GOAL_SETTINGS_TABS: GoalEditTab[] = [
-  "commitment",
-  "motivations",
-  "accountability",
-];
+/** The optional extras kept from the old goal setup. */
+const GOAL_SETTINGS_TABS: GoalEditTab[] = ["motivations", "accountability"];
 
 type TrackableType =
   | "NUMBER"
@@ -72,28 +70,25 @@ type TrackableType =
 
 type GoalEditTab =
   | "progress"
-  | "tasks"
   | "time_tracked"
   | "commitment"
   | "motivations"
   | "accountability";
 
-type TrackerEditTab = "details" | "progress" | "tasks" | "tracking_history";
+type TrackerEditTab = "details" | "progress" | "tracking_history";
 
 const GOAL_TAB_DEFS: { key: GoalEditTab; label: string }[] = [
   { key: "progress", label: "Progress" },
-  { key: "tasks", label: "Tasks" },
-  { key: "time_tracked", label: "Time Tracked" },
-  { key: "commitment", label: "My Commitment" },
+  { key: "time_tracked", label: "What Counted" },
+  { key: "commitment", label: "Settings" },
   { key: "motivations", label: "My Motivations" },
   { key: "accountability", label: "Accountability" },
 ];
 
 const TRACKER_TAB_DEFS: { key: TrackerEditTab; label: string }[] = [
-  { key: "details", label: "Details" },
+  { key: "details", label: "Settings" },
   { key: "progress", label: "Progress" },
-  { key: "tasks", label: "Tasks" },
-  { key: "tracking_history", label: "Tracking History" },
+  { key: "tracking_history", label: "What Counted" },
 ];
 
 export function EditTrackableDialog({
@@ -103,6 +98,8 @@ export function EditTrackableDialog({
 }: EditTrackableDialogProps) {
   const settingsOnly = presentation === "settings";
   const [showSettings, setShowSettings] = useState(false);
+  /** Motivations and accountability: optional extras for a goal. */
+  const [showCommitment, setShowCommitment] = useState(false);
   const { profileReady } = useAuth();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const isDesktop = useIsDesktop();
@@ -131,11 +128,12 @@ export function EditTrackableDialog({
   const deleteTrackable = useMutation(api.trackables.remove);
 
   const [goalTab, setGoalTab] = useState<GoalEditTab>(
-    presentation === "settings" ? "commitment" : "progress",
+    presentation === "settings" ? "motivations" : "progress",
   );
   const [trackerTab, setTrackerTab] = useState<TrackerEditTab>("details");
   const [name, setName] = useState("");
   const [colour, setColour] = useState(DEFAULT_ENTITY_COLOUR);
+  const [parentId, setParentId] = useState<Id<"trackables"> | null>(null);
   const [startDay, setStartDay] = useState("");
   const [endDay, setEndDay] = useState("");
   const [targetCount, setTargetCount] = useState("");
@@ -155,7 +153,7 @@ export function EditTrackableDialog({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setGoalTab(settingsOnly ? "commitment" : "progress");
+    setGoalTab(settingsOnly ? "motivations" : "progress");
     setTrackerTab("details");
   }, [trackableId, settingsOnly]);
 
@@ -165,6 +163,7 @@ export function EditTrackableDialog({
   const formSnapshot = JSON.stringify([
     name,
     colour,
+    parentId,
     startDay,
     endDay,
     targetCount,
@@ -199,6 +198,7 @@ export function EditTrackableDialog({
     baselineRef.current = null;
     setName(trackable.name);
     setColour(trackable.colour);
+    setParentId(trackable.parentId ?? null);
     setStartDay(trackable.startDayYYYYMMDD);
     setEndDay(trackable.endDayYYYYMMDD);
     if (trackable.trackableType === "TRACKER") {
@@ -252,11 +252,7 @@ export function EditTrackableDialog({
    * on another tab.
    */
   const showSaveFooter =
-    isGoal
-      ? goalTab === "commitment" ||
-        goalTab === "motivations" ||
-        goalTab === "accountability"
-      : trackerTab === "details";
+    isGoal && (goalTab === "motivations" || goalTab === "accountability");
 
   const cardFlexStyle: ViewStyle[] = [
     Platform.OS === "web"
@@ -303,6 +299,8 @@ export function EditTrackableDialog({
         id: trackableId,
         name: trimmed,
         colour,
+        parentId:
+          parentId === (trackable.parentId ?? null) ? undefined : parentId,
         trackableType: trackable.trackableType,
         frequency: trackable.frequency,
         startDayYYYYMMDD: startDay || trackable.startDayYYYYMMDD,
@@ -391,120 +389,12 @@ export function EditTrackableDialog({
     );
   };
 
-  /** `my-commitment-form-*` parity — trackers never show numeric targets/dates here. */
+  /**
+   * The settings tab: the one trackable form (name, tree, rules, measure,
+   * goal). It saves itself, so the dialog's own footer stays out of it.
+   */
   const renderMyCommitmentBody = () => (
-    <>
-      <Input label="Name" value={name} onChangeText={setName} placeholder="Name" />
-
-      <View style={styles.fieldBlock}>
-        <ColourSwatchPicker value={colour} onChange={setColour} label="Color" />
-      </View>
-
-      {isGoal ? (
-        <View style={styles.row}>
-          <View style={styles.flex1}>
-            <DateField label="Start Date" value={startDay} onChange={setStartDay} />
-          </View>
-          <View style={styles.flex1}>
-            <DateField label="End Date" value={endDay} onChange={setEndDay} />
-          </View>
-        </View>
-      ) : null}
-
-      {isGoal && trackableType === "NUMBER" ? (
-        <Input
-          label="Target Count"
-          value={targetCount}
-          onChangeText={setTargetCount}
-          keyboardType="numeric"
-          placeholder="e.g. 100"
-        />
-      ) : null}
-
-      {isGoal && trackableType === "TIME_TRACK" ? (
-        <Input
-          label="Target Hours"
-          value={targetHours}
-          onChangeText={setTargetHours}
-          keyboardType="numeric"
-          placeholder="e.g. 50"
-        />
-      ) : null}
-
-      {isGoal && trackableType === "DAYS_A_WEEK" ? (
-        <>
-          <Input
-            label="Target Days per Week"
-            value={targetDaysAWeek}
-            onChangeText={setTargetDaysAWeek}
-            keyboardType="numeric"
-            placeholder="e.g. 5"
-          />
-          <Input
-            label="Target Number of Weeks"
-            value={targetWeeks}
-            onChangeText={setTargetWeeks}
-            keyboardType="numeric"
-            placeholder="e.g. 8"
-          />
-        </>
-      ) : null}
-
-      {isGoal && trackableType === "MINUTES_A_WEEK" ? (
-        <Input
-          label="Target Minutes per Week"
-          value={targetMinutesAWeek}
-          onChangeText={setTargetMinutesAWeek}
-          keyboardType="numeric"
-          placeholder="e.g. 300"
-        />
-      ) : null}
-
-      {trackableType === "TRACKER" ? (
-        <View style={styles.trackerBlock}>
-          <CheckboxRow
-            label="Track time"
-            checked={trackTime}
-            onToggle={() => setTrackTime((v) => !v)}
-          />
-          <CheckboxRow
-            label="Track value"
-            checked={trackCount}
-            onToggle={() => setTrackCount((v) => !v)}
-          />
-          {trackCount ? (
-            <View style={styles.indent}>
-              <CheckboxRow
-                label="Increase value by 1 for each calendar occurrence"
-                checked={autoCountFromCalendar}
-                onToggle={() => setAutoCountFromCalendar((v) => !v)}
-              />
-              <Text style={styles.groupLabel}>Value tracking type</Text>
-              <View style={styles.choiceRow}>
-                <ChoiceChip
-                  title="Cumulative"
-                  subtitle="Values add up over time"
-                  selected={isCumulative === true}
-                  onPress={() => {
-                    setIsCumulative(true);
-                    setIsRatingTracker(false);
-                  }}
-                />
-                <ChoiceChip
-                  title="Rating"
-                  subtitle="Values recorded at a point in time"
-                  selected={isCumulative === false}
-                  onPress={() => {
-                    setIsCumulative(false);
-                    setIsRatingTracker(true);
-                  }}
-                />
-              </View>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-    </>
+    <TrackableForm trackableId={trackableId} />
   );
 
   const coercePreviewInt = (
@@ -561,8 +451,6 @@ export function EditTrackableDialog({
     switch (goalTab) {
       case "progress":
         return renderProgressTabPane();
-      case "tasks":
-        return <EditTrackableTasksTab trackableId={trackableId} />;
       case "time_tracked":
         return (
           <View style={styles.historyTabPane}>
@@ -645,9 +533,6 @@ export function EditTrackableDialog({
     if (trackerTab === "progress") {
       return renderProgressTabPane();
     }
-    if (trackerTab === "tasks") {
-      return <EditTrackableTasksTab trackableId={trackableId} />;
-    }
     return (
       <View style={styles.historyTabPane}>
         <EditTrackableHistoryTab
@@ -666,6 +551,15 @@ export function EditTrackableDialog({
   // because it ended reads as "not on home" and one tap brings it back.
   const isOnHome = homeHiddenReason(trackable, todayYYYYMMDD()) === null;
   const menuItems: DialogMenuItem[] = [
+    ...(isGoal && presentation === "page"
+      ? [
+          {
+            label: "Motivations and accountability",
+            icon: "heart-outline" as const,
+            onPress: () => setShowCommitment(true),
+          },
+        ]
+      : []),
     ...(ownListId
       ? [
           {
@@ -716,6 +610,19 @@ export function EditTrackableDialog({
     /** Too narrow for three readable columns beside the sidebar. */
     const pageStacked = windowWidth < 1180;
     const pageColStyle = pageStacked ? styles.pageColStacked : styles.pageCol;
+    const openTrackable = (id: Id<"trackables">) =>
+      router.push(`/(app)/edit-trackable/${id}`);
+    const parent = trackable.parentId
+      ? trackables?.find((t) => t._id === trackable.parentId)
+      : undefined;
+    const madeUpOf = (
+      <View style={styles.pageStrip}>
+        <SubTrackablesSection
+          trackableId={trackableId}
+          onOpenTrackable={openTrackable}
+        />
+      </View>
+    );
     return (
       <View style={styles.page}>
         <View style={styles.pageHeader}>
@@ -732,6 +639,19 @@ export function EditTrackableDialog({
               color={Colors.textSecondary}
             />
           </Pressable>
+          {/* Where it sits: the trackable above it, as a way back up. */}
+          {parent ? (
+            <Pressable
+              onPress={() => openTrackable(parent._id)}
+              accessibilityRole="link"
+              accessibilityLabel={`Open ${parent.name}`}
+              hitSlop={6}
+            >
+              <Text style={styles.pageParent} numberOfLines={1}>
+                {parent.name} /
+              </Text>
+            </Pressable>
+          ) : null}
           <View
             style={[styles.pageDot, { backgroundColor: trackable.colour }]}
           />
@@ -749,6 +669,7 @@ export function EditTrackableDialog({
 
         {/* Three things to look at, side by side, each scrolling on its
             own. On a narrow window they stack and the page scrolls. */}
+        {pageStacked ? null : madeUpOf}
         <ScrollView
           style={styles.pageColumnsScroll}
           contentContainerStyle={
@@ -756,27 +677,30 @@ export function EditTrackableDialog({
           }
           scrollEnabled={pageStacked}
         >
+          {pageStacked ? madeUpOf : null}
           <View style={pageColStyle}>
             <Text style={styles.pageColTitle}>Progress</Text>
             {renderProgressTabPane()}
           </View>
-          <View style={pageColStyle}>
-            <Text style={styles.pageColTitle}>Tasks</Text>
-            <EditTrackableTasksTab trackableId={trackableId} />
-          </View>
           <View style={[pageColStyle, !pageStacked && styles.pageColWide]}>
             <Text style={styles.pageColTitle}>
-              {isGoal ? "Time tracked" : "Tracking history"}
+              What counted
             </Text>
             {historyPane}
           </View>
         </ScrollView>
 
         {showSettings && (
+          <TrackableFormDialog
+            trackableId={trackableId}
+            onClose={() => setShowSettings(false)}
+          />
+        )}
+        {showCommitment && (
           <EditTrackableDialog
             trackableId={trackableId}
             presentation="settings"
-            onClose={() => setShowSettings(false)}
+            onClose={() => setShowCommitment(false)}
           />
         )}
       </View>
@@ -797,7 +721,9 @@ export function EditTrackableDialog({
       <DialogCard desktopWidth={settingsOnly ? 560 : 640} style={cardFlexStyle}>
         <View style={styles.dialogFill}>
           <DialogHeader
-            title={settingsOnly ? `Edit ${trackable.name}` : trackable.name}
+            title={
+              settingsOnly ? "Motivations and accountability" : trackable.name
+            }
             colour={trackable.colour}
             onClose={requestClose}
             headerActions={
@@ -972,6 +898,10 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   pageDot: { width: 10, height: 10, borderRadius: Radius.pill },
+  pageParent: { fontSize: FontSize.body, color: Colors.textSecondary },
+  // Full-width panel above the columns. Empty (no sub-trackables and no
+  // room for one) it collapses to nothing.
+  pageStrip: { paddingHorizontal: 16, paddingBottom: 12 },
   pageTitle: {
     flex: 1,
     minWidth: 0,

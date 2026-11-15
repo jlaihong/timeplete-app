@@ -4,6 +4,7 @@ import { Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { generateOccurrences } from "./_helpers/recurrence";
 import { wallClockGridToEpochMs } from "./_helpers/wallClockTimeZone";
+import { tracksToPatch } from "./_helpers/trackableMembership";
 import {
   onAttributedWindowInserted,
   deleteTimeWindowWithSideEffects,
@@ -74,6 +75,7 @@ export const create = mutation({
     durationSeconds: v.number(),
     comments: v.optional(v.string()),
     trackableId: v.optional(v.id("trackables")),
+    trackableIds: v.optional(v.array(v.id("trackables"))),
     timeZone: v.string(),
     useTimeZone: v.optional(v.boolean()),
     budgetType: v.union(v.literal("ACTUAL"), v.literal("BUDGETED")),
@@ -128,6 +130,7 @@ export const updateRule = mutation({
     durationSeconds: v.optional(v.number()),
     comments: v.optional(v.string()),
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
+    trackableIds: v.optional(v.array(v.id("trackables"))),
     timeZone: v.optional(v.string()),
     useTimeZone: v.optional(v.boolean()),
     budgetType: v.optional(v.union(v.literal("ACTUAL"), v.literal("BUDGETED"))),
@@ -160,7 +163,8 @@ export const updateRule = mutation({
       patch.startTimeHHMM = args.startTimeHHMM ?? undefined;
     if (args.durationSeconds !== undefined) patch.durationSeconds = args.durationSeconds;
     if (args.comments !== undefined) patch.comments = args.comments;
-    if (args.trackableId !== undefined) patch.trackableId = args.trackableId ?? undefined;
+    const tracksTo = tracksToPatch(args);
+    if (tracksTo) Object.assign(patch, tracksTo);
     if (args.timeZone !== undefined) patch.timeZone = args.timeZone;
     if (args.useTimeZone !== undefined) patch.useTimeZone = args.useTimeZone;
     if (args.budgetType !== undefined) patch.budgetType = args.budgetType;
@@ -342,6 +346,7 @@ export const generateInstances = mutation({
           budgetType: rule.budgetType,
           activityType: rule.activityType,
           trackableId: rule.trackableId,
+          trackableIds: rule.trackableIds,
           title: rule.title,
           comments: rule.comments,
           timeZone: rule.timeZone,
@@ -353,16 +358,7 @@ export const generateInstances = mutation({
         await syncSourceMentions(ctx, "timeWindow", windowId, {
           isNew: true,
         });
-        await onAttributedWindowInserted(ctx, {
-          userId: user._id,
-          trackableId: rule.trackableId,
-          taskId: undefined,
-          listId: undefined,
-          budgetType: rule.budgetType,
-          durationSeconds: rule.durationSeconds,
-          startDayYYYYMMDD: date,
-          activityType: rule.activityType,
-        });
+        await onAttributedWindowInserted(ctx, windowId);
         created++;
       }
     }

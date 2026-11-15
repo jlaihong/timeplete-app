@@ -31,6 +31,7 @@ import {
   type StyleProp,
 } from "react-native";
 import { Colors } from "../../constants/colors";
+import type { Id } from "../../convex/_generated/dataModel";
 import { MentionTextInput } from "../mentions/MentionTextInput";
 
 interface InputProps extends TextInputProps {
@@ -51,6 +52,11 @@ interface InputProps extends TextInputProps {
    * / `onChangeText` then carry mention tokens (see `MentionTextInput`).
    */
   mentions?: boolean;
+  /**
+   * With `mentions`: turns on the "#" shortcut for allocating to a
+   * trackable (see `MentionTextInput.onPickTrackable`).
+   */
+  onPickTrackable?: (trackableId: Id<"trackables">) => void;
 }
 
 const FIELD_HORIZONTAL_PADDING = 12;
@@ -76,6 +82,7 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
     multiline,
     editable = true,
     mentions = false,
+    onPickTrackable,
     ...props
   },
   forwardedRef
@@ -180,6 +187,7 @@ export const Input = forwardRef<TextInput, InputProps>(function Input(
 
         {mentions ? (
           <MentionTextInput
+            onPickTrackable={onPickTrackable}
             autoGrow={!!multiline}
             onChangeText={() => {}}
             ref={inputRef}

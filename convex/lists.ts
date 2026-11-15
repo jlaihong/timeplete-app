@@ -3,17 +3,15 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { persistBoundedOrderMove } from "./_helpers/orderShift";
-import { onListTrackableLinkChange } from "./_helpers/trackableLifetime";
+import { scheduleTrackableResync } from "./trackableResync";
 
 /**
  * Set/clear the bidirectional link between a list and a trackable.
  *
  * Mirrors productivity-one's `list-dialog → "Linked Trackable"` semantics:
- * a list has at most one linked trackable, and a trackable has at most one
- * linked list. Whenever the link changes we keep `listTrackableLinks` and
- * `trackable.listId` in sync, and clear out any conflicting prior link so
- * we never end up with two lists fighting over the same trackable (or vice
- * versa).
+ * a list has at most one linked trackable. A trackable may be linked from
+ * several lists ("tasks on any of these lists count"); the trackable's
+ * form edits the same links through `trackables.setRules`.
  */
 async function setListTrackableLink(
   ctx: MutationCtx,
@@ -47,15 +45,8 @@ async function setListTrackableLink(
       throw new Error("Trackable not found");
     }
 
-    // Steal the trackable away from any list that currently owns it.
-    const existingByTrackable = await ctx.db
-      .query("listTrackableLinks")
-      .withIndex("by_trackable", (q) => q.eq("trackableId", newTrackableId))
-      .unique();
-    if (existingByTrackable) {
-      await ctx.db.delete(existingByTrackable._id);
-    }
-
+    // A trackable can have a rule for several lists, so linking this
+    // list leaves its other lists alone.
     await ctx.db.insert("listTrackableLinks", {
       listId,
       trackableId: newTrackableId,
@@ -64,13 +55,13 @@ async function setListTrackableLink(
     await ctx.db.patch(newTrackableId, { listId });
   }
 
-  await onListTrackableLinkChange(
-    ctx,
+  // Tasks on this list now count toward a different trackable: move
+  // their credit in the background.
+  await scheduleTrackableResync(ctx, {
     userId,
     listId,
-    beforeTrackableId,
-    newTrackableId ?? undefined,
-  );
+    listLinkBefore: beforeTrackableId ?? null,
+  });
 }
 
 export const search = query({

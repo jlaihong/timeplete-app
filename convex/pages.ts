@@ -237,6 +237,19 @@ export const remove = mutation({
     const page = await ctx.db.get(args.id);
     if (!page || page.userId !== user._id) throw new Error("Page not found");
     await removeMentionsForSource(ctx, "page", args.id);
+    // Trackables that counted mentions of this page stop doing so.
+    const rules = await ctx.db
+      .query("trackableRules")
+      .withIndex("by_page", (q) => q.eq("pageId", args.id))
+      .take(200);
+    for (const rule of rules) await ctx.db.delete(rule._id);
+    if (rules.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.trackableResync.run, {
+        userId: user._id,
+        phase: "tasks",
+        cursor: null,
+      });
+    }
     await ctx.db.delete(args.id);
     await ctx.scheduler.runAfter(0, internal.pages.flattenBatch, {
       pageId: args.id,

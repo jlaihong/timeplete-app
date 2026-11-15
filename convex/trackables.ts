@@ -1,6 +1,22 @@
-import { query, mutation } from "./_generated/server";
+import {
+  internalMutation,
+  mutation,
+  query,
+  type MutationCtx,
+} from "./_generated/server";
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import {
+  ancestorPathUnder,
+  loadDescendants,
+  repathDescendants,
+} from "./_helpers/trackableMembership";
+import { MAX_TRACKABLE_DEPTH, exceedsMaxDepth } from "../lib/trackableTree";
+
+const TOO_DEEP = `Trackables can be nested ${MAX_TRACKABLE_DEPTH} levels deep at most`;
+import { scheduleTrackableResync } from "./trackableResync";
+import { internal } from "./_generated/api";
+import { legacyFieldsFor, shapeOf } from "../lib/trackableShape";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { persistBoundedOrderMove } from "./_helpers/orderShift";
 import {
@@ -8,6 +24,7 @@ import {
   buildTaskInfoMap,
   firstActivityDayYYYYMMDD,
   timeWindowAttributedToTrackable,
+  taskAttributedTrackableIds,
 } from "./_helpers/trackableAttribution";
 import { isYYYYMMDDCompact, toCompactYYYYMMDD } from "./_helpers/compactYYYYMMDD";
 
@@ -35,12 +52,42 @@ export const upsert = mutation({
     id: v.optional(v.id("trackables")),
     name: v.string(),
     colour: v.string(),
-    trackableType: v.union(
-      v.literal("NUMBER"),
-      v.literal("TIME_TRACK"),
-      v.literal("DAYS_A_WEEK"),
-      v.literal("MINUTES_A_WEEK"),
-      v.literal("TRACKER")
+    /**
+     * What it measures and its goal (`null` → no goal). When `measure` is
+     * sent, the old type, targets and flags are worked out from it and the
+     * ones in this call are ignored.
+     */
+    measure: v.optional(
+      v.union(
+        v.literal("time"),
+        v.literal("count"),
+        v.literal("days"),
+        v.literal("number"),
+      ),
+    ),
+    goal: v.optional(
+      v.union(
+        v.null(),
+        v.object({
+          direction: v.union(v.literal("atLeast"), v.literal("atMost")),
+          amount: v.number(),
+          period: v.union(
+            v.literal("day"),
+            v.literal("week"),
+            v.literal("month"),
+            v.literal("total"),
+          ),
+        }),
+      ),
+    ),
+    trackableType: v.optional(
+      v.union(
+        v.literal("NUMBER"),
+        v.literal("TIME_TRACK"),
+        v.literal("DAYS_A_WEEK"),
+        v.literal("MINUTES_A_WEEK"),
+        v.literal("TRACKER")
+      ),
     ),
     frequency: v.optional(
       v.union(v.literal("DAILY"), v.literal("WEEKLY"), v.literal("MONTHLY"))
@@ -68,19 +115,44 @@ export const upsert = mutation({
     trackCount: v.optional(v.boolean()),
     autoCountFromCalendar: v.optional(v.boolean()),
     isRatingTracker: v.optional(v.boolean()),
+    /**
+     * The trackable this one sits under ("Family" under "Social").
+     * Omitted → unchanged; `null` → make it top-level.
+     */
+    parentId: v.optional(v.union(v.id("trackables"), v.null())),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, rawArgs) => {
     const user = await requireApprovedUser(ctx);
+
+    // A measure (+ goal) decides the old type, targets and flags.
+    const { goal: goalArg, ...argsNoGoal } = rawArgs;
+    const shapeFields = rawArgs.measure
+      ? {
+          ...legacyFieldsFor({
+            measure: rawArgs.measure,
+            goal: goalArg ?? null,
+          }),
+          goal: goalArg ?? undefined,
+        }
+      : {};
+    const args = { ...argsNoGoal, ...shapeFields };
 
     if (args.id) {
       const existing = await ctx.db.get(args.id);
       if (!existing || existing.userId !== user._id)
         throw new Error("Trackable not found");
 
-      const { id, ...rest } = args;
+      const { id, parentId, ...rest } = args;
       const updateFields: Record<string, unknown> = {};
       for (const [key, val] of Object.entries(rest)) {
         if (val !== undefined) (updateFields as Record<string, unknown>)[key] = val;
+      }
+      if (rawArgs.measure) {
+        // Spelled out: a goal that was removed, or a target the new shape
+        // does not use, has to be cleared rather than left behind.
+        for (const [key, val] of Object.entries(shapeFields)) {
+          (updateFields as Record<string, unknown>)[key] = val;
+        }
       }
       const effectiveType =
         (args.trackableType ?? existing.trackableType) as
@@ -108,7 +180,20 @@ export const upsert = mutation({
         autoCountFromCalendar: args.autoCountFromCalendar ?? existing.autoCountFromCalendar,
         isRatingTracker: args.isRatingTracker ?? existing.isRatingTracker,
       } as any);
+      if (parentId !== undefined) {
+        await moveUnderParent(ctx, user._id, existing, parentId);
+      }
       return args.id;
+    }
+
+    const parent = args.parentId
+      ? await ctx.db.get(args.parentId)
+      : null;
+    if (args.parentId && (!parent || parent.userId !== user._id)) {
+      throw new Error("Parent trackable not found");
+    }
+    if (parent && exceedsMaxDepth(parent.ancestorIds?.length ?? 0, 0)) {
+      throw new Error(TOO_DEEP);
     }
 
     const all = await ctx.db
@@ -119,11 +204,16 @@ export const upsert = mutation({
       ? Math.max(...all.map((t) => t.orderIndex))
       : -1;
 
+    if (!args.trackableType) {
+      throw new Error("A trackable needs a measure");
+    }
     const isTracker = args.trackableType === "TRACKER";
 
     const trackableId = await ctx.db.insert("trackables", {
       name: args.name,
       colour: args.colour,
+      measure: args.measure,
+      goal: rawArgs.measure ? (goalArg ?? undefined) : undefined,
       trackableType: args.trackableType,
       frequency: args.frequency,
       targetNumberOfHours: isTracker ? undefined : args.targetNumberOfHours,
@@ -139,6 +229,8 @@ export const upsert = mutation({
       endDayYYYYMMDD: args.endDayYYYYMMDD,
       orderIndex: maxOrder + 1,
       userId: user._id,
+      parentId: parent?._id,
+      ancestorIds: parent ? ancestorPathUnder(parent) : undefined,
       goalReasons: args.goalReasons,
       willAcceptPenalty: args.willAcceptPenalty,
       willDonateToCharity: args.willDonateToCharity,
@@ -167,6 +259,188 @@ export const upsert = mutation({
     // chooses to link (`listTrackableLinks`, managed from the list dialog).
 
     return trackableId;
+  },
+});
+
+/**
+ * Put `trackable` under `parentId` (`null` → top level), rewrite the
+ * paths of everything below it, and start moving credit: whatever counts
+ * toward this subtree stops counting toward the old ancestors and starts
+ * counting toward the new ones.
+ */
+async function moveUnderParent(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  trackable: Doc<"trackables">,
+  parentId: Id<"trackables"> | null,
+): Promise<void> {
+  if ((trackable.parentId ?? null) === parentId) return;
+  let parent: Doc<"trackables"> | null = null;
+  if (parentId) {
+    parent = await ctx.db.get(parentId);
+    if (!parent || parent.userId !== userId) {
+      throw new Error("Parent trackable not found");
+    }
+    if (
+      parent._id === trackable._id ||
+      (parent.ancestorIds ?? []).includes(trackable._id)
+    ) {
+      throw new Error("A trackable cannot sit under itself");
+    }
+    const own = trackable.ancestorIds?.length ?? 0;
+    const levelsBelow = (await loadDescendants(ctx, trackable._id)).reduce(
+      (max, d) => Math.max(max, (d.ancestorIds?.length ?? 0) - own),
+      0,
+    );
+    if (exceedsMaxDepth(parent.ancestorIds?.length ?? 0, levelsBelow)) {
+      throw new Error(TOO_DEEP);
+    }
+  }
+  const ancestorIds = ancestorPathUnder(parent);
+  await ctx.db.patch(trackable._id, {
+    parentId: parent?._id,
+    ancestorIds,
+  });
+  await repathDescendants(ctx, { _id: trackable._id, ancestorIds });
+  await scheduleTrackableResync(ctx, { userId });
+}
+
+export const setParent = mutation({
+  args: {
+    id: v.id("trackables"),
+    parentId: v.union(v.id("trackables"), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const t = await ctx.db.get(args.id);
+    if (!t || t.userId !== user._id) throw new Error("Trackable not found");
+    await moveUnderParent(ctx, user._id, t, args.parentId);
+    return null;
+  },
+});
+
+/**
+ * The rules that make things count toward a trackable: pages whose
+ * mention counts, and lists whose tasks count.
+ */
+export const getRules = query({
+  args: { id: v.id("trackables") },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUserOrEmpty(ctx);
+    const empty = { pageIds: [] as Id<"pages">[], listIds: [] as Id<"lists">[] };
+    if (!user) return empty;
+    const t = await ctx.db.get(args.id);
+    if (!t || t.userId !== user._id) return empty;
+    const pageRules = await ctx.db
+      .query("trackableRules")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", args.id))
+      .take(200);
+    const listLinks = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", args.id))
+      .take(200);
+    return {
+      pageIds: pageRules.map((r) => r.pageId),
+      listIds: listLinks.map((l) => l.listId),
+    };
+  },
+});
+
+/**
+ * Replace a trackable's rules. Everything a changed rule matches is
+ * re-credited in the background: for a page, the texts that mention it;
+ * for a list, its tasks.
+ */
+export const setRules = mutation({
+  args: {
+    id: v.id("trackables"),
+    pageIds: v.array(v.id("pages")),
+    listIds: v.array(v.id("lists")),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const t = await ctx.db.get(args.id);
+    if (!t || t.userId !== user._id) throw new Error("Trackable not found");
+
+    /* Pages */
+    const wantedPages = new Set<string>(args.pageIds);
+    const pageRules = await ctx.db
+      .query("trackableRules")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", args.id))
+      .take(200);
+    const changedPages = new Set<Id<"pages">>();
+    const havePages = new Set<string>();
+    for (const rule of pageRules) {
+      if (wantedPages.has(rule.pageId) && !havePages.has(rule.pageId)) {
+        havePages.add(rule.pageId);
+        continue;
+      }
+      await ctx.db.delete(rule._id);
+      changedPages.add(rule.pageId);
+    }
+    for (const pageId of args.pageIds) {
+      if (havePages.has(pageId)) continue;
+      const page = await ctx.db.get(pageId);
+      if (!page || page.userId !== user._id) throw new Error("Page not found");
+      await ctx.db.insert("trackableRules", {
+        userId: user._id,
+        trackableId: args.id,
+        kind: "page",
+        pageId,
+      });
+      havePages.add(pageId);
+      changedPages.add(pageId);
+    }
+    for (const pageId of changedPages) {
+      await ctx.scheduler.runAfter(0, internal.trackableResync.runForPage, {
+        userId: user._id,
+        pageId,
+        cursor: null,
+      });
+    }
+
+    /* Lists. A list feeds one trackable, so adding it here takes it from
+       whichever trackable had it. */
+    const wantedLists = new Set<string>(args.listIds);
+    const listLinks = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", args.id))
+      .take(200);
+    const haveLists = new Set<string>();
+    for (const link of listLinks) {
+      if (wantedLists.has(link.listId)) {
+        haveLists.add(link.listId);
+        continue;
+      }
+      await ctx.db.delete(link._id);
+      await scheduleTrackableResync(ctx, {
+        userId: user._id,
+        listId: link.listId,
+        listLinkBefore: args.id,
+      });
+    }
+    for (const listId of args.listIds) {
+      if (haveLists.has(listId)) continue;
+      const list = await ctx.db.get(listId);
+      if (!list || list.userId !== user._id) throw new Error("List not found");
+      const previous = await ctx.db
+        .query("listTrackableLinks")
+        .withIndex("by_list", (q) => q.eq("listId", listId))
+        .take(10);
+      for (const link of previous) await ctx.db.delete(link._id);
+      await ctx.db.insert("listTrackableLinks", {
+        listId,
+        trackableId: args.id,
+        userId: user._id,
+      });
+      haveLists.add(listId);
+      await scheduleTrackableResync(ctx, {
+        userId: user._id,
+        listId,
+        listLinkBefore: previous[0]?.trackableId ?? null,
+      });
+    }
+    return null;
   },
 });
 
@@ -240,6 +514,12 @@ export const remove = mutation({
       .collect();
     for (const s of shares) await ctx.db.delete(s._id);
 
+    const rules = await ctx.db
+      .query("trackableRules")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", args.id))
+      .take(500);
+    for (const r of rules) await ctx.db.delete(r._id);
+
     const daySeconds = await ctx.db
       .query("trackableDaySeconds")
       .withIndex("by_trackable_day", (q) => q.eq("trackableId", args.id))
@@ -252,7 +532,26 @@ export const remove = mutation({
       .collect();
     for (const r of weekStats) await ctx.db.delete(r._id);
 
+    // Children move up to the deleted trackable's parent.
+    const children = await ctx.db
+      .query("trackables")
+      .withIndex("by_parent", (q) => q.eq("parentId", args.id))
+      .take(500);
+    const parent = t.parentId ? await ctx.db.get(t.parentId) : null;
+    const childPath = ancestorPathUnder(parent);
+    for (const child of children) {
+      await ctx.db.patch(child._id, {
+        parentId: parent?._id,
+        ancestorIds: childPath,
+      });
+      await repathDescendants(ctx, { _id: child._id, ancestorIds: childPath });
+    }
+
     await ctx.db.delete(args.id);
+
+    // Tasks and events tagged with it (or matched by its list rule) no
+    // longer count toward it or, through it, toward its ancestors.
+    await scheduleTrackableResync(ctx, { userId: user._id });
   },
 });
 
@@ -338,95 +637,12 @@ export const getCompletedTaskNamesForDay = query({
           t.dateCompleted != null &&
           toCompactYYYYMMDD(t.dateCompleted) === dayCompact
       )
-      .filter((t) => {
-        if (t.trackableId === args.trackableId) return true;
-        if (t.listId && listIdToTrackableId.get(t.listId) === args.trackableId)
-          return true;
-        return false;
-      })
+      .filter((t) =>
+        taskAttributedTrackableIds(t, listIdToTrackableId).includes(
+          args.trackableId,
+        ),
+      )
       .map((t) => t.name);
-  },
-});
-
-/**
- * Open tasks that count toward `trackableId`, for the trackable's Tasks tab:
- * tasks assigned to it directly plus tasks in a list linked to it.
- *
- * Recurring occurrences are collapsed to the next one per series (stale
- * past occurrences are dropped) so a daily habit shows up once.
- */
-export const getOpenTasks = query({
-  args: {
-    trackableId: v.id("trackables"),
-    /** Caller's local day, YYYYMMDD — the cutoff for stale recurring rows. */
-    today: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const user = await requireApprovedUserOrEmpty(ctx);
-    if (!user) return [];
-    const trackable = await ctx.db.get(args.trackableId);
-    if (!trackable || trackable.userId !== user._id) return [];
-
-    const READ_CAP = 500;
-    const direct = await ctx.db
-      .query("tasks")
-      .withIndex("by_trackable", (q) => q.eq("trackableId", args.trackableId))
-      .order("desc")
-      .take(READ_CAP);
-
-    const links = await ctx.db
-      .query("listTrackableLinks")
-      .withIndex("by_trackable", (q) => q.eq("trackableId", args.trackableId))
-      .take(20);
-    const viaList = [];
-    for (const link of links) {
-      const rows = await ctx.db
-        .query("tasks")
-        .withIndex("by_list", (q) => q.eq("listId", link.listId))
-        .order("desc")
-        .take(READ_CAP);
-      // A task in a linked list that is explicitly assigned to another
-      // trackable counts toward that one instead.
-      viaList.push(...rows.filter((t) => t.trackableId === undefined));
-    }
-
-    const today = toCompactYYYYMMDD(args.today);
-    const seen = new Set<string>();
-    const nextBySeries = new Map<string, (typeof direct)[number]>();
-    const open = [];
-    for (const t of [...direct, ...viaList]) {
-      if (seen.has(t._id)) continue;
-      seen.add(t._id);
-      if (t.userId !== user._id || t.dateCompleted !== undefined) continue;
-      if (t.isRecurringInstance) {
-        const day = t.taskDay ? toCompactYYYYMMDD(t.taskDay) : undefined;
-        if (!day || day < today) continue;
-        const series = t.recurringTaskId ?? t._id;
-        const kept = nextBySeries.get(series);
-        if (!kept || day < toCompactYYYYMMDD(kept.taskDay!)) {
-          nextBySeries.set(series, t);
-        }
-        continue;
-      }
-      open.push(t);
-    }
-    open.push(...nextBySeries.values());
-
-    return open
-      .sort((a, b) => {
-        // Scheduled first (soonest on top), then unscheduled, newest first.
-        if (a.taskDay && b.taskDay) return a.taskDay.localeCompare(b.taskDay);
-        if (a.taskDay) return -1;
-        if (b.taskDay) return 1;
-        return b._creationTime - a._creationTime;
-      })
-      .map((t) => ({
-        _id: t._id,
-        name: t.name,
-        taskDay: t.taskDay ?? null,
-        listId: t.listId ?? null,
-        isRecurringInstance: t.isRecurringInstance,
-      }));
   },
 });
 
@@ -1402,3 +1618,32 @@ export const getTrackableAnalyticsSeries = query({
   },
 });
 
+
+/**
+ * One-off: write `measure` and `goal` onto trackables saved as one of the
+ * five old types (`npx convex run trackables:backfillMeasure`). Nothing
+ * else changes; readers already work out the same values with `shapeOf`,
+ * so this only makes the stored row say it outright.
+ */
+export const backfillMeasure = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query("trackables")
+      .paginate({ numItems: 100, cursor: args.cursor ?? null });
+    for (const t of result.page) {
+      if (t.measure) continue;
+      const shape = shapeOf(t);
+      await ctx.db.patch(t._id, {
+        measure: shape.measure,
+        goal: shape.goal ?? undefined,
+      });
+    }
+    if (!result.isDone) {
+      await ctx.scheduler.runAfter(0, internal.trackables.backfillMeasure, {
+        cursor: result.continueCursor,
+      });
+    }
+    return null;
+  },
+});

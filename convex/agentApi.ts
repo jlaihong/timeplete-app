@@ -37,9 +37,9 @@ import {
 import {
   deleteTimeWindowWithSideEffects,
   onAttributedWindowInserted,
-  onAttributedWindowPatched,
-  onTaskCompletionAttribution,
-  type WindowLifetimeRow,
+  removeTaskCompletionCredit,
+  syncTaskAttribution,
+  syncWindowAttribution,
 } from "./_helpers/trackableLifetime";
 import { recordDeletedRecurringEventOccurrence } from "./_helpers/deletedRecurringEventOccurrence";
 import {
@@ -95,18 +95,6 @@ function ok(result: unknown): ApiOutcome {
   return { status: 200, body: { ok: true, result } };
 }
 
-function lifetimeRow(tw: Doc<"timeWindows">): WindowLifetimeRow {
-  return {
-    userId: tw.userId,
-    trackableId: tw.trackableId,
-    taskId: tw.taskId,
-    listId: tw.listId,
-    budgetType: tw.budgetType,
-    durationSeconds: tw.durationSeconds,
-    startDayYYYYMMDD: tw.startDayYYYYMMDD,
-    activityType: tw.activityType,
-  };
-}
 
 function minutesFromHHMM(hhmm: string): number {
   const [hour, minute] = hhmm.split(":").map((part) => parseInt(part, 10));
@@ -288,7 +276,6 @@ async function applyWindowTime(
   next: { day: string; startTime: string; durationSeconds: number },
   detach: boolean,
 ): Promise<void> {
-  const before = lifetimeRow(tw);
   await ctx.db.patch(tw._id, {
     startDayYYYYMMDD: next.day,
     startTimeHHMM: next.startTime,
@@ -298,11 +285,6 @@ async function applyWindowTime(
       ? { recurringEventId: undefined, isRecurringInstance: false }
       : {}),
   });
-  const after: WindowLifetimeRow = {
-    ...before,
-    startDayYYYYMMDD: next.day,
-    durationSeconds: next.durationSeconds,
-  };
   await onTimeWindowPatched(
     ctx,
     {
@@ -318,7 +300,7 @@ async function applyWindowTime(
       durationSeconds: next.durationSeconds,
     },
   );
-  await onAttributedWindowPatched(ctx, before, after);
+  await syncWindowAttribution(ctx, tw._id, tw);
 }
 
 async function runListLists(ctx: MutationCtx, user: Doc<"users">): Promise<ApiOutcome> {
@@ -509,16 +491,7 @@ async function runCreateEvent(
     durationSeconds,
   };
   await onTimeWindowInserted(ctx, inserted);
-  await onAttributedWindowInserted(ctx, {
-    userId: user._id,
-    trackableId: undefined,
-    taskId: undefined,
-    listId: undefined,
-    budgetType: "ACTUAL",
-    durationSeconds,
-    startDayYYYYMMDD: args.day,
-    activityType: "EVENT",
-  });
+  await onAttributedWindowInserted(ctx, eventId);
   return ok({
     eventId,
     title: args.title,
@@ -1005,16 +978,7 @@ async function runAddToCalendar(
     durationSeconds,
   };
   await onTimeWindowInserted(ctx, inserted);
-  await onAttributedWindowInserted(ctx, {
-    userId: user._id,
-    trackableId,
-    taskId: task._id,
-    listId: undefined,
-    budgetType: "ACTUAL",
-    durationSeconds,
-    startDayYYYYMMDD: args.day,
-    activityType: "TASK",
-  });
+  await onAttributedWindowInserted(ctx, eventId);
 
   return ok({
     eventId,
@@ -1043,21 +1007,7 @@ async function runCompleteTask(
     : undefined;
   if ((task.dateCompleted ?? undefined) !== next) {
     await ctx.db.patch(task._id, { dateCompleted: next });
-    await onTaskCompletionAttribution(
-      ctx,
-      {
-        userId: task.userId,
-        dateCompleted: task.dateCompleted,
-        trackableId: task.trackableId,
-        listId: task.listId,
-      },
-      {
-        userId: task.userId,
-        dateCompleted: next,
-        trackableId: task.trackableId,
-        listId: task.listId,
-      },
-    );
+    await syncTaskAttribution(ctx, task._id, task);
   }
   const updated = await ctx.db.get(task._id);
   return ok(await taskResult(ctx, user._id, updated ?? task));
@@ -1082,16 +1032,7 @@ async function deleteTaskRow(
   }
 
   if (task.dateCompleted) {
-    await onTaskCompletionAttribution(
-      ctx,
-      {
-        userId: task.userId,
-        dateCompleted: task.dateCompleted,
-        trackableId: task.trackableId,
-        listId: task.listId,
-      },
-      null,
-    );
+    await removeTaskCompletionCredit(ctx, task);
   }
 
   await ctx.db.delete(task._id);

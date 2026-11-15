@@ -14,13 +14,22 @@ export type TimeWindowLike = {
   _id?: string;
   taskId?: string | null;
   trackableId?: string | null;
+  /**
+   * Every trackable the window counts toward: the ones it is allocated to
+   * or matched by a rule, then their ancestors.
+   */
+  attributedTrackableIds?: string[] | null;
   listId?: string | null;
 };
 
 export type GroupByMode =
   | "task"
   | "list"
+  /** The top of the trackable tree: "Social", "Work". */
   | "trackable"
+  /** The second and third levels of the tree: "Family", "MSA project". */
+  | "trackable_2"
+  | "trackable_3"
   | "date"
   | "day_of_week"
   | "month"
@@ -60,7 +69,13 @@ export interface GroupingLookups {
   lists?: Record<string, { name: string; colour: string }>;
   trackables?: Record<
     string,
-    { name: string; colour: string; trackableType?: TrackableTypeLite }
+    {
+      name: string;
+      colour: string;
+      trackableType?: TrackableTypeLite;
+      /** Path from the top of the tree down to the parent. */
+      ancestorIds?: string[];
+    }
   >;
   listIdToTrackableId?: Record<string, string>;
   /** Union attribution for trackable — matches `useAnalyticsDataset.resolveTrackableId`. */
@@ -90,6 +105,67 @@ function resolvedTrackableId(
   return null;
 }
 
+const NO_TRACKABLE = { key: "no_trackable", label: "No trackable" };
+
+/**
+ * Where a window falls at one level of the trackable tree (1 = top).
+ *
+ * A window can count toward several trackables. So that a ring still adds
+ * up to its total, a window in more than one branch gets a slice of its
+ * own, named after all of them:
+ *
+ *   allocated to Family and Friends (both under Social)
+ *     level 1 → "Social"            (once, not twice)
+ *     level 2 → "Family + Friends"  (its own slice beside "Family")
+ *
+ * A window whose trackable stops above this level (allocated to Social
+ * itself) is "Social directly" at level 2.
+ */
+function trackableLevelKey(
+  w: TimeWindowLike,
+  level: 1 | 2 | 3,
+  lookups: GroupingLookups,
+): { key: string; label: string; colour?: string } {
+  const all = lookups.trackables ?? {};
+  const single = resolvedTrackableId(w, lookups);
+  const stamp = (w.attributedTrackableIds ?? (single ? [single] : [])).filter(
+    (id) => all[id],
+  );
+  if (stamp.length === 0) return NO_TRACKABLE;
+
+  // The most specific trackables: those that are not an ancestor of
+  // another one the window counts toward.
+  const ancestors = new Set<string>();
+  for (const id of stamp) {
+    for (const a of all[id]!.ancestorIds ?? []) ancestors.add(a);
+  }
+  const leaves = stamp.filter((id) => !ancestors.has(id));
+
+  const atLevel = new Set<string>();
+  const stopsAbove = new Set<string>();
+  for (const leaf of leaves) {
+    const path = [...(all[leaf]!.ancestorIds ?? []), leaf];
+    const node = path[level - 1];
+    if (node && all[node]) atLevel.add(node);
+    else stopsAbove.add(leaf);
+  }
+
+  const byName = (a: string, b: string) =>
+    all[a]!.name.localeCompare(all[b]!.name);
+  const here = [...atLevel].sort(byName);
+  const above = [...stopsAbove].sort(byName);
+  const labels = here.map((id) => all[id]!.name);
+  if (above.length > 0) {
+    labels.push(`${above.map((id) => all[id]!.name).join(" + ")} directly`);
+  }
+  const first = here[0] ?? above[0]!;
+  return {
+    key: `${here.join("+")}|${above.join("+")}`,
+    label: labels.join(" + "),
+    colour: all[first]!.colour,
+  };
+}
+
 function getGroupKeys(
   w: TimeWindowLike,
   mode: GroupByMode,
@@ -117,14 +193,12 @@ function getGroupKeys(
       }
       return [{ key: "no_list", label: "No List" }];
 
-    case "trackable": {
-      const tid = resolvedTrackableId(w, lookups);
-      if (tid && lookups.trackables?.[tid]) {
-        const t = lookups.trackables[tid]!;
-        return [{ key: tid, label: t.name, colour: t.colour }];
-      }
-      return [{ key: "no_trackable", label: "No Goal" }];
-    }
+    case "trackable":
+      return [trackableLevelKey(w, 1, lookups)];
+    case "trackable_2":
+      return [trackableLevelKey(w, 2, lookups)];
+    case "trackable_3":
+      return [trackableLevelKey(w, 3, lookups)];
 
     case "date": {
       const day = w.startDayYYYYMMDD;
@@ -281,6 +355,8 @@ export function groupTimeWindows(
 
 export const GROUP_BY_LABEL: Record<GroupByMode, string> = {
   trackable: "Trackable",
+  trackable_2: "Sub-trackable",
+  trackable_3: "Sub-trackable (level 3)",
   list: "List",
   task: "Task",
   date: "Date",
@@ -307,13 +383,23 @@ export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
   }
 }
 
+/**
+ * The default chain when the user's trackables form a tree: the top
+ * level, what it is made up of, then the tasks.
+ */
+export function defaultTreeGroupingLevels(): GroupByMode[] {
+  return ["trackable", "trackable_2", "task"];
+}
+
 export function modesForTab(tab: string): GroupByMode[] {
   switch (tab) {
     case "DAILY":
-      return ["trackable", "list", "task", "time_window"];
+      return ["trackable", "trackable_2", "trackable_3", "list", "task", "time_window"];
     case "WEEKLY":
       return [
         "trackable",
+        "trackable_2",
+        "trackable_3",
         "list",
         "task",
         "time_window",
@@ -323,6 +409,8 @@ export function modesForTab(tab: string): GroupByMode[] {
     case "MONTHLY":
       return [
         "trackable",
+        "trackable_2",
+        "trackable_3",
         "list",
         "task",
         "time_window",
@@ -333,6 +421,8 @@ export function modesForTab(tab: string): GroupByMode[] {
     case "YEARLY":
       return [
         "trackable",
+        "trackable_2",
+        "trackable_3",
         "list",
         "task",
         "time_window",
@@ -342,7 +432,7 @@ export function modesForTab(tab: string): GroupByMode[] {
         "date",
       ];
     default:
-      return ["trackable", "list", "task", "time_window"];
+      return ["trackable", "trackable_2", "trackable_3", "list", "task", "time_window"];
   }
 }
 

@@ -56,7 +56,9 @@ function linkMap(
 }
 
 function windowAttributedToTrackableClient(
-  tw: Pick<TW, "trackableId" | "taskId" | "listId">,
+  tw: Pick<TW, "trackableId" | "taskId" | "listId"> & {
+    attributedTrackableIds?: string[] | null;
+  },
   trackableId: string,
   taskMap: Map<
     string,
@@ -68,6 +70,11 @@ function windowAttributedToTrackableClient(
   listIdToTrackableId: Map<string, Id<"trackables">>,
 ): boolean {
   const tid = trackableId;
+  // The server's answer: allocations, rules and parents included. The
+  // rest is the old rule, for windows saved before that was recorded.
+  if (tw.attributedTrackableIds) {
+    return tw.attributedTrackableIds.some((id) => String(id) === tid);
+  }
   if (tw.trackableId && String(tw.trackableId) === tid) return true;
   if (!tw.taskId) return false;
   const task = taskMap.get(String(tw.taskId));

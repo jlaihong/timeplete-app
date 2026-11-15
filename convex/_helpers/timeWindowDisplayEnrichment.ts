@@ -44,7 +44,13 @@ export function enrichTimeWindowsWithDisplayFields(
       if (directListDoc?.name) derivedTitle = directListDoc.name;
       else if (eventTrackable?.name) derivedTitle = eventTrackable.name;
       listColour = directListDoc?.colour;
-      trackableColour = eventTrackable?.colour;
+      // Tagged only by an "@Trackable" mention: coloured by its first tag.
+      trackableColour = (
+        eventTrackable ??
+        (w.attributedTrackableIds?.[0]
+          ? trackablesById.get(w.attributedTrackableIds[0])
+          : undefined)
+      )?.colour;
     } else if (w.activityType === "TRACKABLE" && w.trackableId) {
       const trackable = trackablesById.get(w.trackableId);
       if (directListDoc?.name) {
@@ -68,7 +74,7 @@ export function enrichTimeWindowsWithDisplayFields(
       }
 
       const resolvedTrackableId = resolveAttributedTrackableId(
-        { trackableId: w.trackableId, taskId: w.taskId, listId: w.listId },
+        w,
         taskInfoMap,
         listIdToTrackableId
       );

@@ -1,4 +1,5 @@
 import { FontSize, Radius } from "../../../theme/tokens";
+import { useTrackableTags } from "../../../hooks/useTrackableTags";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,6 +9,7 @@ import { DEFAULT_EVENT_COLOR } from "../../../lib/eventColors";
 import {
   GroupByMode,
   defaultGroupingLevelsForTab,
+  defaultTreeGroupingLevels,
   GroupingLookups,
 } from "../../../lib/grouping";
 import {
@@ -135,13 +137,24 @@ export function TimeBreakdownSection() {
   const { selectedTab } = useAnalyticsState();
   const dataset = useAnalyticsDataset();
 
+  // With sub-trackables, the default breakdown follows the tree: the top
+  // level, then what each is made up of.
+  const tags = useTrackableTags();
+  const hasTree = useMemo(
+    () => [...tags.byId.values()].some((t) => !!t.parentId && !t.archived),
+    [tags.byId],
+  );
+  const defaultLevels = (tab: string) =>
+    hasTree ? defaultTreeGroupingLevels() : defaultGroupingLevelsForTab(tab);
   const [groupingLevels, setGroupingLevels] = useState<GroupByMode[]>(() =>
-    defaultGroupingLevelsForTab(selectedTab)
+    defaultLevels(selectedTab)
   );
   const [lastTab, setLastTab] = useState(selectedTab);
-  if (lastTab !== selectedTab) {
+  const [lastHasTree, setLastHasTree] = useState(hasTree);
+  if (lastTab !== selectedTab || lastHasTree !== hasTree) {
     setLastTab(selectedTab);
-    setGroupingLevels(defaultGroupingLevelsForTab(selectedTab));
+    setLastHasTree(hasTree);
+    setGroupingLevels(defaultLevels(selectedTab));
   }
 
   const [expandedPaths, setExpandedPaths] = useState(() => new Set<string>());

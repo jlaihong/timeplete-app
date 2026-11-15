@@ -58,12 +58,16 @@
  */
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import type { TaskInfo } from "./trackableAttribution";
 import {
-  buildListIdToTrackableId,
-  resolveAttributedTrackableId,
-  resolveSnapshotTrackableIdForTask,
-  type TaskInfo,
-} from "./trackableAttribution";
+  allocatedTrackableIds,
+  listRuleTrackableIds,
+  newMembershipCache,
+  resolveTaskTrackableIds,
+  resolveWindowTrackableIds,
+  sameTrackableSet,
+  type MembershipCache,
+} from "./trackableMembership";
 import { isYYYYMMDDCompact, toCompactYYYYMMDD } from "./compactYYYYMMDD";
 import {
   onTimeWindowDeleted,
@@ -79,7 +83,8 @@ export type WindowLifetimeRow = Pick<
   | "durationSeconds"
   | "startDayYYYYMMDD"
   | "activityType"
->;
+> &
+  Pick<Doc<"timeWindows">, "attributedTrackableIds">;
 
 type LifetimePatch = {
   totalSeconds?: number;
@@ -408,15 +413,72 @@ async function bumpTrackableDaySeconds(
   await ctx.db.patch(existing._id, { attributedSeconds: next });
 }
 
-async function loadListIdToTrackableIdForUser(
+/* ── Attribution: who gets credit for a window or a completed task ────── */
+
+/**
+ * Extra facts for rows written before `attributedTrackableIds` existed.
+ * Such a row was credited to ONE trackable under the old rule
+ * (window tag, else task tag, else the list's linked trackable), and that
+ * is what has to be taken back. When the caller is in the middle of
+ * changing the task or the list link, it passes the state from BEFORE the
+ * change so the old credit is found exactly.
+ */
+export type LegacyHints = {
+  task?: TaskInfo | null;
+  listLinkBefore?: {
+    listId: Id<"lists">;
+    trackableId: Id<"trackables"> | undefined;
+  };
+};
+
+async function legacyListTrackableId(
   ctx: MutationCtx,
+  cache: MembershipCache,
   userId: Id<"users">,
-): Promise<Map<string, Id<"trackables">>> {
-  const links = await ctx.db
-    .query("listTrackableLinks")
-    .withIndex("by_user", (q) => q.eq("userId", userId))
-    .collect();
-  return buildListIdToTrackableId(links);
+  listId: Id<"lists"> | null | undefined,
+  hints: LegacyHints | undefined,
+): Promise<Id<"trackables"> | undefined> {
+  if (!listId) return undefined;
+  if (hints?.listLinkBefore && hints.listLinkBefore.listId === listId) {
+    return hints.listLinkBefore.trackableId;
+  }
+  return (await listRuleTrackableIds(ctx, cache, userId, listId))[0];
+}
+
+/** The trackables a window is currently credited to. */
+async function creditedWindowIds(
+  ctx: MutationCtx,
+  cache: MembershipCache,
+  tw: WindowLifetimeRow,
+  hints: LegacyHints | undefined,
+): Promise<Id<"trackables">[]> {
+  if (tw.attributedTrackableIds) return tw.attributedTrackableIds;
+  if (tw.trackableId) return [tw.trackableId];
+  if (tw.taskId) {
+    const info =
+      hints?.task !== undefined
+        ? hints.task
+        : await loadTaskInfoForWindow(ctx, tw.taskId);
+    if (info) {
+      if (info.trackableId) return [info.trackableId];
+      const viaList = await legacyListTrackableId(
+        ctx,
+        cache,
+        tw.userId,
+        info.listId,
+        hints,
+      );
+      if (viaList) return [viaList];
+    }
+  }
+  const viaWindowList = await legacyListTrackableId(
+    ctx,
+    cache,
+    tw.userId,
+    tw.listId,
+    hints,
+  );
+  return viaWindowList ? [viaWindowList] : [];
 }
 
 async function loadTaskInfoForWindow(
@@ -432,122 +494,135 @@ async function loadTaskInfoForWindow(
   };
 }
 
-function taskInfoMapForWindow(
-  taskId: Id<"tasks"> | undefined,
-  taskInfo: TaskInfo | null,
-): Map<string, TaskInfo> {
-  const m = new Map<string, TaskInfo>();
-  if (taskId && taskInfo) {
-    m.set(String(taskId), taskInfo);
-  }
-  return m;
-}
-
-/** Single-bucket attribution — matches P1 coalesce / `get_time_track_sums`. */
-function resolveLifetimeTrackableId(
+/** Add (`sign` 1) or take back (-1) a window's time for each trackable. */
+async function applyWindowCredit(
+  ctx: MutationCtx,
   tw: Pick<
-    Doc<"timeWindows">,
-    "trackableId" | "taskId" | "listId" | "budgetType"
+    WindowLifetimeRow,
+    "userId" | "budgetType" | "durationSeconds" | "startDayYYYYMMDD"
   >,
-  taskInfo: TaskInfo | null,
-  listIdToTrackableId: Map<string, Id<"trackables">>,
-): Id<"trackables"> | undefined {
-  if (tw.budgetType !== "ACTUAL") return undefined;
-  return (
-    resolveAttributedTrackableId(
-      tw,
-      taskInfoMapForWindow(tw.taskId, taskInfo),
-      listIdToTrackableId,
-    ) ?? undefined
-  );
-}
-
-async function resolveLifetimeTrackableIdForWindow(
-  ctx: MutationCtx,
-  tw: WindowLifetimeRow,
-  listIdToTrackableId?: Map<string, Id<"trackables">>,
-  taskInfo?: TaskInfo | null,
-): Promise<Id<"trackables"> | undefined> {
-  const map =
-    listIdToTrackableId ??
-    (await loadListIdToTrackableIdForUser(ctx, tw.userId));
-  const info =
-    taskInfo !== undefined
-      ? taskInfo
-      : await loadTaskInfoForWindow(ctx, tw.taskId);
-  return resolveLifetimeTrackableId(tw, info, map);
-}
-
-async function applyCoalesceLifetimeDelta(
-  ctx: MutationCtx,
-  tw: WindowLifetimeRow,
+  trackableIds: readonly Id<"trackables">[],
   sign: 1 | -1,
-  listIdToTrackableId?: Map<string, Id<"trackables">>,
-  taskInfo?: TaskInfo | null,
 ): Promise<void> {
   if (tw.budgetType !== "ACTUAL") return;
   const dur = tw.durationSeconds ?? 0;
   if (dur <= 0) return;
   const day = toCompactYYYYMMDD(tw.startDayYYYYMMDD);
   const activityDay = isYYYYMMDDCompact(day) ? day : undefined;
-  const trackableId = await resolveLifetimeTrackableIdForWindow(
-    ctx,
-    tw,
-    listIdToTrackableId,
-    taskInfo,
-  );
-  if (!trackableId) return;
-  await applyDelta(
-    ctx,
-    trackableId,
-    {
-      totalSeconds: sign * dur,
-      calendarCount: sign,
-    },
-    sign > 0 ? activityDay : undefined,
-  );
-  if (activityDay) {
-    await bumpTrackableDaySeconds(
+  for (const trackableId of trackableIds) {
+    await applyDelta(
       ctx,
       trackableId,
-      tw.userId,
-      activityDay,
-      sign * dur,
+      { totalSeconds: sign * dur, calendarCount: sign },
+      sign > 0 ? activityDay : undefined,
     );
+    if (activityDay) {
+      await bumpTrackableDaySeconds(
+        ctx,
+        trackableId,
+        tw.userId,
+        activityDay,
+        sign * dur,
+      );
+    }
   }
 }
 
-/** Call after inserting an ACTUAL `timeWindows` row. */
+function sameOrder(
+  a: readonly string[] | undefined,
+  b: readonly string[],
+): boolean {
+  return !!a && a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+export type SyncOptions = {
+  cache?: MembershipCache;
+  legacy?: LegacyHints;
+  /**
+   * For a window logged on a task: reset the window's own `trackableId`
+   * to the task's trackable (the task's tag, else its list's). Used when
+   * the task's tags or its list's rule changed, so the window follows.
+   */
+  resnapshot?: boolean;
+};
+
+/**
+ * Bring a time window's credit in line with what it counts toward now.
+ * Call after ANY write to the row, passing the row as it was before the
+ * write (`null` for a new row). Safe to call again at any time: it applies
+ * only the difference between what was credited and what should be.
+ */
+export async function syncWindowAttribution(
+  ctx: MutationCtx,
+  windowId: Id<"timeWindows">,
+  before: WindowLifetimeRow | null,
+  opts: SyncOptions = {},
+): Promise<void> {
+  const cache = opts.cache ?? newMembershipCache();
+  let tw = await ctx.db.get(windowId);
+  if (!tw) {
+    if (before) {
+      await applyWindowCredit(
+        ctx,
+        before,
+        await creditedWindowIds(ctx, cache, before, opts.legacy),
+        -1,
+      );
+    }
+    return;
+  }
+  const prevIds = before
+    ? await creditedWindowIds(ctx, cache, before, opts.legacy)
+    : [];
+
+  const task = tw.taskId ? await ctx.db.get(tw.taskId) : null;
+  if (opts.resnapshot && task && tw.activityType === "TASK") {
+    const snapshot =
+      allocatedTrackableIds(task)[0] ??
+      (await listRuleTrackableIds(ctx, cache, task.userId, task.listId))[0];
+    if (tw.trackableId !== snapshot) {
+      await ctx.db.patch(tw._id, { trackableId: snapshot });
+      tw = { ...tw, trackableId: snapshot };
+    }
+  }
+  const nextIds = await resolveWindowTrackableIds(ctx, cache, tw, task);
+
+  const unchanged =
+    before !== null &&
+    sameTrackableSet(prevIds, nextIds) &&
+    before.budgetType === tw.budgetType &&
+    (before.durationSeconds ?? 0) === (tw.durationSeconds ?? 0) &&
+    toCompactYYYYMMDD(before.startDayYYYYMMDD) ===
+      toCompactYYYYMMDD(tw.startDayYYYYMMDD);
+  if (!unchanged) {
+    if (before) await applyWindowCredit(ctx, before, prevIds, -1);
+    await applyWindowCredit(ctx, tw, nextIds, 1);
+  }
+  if (!sameOrder(tw.attributedTrackableIds, nextIds)) {
+    await ctx.db.patch(tw._id, { attributedTrackableIds: nextIds });
+  }
+}
+
+/** Call after inserting a `timeWindows` row. */
 export async function onAttributedWindowInserted(
   ctx: MutationCtx,
-  tw: WindowLifetimeRow,
+  windowId: Id<"timeWindows">,
 ): Promise<void> {
-  await applyCoalesceLifetimeDelta(ctx, tw, 1);
+  await syncWindowAttribution(ctx, windowId, null);
 }
 
-/** Call after patching an ACTUAL `timeWindows` row. */
-export async function onAttributedWindowPatched(
-  ctx: MutationCtx,
-  before: WindowLifetimeRow,
-  after: WindowLifetimeRow,
-): Promise<void> {
-  const userId = after.userId ?? before.userId;
-  const listMap = await loadListIdToTrackableIdForUser(ctx, userId);
-  const [beforeTask, afterTask] = await Promise.all([
-    loadTaskInfoForWindow(ctx, before.taskId),
-    loadTaskInfoForWindow(ctx, after.taskId),
-  ]);
-
-  await applyCoalesceLifetimeDelta(ctx, before, -1, listMap, beforeTask);
-  await applyCoalesceLifetimeDelta(ctx, after, 1, listMap, afterTask);
-}
-
-/** Call after deleting an ACTUAL `timeWindows` row. */
+/** Call after deleting a `timeWindows` row. */
 export async function onAttributedWindowDeleted(
   ctx: MutationCtx,
   tw: WindowLifetimeRow,
 ): Promise<void> {
-  await applyCoalesceLifetimeDelta(ctx, tw, -1);
+  const cache = newMembershipCache();
+  await applyWindowCredit(
+    ctx,
+    tw,
+    await creditedWindowIds(ctx, cache, tw, undefined),
+    -1,
+  );
 }
 
 /**
@@ -566,65 +641,6 @@ export async function deleteTimeWindowWithSideEffects(
     durationSeconds: tw.durationSeconds,
   });
   await onAttributedWindowDeleted(ctx, tw);
-}
-
-/**
- * Re-snapshot task windows and move lifetime credit when attribution changes.
- */
-async function resyncTaskWindowsOnAttributionChange(
-  ctx: MutationCtx,
-  windows: Doc<"timeWindows">[],
-  beforeTaskInfo: TaskInfo,
-  afterTaskInfo: TaskInfo,
-  beforeListMap: Map<string, Id<"trackables">>,
-  afterListMap: Map<string, Id<"trackables">>,
-  newSnapshot: Id<"trackables"> | undefined,
-): Promise<void> {
-  for (const w of windows) {
-    if (w.budgetType !== "ACTUAL" || w.activityType !== "TASK") continue;
-    const dur = w.durationSeconds ?? 0;
-    if (dur <= 0) continue;
-    const day = toCompactYYYYMMDD(w.startDayYYYYMMDD);
-    if (!isYYYYMMDDCompact(day)) continue;
-
-    const beforeId = resolveLifetimeTrackableId(
-      w,
-      beforeTaskInfo,
-      beforeListMap,
-    );
-    const afterWindow: WindowLifetimeRow = {
-      ...w,
-      trackableId: newSnapshot,
-    };
-    const afterId = resolveLifetimeTrackableId(
-      afterWindow,
-      afterTaskInfo,
-      afterListMap,
-    );
-
-    if (w.trackableId !== newSnapshot) {
-      await ctx.db.patch(w._id, { trackableId: newSnapshot });
-    }
-
-    if (beforeId === afterId) continue;
-
-    if (beforeId) {
-      await applyDelta(ctx, beforeId, {
-        totalSeconds: -dur,
-        calendarCount: -1,
-      });
-      await bumpTrackableDaySeconds(ctx, beforeId, w.userId, day, -dur);
-    }
-    if (afterId) {
-      await applyDelta(
-        ctx,
-        afterId,
-        { totalSeconds: dur, calendarCount: 1 },
-        day,
-      );
-      await bumpTrackableDaySeconds(ctx, afterId, w.userId, day, dur);
-    }
-  }
 }
 
 /** Call after patching `trackableDays.numCompleted` (or inserting/deleting). */
@@ -713,266 +729,135 @@ async function bumpTrackableDayAttributedTaskCount(
   await ctx.db.patch(existing._id, { attributedTaskCount: next });
 }
 
-/**
- * Resolves the attributed trackable for a task using
- * `resolveSnapshotTrackableIdForTask`. Loads `listTrackableLinks` lazily
- * via a cache that the caller can reuse across multiple calls in the
- * same mutation. Returns `undefined` when the task is unattributable.
- */
-async function resolveTaskAttribution(
-  ctx: MutationCtx,
-  task: Pick<Doc<"tasks">, "userId" | "trackableId" | "listId"> | null,
-  linkCache: { byUser: Map<string, Map<string, Id<"trackables">>> },
-): Promise<Id<"trackables"> | undefined> {
-  if (!task) return undefined;
-  if (task.trackableId) return task.trackableId;
-  if (!task.listId) return undefined;
+/** The task fields that decide completion credit. */
+export type TaskCreditRow = Pick<
+  Doc<"tasks">,
+  "userId" | "dateCompleted" | "trackableId" | "listId" | "attributedTrackableIds"
+>;
 
-  let linkMap = linkCache.byUser.get(task.userId);
-  if (!linkMap) {
-    const links = await ctx.db
-      .query("listTrackableLinks")
-      .withIndex("by_user", (q) => q.eq("userId", task.userId))
-      .collect();
-    linkMap = buildListIdToTrackableId(links);
-    linkCache.byUser.set(task.userId, linkMap);
-  }
-  return linkMap.get(task.listId) ?? undefined;
+/** The trackables a completed task is currently credited to. */
+async function creditedTaskIds(
+  ctx: MutationCtx,
+  cache: MembershipCache,
+  task: TaskCreditRow,
+  hints: LegacyHints | undefined,
+): Promise<Id<"trackables">[]> {
+  if (!task.dateCompleted) return [];
+  if (task.attributedTrackableIds) return task.attributedTrackableIds;
+  if (task.trackableId) return [task.trackableId];
+  const viaList = await legacyListTrackableId(
+    ctx,
+    cache,
+    task.userId,
+    task.listId,
+    hints,
+  );
+  return viaList ? [viaList] : [];
 }
 
-/**
- * Call from `tasks.upsert` (and any other writer that mutates a task's
- * `dateCompleted`, `trackableId`, or `listId` fields) to keep
- * `trackables.lifetimeAttributedTaskDayCount` in sync with the
- * "completed task counts as 1 day for its attributed trackable" rule
- * that `getGoalDetails` and `getTrackableAnalyticsSeries` apply.
- *
- * Pass `null` for `before` on insert and `null` for `after` on delete.
- * Idempotent — if neither side resolves to a trackable nothing happens.
- */
-export async function onTaskCompletionAttribution(
+/** Add or take back "one completed task on that day" for each trackable. */
+async function applyTaskCompletionCredit(
   ctx: MutationCtx,
-  before: Pick<
-    Doc<"tasks">,
-    "userId" | "dateCompleted" | "trackableId" | "listId"
-  > | null,
-  after: Pick<
-    Doc<"tasks">,
-    "userId" | "dateCompleted" | "trackableId" | "listId"
-  > | null,
+  task: Pick<Doc<"tasks">, "userId" | "dateCompleted">,
+  trackableIds: readonly Id<"trackables">[],
+  sign: 1 | -1,
 ): Promise<void> {
-  const linkCache = {
-    byUser: new Map<string, Map<string, Id<"trackables">>>(),
-  };
-
-  const wasCounted = before != null && !!before.dateCompleted;
-  const isCounted = after != null && !!after.dateCompleted;
-
-  const beforeTrackable = wasCounted
-    ? await resolveTaskAttribution(ctx, before, linkCache)
-    : undefined;
-  const afterTrackable = isCounted
-    ? await resolveTaskAttribution(ctx, after, linkCache)
-    : undefined;
-
-  // No net change to attribution → nothing to do, even if the task's
-  // `dateCompleted` value itself flipped between two equally-attributed
-  // states (the per-day counters track the resolved trackable, not the
-  // raw task fields).
-  if (
-    beforeTrackable === afterTrackable &&
-    before?.dateCompleted === after?.dateCompleted
-  ) {
-    return;
-  }
-
-  if (beforeTrackable) {
-    await applyDelta(ctx, beforeTrackable, { attributedTaskDayCount: -1 });
-    const beforeDay = before?.dateCompleted
-      ? toCompactYYYYMMDD(before.dateCompleted)
-      : "";
-    if (isYYYYMMDDCompact(beforeDay)) {
-      await bumpTrackableDayAttributedTaskCount(
-        ctx,
-        beforeTrackable,
-        before!.userId,
-        beforeDay,
-        -1,
-      );
-    }
-  }
-  if (afterTrackable) {
-    const afterDay = after?.dateCompleted
-      ? toCompactYYYYMMDD(after.dateCompleted)
-      : "";
-    const validDay = isYYYYMMDDCompact(afterDay) ? afterDay : undefined;
+  if (!task.dateCompleted) return;
+  const day = toCompactYYYYMMDD(task.dateCompleted);
+  const validDay = isYYYYMMDDCompact(day) ? day : undefined;
+  for (const trackableId of trackableIds) {
     await applyDelta(
       ctx,
-      afterTrackable,
-      { attributedTaskDayCount: 1 },
-      validDay,
+      trackableId,
+      { attributedTaskDayCount: sign },
+      sign > 0 ? validDay : undefined,
     );
     if (validDay) {
       await bumpTrackableDayAttributedTaskCount(
         ctx,
-        afterTrackable,
-        after!.userId,
+        trackableId,
+        task.userId,
         validDay,
-        1,
+        sign,
       );
     }
   }
 }
 
 /**
- * When a task's `trackableId` or `listId` changes, re-snapshot its ACTUAL
- * task windows and move lifetime credit so totals follow the task.
+ * Bring a task's completion credit, its stamp and (when what it counts
+ * toward changed) its time windows in line with the task as it is now.
+ * Call after any write that touches the task's name, trackable, list or
+ * completion, passing the row as it was before (`null` for a new task).
+ * Safe to repeat.
  */
-export async function onTaskTimeAttributionChange(
+export async function syncTaskAttribution(
   ctx: MutationCtx,
   taskId: Id<"tasks">,
-  before: Pick<Doc<"tasks">, "userId" | "trackableId" | "listId">,
-  after: Pick<Doc<"tasks">, "userId" | "trackableId" | "listId">,
+  before: TaskCreditRow | null,
+  opts: SyncOptions & { skipWindows?: boolean } = {},
 ): Promise<void> {
-  if (
-    before.trackableId === after.trackableId &&
-    before.listId === after.listId
-  ) {
+  const cache = opts.cache ?? newMembershipCache();
+  const task = await ctx.db.get(taskId);
+  if (!task) {
+    if (before) await removeTaskCompletionCredit(ctx, before);
     return;
   }
+  const prevIds = before
+    ? await creditedTaskIds(ctx, cache, before, opts.legacy)
+    : [];
+  const allIds = await resolveTaskTrackableIds(ctx, cache, task);
+  const nextIds = task.dateCompleted ? allIds : [];
 
-  const listMap = await loadListIdToTrackableIdForUser(ctx, after.userId);
-  const beforeTaskInfo: TaskInfo = {
-    trackableId: before.trackableId ?? null,
-    listId: before.listId ?? null,
-  };
-  const afterTaskInfo: TaskInfo = {
-    trackableId: after.trackableId ?? null,
-    listId: after.listId ?? null,
-  };
-  const newSnapshot = resolveSnapshotTrackableIdForTask({
-    task: afterTaskInfo,
-    listIdToTrackableId: listMap,
-  });
+  if (
+    !sameTrackableSet(prevIds, nextIds) ||
+    (before?.dateCompleted ?? undefined) !== (task.dateCompleted ?? undefined)
+  ) {
+    if (before) await applyTaskCompletionCredit(ctx, before, prevIds, -1);
+    await applyTaskCompletionCredit(ctx, task, nextIds, 1);
+  }
+  if (!sameOrder(task.attributedTrackableIds, allIds)) {
+    await ctx.db.patch(task._id, { attributedTrackableIds: allIds });
+  }
 
+  // The task's windows count toward whatever the task does. Re-sync them
+  // when that changed (or was never recorded for this task).
+  const membershipChanged =
+    before !== null &&
+    (before.attributedTrackableIds === undefined ||
+      !sameTrackableSet(before.attributedTrackableIds, allIds));
+  if (opts.skipWindows || !membershipChanged) return;
   const windows = await ctx.db
     .query("timeWindows")
     .withIndex("by_task", (q) => q.eq("taskId", taskId))
-    .collect();
-
-  await resyncTaskWindowsOnAttributionChange(
-    ctx,
-    windows,
-    beforeTaskInfo,
-    afterTaskInfo,
-    listMap,
-    listMap,
-    newSnapshot,
-  );
+    .take(2000);
+  for (const w of windows) {
+    await syncWindowAttribution(ctx, w._id, w, {
+      cache,
+      resnapshot: true,
+      legacy: {
+        ...opts.legacy,
+        task: {
+          trackableId: before?.trackableId ?? null,
+          listId: before?.listId ?? null,
+        },
+      },
+    });
+  }
 }
 
-/**
- * When a list's linked trackable changes, resync lifetime for tasks that
- * attribute via that list (no direct `task.trackableId`):
- *
- *   - time credit: re-snapshot each task's ACTUAL windows and move
- *     `lifetimeTotalSeconds` / `lifetimeCalendarCount` /
- *     `trackableDaySeconds` buckets (via
- *     `resyncTaskWindowsOnAttributionChange`).
- *   - completed-task day credit: move `lifetimeAttributedTaskDayCount`
- *     and `trackableDays.attributedTaskCount` for each completed task,
- *     mirroring `onTaskCompletionAttribution`. Without this, re-linking
- *     a list moved the seconds but left DAYS_A_WEEK / count-style
- *     progress on the old trackable.
- */
-export async function onListTrackableLinkChange(
+/** Call when a task row is deleted (pass the row as it was). */
+export async function removeTaskCompletionCredit(
   ctx: MutationCtx,
-  userId: Id<"users">,
-  listId: Id<"lists">,
-  beforeTrackableId: Id<"trackables"> | undefined,
-  afterTrackableId: Id<"trackables"> | undefined,
+  task: TaskCreditRow,
 ): Promise<void> {
-  if (beforeTrackableId === afterTrackableId) return;
-
-  const afterListMap = await loadListIdToTrackableIdForUser(ctx, userId);
-  const beforeListMap = new Map(afterListMap);
-  if (beforeTrackableId) {
-    beforeListMap.set(listId, beforeTrackableId);
-  } else {
-    beforeListMap.delete(listId);
-  }
-
-  const tasks = await ctx.db
-    .query("tasks")
-    .withIndex("by_list", (q) => q.eq("listId", listId))
-    .collect();
-
-  for (const task of tasks) {
-    if (task.userId !== userId) continue;
-    const taskInfo: TaskInfo = {
-      trackableId: task.trackableId ?? null,
-      listId: task.listId ?? null,
-    };
-    const newSnapshot = resolveSnapshotTrackableIdForTask({
-      task: taskInfo,
-      listIdToTrackableId: afterListMap,
-    });
-    const windows = await ctx.db
-      .query("timeWindows")
-      .withIndex("by_task", (q) => q.eq("taskId", task._id))
-      .collect();
-    await resyncTaskWindowsOnAttributionChange(
-      ctx,
-      windows,
-      taskInfo,
-      taskInfo,
-      beforeListMap,
-      afterListMap,
-      newSnapshot,
-    );
-
-    // Completed-task day credit follows the link too. Only tasks whose
-    // attribution flows THROUGH the list qualify — a direct
-    // `task.trackableId` overrides the list link on both sides, so the
-    // resolved trackable didn't change for those. Deltas mirror
-    // `onTaskCompletionAttribution` (unconditional lifetime counter,
-    // per-day row only for a valid compact day).
-    if (task.dateCompleted && !task.trackableId) {
-      const day = toCompactYYYYMMDD(task.dateCompleted);
-      const validDay = isYYYYMMDDCompact(day) ? day : undefined;
-      if (beforeTrackableId) {
-        await applyDelta(ctx, beforeTrackableId, {
-          attributedTaskDayCount: -1,
-        });
-        if (validDay) {
-          await bumpTrackableDayAttributedTaskCount(
-            ctx,
-            beforeTrackableId,
-            userId,
-            validDay,
-            -1,
-          );
-        }
-      }
-      if (afterTrackableId) {
-        await applyDelta(
-          ctx,
-          afterTrackableId,
-          { attributedTaskDayCount: 1 },
-          validDay,
-        );
-        if (validDay) {
-          await bumpTrackableDayAttributedTaskCount(
-            ctx,
-            afterTrackableId,
-            userId,
-            validDay,
-            1,
-          );
-        }
-      }
-    }
-  }
+  const cache = newMembershipCache();
+  await applyTaskCompletionCredit(
+    ctx,
+    task,
+    await creditedTaskIds(ctx, cache, task, undefined),
+    -1,
+  );
 }
 
 export type TrackerEntrySnapshot = {

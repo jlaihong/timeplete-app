@@ -155,12 +155,13 @@ export function findMentionQuery(
   text: string,
   caret: number,
   mentions: readonly MentionRange[] = [],
+  trigger: "@" | "#" = "@",
 ): { start: number; query: string } | null {
   const floor = Math.max(0, caret - MAX_QUERY_LENGTH - 1);
   for (let i = caret - 1; i >= floor; i--) {
     const ch = text[i];
     if (ch === "\n") return null;
-    if (ch !== "@") continue;
+    if (ch !== trigger) continue;
     // Only the nearest "@" is considered.
     if (i > 0 && !BEFORE_TRIGGER.test(text[i - 1])) return null;
     if (mentions.some((m) => i >= m.start && i < m.end)) return null;
@@ -170,6 +171,47 @@ export function findMentionQuery(
     return { start: i, query };
   }
   return null;
+}
+
+/**
+ * Is the caret inside a "#name" being typed? "#" is the shortcut for
+ * allocating a task or event to a trackable: the chosen trackable goes
+ * into the item's "Tracks to" field and the "#name" is removed from the
+ * text (see `removeTypedQuery`).
+ *
+ * Unlike "@", what follows must start with a letter, so "#1 priority"
+ * and "ticket #123" stay ordinary text.
+ */
+export function findTrackableQuery(
+  text: string,
+  caret: number,
+  mentions: readonly MentionRange[] = [],
+): { start: number; query: string } | null {
+  const found = findMentionQuery(text, caret, mentions, "#");
+  if (!found) return null;
+  if (found.query.includes("@")) return null;
+  if (found.query !== "" && !/^\p{L}/u.test(found.query)) return null;
+  return found;
+}
+
+/**
+ * Take the "#query" being typed (from `start` to `caret`) out of the
+ * text, along with one of the spaces around it so no double space or
+ * trailing space is left behind. Returns the new text and the caret.
+ */
+export function removeTypedQuery(
+  doc: MentionDoc,
+  start: number,
+  caret: number,
+): { doc: MentionDoc; caret: number } {
+  let from = start;
+  let to = caret;
+  const before = doc.text[from - 1];
+  const after = doc.text[to];
+  if (after === " " && (from === 0 || before === " ")) to += 1;
+  else if (before === " " && (after === undefined || after === "\n")) from -= 1;
+  const text = doc.text.slice(0, from) + doc.text.slice(to);
+  return { doc: applyTextChange(doc, text), caret: from };
 }
 
 /**

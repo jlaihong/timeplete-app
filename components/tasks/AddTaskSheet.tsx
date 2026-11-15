@@ -25,7 +25,7 @@ import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Card } from "../ui/Card";
-import { TrackablePicker } from "./TrackablePicker";
+import { TracksToField } from "../trackables/TracksToField";
 import { ListPicker } from "./ListPicker";
 import { addDays, formatDisplayDate, todayYYYYMMDD } from "../../lib/dates";
 import { Id } from "../../convex/_generated/dataModel";
@@ -116,10 +116,11 @@ export function AddTaskSheet({
       contextualListTrackableId,
     });
 
-  /** Explicit "counts toward" override; `null` follows the list. */
-  const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(
-    () => initialAssignment().trackableId,
-  );
+  /** "Tracks to": trackables the task is allocated to, beyond its list's. */
+  const [trackableIds, setTrackableIds] = useState<Id<"trackables">[]>(() => {
+    const initial = initialAssignment().trackableId;
+    return initial ? [initial] : [];
+  });
   /** Picked list; `null` means Inbox. */
   const [listId, setListId] = useState<Id<"lists"> | null>(
     () => initialAssignment().listId,
@@ -131,7 +132,7 @@ export function AddTaskSheet({
   useEffect(() => {
     if (assignmentTouchedRef.current) return;
     const next = initialAssignment();
-    setTrackableId(next.trackableId);
+    setTrackableIds(next.trackableId ? [next.trackableId] : []);
     setListId(next.listId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextualListId, defaultTrackableId, contextualListTrackableId]);
@@ -183,9 +184,14 @@ export function AddTaskSheet({
 
   // List and trackable are independent: the list is where the task lives,
   // the trackable is what it counts toward.
-  const handleTrackableChange = (id: Id<"trackables"> | null) => {
+  const handleTrackablesChange = (ids: Id<"trackables">[]) => {
     assignmentTouchedRef.current = true;
-    setTrackableId(normalizeTrackableOverride(id, inheritedTrackableId));
+    setTrackableIds(ids);
+  };
+  /** From the "#" shortcut in the name field. */
+  const addTrackable = (id: Id<"trackables">) => {
+    assignmentTouchedRef.current = true;
+    setTrackableIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
   };
   const handleListChange = (id: Id<"lists"> | null) => {
     assignmentTouchedRef.current = true;
@@ -209,7 +215,8 @@ export function AddTaskSheet({
       listId: effectiveListId,
       sectionId,
       parentId,
-      trackableId: trackableId ?? undefined,
+      trackableId: trackableIds[0],
+      trackableIds: trackableIds.length > 0 ? trackableIds : undefined,
       clientViewerUserId:
         profileReady && profile ? profile._id : undefined,
     };
@@ -249,6 +256,7 @@ export function AddTaskSheet({
               ref={titleInputRef}
               label="Task Name"
               mentions
+              onPickTrackable={addTrackable}
               value={name}
               onChangeText={setName}
               placeholder="What needs to be done?"
@@ -282,11 +290,12 @@ export function AddTaskSheet({
               />
             )}
 
-            {/* What the task counts toward — follows the list by default. */}
-            <TrackablePicker
-              value={trackableId}
-              inheritedTrackableId={inheritedTrackableId}
-              onChange={handleTrackableChange}
+            {/* What the task is allocated to; its list's rule (if any)
+                counts on top of this. */}
+            <TracksToField
+              value={trackableIds}
+              onChange={handleTrackablesChange}
+              countsToward={inheritedTrackableId ? [inheritedTrackableId] : null}
             />
           </KeyboardAwareScrollView>
 

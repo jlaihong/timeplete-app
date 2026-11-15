@@ -16,12 +16,13 @@ import {
   onTimeWindowInserted,
   onTimeWindowPatched,
 } from "./_helpers/taskTimeSpent";
+import { tracksToPatch } from "./_helpers/trackableMembership";
 import {
   onAttributedWindowInserted,
-  onAttributedWindowPatched,
+  syncWindowAttribution,
   deleteTimeWindowWithSideEffects,
-  onTaskCompletionAttribution,
-  onTaskTimeAttributionChange,
+  removeTaskCompletionCredit,
+  syncTaskAttribution,
 } from "./_helpers/trackableLifetime";
 import { claimClientMutationId } from "./_helpers/clientMutationId";
 import { applyTillEndShift } from "./_helpers/orderShift";
@@ -406,6 +407,8 @@ export const upsert = mutation({
     sectionOrderIndex: v.optional(v.number()),
     // `undefined` (omitted) → leave unchanged; `null` → clear; id → set.
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
+    /** "Tracks to": the full list of trackables the task is allocated to. */
+    trackableIds: v.optional(v.array(v.id("trackables"))),
     assignedToUserId: v.optional(v.id("users")),
     /**
      * Optional echo of `user._id` from the client — not persisted.
@@ -431,16 +434,6 @@ export const upsert = mutation({
       const existing = await ctx.db.get(args.id);
       if (!existing) throw new Error("Task not found");
 
-      // Snapshot the fields the attributed-task-day hook cares about so
-      // we can compare to the post-patch state once everything has been
-      // applied.
-      const beforeAttribution = {
-        userId: existing.userId,
-        dateCompleted: existing.dateCompleted,
-        trackableId: existing.trackableId,
-        listId: existing.listId,
-      };
-
       const patch: Record<string, unknown> = {};
       if (args.name !== undefined) patch.name = args.name;
       if (args.dateCompleted !== undefined) {
@@ -464,9 +457,8 @@ export const upsert = mutation({
       if (args.taskDayOrderIndex !== undefined) patch.taskDayOrderIndex = args.taskDayOrderIndex;
       if (args.sectionId !== undefined) patch.sectionId = args.sectionId;
       if (args.sectionOrderIndex !== undefined) patch.sectionOrderIndex = args.sectionOrderIndex;
-      if (args.trackableId !== undefined) {
-        patch.trackableId = args.trackableId ?? undefined;
-      }
+      const tracksTo = tracksToPatch(args);
+      if (tracksTo) Object.assign(patch, tracksTo);
       if (args.assignedToUserId !== undefined) patch.assignedToUserId = args.assignedToUserId;
 
       await ctx.db.patch(args.id, patch as any);
@@ -474,39 +466,17 @@ export const upsert = mutation({
         await syncSourceMentions(ctx, "task", args.id);
       }
 
-      // Keep `trackable.lifetimeAttributedTaskDayCount` in sync if the
-      // task's completion state or attribution-defining fields changed.
-      // Helper is a no-op when neither before nor after counts.
-      const completionChanged = args.dateCompleted !== undefined;
-      const trackableChanged = args.trackableId !== undefined;
-      const listChanged = args.listId !== undefined;
-      const afterAttribution = {
-        userId: existing.userId,
-        dateCompleted:
-          args.dateCompleted !== undefined
-            ? (args.dateCompleted ?? undefined)
-            : existing.dateCompleted,
-        trackableId:
-          args.trackableId !== undefined
-            ? (args.trackableId ?? undefined)
-            : existing.trackableId,
-        listId: args.listId !== undefined ? args.listId : existing.listId,
-      };
-      if (completionChanged || trackableChanged || listChanged) {
-        await onTaskCompletionAttribution(
-          ctx,
-          beforeAttribution,
-          afterAttribution,
-        );
-      }
-
-      if (trackableChanged || listChanged) {
-        await onTaskTimeAttributionChange(
-          ctx,
-          args.id!,
-          beforeAttribution,
-          afterAttribution,
-        );
+      // What the task counts toward depends on its name ("@Trackable"
+      // mentions), trackable and list; its completion credit on
+      // `dateCompleted`. Re-sync when any of those was sent.
+      if (
+        args.name !== undefined ||
+        args.dateCompleted !== undefined ||
+        args.trackableId !== undefined ||
+        args.trackableIds !== undefined ||
+        args.listId !== undefined
+      ) {
+        await syncTaskAttribution(ctx, args.id, existing);
       }
 
       return args.id;
@@ -529,7 +499,7 @@ export const upsert = mutation({
       taskDayOrderIndex: args.taskDayOrderIndex ?? 0,
       sectionId: resolvedSectionId,
       sectionOrderIndex: args.sectionOrderIndex ?? 0,
-      trackableId: args.trackableId ?? undefined,
+      ...(tracksToPatch(args) ?? {}),
       isRecurringInstance: false,
       userId: user._id,
       createdBy: user._id,
@@ -539,14 +509,7 @@ export const upsert = mutation({
     await ctx.db.patch(taskId, { rootTaskId: args.parentId ? undefined : taskId });
     await syncSourceMentions(ctx, "task", taskId, { isNew: true });
 
-    if (args.dateCompleted) {
-      await onTaskCompletionAttribution(ctx, null, {
-        userId: user._id,
-        dateCompleted: args.dateCompleted,
-        trackableId: args.trackableId ?? undefined,
-        listId: args.listId,
-      });
-    }
+    await syncTaskAttribution(ctx, taskId, null);
 
     return taskId;
   },
@@ -573,16 +536,7 @@ export const remove = mutation({
           await deleteTimeWindowWithSideEffects(ctx, w);
         }
         if (child.dateCompleted) {
-          await onTaskCompletionAttribution(
-            ctx,
-            {
-              userId: child.userId,
-              dateCompleted: child.dateCompleted,
-              trackableId: child.trackableId,
-              listId: child.listId,
-            },
-            null,
-          );
+          await removeTaskCompletionCredit(ctx, child);
         }
         await removeMentionsForSource(ctx, "task", child._id);
         await ctx.db.delete(child._id);
@@ -607,16 +561,7 @@ export const remove = mutation({
     }
 
     if (task.dateCompleted) {
-      await onTaskCompletionAttribution(
-        ctx,
-        {
-          userId: task.userId,
-          dateCompleted: task.dateCompleted,
-          trackableId: task.trackableId,
-          listId: task.listId,
-        },
-        null,
-      );
+      await removeTaskCompletionCredit(ctx, task);
     }
 
     await removeMentionsForSource(ctx, "task", args.id);
@@ -921,29 +866,7 @@ export const setTimeSpent = mutation({
               durationSeconds: nextDur,
             },
           );
-          await onAttributedWindowPatched(
-            ctx,
-            {
-              userId: w.userId,
-              trackableId: w.trackableId,
-              taskId: w.taskId,
-              listId: w.listId,
-              budgetType: w.budgetType,
-              durationSeconds: dur,
-              startDayYYYYMMDD: w.startDayYYYYMMDD,
-              activityType: w.activityType,
-            },
-            {
-              userId: w.userId,
-              trackableId: w.trackableId,
-              taskId: w.taskId,
-              listId: w.listId,
-              budgetType: w.budgetType,
-              durationSeconds: nextDur,
-              startDayYYYYMMDD: w.startDayYYYYMMDD,
-              activityType: w.activityType,
-            },
-          );
+          await syncWindowAttribution(ctx, w._id, w);
           toTrim = 0;
         }
       }
@@ -982,7 +905,7 @@ export const setTimeSpent = mutation({
       listIdToTrackableId,
     });
 
-    await ctx.db.insert("timeWindows", {
+    const manualWindowId = await ctx.db.insert("timeWindows", {
       startTimeHHMM,
       startDayYYYYMMDD: day,
       startTimeEpochMs: startEpochMs,
@@ -1003,16 +926,7 @@ export const setTimeSpent = mutation({
       budgetType: "ACTUAL" as const,
       durationSeconds: deltaSec,
     });
-    await onAttributedWindowInserted(ctx, {
-      userId: user._id,
-      trackableId: snapshotTrackableId,
-      taskId: args.taskId,
-      listId: task.listId,
-      budgetType: "ACTUAL",
-      durationSeconds: deltaSec,
-      startDayYYYYMMDD: day,
-      activityType: "TASK",
-    });
+    await onAttributedWindowInserted(ctx, manualWindowId);
   },
 });
 

@@ -10,12 +10,19 @@ import {
 } from "../../../lib/dates";
 import { useTimer } from "../../../hooks/useTimer";
 import type { WidgetGoal } from "./types";
+import { useTrackableTags } from "../../../hooks/useTrackableTags";
+import { shapeOf } from "../../../lib/trackableShape";
 import { shouldIgnoreTrackablePress, stopTrackableDrag } from "./dragSafe";
 import { Ionicons } from "@expo/vector-icons";
 
 interface TrackableWidgetCardProps {
   goal: WidgetGoal;
   children: React.ReactNode;
+  /**
+   * Set when the card is showing a sub-trackable: goes back up to the
+   * trackable above it.
+   */
+  onBack?: () => void;
   onRequestEditTrackable?: (trackableId: string) => void;
   /** Open the full log dialog (date, custom amount, note). */
   onRequestLogDetails?: () => void;
@@ -35,13 +42,17 @@ interface TrackableWidgetCardProps {
 export function TrackableWidgetCard({
   goal,
   children,
+  onBack,
   onRequestEditTrackable,
   onRequestLogDetails,
 }: TrackableWidgetCardProps) {
   const timer = useTimer();
   const isTicking = timer.isRunning && timer.trackableId === goal._id;
 
-  const showDueCopy = goal.trackableType !== "TRACKER";
+  // A deadline only means something for a goal "in total".
+  const stored = useTrackableTags().byId.get(goal._id);
+  const showDueCopy =
+    !!stored && shapeOf(stored).goal?.period === "total" && !goal.archived;
   const dueCopy = showDueCopy ? formatDueCopy(goal.endDayYYYYMMDD) : null;
 
   const openEdit = () => {
@@ -53,6 +64,13 @@ export function TrackableWidgetCard({
     router.push(`/(app)/edit-trackable/${goal._id}`);
   };
 
+  // Where it sits in the tree: "Social" above "Family".
+  const tags = useTrackableTags();
+  const parentPath = (tags.byId.get(goal._id)?.ancestorIds ?? [])
+    .map((id) => tags.byId.get(id)?.name)
+    .filter(Boolean)
+    .join(" / ");
+
   return (
     <Card style={[styles.card, isTicking && styles.cardTicking]}>
       <View style={styles.headerRow}>
@@ -63,6 +81,32 @@ export function TrackableWidgetCard({
         accessibilityRole="button"
         accessibilityLabel={`Open ${goal.name} details`}
       >
+        {parentPath && onBack ? (
+          <Pressable
+            onPress={() => {
+              if (shouldIgnoreTrackablePress()) return;
+              onBack();
+            }}
+            onPointerDown={stopTrackableDrag as never}
+            accessibilityRole="button"
+            accessibilityLabel={`Back to ${parentPath}`}
+            hitSlop={6}
+            style={styles.backRow}
+          >
+            <Ionicons
+              name="chevron-back"
+              size={12}
+              color={Colors.textSecondary}
+            />
+            <Text style={styles.backText} numberOfLines={1}>
+              {parentPath}
+            </Text>
+          </Pressable>
+        ) : parentPath ? (
+          <Text style={styles.parentPath} numberOfLines={1}>
+            {parentPath}
+          </Text>
+        ) : null}
         <View style={styles.titleRow}>
           <View style={[styles.dot, { backgroundColor: goal.colour }]} />
           <Text style={styles.title} numberOfLines={2}>
@@ -172,6 +216,19 @@ const styles = StyleSheet.create({
     fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.text,
+  },
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    alignSelf: "flex-start",
+    marginBottom: 2,
+  },
+  backText: { fontSize: FontSize.caption, color: Colors.textSecondary },
+  parentPath: {
+    fontSize: FontSize.caption,
+    color: Colors.textTertiary,
+    marginLeft: 16,
   },
   dueCopy: {
     fontSize: FontSize.caption,

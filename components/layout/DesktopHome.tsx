@@ -15,7 +15,7 @@ import {
 import { AddTaskSheet } from "../tasks/AddTaskSheet";
 import { TaskDetailSheet } from "../tasks/TaskDetailSheet";
 import { EventDialog } from "../calendar/EventDialog";
-import { AddTrackableFlow } from "../trackables/AddTrackableFlow";
+import { TrackableFormDialog } from "../trackables/TrackableForm";
 import { router } from "expo-router";
 import { TrackableDialogHost } from "../trackables/widgets/TrackableDialogHost";
 import type { LogRequest } from "../trackables/widgets/types";
@@ -324,7 +324,7 @@ export function DesktopHome() {
       )}
 
       {showAddTrackable && (
-        <AddTrackableFlow onClose={() => setShowAddTrackable(false)} />
+        <TrackableFormDialog onClose={() => setShowAddTrackable(false)} />
       )}
 
       <TrackableDialogHost

@@ -24,10 +24,11 @@ import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth
 import { generateOccurrences } from "./_helpers/recurrence";
 import { wallClockGridToEpochMs } from "./_helpers/wallClockTimeZone";
 import { onTimeWindowInserted } from "./_helpers/taskTimeSpent";
+import { tracksToPatch } from "./_helpers/trackableMembership";
 import {
   onAttributedWindowInserted,
   deleteTimeWindowWithSideEffects,
-  onTaskCompletionAttribution,
+  removeTaskCompletionCredit,
 } from "./_helpers/trackableLifetime";
 import { syncSourceMentions } from "./_helpers/mentions";
 
@@ -96,6 +97,7 @@ export const create = mutation({
     listId: v.optional(v.id("lists")),
     sectionId: v.optional(v.id("listSections")),
     trackableId: v.optional(v.id("trackables")),
+    trackableIds: v.optional(v.array(v.id("trackables"))),
     timeEstimatedInSeconds: v.optional(v.number()),
     /**
      * Optional task to convert into the first instance of this series.
@@ -128,7 +130,7 @@ export const create = mutation({
       listId: args.listId,
       sectionId: args.sectionId,
       sectionOrderIndex: 0,
-      trackableId: args.trackableId,
+      ...(tracksToPatch(args) ?? {}),
       timeEstimatedInSeconds: args.timeEstimatedInSeconds ?? 0,
       userId: user._id,
     });
@@ -170,6 +172,7 @@ export const updateRule = mutation({
     useTimeZone: v.optional(v.boolean()),
     listId: v.optional(v.union(v.id("lists"), v.null())),
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
+    trackableIds: v.optional(v.array(v.id("trackables"))),
     timeEstimatedInSeconds: v.optional(v.number()),
     /**
      * Floor (inclusive YYYYMMDD) at which to discard already-materialized
@@ -210,8 +213,8 @@ export const updateRule = mutation({
       patch.timeZone = args.timeZone ?? undefined;
     if (args.useTimeZone === false) patch.timeZone = undefined;
     if (args.listId !== undefined) patch.listId = args.listId ?? undefined;
-    if (args.trackableId !== undefined)
-      patch.trackableId = args.trackableId ?? undefined;
+    const tracksTo = tracksToPatch(args);
+    if (tracksTo) Object.assign(patch, tracksTo);
     if (args.timeEstimatedInSeconds !== undefined)
       patch.timeEstimatedInSeconds = args.timeEstimatedInSeconds;
 
@@ -367,16 +370,7 @@ export const deleteInstance = mutation({
     }
 
     if (task.dateCompleted) {
-      await onTaskCompletionAttribution(
-        ctx,
-        {
-          userId: task.userId,
-          dateCompleted: task.dateCompleted,
-          trackableId: task.trackableId,
-          listId: task.listId,
-        },
-        null,
-      );
+      await removeTaskCompletionCredit(ctx, task);
     }
 
     await ctx.db.delete(args.taskId);
@@ -419,16 +413,7 @@ export const remove = mutation({
           await deleteTimeWindowWithSideEffects(ctx, w);
         }
         if (t.dateCompleted) {
-          await onTaskCompletionAttribution(
-            ctx,
-            {
-              userId: t.userId,
-              dateCompleted: t.dateCompleted,
-              trackableId: t.trackableId,
-              listId: t.listId,
-            },
-            null,
-          );
+          await removeTaskCompletionCredit(ctx, t);
         }
         await ctx.db.delete(t._id);
       } else {
@@ -570,6 +555,7 @@ export const generateInstances = mutation({
           sectionId: rule.sectionId,
           sectionOrderIndex: rule.sectionOrderIndex ?? 0,
           trackableId: rule.trackableId,
+          trackableIds: rule.trackableIds,
           recurringTaskId: rule._id,
           seriesId: rule._id,
           isRecurringInstance: true,
@@ -621,7 +607,7 @@ export const generateInstances = mutation({
             const startTimeEpochMs = useTimeZone
               ? computeStartEpochMs(date, rule.startTimeHHMM, rowTimeZone)
               : undefined;
-            await ctx.db.insert("timeWindows", {
+            const windowId = await ctx.db.insert("timeWindows", {
               startTimeHHMM: rule.startTimeHHMM,
               startDayYYYYMMDD: date,
               startTimeEpochMs,
@@ -647,16 +633,7 @@ export const generateInstances = mutation({
               budgetType: "ACTUAL" as const,
               durationSeconds: dur,
             });
-            await onAttributedWindowInserted(ctx, {
-              userId: user._id,
-              trackableId: rule.trackableId,
-              taskId,
-              listId: undefined,
-              budgetType: "ACTUAL",
-              durationSeconds: dur,
-              startDayYYYYMMDD: date,
-              activityType: "TASK",
-            });
+            await onAttributedWindowInserted(ctx, windowId);
           }
         }
       }

@@ -20,9 +20,12 @@ import { SkeletonRows } from "../ui/SkeletonRows";
 import { SectionHeadingAddButton } from "../ui/SectionHeadingAddButton";
 import { useIsDesktop } from "../../hooks/useIsDesktop";
 import { useAuth } from "../../hooks/useAuth";
-import { AddTrackableFlow } from "../trackables/AddTrackableFlow";
+import { TrackableFormDialog } from "../trackables/TrackableForm";
 import { TrackableWidgetFactory } from "../trackables/widgets/TrackableWidgetFactory";
 import { ActiveTrackableDnd } from "../trackables/ActiveTrackableDnd";
+import { useTrackableTags } from "../../hooks/useTrackableTags";
+import { groupTrackablesByTree } from "../../lib/trackableTree";
+import type { WidgetGoal } from "../trackables/widgets/types";
 import { TrackableDialogHost } from "../trackables/widgets/TrackableDialogHost";
 import type { LogRequest } from "../trackables/widgets/types";
 import { startOfWeek, todayYYYYMMDD } from "../../lib/dates";
@@ -95,6 +98,22 @@ export function TrackableList({
   const isDesktop = useIsDesktop();
   const { profileReady } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
+  // One card per top-level trackable; everything below it is a row inside
+  // that card (see `lib/trackableTree.ts`).
+  const tags = useTrackableTags();
+  const asTree = (goals: WidgetGoal[]) => {
+    const groups = groupTrackablesByTree(
+      goals,
+      (id) => tags.byId.get(id)?.ancestorIds ?? [],
+    );
+    const subGoals = new Map(
+      groups.map((g) => [g.root._id as string, g.descendants]),
+    );
+    return {
+      roots: groups.map((g) => g.root),
+      subGoalsOf: (id: string) => subGoals.get(id),
+    };
+  };
 
   // Recompute each render so long-lived sessions advance past midnight and
   // past a goal's `startDayYYYYMMDD`. `getGoalDetails` clamps
@@ -203,6 +222,7 @@ export function TrackableList({
     const hasMoreArchived =
       goalDetails.archivedCount > goalDetails.archived.length;
 
+    const activeTree = asTree(goalDetails.active);
     const renderGoalTile = (goal: (typeof goalDetails.active)[0]) => (
       <View
         key={goal._id}
@@ -210,6 +230,7 @@ export function TrackableList({
       >
         <TrackableWidgetFactory
           goal={goal}
+          subGoals={activeTree.subGoalsOf(goal._id)}
           today={today}
           onRequestLog={handleRequestLog}
           onRequestEditTrackable={onRequestEditTrackable}
@@ -265,7 +286,8 @@ export function TrackableList({
             >
               {Platform.OS === "web" ? (
                 <ActiveTrackableDnd
-                  goals={goalDetails.active}
+                  goals={activeTree.roots}
+                  subGoalsOf={activeTree.subGoalsOf}
                   today={today}
                   layout="grid"
                   itemWidth={tileWidth}
@@ -273,7 +295,7 @@ export function TrackableList({
                   onRequestEditTrackable={onRequestEditTrackable}
                 />
               ) : (
-                goalDetails.active.map(renderGoalTile)
+                activeTree.roots.map(renderGoalTile)
               )}
             </View>
           )}
@@ -337,7 +359,7 @@ export function TrackableList({
         )}
 
         {localShowAdd && (
-          <AddTrackableFlow onClose={() => setLocalShowAdd(false)} />
+          <TrackableFormDialog onClose={() => setLocalShowAdd(false)} />
         )}
 
         <TrackableDialogHost
@@ -357,6 +379,7 @@ export function TrackableList({
     : (homeSplit?.shown ?? goalDetails.active);
   // Count against the full active total so trackables beyond the fetched
   // page are included in "N more".
+  const displayTree = asTree(displayGoals);
   const hiddenFromHomeCount = homeSplit
     ? goalDetails.activeCount - homeSplit.shown.length
     : 0;
@@ -438,7 +461,8 @@ export function TrackableList({
       ) : Platform.OS === "web" && !isShowingArchivedList ? (
         <View style={styles.reorderScroll}>
           <ActiveTrackableDnd
-            goals={displayGoals}
+            goals={displayTree.roots}
+            subGoalsOf={displayTree.subGoalsOf}
             today={today}
             layout="vertical"
             onRequestLog={handleRequestLog}
@@ -448,11 +472,12 @@ export function TrackableList({
         </View>
       ) : (
         <FlatList
-          data={displayGoals}
+          data={displayTree.roots}
           keyExtractor={(item) => item._id}
           renderItem={({ item }) => (
             <TrackableWidgetFactory
               goal={item}
+              subGoals={displayTree.subGoalsOf(item._id)}
               today={today}
               onRequestLog={handleRequestLog}
               onRequestEditTrackable={onRequestEditTrackable}
@@ -480,7 +505,7 @@ export function TrackableList({
       )}
 
       {localShowAdd && (
-        <AddTrackableFlow onClose={() => setLocalShowAdd(false)} />
+        <TrackableFormDialog onClose={() => setLocalShowAdd(false)} />
       )}
 
       <TrackableDialogHost

@@ -46,6 +46,7 @@ export type UpsertTaskOptimisticArgs = {
   sectionId?: Id<"listSections">;
   sectionOrderIndex?: number;
   trackableId?: Id<"trackables"> | null;
+  trackableIds?: Id<"trackables">[];
   assignedToUserId?: Id<"users">;
   /** Echo of the signed-in user — optimistic stubs only (`tasks.upsert` ignores it server-side). */
   clientViewerUserId?: Id<"users">;

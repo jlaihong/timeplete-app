@@ -35,9 +35,13 @@ import {
 import { TrackableWidgetFactory } from "./widgets/TrackableWidgetFactory";
 import { suppressTrackablePress } from "./widgets/dragSafe";
 import type { LogRequest, WidgetGoal } from "./widgets/types";
+import type { SubGoal } from "./widgets/TrackableWidgetFactory";
 
 interface ActiveTrackableDndProps {
+  /** The trackables that get a card: the top-level ones. */
   goals: WidgetGoal[];
+  /** Trackables below a card's trackable, shown as rows inside the card. */
+  subGoalsOf?: (trackableId: string) => SubGoal[] | undefined;
   today: string;
   onRequestLog: (req: LogRequest) => void;
   onRequestEditTrackable?: (trackableId: string) => void;
@@ -49,6 +53,7 @@ interface ActiveTrackableDndProps {
 
 export function ActiveTrackableDnd({
   goals,
+  subGoalsOf,
   today,
   onRequestLog,
   onRequestEditTrackable,
@@ -105,6 +110,7 @@ export function ActiveTrackableDnd({
           <SortableTrackable
             key={goal._id}
             goal={goal}
+            subGoals={subGoalsOf?.(goal._id)}
             today={today}
             onRequestLog={onRequestLog}
             onRequestEditTrackable={onRequestEditTrackable}
@@ -118,12 +124,14 @@ export function ActiveTrackableDnd({
 
 function SortableTrackable({
   goal,
+  subGoals,
   today,
   onRequestLog,
   onRequestEditTrackable,
   itemWidth,
 }: {
   goal: WidgetGoal;
+  subGoals?: SubGoal[];
   today: string;
   onRequestLog: (req: LogRequest) => void;
   onRequestEditTrackable?: (trackableId: string) => void;
@@ -162,6 +170,7 @@ function SortableTrackable({
     >
       <TrackableWidgetFactory
         goal={goal}
+        subGoals={subGoals}
         today={today}
         onRequestLog={onRequestLog}
         onRequestEditTrackable={onRequestEditTrackable}

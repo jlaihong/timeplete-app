@@ -41,7 +41,15 @@ import { Colors } from "../../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
 import { Button } from "../ui/Button";
 import { DateField } from "../ui/DateField";
-import { TrackablePicker } from "./TrackablePicker";
+import { TracksToField } from "../trackables/TracksToField";
+
+/** The trackables a task is allocated to ("Tracks to"). */
+function allocatedOf(task: {
+  trackableIds?: Id<"trackables">[];
+  trackableId?: Id<"trackables">;
+}): Id<"trackables">[] {
+  return task.trackableIds ?? (task.trackableId ? [task.trackableId] : []);
+}
 import { ListPicker } from "./ListPicker";
 import { useVisualViewportHeight } from "../../hooks/useVisualViewportHeight";
 import {
@@ -107,6 +115,8 @@ interface EditableForm {
   /** YYYYMMDD or "" when unset. */
   taskDay: string;
   trackableId: Id<"trackables"> | null;
+  /** "Tracks to"; `trackableId` above is always its first entry. */
+  trackableIds: Id<"trackables">[];
   listId: Id<"lists"> | null;
   /**
    * Recurrence form snapshot. `null` = "Repeat" toggle is off.
@@ -224,7 +234,8 @@ export function TaskDetailSheet({
       setForm({
         name: task.name,
         taskDay: task.taskDay ?? "",
-        trackableId: (task.trackableId as Id<"trackables"> | undefined) ?? null,
+        trackableId: allocatedOf(task)[0] ?? null,
+        trackableIds: allocatedOf(task),
         listId: (task.listId as Id<"lists"> | undefined) ?? null,
         // Translation lives in `ruleToRecurrenceForm` so this file is
         // agnostic to the patternType ↔ (frequency, interval,
@@ -315,8 +326,7 @@ export function TaskDetailSheet({
     return (
       form.name.trim() !== task.name ||
       (form.taskDay || "") !== (task.taskDay ?? "") ||
-      (form.trackableId ?? null) !==
-        ((task.trackableId as Id<"trackables"> | undefined) ?? null) ||
+      form.trackableIds.join() !== allocatedOf(task).join() ||
       (form.listId ?? null) !==
         ((task.listId as Id<"lists"> | undefined) ?? null)
     );
@@ -373,10 +383,9 @@ export function TaskDetailSheet({
       patch.taskDay = form.taskDay || null;
     }
 
-    const persistedTrackable =
-      (task.trackableId as Id<"trackables"> | undefined) ?? null;
-    if ((form.trackableId ?? null) !== persistedTrackable) {
-      patch.trackableId = form.trackableId ?? null;
+    if (form.trackableIds.join() !== allocatedOf(task).join()) {
+      patch.trackableIds = form.trackableIds;
+      patch.trackableId = form.trackableIds[0] ?? null;
     }
 
     const persistedList = (task.listId as Id<"lists"> | undefined) ?? null;
@@ -760,18 +769,15 @@ export function TaskDetailSheet({
         }
       />
 
-      {/* What the task counts toward — follows the list unless overridden. */}
-      <TrackablePicker
-        value={form.trackableId}
-        inheritedTrackableId={
-          (lists?.find(
-            (l) =>
-              l._id === (form.listId ?? lists?.find((x) => x.isInbox)?._id),
-          )?.trackableId ?? null) as Id<"trackables"> | null
+      {/* What the task is allocated to; rules and parents show below it. */}
+      <TracksToField
+        value={form.trackableIds}
+        countsToward={
+          (task as { attributedTrackableIds?: string[] }).attributedTrackableIds
         }
-        onChange={(id) =>
+        onChange={(ids) =>
           setForm((f) =>
-            f ? { ...f, trackableId: id as Id<"trackables"> | null } : f,
+            f ? { ...f, trackableIds: ids, trackableId: ids[0] ?? null } : f,
           )
         }
       />
@@ -896,6 +902,17 @@ export function TaskDetailSheet({
         <View style={styles.headerMain}>
           {editingName ? (
             <MentionTextInput
+              onPickTrackable={(id) =>
+                setForm((f) =>
+                  f && !f.trackableIds.includes(id)
+                    ? {
+                        ...f,
+                        trackableIds: [...f.trackableIds, id],
+                        trackableId: f.trackableIds[0] ?? id,
+                      }
+                    : f,
+                )
+              }
               style={styles.nameInput}
               value={nameDraft}
               onChangeText={handleNameDraftChange}

@@ -113,6 +113,8 @@ export interface EditEventPayload {
   budgetType: string;
   comments?: string;
   trackableId?: string | null;
+  trackableIds?: string[] | null;
+  attributedTrackableIds?: string[] | null;
   listId?: string | null;
   taskId?: string | null;
   recurringEventId?: string | null;
@@ -1272,6 +1274,8 @@ export function CalendarView({
                               budgetType: tw.budgetType,
                               comments: tw.comments,
                               trackableId: tw.trackableId,
+                trackableIds: tw.trackableIds,
+                attributedTrackableIds: tw.attributedTrackableIds,
                               listId: tw.listId,
                               taskId: tw.taskId,
                               recurringEventId: tw.recurringEventId,
@@ -1468,6 +1472,8 @@ export function CalendarView({
                 budgetType: tw.budgetType,
                 comments: tw.comments,
                 trackableId: tw.trackableId,
+                trackableIds: tw.trackableIds,
+                attributedTrackableIds: tw.attributedTrackableIds,
                 listId: tw.listId,
                 taskId: tw.taskId,
                 recurringEventId: tw.recurringEventId,

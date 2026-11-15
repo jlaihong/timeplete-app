@@ -117,6 +117,10 @@ export interface TimeWindowDoc {
   activityType: "TASK" | "EVENT" | "TRACKABLE";
   taskId?: string;
   trackableId?: string;
+  /** "Tracks to": every trackable the window is allocated to. */
+  trackableIds?: string[];
+  /** Everything it counts toward, rules and parents included. */
+  attributedTrackableIds?: string[];
   listId?: string;
   /**
    * The PERSISTED title:

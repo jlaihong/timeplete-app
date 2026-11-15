@@ -59,6 +59,12 @@ export default defineSchema({
     sectionId: v.optional(v.id("listSections")),
     sectionOrderIndex: v.number(),
     trackableId: v.optional(v.id("trackables")),
+    /**
+     * "Tracks to": the trackables this row is allocated to directly, in
+     * the order they were picked. `trackableId` mirrors the first one for
+     * code that needs a single trackable (a colour, a derived title).
+     */
+    trackableIds: v.optional(v.array(v.id("trackables"))),
     recurringTaskId: v.optional(v.id("recurringTasks")),
     /** Explicit series link used by scoped recurring edits. */
     seriesId: v.optional(v.id("recurringTasks")),
@@ -76,6 +82,17 @@ export default defineSchema({
      * it has, delete this line.
      */
     tagIds: v.optional(v.any()),
+    /**
+     * Every trackable this task counts toward right now: the ones it is
+     * allocated to (`trackableIds`) or matched by a rule (its list, a page
+     * its name mentions), followed by all of their ancestors. Written by
+     * `_helpers/trackableLifetime.syncTaskAttribution`; it is also the
+     * record of which trackables were credited for the task's completion,
+     * so credit can be moved exactly when tags, rules or the tree change.
+     * `undefined` on rows not yet stamped (readers fall back to the old
+     * single-trackable resolution).
+     */
+    attributedTrackableIds: v.optional(v.array(v.id("trackables"))),
     legacyId: v.optional(v.string()),
   })
     .index("by_user_day", ["userId", "taskDay"])
@@ -174,6 +191,12 @@ export default defineSchema({
     taskId: v.optional(v.id("tasks")),
     trackableId: v.optional(v.id("trackables")),
     /**
+     * "Tracks to": the trackables this row is allocated to directly, in
+     * the order they were picked. `trackableId` mirrors the first one for
+     * code that needs a single trackable (a colour, a derived title).
+     */
+    trackableIds: v.optional(v.array(v.id("trackables"))),
+    /**
      * Optional direct link to a list. When present (and the row is not
      * a TASK — task events derive list from `task.listId`), the list
      * name is the second priority in the title-derivation ladder
@@ -228,6 +251,15 @@ export default defineSchema({
         v.literal("tracker_entry")
       )
     ),
+    /**
+     * Every trackable this window's time counts toward: the ones it is
+     * allocated to (`trackableIds`), rule matches (pages mentioned in
+     * `title` / `comments`, its list), everything its task counts toward,
+     * and all of their ancestors. Same contract
+     * as `tasks.attributedTrackableIds`; written by
+     * `_helpers/trackableLifetime.syncWindowAttribution`.
+     */
+    attributedTrackableIds: v.optional(v.array(v.id("trackables"))),
     legacyId: v.optional(v.string()),
   })
     .index("by_user_day", ["userId", "startDayYYYYMMDD"])
@@ -302,6 +334,34 @@ export default defineSchema({
   trackables: defineTable({
     name: v.string(),
     colour: v.string(),
+    /**
+     * What the trackable measures and the goal set on it, if any (see
+     * `lib/trackableShape.ts`). These two replace the five fixed types:
+     * `trackableType` and its flags below are still written, as the
+     * closest old type, for screens that have not moved over. Absent on
+     * rows saved before this existed; readers use `shapeOf`.
+     */
+    measure: v.optional(
+      v.union(
+        v.literal("time"),
+        v.literal("count"),
+        v.literal("days"),
+        v.literal("number"),
+      ),
+    ),
+    goal: v.optional(
+      v.object({
+        direction: v.union(v.literal("atLeast"), v.literal("atMost")),
+        /** Hours when the measure is time; a plain number otherwise. */
+        amount: v.number(),
+        period: v.union(
+          v.literal("day"),
+          v.literal("week"),
+          v.literal("month"),
+          v.literal("total"),
+        ),
+      }),
+    ),
     trackableType: v.union(
       v.literal("NUMBER"),
       v.literal("TIME_TRACK"),
@@ -321,6 +381,15 @@ export default defineSchema({
     targetNumberOfMinutesAWeek: v.optional(v.number()),
     targetNumberOfWeeks: v.optional(v.number()),
     targetCount: v.optional(v.number()),
+    /**
+     * Trackables form a tree: "Family" and "Friends" under "Social".
+     * Anything that counts toward a trackable also counts toward every
+     * ancestor, once (membership is a set, so an event tagged with two
+     * siblings is not double counted by their parent).
+     */
+    parentId: v.optional(v.id("trackables")),
+    /** Path from the root down to `parentId`. Empty/absent for a root. */
+    ancestorIds: v.optional(v.array(v.id("trackables"))),
     startDayYYYYMMDD: v.string(),
     endDayYYYYMMDD: v.string(),
     orderIndex: v.number(),
@@ -433,6 +502,7 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_order", ["userId", "orderIndex"])
     .index("by_user_archived", ["userId", "archived"])
+    .index("by_parent", ["parentId"])
     .index("by_legacy", ["legacyId"]),
 
   trackableDays: defineTable({
@@ -552,6 +622,28 @@ export default defineSchema({
     .index("by_trackable", ["trackableId"])
     .index("by_user", ["userId"])
     .index("by_legacy", ["legacyId"]),
+
+  /**
+   * Rules that make things count toward a trackable without allocating
+   * each one by hand. A trackable can have any number; an item counts when
+   * it matches ANY of them (or is allocated directly).
+   *
+   *   page — tasks and events whose text mentions this page
+   *          ("@Wesley" counts toward "Family").
+   *
+   * The "tasks on this list" rule predates this table and lives in
+   * `listTrackableLinks`. New rule kinds are added to the union here and
+   * resolved in `_helpers/trackableMembership.ts`.
+   */
+  trackableRules: defineTable({
+    userId: v.id("users"),
+    trackableId: v.id("trackables"),
+    kind: v.literal("page"),
+    pageId: v.id("pages"),
+  })
+    .index("by_user", ["userId"])
+    .index("by_trackable", ["trackableId"])
+    .index("by_page", ["pageId"]),
 
   reviewQuestions: defineTable({
     userId: v.id("users"),
@@ -673,6 +765,7 @@ export default defineSchema({
     sectionId: v.optional(v.id("listSections")),
     sectionOrderIndex: v.number(),
     trackableId: v.optional(v.id("trackables")),
+    trackableIds: v.optional(v.array(v.id("trackables"))),
     /**
      * @deprecated Tags were removed. Old rows may still carry this field
      * until `_admin/removeTags:run` has been run on the deployment; once
@@ -733,6 +826,7 @@ export default defineSchema({
     durationSeconds: v.number(),
     comments: v.optional(v.string()),
     trackableId: v.optional(v.id("trackables")),
+    trackableIds: v.optional(v.array(v.id("trackables"))),
     /**
      * @deprecated Tags were removed. Old rows may still carry this field
      * until `_admin/removeTags:run` has been run on the deployment; once

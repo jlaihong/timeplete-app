@@ -28,6 +28,11 @@ export interface TimeWindowLite {
   activityType: "TASK" | "EVENT" | "TRACKABLE";
   taskId?: string | null;
   trackableId?: string | null;
+  /**
+   * Every trackable the window counts toward: its tags first, then their
+   * ancestors (see `convex/_helpers/trackableMembership.ts`).
+   */
+  attributedTrackableIds?: string[] | null;
   listId?: string | null;
   /** Explicit calendar title when set; otherwise derived like `timeWindows.search`. */
   title?: string | null;
@@ -45,6 +50,8 @@ export interface TrackableLite {
     | "MINUTES_A_WEEK"
     | "TRACKER";
   archived?: boolean;
+  /** Path from the top of the trackable tree down to the parent. */
+  ancestorIds?: string[];
 }
 
 export function useAnalyticsDataset() {
@@ -99,6 +106,9 @@ export function useAnalyticsDataset() {
 
   const resolveTrackableId = useMemo(() => {
     return (w: TimeWindowLite): string | null => {
+      // One bucket per window so a breakdown adds up to the total: its
+      // first tag (an "@Trackable" mention, a rule, …).
+      if (w.attributedTrackableIds) return w.attributedTrackableIds[0] ?? null;
       if (w.trackableId) return w.trackableId;
       if (w.taskId) {
         const task = tasks[w.taskId];

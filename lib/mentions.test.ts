@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   applyTextChange,
   findMentionQuery,
+  findTrackableQuery,
+  removeTypedQuery,
   flattenMentions,
   insertMention,
   matchPages,
@@ -156,4 +158,41 @@ test("stored-text helpers", () => {
     flattenMentions(STORED, "abc123", "Wesley K"),
     "Dinner with Wesley K and @[Ana](page:def456).",
   );
+});
+
+/* ── "#" shortcut for the Tracks to field ─────────────────────────────── */
+
+test("# at the start of a word starts a trackable query", () => {
+  assert.deepEqual(findTrackableQuery("Christmas dinner #Fam", 21), {
+    start: 17,
+    query: "Fam",
+  });
+  assert.deepEqual(findTrackableQuery("#", 1), { start: 0, query: "" });
+});
+
+test("# followed by a digit, or inside a word, is ordinary text", () => {
+  assert.equal(findTrackableQuery("My #1 priority", 5), null);
+  assert.equal(findTrackableQuery("ticket #123", 11), null);
+  assert.equal(findTrackableQuery("C#sharp", 7), null);
+  // "@" and "#" do not swallow each other.
+  assert.equal(findTrackableQuery("#fam @wes", 9), null);
+  assert.equal(findMentionQuery("a #fam", 6), null);
+});
+
+test("the chosen #query is removed without leaving stray spaces", () => {
+  const end = removeTypedQuery({ text: "Christmas dinner #Fam", mentions: [] }, 17, 21);
+  assert.equal(end.doc.text, "Christmas dinner");
+  assert.equal(end.caret, 16);
+
+  const middle = removeTypedQuery({ text: "Dinner #Fam at home", mentions: [] }, 7, 11);
+  assert.equal(middle.doc.text, "Dinner at home");
+  assert.equal(middle.caret, 7);
+
+  const startOfText = removeTypedQuery({ text: "#Fam dinner", mentions: [] }, 0, 4);
+  assert.equal(startOfText.doc.text, "dinner");
+
+  // A page link after the removed text keeps pointing at the right words.
+  const linked = parseMentions("#Fam with @[Wesley](page:w1)");
+  const out = removeTypedQuery(linked, 0, 4);
+  assert.equal(serializeMentions(out.doc), "with @[Wesley](page:w1)");
 });

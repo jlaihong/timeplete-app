@@ -1,11 +1,16 @@
-import React from "react";
+import React, { useState } from "react";
+import { View } from "react-native";
+import { SubTrackablePills } from "./SubTrackablePills";
+import { useTrackableTags } from "../../../hooks/useTrackableTags";
 import { TrackableWidgetCard } from "./TrackableWidgetCard";
-import { DaysAWeekWidget } from "./DaysAWeekWidget";
-import { MinutesAWeekWidget } from "./MinutesAWeekWidget";
-import { TimeTrackWidget } from "./TimeTrackWidget";
-import { NumberWidget } from "./NumberWidget";
-import { TrackerWidget } from "./TrackerWidget";
+import { ProgressWidget } from "./ProgressWidget";
 import type { LogRequest, WidgetGoal } from "./types";
+
+export interface SubGoal {
+  item: WidgetGoal;
+  /** 0 for a direct sub-trackable of the card's trackable. */
+  depth: number;
+}
 
 interface TrackableWidgetFactoryProps {
   goal: WidgetGoal;
@@ -14,32 +19,62 @@ interface TrackableWidgetFactoryProps {
   /** Called when a widget wants to open a quick-log dialog. */
   onRequestLog: (req: LogRequest) => void;
   onRequestEditTrackable?: (trackableId: string) => void;
+  /**
+   * Trackables below this one that the card can move to. They do not get
+   * cards of their own.
+   */
+  subGoals?: SubGoal[];
 }
 
 /**
- * Mirror of productivity-one's `@switch (trackableType)` in
- * `goal-widget.html`: pick the right body component for the goal's type.
- *
- * Mapping (productivity-one → ours):
- *   PERIODIC + COUPLE_DAYS_A_WEEK / READING → DAYS_A_WEEK → DaysAWeekWidget
- *   PERIODIC + COUPLE_MINUTES_A_WEEK        → MINUTES_A_WEEK → MinutesAWeekWidget
- *   TIME_TRACK                              → TIME_TRACK   → TimeTrackWidget
- *   COUNT                                   → NUMBER       → NumberWidget
- *   TRACKER                                 → TRACKER      → TrackerWidget
+ * A trackable's card: shared chrome around the one body every trackable
+ * uses (`ProgressWidget`). The log dialog behind the "⋯" button is still
+ * picked by the trackable's old type.
  */
 export function TrackableWidgetFactory({
   goal,
   today,
   onRequestLog,
   onRequestEditTrackable,
+  subGoals,
 }: TrackableWidgetFactoryProps) {
+  const tags = useTrackableTags();
+  // The card shows one trackable at a time: its own, or, after a pill is
+  // pressed, one of the trackables below it.
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const inCard = (id: string | null | undefined) =>
+    id ? subGoals?.find((s) => s.item._id === id)?.item : undefined;
+  const focused = inCard(focusId) ?? goal;
+  const goUp = () => {
+    const parentId = tags.byId.get(focused._id)?.parentId;
+    setFocusId(inCard(parentId) ? (parentId as string) : null);
+  };
+
   return (
     <TrackableWidgetCard
-      goal={goal}
+      goal={focused}
+      onBack={focused._id !== goal._id ? goUp : undefined}
       onRequestEditTrackable={onRequestEditTrackable}
-      onRequestLogDetails={() => onRequestLog(detailsRequest(goal, today))}
+      onRequestLogDetails={() => onRequestLog(detailsRequest(focused, today))}
     >
-      {renderBody(goal, today, onRequestLog)}
+      <View style={{ gap: 12, alignSelf: "stretch" }}>
+        <ProgressWidget
+          key={focused._id}
+          goal={focused}
+          today={today}
+          onRequestLog={onRequestLog}
+        />
+        <SubTrackablePills
+          trackableId={focused._id}
+          today={today}
+          onPick={(id) => {
+            // A sub-trackable that is not in this list (hidden from Home,
+            // say) opens its page instead.
+            if (inCard(id)) setFocusId(id);
+            else onRequestEditTrackable?.(id);
+          }}
+        />
+      </View>
     </TrackableWidgetCard>
   );
 }
@@ -77,37 +112,3 @@ function detailsRequest(goal: WidgetGoal, today: string): LogRequest {
   }
 }
 
-function renderBody(
-  goal: WidgetGoal,
-  today: string,
-  onRequestLog: (req: LogRequest) => void
-) {
-  switch (goal.trackableType) {
-    case "DAYS_A_WEEK":
-      return (
-        <DaysAWeekWidget goal={goal} today={today} onRequestLog={onRequestLog} />
-      );
-    case "MINUTES_A_WEEK":
-      return (
-        <MinutesAWeekWidget
-          goal={goal}
-          today={today}
-          onRequestLog={onRequestLog}
-        />
-      );
-    case "TIME_TRACK":
-      return (
-        <TimeTrackWidget goal={goal} today={today} onRequestLog={onRequestLog} />
-      );
-    case "NUMBER":
-      return (
-        <NumberWidget goal={goal} today={today} onRequestLog={onRequestLog} />
-      );
-    case "TRACKER":
-      return (
-        <TrackerWidget goal={goal} today={today} onRequestLog={onRequestLog} />
-      );
-    default:
-      return null;
-  }
-}

@@ -37,7 +37,7 @@ import { Colors } from "../../constants/colors";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { DateField } from "../ui/DateField";
-import { TrackablePicker } from "../tasks/TrackablePicker";
+import { TracksToField } from "../trackables/TracksToField";
 import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
 import {
@@ -85,6 +85,10 @@ interface EventDialogProps {
     comments?: string;
     startDayYYYYMMDD?: string;
     trackableId?: string | null;
+    /** "Tracks to": every trackable the event is allocated to. */
+    trackableIds?: string[] | null;
+    /** Everything it counts toward, rules and parents included. */
+    attributedTrackableIds?: string[] | null;
     listId?: string | null;
     taskId?: string | null;
     recurringEventId?: string | null;
@@ -141,9 +145,26 @@ export function EventDialog({
         ? String(defaultDurationMinutes)
         : "60"
   );
-  const [trackableId, setTrackableId] = useState<Id<"trackables"> | null>(
-    (existingEvent?.trackableId as Id<"trackables"> | null | undefined) ?? null
-  );
+  // "Tracks to". An event logged on a task carries its task's trackable
+  // in `trackableId` as a copy, not as its own allocation, so only a
+  // stored list counts for those.
+  const [trackableIds, setTrackableIds] = useState<Id<"trackables">[]>(() => {
+    const stored = existingEvent?.trackableIds as
+      | Id<"trackables">[]
+      | null
+      | undefined;
+    if (stored) return stored;
+    const single = existingEvent?.trackableId as
+      | Id<"trackables">
+      | null
+      | undefined;
+    return single && existingEvent?.activityType !== "TASK" ? [single] : [];
+  });
+  const initialTrackableIdsRef = useRef(trackableIds);
+  /** The first one stands in where a single trackable is needed. */
+  const trackableId = trackableIds[0] ?? null;
+  const addTrackable = (id: Id<"trackables">) =>
+    setTrackableIds((ids) => (ids.includes(id) ? ids : [...ids, id]));
   const [comments, setComments] = useState(existingEvent?.comments ?? "");
   // Empty-slot calendar create defaults to timezone-aware (meetings).
   // Editing an existing row / personal history defaults to wall-clock.
@@ -177,7 +198,7 @@ export function EventDialog({
     eventDay,
     startTime,
     durationMinutes,
-    trackableId,
+    trackableIds,
     comments,
     useTimeZone,
     selectedTimeZone,
@@ -335,6 +356,7 @@ export function EventDialog({
       durationSeconds,
       comments: comments || undefined,
       trackableId: trackableId ?? undefined,
+      trackableIds,
       timeZone: tz,
       useTimeZone,
       budgetType: "ACTUAL" as const,
@@ -403,6 +425,7 @@ export function EventDialog({
       taskId:
         (existingEvent?.taskId as Id<"tasks"> | null | undefined) ?? undefined,
       trackableId: trackableId ?? undefined,
+      trackableIds,
       listId:
         (existingEvent?.listId as Id<"lists"> | null | undefined) ?? undefined,
       title: payload.titleToPersist,
@@ -486,7 +509,7 @@ export function EventDialog({
           Math.round(existingEvent.durationSeconds / 60) !== parseInt(durationMinutes, 10) ||
           (existingEvent.title ?? "") !== (titleToPersist ?? "") ||
           (existingEvent.comments ?? "") !== (comments || "") ||
-          (existingEvent.trackableId ?? null) !== (trackableId ?? null) ||
+          initialTrackableIdsRef.current.join() !== trackableIds.join() ||
           (existingEvent.useTimeZone === true) !== useTimeZone ||
           (useTimeZone &&
             (existingEvent.timeZone ?? "") !== selectedTimeZone));
@@ -614,6 +637,7 @@ export function EventDialog({
             // behaviour (the placeholder shows what will render).
             label={liveDerivedName ? "Title" : "Title *"}
             mentions
+            onPickTrackable={addTrackable}
             value={title}
             onChangeText={(v) => {
               setTitle(v);
@@ -650,10 +674,10 @@ export function EventDialog({
             </View>
           </View>
 
-          <TrackablePicker
-            label="Trackable"
-            value={trackableId}
-            onChange={setTrackableId}
+          <TracksToField
+            value={trackableIds}
+            onChange={setTrackableIds}
+            countsToward={existingEvent?.attributedTrackableIds}
           />
 
           <Pressable
@@ -724,6 +748,7 @@ export function EventDialog({
           <Input
             label="Comments"
             mentions
+            onPickTrackable={addTrackable}
             value={comments}
             onChangeText={setComments}
             placeholder="Optional comments"

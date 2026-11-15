@@ -6,15 +6,18 @@
  * contribute to?". Every analytics surface that aggregates time per trackable
  * MUST use these helpers so totals stay consistent across screens.
  *
- * The resolution order matches productivity-one, with one Convex extension:
+ * A window or task can count toward SEVERAL trackables: its tags, the
+ * rules that match it, and every ancestor of those. That set is resolved
+ * and stamped on the row (`attributedTrackableIds`) by
+ * `trackableMembership.ts` / `trackableLifetime.ts`; the helpers here
+ * read the stamp, and fall back to the older single-trackable rule
  *
  *   1. window.trackableId is set                → that trackable
  *   2. window.taskId is set                       → task.trackableId, else
  *      task.listId → listTrackableLinks → trackableId
  *   3. window.listId only (calendar EVENT / legacy rows) → listTrackableLinks
  *
- * Each window matches at most ONE trackable (early-return), so summing per
- * trackable across all windows never double-counts.
+ * for rows that have not been stamped yet.
  */
 import { Doc, Id } from "../_generated/dataModel";
 import { toCompactYYYYMMDD } from "./compactYYYYMMDD";
@@ -22,6 +25,8 @@ import { toCompactYYYYMMDD } from "./compactYYYYMMDD";
 export type TaskInfo = {
   trackableId?: Id<"trackables"> | null;
   listId?: Id<"lists"> | null;
+  /** The task's stamp, when it has one (see `tasks.attributedTrackableIds`). */
+  attributedTrackableIds?: Id<"trackables">[] | null;
 };
 
 /**
@@ -51,6 +56,7 @@ export function buildTaskInfoMap(
     m.set(t._id, {
       trackableId: t.trackableId ?? null,
       listId: t.listId ?? null,
+      attributedTrackableIds: t.attributedTrackableIds ?? null,
     });
   }
   return m;
@@ -69,10 +75,15 @@ export function buildTaskInfoMap(
  * snapshot points elsewhere.
  */
 export function resolveAttributedTrackableId(
-  tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId" | "listId">,
+  tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId" | "listId"> &
+    Partial<Pick<Doc<"timeWindows">, "attributedTrackableIds">>,
   taskInfoMap: Map<string, TaskInfo>,
   listIdToTrackableId: Map<string, Id<"trackables">>
 ): Id<"trackables"> | null {
+  // A window can count toward several trackables (tags, rules, their
+  // ancestors). Where one is needed — a colour, a single bucket — it is
+  // the first tag: the stamp lists tags first, ancestors after.
+  if (tw.attributedTrackableIds) return tw.attributedTrackableIds[0] ?? null;
   if (tw.trackableId) return tw.trackableId;
   if (tw.taskId) {
     const taskInfo = taskInfoMap.get(tw.taskId);
@@ -100,12 +111,18 @@ export function resolveAttributedTrackableId(
  *   3. task.listId → listTrackableLinks === trackableId
  */
 export function timeWindowAttributedToTrackable(
-  tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId" | "listId">,
+  tw: Pick<Doc<"timeWindows">, "trackableId" | "taskId" | "listId"> &
+    Partial<Pick<Doc<"timeWindows">, "attributedTrackableIds">>,
   trackableId: Id<"trackables">,
   taskInfoMap: Map<string, TaskInfo>,
   listIdToTrackableId: Map<string, Id<"trackables">>
 ): boolean {
   const tid = String(trackableId);
+  // Stamped rows carry the full answer (tags, rules, ancestors). The
+  // rest of this function is the old rule, for rows not yet stamped.
+  if (tw.attributedTrackableIds) {
+    return tw.attributedTrackableIds.some((id) => String(id) === tid);
+  }
   if (tw.trackableId && String(tw.trackableId) === tid) return true;
   if (!tw.taskId) return false;
   const taskInfo = taskInfoMap.get(String(tw.taskId));
@@ -206,22 +223,38 @@ export function buildCompletedTaskCountsByTrackableDay(
   const out = new Map<string, Map<string, number>>();
   for (const task of tasks) {
     if (!task.dateCompleted) continue;
-    const trackableId = resolveSnapshotTrackableIdForTask({
-      task: { trackableId: task.trackableId, listId: task.listId },
-      listIdToTrackableId,
-    });
-    if (!trackableId) continue;
-    const tid = String(trackableId);
-    let dayMap = out.get(tid);
-    if (!dayMap) {
-      dayMap = new Map<string, number>();
-      out.set(tid, dayMap);
-    }
     const compactDay = toCompactYYYYMMDD(task.dateCompleted);
     if (!compactDay || compactDay.length !== 8) continue;
-    dayMap.set(compactDay, (dayMap.get(compactDay) ?? 0) + 1);
+    for (const trackableId of taskAttributedTrackableIds(
+      task,
+      listIdToTrackableId,
+    )) {
+      const tid = String(trackableId);
+      let dayMap = out.get(tid);
+      if (!dayMap) {
+        dayMap = new Map<string, number>();
+        out.set(tid, dayMap);
+      }
+      dayMap.set(compactDay, (dayMap.get(compactDay) ?? 0) + 1);
+    }
   }
   return out;
+}
+
+/**
+ * Every trackable a task counts toward: its stamp when it has one, else
+ * the old single-trackable rule (its tag, else its list's trackable).
+ */
+export function taskAttributedTrackableIds(
+  task: Pick<Doc<"tasks">, "trackableId" | "listId" | "attributedTrackableIds">,
+  listIdToTrackableId: Map<string, Id<"trackables">>,
+): Id<"trackables">[] {
+  if (task.attributedTrackableIds) return task.attributedTrackableIds;
+  const single = resolveSnapshotTrackableIdForTask({
+    task: { trackableId: task.trackableId, listId: task.listId },
+    listIdToTrackableId,
+  });
+  return single ? [single] : [];
 }
 
 /**

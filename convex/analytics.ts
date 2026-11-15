@@ -75,6 +75,11 @@ export const getTimeBreakdown = query({
     for (const w of allWindows) {
       if (w.taskId) referencedTaskIds.add(w.taskId);
       if (w.trackableId) referencedTrackableIds.add(w.trackableId);
+      // Everything the window counts toward, parents included: the tree
+      // breakdown needs each of them (name, colour, where it sits).
+      for (const id of w.attributedTrackableIds ?? []) {
+        referencedTrackableIds.add(id);
+      }
       if (w.listId) referencedListIds.add(w.listId);
     }
 
