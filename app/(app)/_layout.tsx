@@ -7,6 +7,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import { Colors } from "../../constants/colors";
 import { useQuery, useConvexAuth } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -50,6 +51,12 @@ import {
   traceSidebarClick,
   traceSidebarClickFlushComplete,
 } from "../../lib/navInstrumentation";
+
+/** Checkout name from the gitignored `.workspace-label` (see app.config.js). */
+const WORKSPACE_LABEL = String(
+  (Constants.expoConfig?.extra as Record<string, unknown> | undefined)
+    ?.workspaceLabel ?? "",
+).trim();
 
 /**
  * One sidebar row. Memoized with stable callbacks so only the rows whose
@@ -447,11 +454,18 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
           top bar, which spent a 56px strip of every page on the app name. */}
       <View style={[styles.brandRow, rail && styles.brandRowRail]}>
         {!rail && (
-          <View style={styles.brand}>
-            <Text style={styles.brandText}>Timeplete</Text>
-            <View style={styles.betaPill}>
-              <Text style={styles.betaLabel}>Beta</Text>
+          <View style={styles.brandColumn}>
+            <View style={styles.brand}>
+              <Text style={styles.brandText}>Timeplete</Text>
+              <View style={styles.betaPill}>
+                <Text style={styles.betaLabel}>Beta</Text>
+              </View>
             </View>
+            {WORKSPACE_LABEL ? (
+              <Text style={styles.workspaceLabel} numberOfLines={1}>
+                {WORKSPACE_LABEL}
+              </Text>
+            ) : null}
           </View>
         )}
         {isDesktop && (
@@ -771,7 +785,13 @@ const styles = StyleSheet.create({
     paddingRight: 10,
   },
   brandRowRail: { justifyContent: "center", paddingLeft: 0, paddingRight: 0 },
+  brandColumn: { minWidth: 0, flexShrink: 1 },
   brand: { flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0 },
+  workspaceLabel: {
+    marginTop: 2,
+    fontSize: FontSize.micro,
+    color: Colors.textSecondary,
+  },
   brandText: {
     fontSize: FontSize.bodyLarge,
     fontWeight: "700",

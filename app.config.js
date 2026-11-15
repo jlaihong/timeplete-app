@@ -236,6 +236,22 @@ function pickResolvedLoopbackConvexUrls(mergedCloud, mergedSite) {
   };
 }
 
+/**
+ * Optional one-line label naming this checkout (branch / worktree), shown
+ * under the "Timeplete Beta" brand so parallel workspaces are tellable apart.
+ * Read from the gitignored `.workspace-label`; absent in normal checkouts and
+ * never read for EAS builds, so shipped binaries carry no label.
+ */
+function readWorkspaceLabel() {
+  if (process.env.EAS_BUILD === "true") return "";
+  try {
+    const text = fs.readFileSync(path.join(__dirname, ".workspace-label"), "utf8");
+    return (text.split("\n").find((l) => l.trim()) || "").trim().slice(0, 60);
+  } catch {
+    return "";
+  }
+}
+
 /** @type {import('@expo/config').ExpoConfig} */
 module.exports = () => {
   const appJson = require("./app.json");
@@ -314,6 +330,7 @@ module.exports = () => {
         ...(appJson.expo.extra || {}),
         EXPO_PUBLIC_CONVEX_URL: convexUrl,
         EXPO_PUBLIC_CONVEX_SITE_URL: convexSiteUrl,
+        workspaceLabel: readWorkspaceLabel(),
       },
     },
   };

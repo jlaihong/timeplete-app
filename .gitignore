@@ -39,6 +39,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Per-checkout label shown under the app name (see app.config.js)
+.workspace-label
+
 # Convex local backend + deployment metadata (link or copy from main clone)
 .convex/
 
