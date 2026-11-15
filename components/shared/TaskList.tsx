@@ -15,7 +15,6 @@ import {
   NestableDraggableFlatList,
   type RenderItemParams,
 } from "react-native-draggable-flatlist";
-import { Pressable as GesturePressable } from "react-native-gesture-handler";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -49,7 +48,7 @@ function isPastDayGroup(day: string, today: string): boolean {
 import { TaskTimeSpentButton } from "../tasks/TaskTimeSpentButton";
 import { useTaskDaySeconds } from "../../hooks/useTaskDaySeconds";
 import { useCompleteWithFeedback } from "../../hooks/useCompleteWithFeedback";
-import { CompleteCheckIcon } from "../tasks/CompleteCheckIcon";
+import { TaskCheckButton } from "../tasks/TaskCheckButton";
 import { useTaskTimeSpentEditor } from "../tasks/useTaskTimeSpentEditor";
 import { Id } from "../../convex/_generated/dataModel";
 import {
@@ -782,20 +781,14 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         >
           {/* Native gesture, outside the row long-press, so a check
               does not wait on the list pan or the 300ms drag timer. */}
-          <GesturePressable
+          <TaskCheckButton
+            checked={isCompleted}
+            size={22}
+            style={styles.checkBtn}
             onPress={() => {
               toggleComplete(task._id, task.name, isSavedCompleted);
             }}
-            hitSlop={8}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: isCompleted }}
-            accessibilityLabel={
-              isCompleted ? "Mark incomplete" : "Mark complete"
-            }
-            style={styles.checkBtn}
-          >
-            <CompleteCheckIcon checked={isCompleted} size={22} />
-          </GesturePressable>
+          />
           <TouchableOpacity
             style={styles.taskMain}
             onPress={() => onSelectTask?.(task._id)}

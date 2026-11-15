@@ -23,7 +23,6 @@ import {
   NestableDraggableFlatList,
   type RenderItemParams,
 } from "react-native-draggable-flatlist";
-import { Pressable as GesturePressable } from "react-native-gesture-handler";
 import { api } from "../../../convex/_generated/api";
 import { Colors } from "../../../constants/colors";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -32,7 +31,7 @@ import { ListDialog } from "../../../components/lists/ListDialog";
 import { AddTaskSheet } from "../../../components/tasks/AddTaskSheet";
 import { TaskDetailSheet } from "../../../components/tasks/TaskDetailSheet";
 import { TaskTimeSpentButton } from "../../../components/tasks/TaskTimeSpentButton";
-import { CompleteCheckIcon } from "../../../components/tasks/CompleteCheckIcon";
+import { TaskCheckButton } from "../../../components/tasks/TaskCheckButton";
 import { useCompleteWithFeedback } from "../../../hooks/useCompleteWithFeedback";
 import { useTaskTimeSpentEditor } from "../../../components/tasks/useTaskTimeSpentEditor";
 import {
@@ -680,20 +679,14 @@ export default function ListDetailScreen() {
             {/* Native gesture, outside the row long-press. A nested
                 TouchableOpacity waits on the list pan and the 300ms
                 long-press before the check paints. */}
-            <GesturePressable
+            <TaskCheckButton
+              checked={isCompleted}
+              size={24}
+              style={styles.checkBtn}
               onPress={() => {
                 void toggleComplete(task._id, task.name, isSavedCompleted);
               }}
-              hitSlop={8}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: isCompleted }}
-              accessibilityLabel={
-                isCompleted ? "Mark incomplete" : "Mark complete"
-              }
-              style={styles.checkBtn}
-            >
-              <CompleteCheckIcon checked={isCompleted} size={24} />
-            </GesturePressable>
+            />
             <TouchableOpacity
               style={styles.taskMain}
               onPress={() => setSelectedTaskId(task._id)}
