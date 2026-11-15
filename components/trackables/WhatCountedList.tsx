@@ -1,7 +1,7 @@
 import React from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useQuery } from "convex/react";
+import { usePaginatedQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { Colors } from "../../constants/colors";
@@ -14,6 +14,8 @@ import { MentionText } from "../mentions/MentionText";
 interface Props {
   trackableId: Id<"trackables">;
 }
+
+const PAGE = 30;
 
 const ICON = {
   event: "calendar-outline",
@@ -32,11 +34,16 @@ const ICON = {
  */
 export function WhatCountedList({ trackableId }: Props) {
   const { profileReady } = useAuth();
-  const items = useQuery(
+  const {
+    results: items,
+    status,
+    loadMore,
+  } = usePaginatedQuery(
     api.trackableProgress.counted,
     profileReady ? { id: trackableId } : "skip",
+    { initialNumItems: PAGE },
   );
-  if (!items) return null;
+  if (status === "LoadingFirstPage") return null;
   if (items.length === 0) {
     return (
       <Text style={styles.empty}>
@@ -49,7 +56,7 @@ export function WhatCountedList({ trackableId }: Props) {
   return (
     <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
       {items.map((item) => (
-        <View key={`${item.kind}:${item.id}`} style={styles.row}>
+        <View key={item.id} style={styles.row}>
           <Ionicons
             name={ICON[item.kind]}
             size={16}
@@ -93,6 +100,18 @@ export function WhatCountedList({ trackableId }: Props) {
           </Text>
         </View>
       ))}
+      {status === "CanLoadMore" || status === "LoadingMore" ? (
+        <Pressable
+          onPress={() => loadMore(PAGE)}
+          disabled={status === "LoadingMore"}
+          accessibilityRole="button"
+          style={styles.more}
+        >
+          <Text style={styles.moreText}>
+            {status === "LoadingMore" ? "Loading…" : "Load more"}
+          </Text>
+        </Pressable>
+      ) : null}
     </ScrollView>
   );
 }
@@ -108,6 +127,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.outlineVariant,
   },
+  more: { alignSelf: "center", paddingVertical: 12, paddingHorizontal: 16 },
+  moreText: { fontSize: FontSize.body, color: Colors.primary },
   day: { width: 52, fontSize: FontSize.caption, color: Colors.textSecondary },
   titleCell: { flex: 1, minWidth: 0 },
   title: { fontSize: FontSize.body, color: Colors.text },

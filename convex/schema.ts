@@ -659,6 +659,35 @@ export default defineSchema({
     .index("by_trackable", ["trackableId"])
     .index("by_page", ["pageId"]),
 
+  /**
+   * The index behind a trackable's "What counted" list: one row per thing
+   * per trackable it counts toward (ancestors included), so a trackable's
+   * items can be read directly, newest first. Maintained beside the
+   * totals; see `_helpers/trackableItems.ts`.
+   */
+  trackableItems: defineTable({
+    userId: v.id("users"),
+    trackableId: v.id("trackables"),
+    /** Compact YYYYMMDD the item counts on. */
+    dayYYYYMMDD: v.string(),
+    kind: v.union(
+      v.literal("event"),
+      v.literal("task"),
+      v.literal("value"),
+      v.literal("checkIn"),
+    ),
+    windowId: v.optional(v.id("timeWindows")),
+    taskId: v.optional(v.id("tasks")),
+    entryId: v.optional(v.id("trackerEntries")),
+    /** For a check-in: the trackable it was ticked on. */
+    sourceTrackableId: v.optional(v.id("trackables")),
+  })
+    .index("by_trackable_day", ["trackableId", "dayYYYYMMDD"])
+    .index("by_window", ["windowId"])
+    .index("by_task", ["taskId"])
+    .index("by_entry", ["entryId"])
+    .index("by_source_day", ["sourceTrackableId", "dayYYYYMMDD"]),
+
   reviewQuestions: defineTable({
     userId: v.id("users"),
     questionText: v.string(),

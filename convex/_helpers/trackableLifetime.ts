@@ -37,6 +37,7 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { TaskInfo } from "./trackableAttribution";
+import { setManualItems, setTrackableItems } from "./trackableItems";
 import {
   allocatedTrackableIds,
   listRuleTrackableIds,
@@ -548,6 +549,13 @@ export async function syncWindowAttribution(
   let tw = await ctx.db.get(windowId);
   if (!tw) {
     if (before) {
+      await setTrackableItems(
+        ctx,
+        { kind: "event", windowId },
+        before.userId,
+        [],
+        undefined,
+      );
       await applyWindowCredit(
         ctx,
         before,
@@ -587,6 +595,14 @@ export async function syncWindowAttribution(
   if (!sameOrder(tw.attributedTrackableIds, nextIds)) {
     await ctx.db.patch(tw._id, { attributedTrackableIds: nextIds });
   }
+  // "What counted" lists the window under each of them, when it counts.
+  await setTrackableItems(
+    ctx,
+    { kind: "event", windowId: tw._id },
+    tw.userId,
+    tw.budgetType === "ACTUAL" && (tw.durationSeconds ?? 0) > 0 ? nextIds : [],
+    tw.startDayYYYYMMDD,
+  );
 }
 
 /** Call after inserting a `timeWindows` row. */
@@ -620,6 +636,13 @@ export async function deleteTimeWindowWithSideEffects(
   tw: Doc<"timeWindows">,
 ): Promise<void> {
   await ctx.db.delete(tw._id);
+  await setTrackableItems(
+    ctx,
+    { kind: "event", windowId: tw._id },
+    tw.userId,
+    [],
+    undefined,
+  );
   await onTimeWindowDeleted(ctx, {
     taskId: tw.taskId,
     activityType: tw.activityType,
@@ -786,7 +809,9 @@ export async function syncTaskAttribution(
   const cache = opts.cache ?? newMembershipCache();
   const task = await ctx.db.get(taskId);
   if (!task) {
-    if (before) await removeTaskCompletionCredit(ctx, before);
+    if (before) {
+      await removeTaskCompletionCredit(ctx, { ...before, _id: taskId });
+    }
     return;
   }
   const prevIds = before
@@ -805,6 +830,14 @@ export async function syncTaskAttribution(
   if (!sameOrder(task.attributedTrackableIds, allIds)) {
     await ctx.db.patch(task._id, { attributedTrackableIds: allIds });
   }
+  // "What counted" lists a completed task on the day it was completed.
+  await setTrackableItems(
+    ctx,
+    { kind: "task", taskId: task._id },
+    task.userId,
+    nextIds,
+    task.dateCompleted,
+  );
 
   // The task's windows count toward whatever the task does. Re-sync them
   // when that changed (or was never recorded for this task).
@@ -835,8 +868,17 @@ export async function syncTaskAttribution(
 /** Call when a task row is deleted (pass the row as it was). */
 export async function removeTaskCompletionCredit(
   ctx: MutationCtx,
-  task: TaskCreditRow,
+  task: TaskCreditRow & { _id?: Id<"tasks"> },
 ): Promise<void> {
+  if (task._id) {
+    await setTrackableItems(
+      ctx,
+      { kind: "task", taskId: task._id },
+      task.userId,
+      [],
+      undefined,
+    );
+  }
   const cache = newMembershipCache();
   await applyTaskCompletionCredit(
     ctx,
@@ -906,6 +948,13 @@ export async function onTrackerEntryWrite(
   },
 ): Promise<void> {
   const { trackableId, entryId, before, after } = args;
+  await setManualItems(
+    ctx,
+    { kind: "value", entryId },
+    trackableId,
+    after?.dayYYYYMMDD,
+    after !== null,
+  );
   const deltaCountValue = (after?.countValue ?? 0) - (before?.countValue ?? 0);
   const deltaDurationSeconds =
     (after?.durationSeconds ?? 0) - (before?.durationSeconds ?? 0);

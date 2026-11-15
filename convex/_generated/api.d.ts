@@ -35,6 +35,7 @@ import type * as _helpers_taskDayMove from "../_helpers/taskDayMove.js";
 import type * as _helpers_taskTimeSpent from "../_helpers/taskTimeSpent.js";
 import type * as _helpers_timeWindowDisplayEnrichment from "../_helpers/timeWindowDisplayEnrichment.js";
 import type * as _helpers_trackableAttribution from "../_helpers/trackableAttribution.js";
+import type * as _helpers_trackableItems from "../_helpers/trackableItems.js";
 import type * as _helpers_trackableLifetime from "../_helpers/trackableLifetime.js";
 import type * as _helpers_trackableMembership from "../_helpers/trackableMembership.js";
 import type * as _helpers_wallClockTimeZone from "../_helpers/wallClockTimeZone.js";
@@ -99,6 +100,7 @@ declare const fullApi: ApiFromModules<{
   "_helpers/taskTimeSpent": typeof _helpers_taskTimeSpent;
   "_helpers/timeWindowDisplayEnrichment": typeof _helpers_timeWindowDisplayEnrichment;
   "_helpers/trackableAttribution": typeof _helpers_trackableAttribution;
+  "_helpers/trackableItems": typeof _helpers_trackableItems;
   "_helpers/trackableLifetime": typeof _helpers_trackableLifetime;
   "_helpers/trackableMembership": typeof _helpers_trackableMembership;
   "_helpers/wallClockTimeZone": typeof _helpers_wallClockTimeZone;

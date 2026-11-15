@@ -18,6 +18,7 @@
  * "in total", the days since the trackable started.
  */
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUserOrEmpty } from "./_helpers/auth";
@@ -416,145 +417,112 @@ export const day = query({
   },
 });
 
-/** How far back "What counted" looks for matching events and tasks. */
-const COUNTED_SCAN = 1500;
-
 /**
- * "What counted": the most recent things that fed a trackable. Events and
- * logged time, completed tasks, and values or check-ins logged by hand,
- * newest first. Each says which direct sub-trackable it came through, if
- * any.
+ * "What counted": the things that fed a trackable, newest first, a page
+ * at a time. Events and logged time, completed tasks, and values or
+ * check-ins logged by hand. Each says which direct sub-trackables it came
+ * through.
  *
- * Events and tasks are found by their stamp (`attributedTrackableIds`),
- * scanning the user's most recent ones, so a trackable that has not been
- * used for a long time may show fewer rows than it has.
+ * Read straight from the `trackableItems` index, so a page costs a page
+ * of rows however old they are (see `_helpers/trackableItems.ts`).
  */
 export const counted = query({
-  args: { id: v.id("trackables"), limit: v.optional(v.number()) },
+  args: { id: v.id("trackables"), paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
     const user = await requireApprovedUserOrEmpty(ctx);
-    if (!user) return [];
-    const trackable = await ctx.db.get(args.id);
-    if (!trackable || trackable.userId !== user._id) return [];
-    const limit = Math.min(args.limit ?? 50, 200);
+    const trackable = user ? await ctx.db.get(args.id) : null;
+    if (!user || !trackable || trackable.userId !== user._id) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
 
     const children = await ctx.db
       .query("trackables")
       .withIndex("by_parent", (q) => q.eq("parentId", trackable._id))
       .take(100);
     const childById = new Map(children.map((c) => [c._id as string, c]));
+    const label = (c: Doc<"trackables">) => ({ name: c.name, colour: c.colour });
     /** The direct sub-trackables an item came through (often one). */
-    const via = (stamp: Id<"trackables">[] | undefined) =>
+    const viaStamp = (stamp: Id<"trackables">[] | undefined) =>
       (stamp ?? [])
         .map((id) => childById.get(id))
         .filter((c): c is Doc<"trackables"> => !!c)
-        .map((c) => ({ name: c.name, colour: c.colour }));
-    const counts = (stamp: Id<"trackables">[] | undefined) =>
-      !!stamp && stamp.includes(trackable._id);
-
-    type Item = {
-      kind: "event" | "task" | "value" | "checkIn";
-      id: string;
-      dayYYYYMMDD: string;
-      startTimeHHMM: string | null;
-      title: string;
-      seconds: number | null;
-      count: number | null;
-      via: { name: string; colour: string }[];
+        .map(label);
+    /** For something logged on `sourceId`: the sub-trackable it is under. */
+    const viaSource = async (sourceId: Id<"trackables">) => {
+      if (sourceId === trackable._id) return [];
+      const source = await ctx.db.get(sourceId);
+      const path = source ? [...(source.ancestorIds ?? []), source._id] : [];
+      const child = childById.get(path[path.indexOf(trackable._id) + 1] ?? "");
+      return child ? [label(child)] : [];
     };
-    const items: Item[] = [];
 
-    const windows = await ctx.db
-      .query("timeWindows")
-      .withIndex("by_user_budget_day", (q) =>
-        q.eq("userId", user._id).eq("budgetType", "ACTUAL"),
-      )
-      .order("desc")
-      .take(COUNTED_SCAN);
-    for (const w of windows) {
-      if (items.length >= limit) break;
-      if (!counts(w.attributedTrackableIds)) continue;
-      const task = w.taskId ? await ctx.db.get(w.taskId) : null;
-      items.push({
-        kind: "event",
-        id: w._id,
-        dayYYYYMMDD: toCompactYYYYMMDD(w.startDayYYYYMMDD),
-        startTimeHHMM: w.startTimeHHMM,
-        title: w.title ?? task?.name ?? w.comments ?? "Logged time",
-        seconds: w.durationSeconds,
-        count: null,
-        via: via(w.attributedTrackableIds),
-      });
-    }
-
-    const tasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_user_completed_day", (q) =>
-        q.eq("userId", user._id).gt("dateCompleted", ""),
-      )
-      .order("desc")
-      .take(COUNTED_SCAN);
-    let taskRows = 0;
-    for (const t of tasks) {
-      if (taskRows >= limit) break;
-      if (!t.dateCompleted || !counts(t.attributedTrackableIds)) continue;
-      taskRows += 1;
-      items.push({
-        kind: "task",
-        id: t._id,
-        dayYYYYMMDD: toCompactYYYYMMDD(t.dateCompleted),
-        startTimeHHMM: null,
-        title: t.name,
-        seconds: null,
-        count: 1,
-        via: via(t.attributedTrackableIds),
-      });
-    }
-
-    // Logged by hand on this trackable itself.
-    const entries = await ctx.db
-      .query("trackerEntries")
+    const result = await ctx.db
+      .query("trackableItems")
       .withIndex("by_trackable_day", (q) => q.eq("trackableId", trackable._id))
       .order("desc")
-      .take(limit);
-    for (const e of entries) {
-      items.push({
-        kind: "value",
-        id: e._id,
-        dayYYYYMMDD: toCompactYYYYMMDD(e.dayYYYYMMDD),
-        startTimeHHMM: e.startTimeHHMM ?? null,
-        title: e.comments ?? "",
-        seconds: e.durationSeconds ?? null,
-        count: e.countValue ?? null,
-        via: [],
-      });
-    }
-    const checkIns = await ctx.db
-      .query("trackableDays")
-      .withIndex("by_trackable_day", (q) => q.eq("trackableId", trackable._id))
-      .order("desc")
-      .take(limit);
-    for (const d of checkIns) {
-      if (d.numCompleted <= 0) continue;
-      items.push({
-        kind: "checkIn",
-        id: d._id,
-        dayYYYYMMDD: toCompactYYYYMMDD(d.dayYYYYMMDD),
-        startTimeHHMM: null,
-        title: d.comments,
-        seconds: null,
-        count: d.numCompleted,
-        via: [],
-      });
-    }
+      .paginate(args.paginationOpts);
 
-    return items
-      .sort(
-        (a, b) =>
-          b.dayYYYYMMDD.localeCompare(a.dayYYYYMMDD) ||
-          (b.startTimeHHMM ?? "").localeCompare(a.startTimeHHMM ?? ""),
-      )
-      .slice(0, limit);
+    const page = [];
+    for (const row of result.page) {
+      const base = {
+        id: row._id,
+        kind: row.kind,
+        dayYYYYMMDD: row.dayYYYYMMDD,
+        startTimeHHMM: null as string | null,
+        title: "",
+        seconds: null as number | null,
+        count: null as number | null,
+        via: [] as { name: string; colour: string }[],
+      };
+      if (row.kind === "event" && row.windowId) {
+        const w = await ctx.db.get(row.windowId);
+        if (!w) continue;
+        const task = w.taskId ? await ctx.db.get(w.taskId) : null;
+        page.push({
+          ...base,
+          startTimeHHMM: w.startTimeHHMM,
+          title: w.title ?? task?.name ?? w.comments ?? "Logged time",
+          seconds: w.durationSeconds,
+          via: viaStamp(w.attributedTrackableIds),
+        });
+      } else if (row.kind === "task" && row.taskId) {
+        const t = await ctx.db.get(row.taskId);
+        if (!t) continue;
+        page.push({
+          ...base,
+          title: t.name,
+          count: 1,
+          via: viaStamp(t.attributedTrackableIds),
+        });
+      } else if (row.kind === "value" && row.entryId) {
+        const e = await ctx.db.get(row.entryId);
+        if (!e) continue;
+        page.push({
+          ...base,
+          startTimeHHMM: e.startTimeHHMM ?? null,
+          title: e.comments ?? "",
+          seconds: e.durationSeconds ?? null,
+          count: e.countValue ?? null,
+          via: await viaSource(e.trackableId),
+        });
+      } else if (row.kind === "checkIn" && row.sourceTrackableId) {
+        const sourceId = row.sourceTrackableId;
+        const dayRow = await ctx.db
+          .query("trackableDays")
+          .withIndex("by_trackable_day", (q) =>
+            q.eq("trackableId", sourceId).eq("dayYYYYMMDD", row.dayYYYYMMDD),
+          )
+          .first();
+        if (!dayRow || dayRow.numCompleted <= 0) continue;
+        page.push({
+          ...base,
+          title: dayRow.comments,
+          count: dayRow.numCompleted,
+          via: await viaSource(sourceId),
+        });
+      }
+    }
+    return { ...result, page };
   },
 });
 

@@ -23,6 +23,7 @@ import {
   type LegacyHints,
 } from "./_helpers/trackableLifetime";
 import { newMembershipCache } from "./_helpers/trackableMembership";
+import { setManualItems } from "./_helpers/trackableItems";
 
 const USER_BATCH = 100;
 /** Smaller: each task in a list scope also re-syncs its windows. */
@@ -114,7 +115,14 @@ export const runForPage = internalMutation({
 export const run = internalMutation({
   args: {
     ...scopeArgs,
-    phase: v.union(v.literal("tasks"), v.literal("windows")),
+    phase: v.union(
+      v.literal("tasks"),
+      v.literal("windows"),
+      // Whole-account runs only: things logged by hand on a trackable,
+      // which count toward it and everything above it.
+      v.literal("entries"),
+      v.literal("checkIns"),
+    ),
     cursor: v.union(v.string(), v.null()),
   },
   handler: async (ctx, args) => {
@@ -156,6 +164,40 @@ export const run = internalMutation({
         });
       }
       ({ isDone, continueCursor } = result);
+    } else if (args.phase === "entries") {
+      const result = await ctx.db
+        .query("trackerEntries")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .paginate(paginationOpts);
+      for (const entry of result.page) {
+        await setManualItems(
+          ctx,
+          { kind: "value", entryId: entry._id },
+          entry.trackableId,
+          entry.dayYYYYMMDD,
+          true,
+        );
+      }
+      ({ isDone, continueCursor } = result);
+    } else if (args.phase === "checkIns") {
+      const result = await ctx.db
+        .query("trackableDays")
+        .withIndex("by_user_trackable", (q) => q.eq("userId", userId))
+        .paginate(paginationOpts);
+      for (const row of result.page) {
+        await setManualItems(
+          ctx,
+          {
+            kind: "checkIn",
+            sourceTrackableId: row.trackableId,
+            dayYYYYMMDD: row.dayYYYYMMDD,
+          },
+          row.trackableId,
+          row.dayYYYYMMDD,
+          row.numCompleted > 0,
+        );
+      }
+      ({ isDone, continueCursor } = result);
     } else {
       const result = listId
         ? await ctx.db
@@ -184,12 +226,24 @@ export const run = internalMutation({
         phase: args.phase,
         cursor: continueCursor,
       });
-    } else if (args.phase === "tasks") {
-      await ctx.scheduler.runAfter(0, internal.trackableResync.run, {
-        ...scope,
-        phase: "windows",
-        cursor: null,
-      });
+    } else {
+      const next =
+        args.phase === "tasks"
+          ? "windows"
+          : listId
+            ? null
+            : args.phase === "windows"
+              ? "entries"
+              : args.phase === "entries"
+                ? "checkIns"
+                : null;
+      if (next) {
+        await ctx.scheduler.runAfter(0, internal.trackableResync.run, {
+          ...scope,
+          phase: next,
+          cursor: null,
+        });
+      }
     }
     return null;
   },
@@ -289,6 +343,42 @@ export const backfillEventCounts = internalMutation({
         internal.trackableResync.backfillEventCounts,
         { userId: args.userId, phase: "count", cursor: null },
       );
+    }
+    return null;
+  },
+});
+
+/**
+ * After a trackable is deleted: remove its rows from the "What counted"
+ * index, in batches. (Things that counted toward it only through the
+ * tree or a rule are re-synced separately by `run`.)
+ */
+export const deleteItems = internalMutation({
+  args: { trackableId: v.id("trackables") },
+  handler: async (ctx, args) => {
+    const own = await ctx.db
+      .query("trackableItems")
+      .withIndex("by_trackable_day", (q) =>
+        q.eq("trackableId", args.trackableId),
+      )
+      .take(300);
+    // Its check-ins, as listed under the trackables above it.
+    const rolledUp = await ctx.db
+      .query("trackableItems")
+      .withIndex("by_source_day", (q) =>
+        q.eq("sourceTrackableId", args.trackableId),
+      )
+      .take(300);
+    const seen = new Set<string>();
+    for (const row of [...own, ...rolledUp]) {
+      if (seen.has(row._id)) continue;
+      seen.add(row._id);
+      await ctx.db.delete(row._id);
+    }
+    if (own.length + rolledUp.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.trackableResync.deleteItems, {
+        trackableId: args.trackableId,
+      });
     }
     return null;
   },

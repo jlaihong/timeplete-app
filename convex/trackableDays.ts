@@ -1,3 +1,4 @@
+import { setManualItems } from "./_helpers/trackableItems";
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
@@ -47,6 +48,20 @@ export const upsert = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+
+    // "What counted" lists a day's check-in under the trackable and
+    // everything above it.
+    await setManualItems(
+      ctx,
+      {
+        kind: "checkIn",
+        sourceTrackableId: args.trackableId,
+        dayYYYYMMDD: args.dayYYYYMMDD,
+      },
+      args.trackableId,
+      args.dayYYYYMMDD,
+      args.numCompleted > 0,
+    );
 
     const existing = await ctx.db
       .query("trackableDays")

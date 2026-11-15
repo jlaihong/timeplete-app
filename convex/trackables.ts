@@ -553,6 +553,9 @@ export const remove = mutation({
     }
 
     await ctx.db.delete(args.id);
+    await ctx.scheduler.runAfter(0, internal.trackableResync.deleteItems, {
+      trackableId: args.id,
+    });
 
     // Tasks and events tagged with it (or matched by its list rule) no
     // longer count toward it or, through it, toward its ancestors.
