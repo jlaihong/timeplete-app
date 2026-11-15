@@ -55,7 +55,11 @@ export function TrackableWidgetFactory({
       goal={focused}
       onBack={focused._id !== goal._id ? goUp : undefined}
       onRequestEditTrackable={onRequestEditTrackable}
-      onRequestLogDetails={() => onRequestLog(detailsRequest(focused, today))}
+      // The card logs the usual amount in one press; this opens the full
+      // dialog for another day, a custom amount or a note.
+      onRequestLogDetails={() =>
+        onRequestLog({ trackableId: focused._id, dayYYYYMMDD: today })
+      }
     >
       <View style={{ gap: 12, alignSelf: "stretch" }}>
         <ProgressWidget
@@ -78,37 +82,3 @@ export function TrackableWidgetFactory({
     </TrackableWidgetCard>
   );
 }
-
-/**
- * The full log dialog for today — the card's "⋯" button. The card itself
- * logs the usual amount in one press; this is for another day, a custom
- * amount, or a note.
- */
-function detailsRequest(goal: WidgetGoal, today: string): LogRequest {
-  const todayEntry = goal.weeklyDayCompletion.find(
-    (d) => d.dayYYYYMMDD === today,
-  );
-  switch (goal.trackableType) {
-    case "DAYS_A_WEEK":
-      return {
-        kind: "periodic",
-        goal,
-        dayYYYYMMDD: today,
-        initialNumCompleted: todayEntry?.numCompleted ?? 0,
-        initialComments: todayEntry?.comments ?? "",
-      };
-    case "NUMBER":
-      return {
-        kind: "count",
-        goal,
-        dayYYYYMMDD: today,
-        initialCount: todayEntry?.numCompleted ?? 0,
-        initialComments: todayEntry?.comments ?? "",
-      };
-    case "TRACKER":
-      return { kind: "tracker", goal, dayYYYYMMDD: today };
-    default:
-      return { kind: "time", goal, dayYYYYMMDD: today };
-  }
-}
-

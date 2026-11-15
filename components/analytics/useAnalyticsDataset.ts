@@ -122,6 +122,20 @@ export function useAnalyticsDataset() {
     };
   }, [tasks, listIdToTrackableId]);
 
+  /**
+   * The top-level trackable a window belongs under: its first tag's root
+   * in the tree ("Social" for something allocated to "Family"). For views
+   * that show one colour per window by top-level trackable.
+   */
+  const resolveTopTrackableId = useMemo(() => {
+    return (w: TimeWindowLite): string | null => {
+      const id = resolveTrackableId(w);
+      if (!id) return null;
+      const root = trackables[id]?.ancestorIds?.[0];
+      return root && trackables[root] ? root : id;
+    };
+  }, [resolveTrackableId, trackables]);
+
   const totalSeconds = useMemo(
     () => timeWindows.reduce((s, w) => s + w.durationSeconds, 0),
     [timeWindows]
@@ -136,6 +150,7 @@ export function useAnalyticsDataset() {
     trackables,
     listIdToTrackableId,
     resolveTrackableId,
+    resolveTopTrackableId,
     totalSeconds,
     windowStart,
     windowEnd,

@@ -1,8 +1,5 @@
 import React from "react";
-import { TrackPeriodicDialog } from "./dialogs/TrackPeriodicDialog";
-import { TrackTimeDialog } from "./dialogs/TrackTimeDialog";
-import { TrackCountDialog } from "./dialogs/TrackCountDialog";
-import { TrackTrackerDialog } from "./dialogs/TrackTrackerDialog";
+import { TrackableLogDialog } from "./dialogs/TrackableLogDialog";
 import type { LogRequest } from "./types";
 import { QuickLogToastHost } from "./quickLog";
 
@@ -24,61 +21,16 @@ export function TrackableDialogHost({
 }: TrackableDialogHostProps) {
   return (
     <>
-      {request ? renderDialog(request, onClose) : null}
+      {request ? (
+        <TrackableLogDialog
+          trackableId={request.trackableId}
+          dayYYYYMMDD={request.dayYYYYMMDD}
+          onClose={onClose}
+        />
+      ) : null}
       {/* The "Logged · Undo" message for one-click logs from the cards. */}
       <QuickLogToastHost />
     </>
   );
 }
 
-function renderDialog(request: LogRequest, onClose: () => void) {
-  switch (request.kind) {
-    case "periodic":
-      return (
-        <TrackPeriodicDialog
-          trackableId={request.goal._id}
-          trackableName={request.goal.name}
-          trackableColour={request.goal.colour}
-          dayYYYYMMDD={request.dayYYYYMMDD}
-          initialNumCompleted={request.initialNumCompleted}
-          initialComments={request.initialComments}
-          onClose={onClose}
-        />
-      );
-    case "time":
-      return (
-        <TrackTimeDialog
-          trackableId={request.goal._id}
-          trackableName={request.goal.name}
-          trackableColour={request.goal.colour}
-          dayYYYYMMDD={request.dayYYYYMMDD}
-          onClose={onClose}
-        />
-      );
-    case "count":
-      return (
-        <TrackCountDialog
-          trackableId={request.goal._id}
-          trackableName={request.goal.name}
-          trackableColour={request.goal.colour}
-          dayYYYYMMDD={request.dayYYYYMMDD}
-          initialCount={request.initialCount}
-          initialComments={request.initialComments}
-          onClose={onClose}
-        />
-      );
-    case "tracker":
-      return (
-        <TrackTrackerDialog
-          trackableId={request.goal._id}
-          trackableName={request.goal.name}
-          trackableColour={request.goal.colour}
-          dayYYYYMMDD={request.dayYYYYMMDD}
-          trackCount={request.goal.trackCount ?? false}
-          trackTime={request.goal.trackTime ?? false}
-          isRatingTracker={request.goal.isRatingTracker ?? false}
-          onClose={onClose}
-        />
-      );
-  }
-}

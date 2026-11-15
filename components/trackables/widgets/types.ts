@@ -11,38 +11,20 @@ export type WidgetGoal = FunctionReturnType<
 >["active"][number];
 
 /**
- * Description of a quick-log dialog the user wants to open. Widgets do **not**
- * render dialogs themselves — they bubble a `LogRequest` up to a single
- * dialog host mounted at the root of the screen (`DesktopHome`). This avoids
- * mounting `Modal` portals from inside the virtualized `FlatList` (which
- * would be clipped by ancestor stacking contexts and is also broken under
- * React `StrictMode` for `react-native-web`'s `ModalPortal`).
+ * A request to open the full log dialog for a trackable on a day. Cards
+ * do **not** render dialogs themselves: they bubble a `LogRequest` up to a
+ * single dialog host mounted at the root of the screen (`DesktopHome`).
+ * This avoids mounting `Modal` portals from inside the virtualized
+ * `FlatList` (which would be clipped by ancestor stacking contexts and is
+ * also broken under React `StrictMode` for `react-native-web`'s
+ * `ModalPortal`). The host picks the dialog from what the trackable
+ * measures (`TrackableLogDialog`).
  */
-export type LogRequest =
-  | {
-      kind: "periodic";
-      goal: WidgetGoal;
-      dayYYYYMMDD: string;
-      initialNumCompleted: number;
-      initialComments: string;
-    }
-  | {
-      kind: "time";
-      goal: WidgetGoal;
-      dayYYYYMMDD: string;
-    }
-  | {
-      kind: "count";
-      goal: WidgetGoal;
-      dayYYYYMMDD: string;
-      initialCount: number;
-      initialComments: string;
-    }
-  | {
-      kind: "tracker";
-      goal: WidgetGoal;
-      dayYYYYMMDD: string;
-    };
+export interface LogRequest {
+  trackableId: WidgetGoal["_id"];
+  /** YYYYMMDD (no dashes). */
+  dayYYYYMMDD: string;
+}
 
 /**
  * Common props every per-type widget receives. The card chrome (header,

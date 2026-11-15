@@ -79,7 +79,7 @@ export function ProgressWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
             label="Log a value"
             accessibilityLabel={`Log a value for ${goal.name}`}
             onPress={() =>
-              onRequestLog({ kind: "tracker", goal, dayYYYYMMDD: today })
+              onRequestLog({ trackableId: goal._id, dayYYYYMMDD: today })
             }
           />
         ) : null}

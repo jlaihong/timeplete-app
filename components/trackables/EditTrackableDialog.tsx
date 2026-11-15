@@ -24,6 +24,7 @@ import { DateField } from "../ui/DateField";
 import { ColourSwatchPicker } from "./ColourSwatchPicker";
 import { TrackableForm, TrackableFormDialog } from "./TrackableForm";
 import { SubTrackablesSection } from "./SubTrackablesSection";
+import { shapeOf } from "../../lib/trackableShape";
 import {
   DialogOverlay,
   DialogCard,
@@ -37,8 +38,8 @@ import {
   GoalAccountabilityForm,
   type GoalAccountabilityValue,
 } from "./goal/GoalAccountabilityForm";
-import { EditTrackableHistoryTab } from "./EditTrackableHistoryTab";
-import { EditTrackableProgressTab } from "./EditTrackableProgressTab";
+import { WhatCountedList } from "./WhatCountedList";
+import { TrackableProgressCalendar } from "./TrackableProgressCalendar";
 import { useAuth } from "../../hooks/useAuth";
 import { homeHiddenReason } from "../../lib/trackableHomeVisibility";
 import { todayYYYYMMDD } from "../../lib/dates";
@@ -243,7 +244,9 @@ export function EditTrackableDialog({
   if (!trackable) return null;
 
   const trackableType = trackable.trackableType as TrackableType;
-  const isGoal = trackableType !== "TRACKER";
+  // A goal is whatever has a target, of any kind ("at most 1 hour per
+  // day" included), not only the ones the old types could express.
+  const isGoal = shapeOf(trackable).goal !== null;
 
   /**
    * Save shows on every tab that holds editable form state: commitment
@@ -414,35 +417,21 @@ export function EditTrackableDialog({
       contentContainerStyle={styles.scrollContent}
       keyboardShouldPersistTaps="handled"
     >
-      <EditTrackableProgressTab
-        trackable={{
-          _id: trackableId,
-          trackableType,
-          name: trackable.name,
-          colour: trackable.colour,
-          startDayYYYYMMDD: trackable.startDayYYYYMMDD,
-          endDayYYYYMMDD: trackable.endDayYYYYMMDD,
-          targetCount: coercePreviewInt(targetCount, trackable.targetCount),
-          targetNumberOfHours: coercePreviewInt(
-            targetHours,
-            trackable.targetNumberOfHours
-          ),
-          targetNumberOfDaysAWeek: coercePreviewInt(
-            targetDaysAWeek,
-            trackable.targetNumberOfDaysAWeek
-          ),
-          targetNumberOfMinutesAWeek: coercePreviewInt(
-            targetMinutesAWeek,
-            trackable.targetNumberOfMinutesAWeek
-          ),
-          targetNumberOfWeeks: coercePreviewInt(
-            targetWeeks,
-            trackable.targetNumberOfWeeks
-          ),
-          trackCount: trackable.trackCount ?? undefined,
-          trackTime: trackable.trackTime ?? undefined,
-          isRatingTracker: trackable.isRatingTracker ?? undefined,
-        }}
+      {/* The page shows this in its own panel above the columns. */}
+      {presentation !== "page" ? (
+        <View style={styles.progressSubTrackables}>
+          <SubTrackablesSection
+            trackableId={trackableId}
+            onOpenTrackable={(id) => {
+              onClose();
+              router.push(`/(app)/edit-trackable/${id}`);
+            }}
+          />
+        </View>
+      ) : null}
+      <TrackableProgressCalendar
+        trackableId={trackableId}
+        colour={trackable.colour}
       />
     </ScrollView>
   );
@@ -454,12 +443,7 @@ export function EditTrackableDialog({
       case "time_tracked":
         return (
           <View style={styles.historyTabPane}>
-            <EditTrackableHistoryTab
-              trackableId={trackableId}
-              trackTime={trackTime}
-              trackCount={trackCount}
-              autoCountFromCalendar={autoCountFromCalendar}
-            />
+            <WhatCountedList trackableId={trackableId} />
           </View>
         );
       case "commitment":
@@ -535,12 +519,7 @@ export function EditTrackableDialog({
     }
     return (
       <View style={styles.historyTabPane}>
-        <EditTrackableHistoryTab
-          trackableId={trackableId}
-          trackTime={trackTime}
-          trackCount={trackCount}
-          autoCountFromCalendar={autoCountFromCalendar}
-        />
+        <WhatCountedList trackableId={trackableId} />
       </View>
     );
   };
@@ -597,12 +576,7 @@ export function EditTrackableDialog({
 
   const historyPane = (
     <View style={styles.historyTabPane}>
-      <EditTrackableHistoryTab
-        trackableId={trackableId}
-        trackTime={trackTime}
-        trackCount={trackCount}
-        autoCountFromCalendar={autoCountFromCalendar}
-      />
+      <WhatCountedList trackableId={trackableId} />
     </View>
   );
 
@@ -898,6 +872,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   pageDot: { width: 10, height: 10, borderRadius: Radius.pill },
+  progressSubTrackables: { marginBottom: 16 },
   pageParent: { fontSize: FontSize.body, color: Colors.textSecondary },
   // Full-width panel above the columns. Empty (no sub-trackables and no
   // room for one) it collapses to nothing.

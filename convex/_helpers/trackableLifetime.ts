@@ -1,60 +1,38 @@
 /**
- * Maintains `trackables.lifetime*` and `firstActivityDayYYYYMMDD` so the
- * home + analytics readers can serve all-time totals straight off the
- * trackable document. The previous implementation re-aggregated the
- * user's entire activity history on every reactive fire of
- * `getGoalDetails` / `getTrackableAnalyticsSeries`, which was the single
- * largest contributor to dashboard `Reads` bandwidth on the home page.
+ * Keeps every trackable's totals up to date as tasks, time windows and
+ * hand-logged entries change, so the home, trackable and analytics screens
+ * read small precomputed rows instead of re-adding a user's history.
  *
- * Contract (after `_admin/backfillTrackableLifetime` has run):
+ * What an item counts toward is a SET of trackables (allocation, rules,
+ * its task, and every ancestor): see `trackableMembership.ts`. For each
+ * trackable in that set this file maintains
  *
- *   trackable.lifetimeTotalSeconds
- *     === Σ timeWindows.durationSeconds
- *         WHERE resolveAttributedTrackableId(window, task, list links)
- *               === trackable._id
- *           AND timeWindows.budgetType   === "ACTUAL"
- *       + Σ trackerEntries.durationSeconds   (TRACKER trackables only)
- *         WHERE trackerEntries.trackableId === trackable._id
- *
- *   trackable.lifetimeCalendarCount
- *     === count of timeWindows rows above
- *
- *   trackable.lifetimeStoredDayCount
- *     === Σ trackableDays.numCompleted WHERE trackableId === trackable._id
- *
- *   trackable.lifetimeTrackerEntryCount
- *     === Σ trackerEntries.countValue           (TRACKER only)
- *
- *   trackable.lifetimeTrackerEntrySeconds
- *     === Σ trackerEntries.durationSeconds      (TRACKER only)
- *
- *   trackable.lifetimeTrackerEntryRowCount
- *     === count of trackerEntries rows
- *
- *   trackable.lifetimeAttributedTaskDayCount
- *     === count of completed tasks whose attribution
- *         (`task.trackableId` else `task.listId → listTrackableLinks`)
- *         resolves to this trackable. Maintained by
- *         `onTaskCompletionAttribution` from `tasks.upsert` whenever a
- *         task's `dateCompleted`, `trackableId`, or `listId` changes
- *         (or the resolved-via-list attribution changes shape).
- *
+ *   trackable.lifetimeTotalSeconds / lifetimeCalendarCount
+ *       ACTUAL window seconds and window count (plus, for hand-logged
+ *       entries on the trackable itself, their seconds);
+ *   trackableDaySeconds / trackableWeekStats.secondsByDay
+ *       the same seconds per day and per week;
+ *   trackable.lifetimeAttributedTaskDayCount, trackableDays.attributedTaskCount,
+ *   trackableWeekStats.activeDayMask
+ *       completed tasks, in total, per day, and as "active day" bits;
  *   trackable.firstActivityDayYYYYMMDD
- *     === min day across all attributed windows / days / entries; falls
- *         back to `startDayYYYYMMDD` when no activity recorded.
+ *       the earliest day with any of the above.
  *
- * Additionally maintains the `trackableDaySeconds` table (after
- * `_admin/backfillTrackableDaySeconds` has run):
+ * and, for the trackable an entry or check-in was logged on, the
+ * `lifetimeStoredDayCount` / `lifetimeTrackerEntry*` / daily-average
+ * fields.
  *
- *   trackableDaySeconds[trackableId, day].attributedSeconds
- *     === Σ timeWindows.durationSeconds
- *         WHERE resolveAttributedTrackableId(...) === trackableId
- *           AND budgetType === "ACTUAL"
- *           AND toCompactYYYYMMDD(startDayYYYYMMDD) === day
+ * Credit is exact because each row records who was credited for it
+ * (`attributedTrackableIds`): `syncWindowAttribution` and
+ * `syncTaskAttribution` take back what the stamp says and add what the
+ * row counts toward now. Call them after any write to a window or a
+ * task; they are safe to repeat, which is what lets rule and tree changes
+ * be applied by re-running them over history (`trackableResync.ts`).
  *
- * These rows let `getGoalDetails` compute per-week attributed seconds
- * (the `MINUTES_A_WEEK` overall-progress loop) without re-reading the
- * raw window history.
+ * Rows saved before stamps existed were credited to one trackable under
+ * the old rule (window tag, else task tag, else the list's trackable);
+ * `creditedWindowIds` / `creditedTaskIds` fall back to that until
+ * `trackableResync:runForAllUsers` has stamped them.
  */
 import type { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";

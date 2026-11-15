@@ -127,7 +127,7 @@ export function TimeSpendSection() {
       const bucketId = bucketIdForWindow(w, true);
       const inner = map.get(bucketId);
       if (!inner) continue;
-      const tid = dataset.resolveTrackableId(w) ?? "__untracked__";
+      const tid = dataset.resolveTopTrackableId(w) ?? "__untracked__";
       inner.set(tid, (inner.get(tid) ?? 0) + w.durationSeconds);
     }
     return ids.map(({ id, label }) => {
@@ -157,7 +157,7 @@ export function TimeSpendSection() {
   const legend = useMemo(() => {
     const totals = new Map<string, number>();
     for (const w of dataset.timeWindows) {
-      const tid = dataset.resolveTrackableId(w);
+      const tid = dataset.resolveTopTrackableId(w);
       if (!tid) continue;
       totals.set(tid, (totals.get(tid) ?? 0) + w.durationSeconds);
     }
@@ -175,7 +175,7 @@ export function TimeSpendSection() {
           trackable: TrackableLite;
         } => x.trackable != null,
       );
-  }, [dataset.timeWindows, dataset.trackables, dataset.resolveTrackableId]);
+  }, [dataset.timeWindows, dataset.trackables, dataset.resolveTopTrackableId]);
 
   const showYearlyScroll = isYearly && yearlyBuckets.length > 14;
 
@@ -237,7 +237,7 @@ export function TimeSpendSection() {
           <TimeSpendTimelineChart
             days={timelineDays}
             timeWindows={dataset.timeWindows}
-            resolveTrackableId={dataset.resolveTrackableId}
+            resolveTrackableId={dataset.resolveTopTrackableId}
             trackables={dataset.trackables}
             getCalendarDisplayTitle={getCalendarDisplayTitle}
             fallbackColour={FALLBACK_COLOUR}

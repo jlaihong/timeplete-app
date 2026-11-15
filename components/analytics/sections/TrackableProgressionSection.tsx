@@ -1,4 +1,5 @@
 import { FontSize } from "../../../theme/tokens";
+import { useTrackableTags } from "../../../hooks/useTrackableTags";
 import React from "react";
 import { SkeletonRows } from "../../ui/SkeletonRows";
 import { View, Text, StyleSheet, Pressable } from "react-native";
@@ -77,7 +78,14 @@ export function TrackableProgressionSection() {
   // card: their charts are worth reading even when the period is quiet.
   const foldInactive = selectedTab === "DAILY";
   const [showInactive, setShowInactive] = React.useState(false);
-  const all = fresh?.trackables ?? [];
+  // One card per top-level trackable: what is below it already counts
+  // toward it, and has its own page.
+  const tags = useTrackableTags();
+  const all = (fresh?.trackables ?? []).filter((g) => {
+    const parentId = tags.byId.get(g._id)?.parentId;
+    const parent = parentId ? tags.byId.get(parentId) : undefined;
+    return !parent || parent.archived;
+  });
   const activeGoals = foldInactive ? all.filter(hasActivity) : all;
   const inactiveGoals = foldInactive ? all.filter((g) => !hasActivity(g)) : [];
   const renderGoal = (goal: (typeof all)[number]) => (
