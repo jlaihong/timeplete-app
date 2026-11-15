@@ -335,7 +335,6 @@ export function EventDialog({
       durationSeconds,
       comments: comments || undefined,
       trackableId: trackableId ?? undefined,
-      tagIds: undefined as Id<"tags">[] | undefined,
       timeZone: tz,
       useTimeZone,
       budgetType: "ACTUAL" as const,

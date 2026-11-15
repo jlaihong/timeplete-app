@@ -7,7 +7,7 @@ import { useIsDesktop } from "../../hooks/useIsDesktop";
 
 /**
  * Width of the centred column used by pages whose content is naturally
- * narrow (Lists, Tags, Reviews, Settings), the same reading width as a
+ * narrow (Lists, Reviews, Settings), the same reading width as a
  * list's own page: 672px of content plus 16px of padding either side.
  * Pages that need the room (Home, Analytics, Trackables) don't use it.
  */

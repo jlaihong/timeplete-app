@@ -343,35 +343,6 @@ export const getPaginated = query({
         )
       : allOnList;
 
-    // Tags come from the denormalized `tasks.tagIds` field. The previous
-    // implementation scanned the entire `taskTags` table on every list
-    // subscription — even when only a handful of rows were eligible —
-    // which was a top contributor to dashboard `Reads` bandwidth.
-    //
-    // Legacy rows missing the field fall back to a per-task `by_task`
-    // lookup so the view stays correct during the backfill window.
-    // After `_admin/backfillTaskTagIds:runAll` runs the fallback is
-    // dead code.
-    const legacyRows = eligible.filter((t) => t.tagIds === undefined);
-    const legacyMap = new Map<Id<"tasks">, Id<"tags">[]>();
-    if (legacyRows.length > 0) {
-      await Promise.all(
-        legacyRows.map(async (t) => {
-          const tts = await ctx.db
-            .query("taskTags")
-            .withIndex("by_task", (q) => q.eq("taskId", t._id))
-            .collect();
-          if (tts.length > 0) {
-            legacyMap.set(t._id, tts.map((tt) => tt.tagId));
-          }
-        }),
-      );
-    }
-    const withTags = (t: (typeof eligible)[number]) => ({
-      ...t,
-      tagIds: t.tagIds ?? legacyMap.get(t._id) ?? [],
-    });
-
     const result = [];
     /**
      * `taskLimit` caps incomplete rows only. Completed tasks always follow (P1 stacks them
@@ -393,9 +364,7 @@ export const getPaginated = query({
       const sorted = [...tasksForSection].sort(compareTasksForListView);
       const incomplete = sorted.filter((t) => !isTaskCompletedForListView(t));
       const complete = sorted.filter((t) => isTaskCompletedForListView(t));
-      const pageTasks = [...incomplete.slice(0, taskLim), ...complete].map(
-        withTags,
-      );
+      const pageTasks = [...incomplete.slice(0, taskLim), ...complete];
 
       result.push({
         section,

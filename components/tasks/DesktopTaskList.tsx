@@ -371,10 +371,7 @@ export function DesktopTaskList({
     if (backwardGapTasksQuery !== undefined) {
       for (const t of backwardGapTasksQuery as TaskRowTask[]) {
         if (!merged.has(t._id)) {
-          merged.set(t._id, {
-            ...t,
-            tagIds: t.tagIds ?? [],
-          });
+          merged.set(t._id, t);
         }
       }
     }
@@ -414,7 +411,6 @@ export function DesktopTaskList({
       };
     }
   }, [mergedFromQueries, clockToday, retainedRangeEndDay]);
-  const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const sharedWithMeAccepted = useQuery(
     api.sharing.getSharedWithMe,
@@ -527,15 +523,7 @@ export function DesktopTaskList({
     []
   );
 
-  /* Maps for tag/list/trackable lookup */
-  const tagMap = useMemo(() => {
-    const m = new Map<string, { name: string; colour: string }>();
-    tags?.forEach((t: any) =>
-      m.set(t._id, { name: t.name, colour: t.colour })
-    );
-    return m;
-  }, [tags]);
-
+  /* Maps for list/trackable lookup */
   const listMap = useMemo(() => {
     const m = new Map<
       string,
@@ -1103,14 +1091,9 @@ export function DesktopTaskList({
         ? trackableMap.get(task.trackableId) ?? null
         : null;
       const list = task.listId ? listMap.get(task.listId) ?? null : null;
-      const tagsForTask = (task.tagIds ?? [])
-        .map((id) => tagMap.get(id))
-        .filter(
-          (t): t is { name: string; colour: string } => t != null
-        );
-      return { trackable, list, tags: tagsForTask };
+      return { trackable, list };
     },
-    [trackableMap, listMap, tagMap]
+    [trackableMap, listMap]
   );
 
   /**

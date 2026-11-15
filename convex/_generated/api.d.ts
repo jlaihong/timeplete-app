@@ -9,7 +9,6 @@
  */
 
 import type * as _admin_backfillAttributedTaskDayCount from "../_admin/backfillAttributedTaskDayCount.js";
-import type * as _admin_backfillTaskTagIds from "../_admin/backfillTaskTagIds.js";
 import type * as _admin_backfillTaskTimeSpent from "../_admin/backfillTaskTimeSpent.js";
 import type * as _admin_backfillTrackableDayAttributedTaskCount from "../_admin/backfillTrackableDayAttributedTaskCount.js";
 import type * as _admin_backfillTrackableDaySeconds from "../_admin/backfillTrackableDaySeconds.js";
@@ -24,6 +23,7 @@ import type * as _admin_debugTrackableWindows from "../_admin/debugTrackableWind
 import type * as _admin_diagnoseMinutesAWeekProgress from "../_admin/diagnoseMinutesAWeekProgress.js";
 import type * as _admin_fixMigratedWindowTimeZones from "../_admin/fixMigratedWindowTimeZones.js";
 import type * as _admin_import from "../_admin/import.js";
+import type * as _admin_removeTags from "../_admin/removeTags.js";
 import type * as _admin_repairTrackableLifetime from "../_admin/repairTrackableLifetime.js";
 import type * as _admin_wipe from "../_admin/wipe.js";
 import type * as _helpers_activeTimerCalendarDisplay from "../_helpers/activeTimerCalendarDisplay.js";
@@ -59,7 +59,6 @@ import type * as recurringEvents from "../recurringEvents.js";
 import type * as recurringTasks from "../recurringTasks.js";
 import type * as reviews from "../reviews.js";
 import type * as sharing from "../sharing.js";
-import type * as tags from "../tags.js";
 import type * as taskComments from "../taskComments.js";
 import type * as tasks from "../tasks.js";
 import type * as timeWindows from "../timeWindows.js";
@@ -78,7 +77,6 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "_admin/backfillAttributedTaskDayCount": typeof _admin_backfillAttributedTaskDayCount;
-  "_admin/backfillTaskTagIds": typeof _admin_backfillTaskTagIds;
   "_admin/backfillTaskTimeSpent": typeof _admin_backfillTaskTimeSpent;
   "_admin/backfillTrackableDayAttributedTaskCount": typeof _admin_backfillTrackableDayAttributedTaskCount;
   "_admin/backfillTrackableDaySeconds": typeof _admin_backfillTrackableDaySeconds;
@@ -93,6 +91,7 @@ declare const fullApi: ApiFromModules<{
   "_admin/diagnoseMinutesAWeekProgress": typeof _admin_diagnoseMinutesAWeekProgress;
   "_admin/fixMigratedWindowTimeZones": typeof _admin_fixMigratedWindowTimeZones;
   "_admin/import": typeof _admin_import;
+  "_admin/removeTags": typeof _admin_removeTags;
   "_admin/repairTrackableLifetime": typeof _admin_repairTrackableLifetime;
   "_admin/wipe": typeof _admin_wipe;
   "_helpers/activeTimerCalendarDisplay": typeof _helpers_activeTimerCalendarDisplay;
@@ -128,7 +127,6 @@ declare const fullApi: ApiFromModules<{
   recurringTasks: typeof recurringTasks;
   reviews: typeof reviews;
   sharing: typeof sharing;
-  tags: typeof tags;
   taskComments: typeof taskComments;
   tasks: typeof tasks;
   timeWindows: typeof timeWindows;

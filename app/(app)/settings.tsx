@@ -69,7 +69,6 @@ export default function SettingsScreen() {
           <>
             <Text style={styles.sectionLabel}>Organise</Text>
             <View style={styles.linkGroup}>
-              <LinkRow icon="pricetag-outline" label="Tags" href="/(app)/tags" />
               <LinkRow icon="at-outline" label="Pages" href="/(app)/pages" />
               <LinkRow
                 icon="people-outline"

@@ -15,7 +15,6 @@ export const getTimeBreakdown = query({
       return {
         timeWindows: [],
         tasks: {},
-        tags: {},
         lists: {},
         trackables: {},
         listIdToTrackableId: {},
@@ -27,7 +26,7 @@ export const getTimeBreakdown = query({
     // Bounded read strategy (see convex-bandwidth-fixes branch notes):
     //
     // The historical implementation `.collect()`-ed every timeWindow,
-    // task, tag, list, and trackable for the user and returned the
+    // task, list, and trackable for the user and returned the
     // whole-collection maps to the client just so the UI could do
     // `tasks[w.taskId]` lookups. For a daily window that's a ~1.3 MB
     // read amplification (measured) per Analytics page load.
@@ -35,7 +34,7 @@ export const getTimeBreakdown = query({
     // The new approach:
     //   1. `timeWindows` is bounded by `by_user_day` to [startDay, endDay].
     //   2. We collect the ID sets actually referenced by those bounded
-    //      windows (taskId / trackableId / listId / tagId) plus the
+    //      windows (taskId / trackableId / listId) plus the
     //      `task.listId` of each referenced task (needed for the
     //      colour ladder + list grouping), and `ctx.db.get` only those
     //      entries.
@@ -73,14 +72,10 @@ export const getTimeBreakdown = query({
     const referencedTaskIds = new Set<Id<"tasks">>();
     const referencedTrackableIds = new Set<Id<"trackables">>();
     const referencedListIds = new Set<Id<"lists">>();
-    const referencedTagIds = new Set<Id<"tags">>();
     for (const w of allWindows) {
       if (w.taskId) referencedTaskIds.add(w.taskId);
       if (w.trackableId) referencedTrackableIds.add(w.trackableId);
       if (w.listId) referencedListIds.add(w.listId);
-      if (Array.isArray(w.tagIds)) {
-        for (const t of w.tagIds) referencedTagIds.add(t);
-      }
     }
 
     const taskDocs = await Promise.all(
@@ -100,20 +95,17 @@ export const getTimeBreakdown = query({
       if (t.trackableId) referencedTrackableIds.add(t.trackableId);
     }
 
-    const [listDocs, trackableDocs, tagDocs] = await Promise.all([
+    const [listDocs, trackableDocs] = await Promise.all([
       Promise.all(Array.from(referencedListIds).map((id) => ctx.db.get(id))),
       Promise.all(
         Array.from(referencedTrackableIds).map((id) => ctx.db.get(id))
       ),
-      Promise.all(Array.from(referencedTagIds).map((id) => ctx.db.get(id))),
     ]);
 
     const listMap = new Map<string, Doc<"lists">>();
     for (const l of listDocs) if (l) listMap.set(l._id, l);
     const trackableMap = new Map<string, Doc<"trackables">>();
     for (const t of trackableDocs) if (t) trackableMap.set(t._id, t);
-    const tagMap = new Map<string, Doc<"tags">>();
-    for (const t of tagDocs) if (t) tagMap.set(t._id, t);
 
     // Surface the list→trackable join so the client can run the SAME union
     // attribution as `getGoalDetails` / `getProgressionStats`. Kept whole
@@ -130,7 +122,6 @@ export const getTimeBreakdown = query({
     return {
       timeWindows: allWindows,
       tasks: Object.fromEntries(taskMap),
-      tags: Object.fromEntries(tagMap),
       lists: Object.fromEntries(listMap),
       trackables: Object.fromEntries(trackableMap),
       listIdToTrackableId,

@@ -131,7 +131,6 @@ export interface TimeWindowDoc {
    */
   title?: string;
   comments?: string;
-  tagIds?: string[];
   timeZone: string;
   /**
    * When true, future events convert into the grid zone; past events
@@ -177,10 +176,6 @@ export function undoUpsertPayloadFromCalendarRow(tw: TimeWindowDoc) {
     listId: tw.listId ? (tw.listId as Id<"lists">) : undefined,
     title: tw.title,
     comments: tw.comments,
-    tagIds:
-      Array.isArray(tw.tagIds) && tw.tagIds.length > 0
-        ? (tw.tagIds as Id<"tags">[])
-        : undefined,
     timeZone: tw.timeZone,
     useTimeZone: tw.useTimeZone === true,
     source: tw.source,

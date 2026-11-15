@@ -12,7 +12,7 @@ export interface EntityRowAction {
 }
 
 /**
- * One row of a management list (Lists, Tags): a colour dot, a name, an
+ * One row of a management list (Lists): a colour dot, a name, an
  * optional quiet note, and a few icon actions. Flat, with a hairline
  * divider — the same language as the task rows — not a boxed card per row.
  */

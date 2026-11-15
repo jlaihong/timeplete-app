@@ -262,7 +262,6 @@ export const upsert = mutation({
     listId: v.optional(v.id("lists")),
     title: v.optional(v.string()),
     comments: v.optional(v.string()),
-    tagIds: v.optional(v.array(v.id("tags"))),
     timeZone: v.string(),
     /**
      * When true, interpret HHMM in `timeZone` (meetings). When false/
@@ -339,7 +338,6 @@ export const upsert = mutation({
         listId: args.listId,
         title: normalizedTitle,
         comments: args.comments,
-        tagIds: args.tagIds,
         timeZone: args.timeZone,
         useTimeZone,
         source: args.source ?? existing.source,
@@ -404,7 +402,6 @@ export const upsert = mutation({
       listId: args.listId,
       title: normalizedTitle,
       comments: args.comments,
-      tagIds: args.tagIds,
       timeZone: args.timeZone,
       useTimeZone: args.useTimeZone === true,
       recurringEventId: args.recurringEventId,

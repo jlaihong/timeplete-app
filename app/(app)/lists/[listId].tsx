@@ -64,28 +64,23 @@ import { useVisualViewportHeight } from "../../../hooks/useVisualViewportHeight"
 import { MentionText } from "../../../components/mentions/MentionText";
 import { plainMentions } from "../../../lib/mentions";
 
-/** `lists.getPaginated` enriches rows with `tagIds` like `tasks.search`. */
-type ListPageTask = Doc<"tasks"> & { tagIds?: Id<"tags">[] };
+type ListPageTask = Doc<"tasks">;
 
 const isWeb = Platform.OS === "web";
 
 function buildMeta(
   task: ListPageTask,
-  tagMap: Map<string, { name: string; colour: string }>,
   listMap: Map<
     string,
     { name: string; colour: string; isGoalList?: boolean; isInbox?: boolean }
   >,
   trackableMap: Map<string, { name: string; colour: string }>,
 ): TaskRowMeta {
-  const tags = (task.tagIds ?? [])
-    .map((id: Id<"tags">) => tagMap.get(id))
-    .filter(Boolean) as { name: string; colour: string }[];
   const list = task.listId ? (listMap.get(task.listId) ?? null) : null;
   const trackable = task.trackableId
     ? (trackableMap.get(task.trackableId) ?? null)
     : null;
-  return { tags, list, trackable };
+  return { list, trackable };
 }
 
 interface ListSection {
@@ -250,7 +245,6 @@ export default function ListDetailScreen() {
       return need;
     });
   }, [paginatedData, listId]);
-  const tags = useQuery(api.tags.search, canQueryLists ? {} : "skip");
   const trackables = useQuery(api.trackables.search, canQueryLists ? {} : "skip");
   const listMembers = useQuery(
     api.sharing.getListMembers,
@@ -341,12 +335,6 @@ export default function ListDetailScreen() {
     );
   }, [listMembers]);
   const showCollaboratorFilter = assignableMembers.length > 1;
-
-  const tagMap = useMemo(() => {
-    const m = new Map<string, { name: string; colour: string }>();
-    tags?.forEach((t) => m.set(t._id, { name: t.name, colour: t.colour }));
-    return m;
-  }, [tags]);
 
   const listMap = useMemo(() => {
     const m = new Map<
@@ -668,9 +656,6 @@ export default function ListDetailScreen() {
       ? trackableMap.get(task.trackableId)
       : null;
     const list = task.listId ? listMap.get(task.listId) : null;
-    const taskTags = (task.tagIds ?? [])
-      .map((tid: Id<"tags">) => tagMap.get(tid))
-      .filter(Boolean) as { name: string; colour: string }[];
 
     return (
       <View style={isActive ? styles.taskCardDragging : undefined}>
@@ -737,11 +722,10 @@ export default function ListDetailScreen() {
             (!task.trackableId &&
               list &&
               !list.isGoalList &&
-              !list.isInbox) ||
-            taskTags.length > 0) && (
-            <View style={styles.tagsRow}>
+              !list.isInbox)) && (
+            <View style={styles.metaRow}>
               {trackable && (
-                <View style={styles.tagChip}>
+                <View style={styles.metaChip}>
                   <Ionicons
                     name="analytics"
                     size={13}
@@ -749,7 +733,7 @@ export default function ListDetailScreen() {
                   />
                   <Text
                     style={[
-                      styles.tagName,
+                      styles.metaName,
                       { color: trackable.colour || Colors.text },
                     ]}
                     numberOfLines={1}
@@ -759,7 +743,7 @@ export default function ListDetailScreen() {
                 </View>
               )}
               {!trackable && list && !list.isGoalList && !list.isInbox && (
-                <View style={styles.tagChip}>
+                <View style={styles.metaChip}>
                   <Ionicons
                     name="list"
                     size={13}
@@ -767,7 +751,7 @@ export default function ListDetailScreen() {
                   />
                   <Text
                     style={[
-                      styles.tagName,
+                      styles.metaName,
                       { color: list.colour || Colors.text },
                     ]}
                     numberOfLines={1}
@@ -775,23 +759,6 @@ export default function ListDetailScreen() {
                     {list.name}
                   </Text>
                 </View>
-              )}
-              {taskTags.map(
-                (tag: { name: string; colour: string }, i: number) => (
-                  <View key={i} style={styles.tagChip}>
-                    <Ionicons
-                      name="pricetag"
-                      size={12}
-                      color={tag.colour}
-                    />
-                    <Text
-                      style={[styles.tagName, { color: tag.colour }]}
-                      numberOfLines={1}
-                    >
-                      {tag.name}
-                    </Text>
-                  </View>
-                ),
               )}
             </View>
           )}
@@ -1119,7 +1086,7 @@ export default function ListDetailScreen() {
           <ListDetailWebDnd
             sections={webDndSections}
             buildMeta={(task) =>
-              buildMeta(task as ListPageTask, tagMap, listMap, trackableMap)
+              buildMeta(task as ListPageTask, listMap, trackableMap)
             }
             canDrag={canDragReorder}
             isTicking={(id) => timer.isRunning && timer.taskId === id}
@@ -1492,20 +1459,20 @@ const styles = StyleSheet.create({
   },
   duration: { fontSize: FontSize.body, color: Colors.textSecondary },
   durationActive: { color: Colors.success, fontWeight: "600" },
-  tagsRow: {
+  metaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
     paddingHorizontal: 12,
     paddingBottom: 10,
   },
-  tagChip: {
+  metaChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     maxWidth: "48%",
   },
-  tagName: { fontSize: FontSize.caption },
+  metaName: { fontSize: FontSize.caption },
   fab: {
     zIndex: 30,
     position: "absolute",

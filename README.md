@@ -7,11 +7,10 @@ Cross-platform productivity application built with **Expo** (React Native + Web)
 - **Tasks**: Create, organize, and track tasks across days, lists, and sections
 - **Calendar**: Day/week view with time window tracking
 - **Goals / Trackables**: Multiple goal types (count, time, days/week, minutes/week, tracker)
-- **Analytics**: Time breakdown by activity, tag, list, and goal with period navigation
+- **Analytics**: Time breakdown by activity, list, and goal with period navigation
 - **Reviews**: Daily/weekly/monthly/yearly review questions and answers
 - **Sharing**: Share lists and goals with collaborators
 - **Timer**: One-click task and goal timers that auto-log time windows
-- **Tags**: Color-coded tags for task organization
 - **Recurring Tasks & Events**: Full recurrence support (daily, weekly, monthly, yearly)
 
 ## Tech Stack
@@ -68,7 +67,6 @@ timeplete-app/
 │   └── (app)/             # Authenticated screens
 │       ├── (tabs)/        # Bottom tab screens (tasks, calendar, goals, analytics, reviews)
 │       ├── lists/         # List index + detail
-│       ├── tags.tsx       # Tag management
 │       ├── shared.tsx     # Shared items
 │       └── edit-trackable/# Goal editor
 ├── components/            # Reusable UI components
@@ -95,7 +93,7 @@ timeplete-app/
 The backend uses ~25 tables covering:
 
 - Users, authentication, and approval
-- Tasks with nested subtasks, tags, days, sections
+- Tasks with nested subtasks, days, sections
 - Lists with sections and ordering
 - Time windows (calendar events / time tracking)
 - Goals/trackables with multiple types and frequencies

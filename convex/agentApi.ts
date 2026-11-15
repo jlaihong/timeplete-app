@@ -1067,12 +1067,6 @@ async function deleteTaskRow(
   ctx: MutationCtx,
   task: Doc<"tasks">,
 ): Promise<void> {
-  const tags = await ctx.db
-    .query("taskTags")
-    .withIndex("by_task", (q) => q.eq("taskId", task._id))
-    .collect();
-  for (const tag of tags) await ctx.db.delete(tag._id);
-
   const comments = await ctx.db
     .query("taskComments")
     .withIndex("by_task", (q) => q.eq("taskId", task._id))

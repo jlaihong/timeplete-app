@@ -118,24 +118,6 @@ async function main() {
   const userIdParam = userIds;
   const inUsers = `WHERE user_id = ANY($1::uuid[])`;
 
-  // --- TAGS ---
-  const tags = await client.query(
-    `SELECT id, name, colour, order_index, user_id, COALESCE(archived, false) AS archived
-     FROM public.tags ${inUsers} ORDER BY order_index`,
-    [userIdParam],
-  );
-  writeJsonl(
-    "tags.jsonl",
-    tags.rows.map((r) => ({
-      legacyId: r.id,
-      name: r.name,
-      colour: r.colour,
-      orderIndex: r.order_index,
-      userId: r.user_id,
-      archived: b(r.archived),
-    })),
-  );
-
   // --- LISTS ---
   const lists = await client.query(
     `SELECT id, name, colour, order_index, user_id, COALESCE(archived,false) AS archived,
@@ -248,7 +230,7 @@ async function main() {
             day_of_month, week_of_month, day_of_week_monthly, month_of_year,
             start_date_yyyymmdd, end_date_yyyymmdd, start_time_hhmm, end_time_hhmm,
             name, list_id, section_id, COALESCE(section_order_index,0) AS section_order_index,
-            trackable_id, tag_ids, COALESCE(time_estimated_in_seconds,0) AS time_estimated_in_seconds,
+            trackable_id, COALESCE(time_estimated_in_seconds,0) AS time_estimated_in_seconds,
             user_id
      FROM public.recurring_tasks ${inUsers}`,
     [userIdParam],
@@ -274,7 +256,6 @@ async function main() {
       sectionId: r.section_id ?? undefined,
       sectionOrderIndex: r.section_order_index,
       trackableId: r.trackable_id ?? undefined,
-      tagIds: r.tag_ids ?? undefined,
       timeEstimatedInSeconds: r.time_estimated_in_seconds,
       userId: r.user_id,
     })),
@@ -286,7 +267,7 @@ async function main() {
             day_of_month, week_of_month, day_of_week_monthly, month_of_year,
             start_date_yyyymmdd, end_date_yyyymmdd, title, start_time_hhmm,
             COALESCE(duration_seconds,0) AS duration_seconds, comments,
-            trackable_id, tag_ids, time_zone, budget_type, activity_type, user_id
+            trackable_id, time_zone, budget_type, activity_type, user_id
      FROM public.recurring_events ${inUsers}`,
     [userIdParam],
   );
@@ -309,7 +290,6 @@ async function main() {
       durationSeconds: r.duration_seconds,
       comments: r.comments ?? undefined,
       trackableId: r.trackable_id ?? undefined,
-      tagIds: r.tag_ids ?? undefined,
       timeZone: r.time_zone ?? "UTC",
       budgetType: mapBudgetType(r.budget_type),
       activityType: r.activity_type,
@@ -375,23 +355,6 @@ async function main() {
         assignedToUserId: r.assigned_to_user_id ?? undefined,
       };
     }),
-  );
-
-  // --- TASK-TAG join (auto legacyId since PG uses composite PK) ---
-  const taskTags = await client.query(
-    `SELECT tt.task_id, tt.tag_id
-     FROM public.task_tags tt
-     JOIN public.tasks t ON t.id = tt.task_id
-     WHERE t.user_id = ANY($1::uuid[])`,
-    [userIdParam],
-  );
-  writeJsonl(
-    "taskTags.jsonl",
-    taskTags.rows.map((r) => ({
-      legacyId: `${r.task_id}:${r.tag_id}`,
-      taskId: r.task_id,
-      tagId: r.tag_id,
-    })),
   );
 
   // --- TASK DAYS (PK = user_id, day_yyyymmdd, task_id) ---
@@ -515,7 +478,7 @@ async function main() {
     `SELECT id, start_time_hhmm, start_day_yyyymmdd,
             COALESCE(duration_seconds,0) AS duration_seconds, user_id,
             budget_type, activity_type, task_id, trackable_id, title, comments,
-            tag_ids, time_zone, recurring_event_id,
+            time_zone, recurring_event_id,
             COALESCE(is_recurring_instance,false) AS is_recurring_instance
      FROM public.time_windows ${inUsers}`,
     [userIdParam],
@@ -577,7 +540,6 @@ async function main() {
       trackableId: r.trackable_id ?? undefined,
       title: r.title ?? undefined,
       comments: r.comments ?? undefined,
-      tagIds: r.tag_ids ?? undefined,
       timeZone: resolveWindowZone(r),
       recurringEventId: r.recurring_event_id ?? undefined,
       isRecurringInstance: b(r.is_recurring_instance),

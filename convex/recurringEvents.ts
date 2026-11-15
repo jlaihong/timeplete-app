@@ -74,7 +74,6 @@ export const create = mutation({
     durationSeconds: v.number(),
     comments: v.optional(v.string()),
     trackableId: v.optional(v.id("trackables")),
-    tagIds: v.optional(v.array(v.id("tags"))),
     timeZone: v.string(),
     useTimeZone: v.optional(v.boolean()),
     budgetType: v.union(v.literal("ACTUAL"), v.literal("BUDGETED")),
@@ -129,7 +128,6 @@ export const updateRule = mutation({
     durationSeconds: v.optional(v.number()),
     comments: v.optional(v.string()),
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
-    tagIds: v.optional(v.array(v.id("tags"))),
     timeZone: v.optional(v.string()),
     useTimeZone: v.optional(v.boolean()),
     budgetType: v.optional(v.union(v.literal("ACTUAL"), v.literal("BUDGETED"))),
@@ -163,7 +161,6 @@ export const updateRule = mutation({
     if (args.durationSeconds !== undefined) patch.durationSeconds = args.durationSeconds;
     if (args.comments !== undefined) patch.comments = args.comments;
     if (args.trackableId !== undefined) patch.trackableId = args.trackableId ?? undefined;
-    if (args.tagIds !== undefined) patch.tagIds = args.tagIds;
     if (args.timeZone !== undefined) patch.timeZone = args.timeZone;
     if (args.useTimeZone !== undefined) patch.useTimeZone = args.useTimeZone;
     if (args.budgetType !== undefined) patch.budgetType = args.budgetType;
@@ -347,7 +344,6 @@ export const generateInstances = mutation({
           trackableId: rule.trackableId,
           title: rule.title,
           comments: rule.comments,
-          tagIds: rule.tagIds,
           timeZone: rule.timeZone,
           useTimeZone,
           recurringEventId: rule._id,

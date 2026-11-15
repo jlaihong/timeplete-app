@@ -128,7 +128,6 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
     }
     return undefined;
   }, [queryTasks, today, visibleEndDay]);
-  const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   const trackables = useQuery(api.trackables.search, profileReady ? {} : "skip");
   const recurringRules = useQuery(
@@ -204,12 +203,6 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
   } | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   dragOverTargetRef.current = dragOverTarget;
-
-  const tagMap = useMemo(() => {
-    const m = new Map<string, { name: string; colour: string }>();
-    tags?.forEach((t) => m.set(t._id, { name: t.name, colour: t.colour }));
-    return m;
-  }, [tags]);
 
   const listMap = useMemo(() => {
     const m = new Map<string, { name: string; colour: string }>();
@@ -760,14 +753,10 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
         ? trackableMap.get(task.trackableId)
         : null;
       const list = task.listId ? listMap.get(task.listId) : null;
-      const taskTags = (task.tagIds ?? [])
-        .map((id: string) => tagMap.get(id))
-        .filter(Boolean);
 
       const metaLabels: { colour?: string; name: string }[] = [];
       if (trackable) metaLabels.push(trackable);
       else if (list) metaLabels.push(list);
-      for (const tag of taskTags) if (tag) metaLabels.push(tag as any);
       const hasTime = timeSpent > 0 || isTimerActive;
 
       // Flat row: no card. The colour dot carries identity; text stays grey.
@@ -803,16 +792,16 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
                 numberOfLines={1}
               />
               {metaLabels.length > 0 && (
-                <View style={styles.tagsRow}>
+                <View style={styles.metaRow}>
                   {metaLabels.map((label, i) => (
-                    <View key={i} style={styles.tagChip}>
+                    <View key={i} style={styles.metaChip}>
                       <View
                         style={[
-                          styles.tagDot,
+                          styles.metaDot,
                           { backgroundColor: label.colour || Colors.neutral },
                         ]}
                       />
-                      <Text style={styles.tagName} numberOfLines={1}>
+                      <Text style={styles.metaName} numberOfLines={1}>
                         {label.name}
                       </Text>
                     </View>
@@ -912,7 +901,6 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
     [
       timer,
       dragOverTarget,
-      tagMap,
       listMap,
       trackableMap,
       onSelectTask,
@@ -1584,20 +1572,20 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  tagsRow: {
+  metaRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     overflow: "hidden",
   },
-  tagChip: {
+  metaChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     flexShrink: 1,
   },
-  tagDot: { width: 6, height: 6, borderRadius: Radius.pill },
-  tagName: {
+  metaDot: { width: 6, height: 6, borderRadius: Radius.pill },
+  metaName: {
     fontSize: FontSize.caption,
     color: Colors.textTertiary,
     maxWidth: 140,

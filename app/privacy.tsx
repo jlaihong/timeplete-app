@@ -23,7 +23,7 @@ export default function PrivacyPolicy() {
       <Section title="Information we collect">
         Account: email address, name, and authentication credentials (including
         one-time email codes we send to verify your account).{"\n\n"}
-        Content you create: tasks, lists, tags, calendar events, timers, goals,
+        Content you create: tasks, lists, pages, calendar events, timers, goals,
         reviews, and sharing invitations.{"\n\n"}
         Device: timezone and, if you allow notifications, a push token used to
         deliver timer reminders.{"\n\n"}

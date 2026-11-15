@@ -68,7 +68,6 @@ export interface TaskRowTask {
   timeSpentInSecondsUnallocated?: number;
   trackableId?: string;
   listId?: string;
-  tagIds?: string[];
   assignedToUserName?: string;
   taskDayOrderIndex?: number;
   sectionOrderIndex?: number;
@@ -89,7 +88,6 @@ export interface TaskRowTask {
 export interface TaskRowMeta {
   trackable?: { name: string; colour: string } | null;
   list?: { name: string; colour: string; isGoalList?: boolean; isInbox?: boolean } | null;
-  tags?: { name: string; colour: string }[];
 }
 
 export interface TaskRowDesktopProps {
@@ -184,10 +182,10 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
     const initials = getInitials(task.assignedToUserName);
     const dateLabel = showDate ? getDateDisplay(task.taskDay) : null;
 
-    const showTrackableTag = !!meta.trackable;
+    const showTrackableLabel = !!meta.trackable;
     // List (where it lives) and trackable (what it counts toward) are
-    // independent, so a task can carry both tags.
-    const showListTag =
+    // independent, so a task can carry both labels.
+    const showListLabel =
       !!meta.list &&
       !meta.list.isGoalList &&
       !meta.list.isInbox;
@@ -267,9 +265,8 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
     const hasMeta =
       !!initials ||
       !!dateLabel ||
-      showTrackableTag ||
-      showListTag ||
-      (meta.tags?.length ?? 0) > 0;
+      showTrackableLabel ||
+      showListLabel;
 
     return (
       <View
@@ -341,18 +338,15 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
           </View>
               {hasMeta && (
             <View style={[styles.meta, narrow && styles.metaNarrow]}>
-              {showTrackableTag && meta.trackable && (
+              {showTrackableLabel && meta.trackable && (
                 <MetaLabel
                   colour={meta.trackable.colour}
                   name={meta.trackable.name}
                 />
               )}
-              {showListTag && meta.list && (
+              {showListLabel && meta.list && (
                 <MetaLabel colour={meta.list.colour} name={meta.list.name} />
               )}
-              {meta.tags?.map((tag, i) => (
-                <MetaLabel key={i} colour={tag.colour} name={tag.name} />
-              ))}
               {dateLabel && <Text style={styles.metaText}>{dateLabel}</Text>}
               {initials && (
                 <View style={styles.avatar}>
@@ -385,18 +379,15 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
           </View>
               {hasMeta && (
             <View style={[styles.meta, narrow && styles.metaNarrow]}>
-              {showTrackableTag && meta.trackable && (
+              {showTrackableLabel && meta.trackable && (
                 <MetaLabel
                   colour={meta.trackable.colour}
                   name={meta.trackable.name}
                 />
               )}
-              {showListTag && meta.list && (
+              {showListLabel && meta.list && (
                 <MetaLabel colour={meta.list.colour} name={meta.list.name} />
               )}
-              {meta.tags?.map((tag, i) => (
-                <MetaLabel key={i} colour={tag.colour} name={tag.name} />
-              ))}
               {dateLabel && <Text style={styles.metaText}>{dateLabel}</Text>}
               {initials && (
                 <View style={styles.avatar}>

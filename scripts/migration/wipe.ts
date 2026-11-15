@@ -37,11 +37,9 @@ const TARGET: "dev" | "prod" = (() => {
 })();
 
 const APP_TABLES = [
-  "tags",
   "lists",
   "listSections",
   "tasks",
-  "taskTags",
   "taskDays",
   "userTaskDayOrder",
   "taskListOrdering",

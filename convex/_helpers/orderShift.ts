@@ -9,7 +9,7 @@ import type { Id } from "../_generated/dataModel";
  *   open gap:  everyone with order >= toIndex gets +1
  *   moved row is then set to toIndex
  *
- * Collection moves (lists, tags, trackables, review questions, sections)
+ * Collection moves (lists, trackables, review questions, sections)
  * use a bounded range:
  *   forward (from < to):  decrement [from, to]
  *   backward (from > to): increment [to, from]
@@ -104,7 +104,6 @@ export function applyBoundedOrderShift<T>(
 
 type OrderableTable =
   | "lists"
-  | "tags"
   | "trackables"
   | "reviewQuestions"
   | "listSections";

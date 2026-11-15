@@ -49,7 +49,7 @@ export const Colors = {
 
   /** Destructive actions and "required" chart lines. */
   danger: "#EF4444",
-  /** Fallback swatch for a task with no list, trackable or tag colour. */
+  /** Fallback swatch for a task with no list or trackable colour. */
   neutral: "#6B7280",
   /** Chart series when a widget plots count and time together. */
   chartCount: "#3B82F6",
@@ -119,5 +119,5 @@ export const TRACKABLE_COLORS = [
   "#EF4444",
 ];
 
-/** Colour pre-selected when creating a list, tag or trackable. */
+/** Colour pre-selected when creating a list or trackable. */
 export const DEFAULT_ENTITY_COLOUR = "#4A90D9";

@@ -185,9 +185,9 @@ const NavRow = React.memo(function NavRow({
  * - `router.navigate` on tabs becomes `JUMP_TO` — instant tab switches (matches SPA routers
  *   that update the active outlet immediately).
  * - `router.replace` on the drawer becomes `JUMP_TO` — avoids stacking duplicate drawer
- *   branches when moving between tabs, lists, tags, etc.
+ *   branches when moving between tabs, lists, pages, etc.
  */
-type NavDrawerGroup = "tabs" | "lists" | "tags" | "pages" | "shared";
+type NavDrawerGroup = "tabs" | "lists" | "pages" | "shared";
 
 function navDrawerGroupFromSegments(
   segments: readonly string[],
@@ -195,7 +195,6 @@ function navDrawerGroupFromSegments(
   const top = segments[1];
   if (top === "(tabs)") return "tabs";
   if (top === "lists") return "lists";
-  if (top === "tags") return "tags";
   if (top === "pages") return "pages";
   if (top === "shared") return "shared";
   return null;
@@ -204,7 +203,6 @@ function navDrawerGroupFromSegments(
 function navDrawerGroupFromHrefString(href: string): NavDrawerGroup | null {
   if (href.includes("/(tabs)")) return "tabs";
   if (href.includes("/lists")) return "lists";
-  if (href.includes("/tags")) return "tags";
   if (href.includes("/pages")) return "pages";
   if (href.includes("/shared")) return "shared";
   return null;
@@ -216,7 +214,6 @@ const PREFETCH_DRAWER_HREFS: Href[] = [
   "/(app)/(tabs)/analytics",
   "/(app)/(tabs)/calendar",
   "/(app)/(tabs)/reviews",
-  "/(app)/tags",
   "/(app)/pages",
   "/(app)/lists",
   "/(app)/shared",
@@ -410,7 +407,6 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
   const onTrackables = useCallback(() => go("/(app)/(tabs)/goals"), [go]);
   const onAnalytics = useCallback(() => go("/(app)/(tabs)/analytics"), [go]);
   const onReviews = useCallback(() => go("/(app)/(tabs)/reviews"), [go]);
-  const onTags = useCallback(() => go("/(app)/tags"), [go]);
   const onPages = useCallback(() => go("/(app)/pages"), [go]);
   const onSettings = useCallback(() => go("/(app)/settings"), [go]);
   const onAllLists = useCallback(() => go("/(app)/lists"), [go]);
@@ -519,14 +515,6 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
           focused={sel.reviews}
           iconName="journal-outline"
           onPress={onReviews}
-          rail={rail}
-          touch={touch}
-        />
-        <NavRow
-          label="Tags"
-          focused={sel.tags}
-          iconName="pricetag-outline"
-          onPress={onTags}
           rail={rail}
           touch={touch}
         />
@@ -658,7 +646,6 @@ function AppDrawer({ isDesktop }: { isDesktop: boolean }) {
     >
       <Drawer.Screen name="(tabs)" />
       <Drawer.Screen name="inbox" options={{ title: "Inbox" }} />
-      <Drawer.Screen name="tags" options={{ title: "Tags" }} />
       <Drawer.Screen name="pages" options={{ title: "Pages" }} />
       <Drawer.Screen name="lists" options={{ title: "Lists" }} />
       <Drawer.Screen name="shared" options={{ title: "Shared" }} />

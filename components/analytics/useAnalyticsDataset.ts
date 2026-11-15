@@ -31,7 +31,6 @@ export interface TimeWindowLite {
   listId?: string | null;
   /** Explicit calendar title when set; otherwise derived like `timeWindows.search`. */
   title?: string | null;
-  tagIds?: string[];
   budgetType: "ACTUAL" | "BUDGETED";
 }
 
@@ -85,10 +84,6 @@ export function useAnalyticsDataset() {
     string,
     { _id: string; name: string; colour: string } | undefined
   >;
-  const tags = (data?.tags ?? {}) as Record<
-    string,
-    { name: string; colour: string } | undefined
-  >;
   const trackables = (data?.trackables ?? {}) as Record<
     string,
     (TrackableLite & { _id: string }) | undefined
@@ -128,7 +123,6 @@ export function useAnalyticsDataset() {
     timeWindows,
     tasks,
     lists,
-    tags,
     trackables,
     listIdToTrackableId,
     resolveTrackableId,

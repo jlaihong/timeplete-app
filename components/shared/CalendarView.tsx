@@ -725,7 +725,6 @@ export function CalendarView({
         listId: tw.listId as Id<"lists"> | undefined,
         title: tw.title,
         comments: tw.comments,
-        tagIds: tw.tagIds as Id<"tags">[] | undefined,
         // Wall-clock rows keep HHMM as truth in the grid zone. TZ-aware
         // rows re-anchor to the viewer's grid zone on drag (same as before).
         timeZone: useTimeZone ? gridTimeZone : tw.timeZone || gridTimeZone,

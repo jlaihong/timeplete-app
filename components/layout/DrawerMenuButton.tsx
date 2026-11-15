@@ -26,7 +26,6 @@ export function mobileBackTarget(pathname: string): Href | null {
   if (path.startsWith("/pages/")) return "/(app)/pages";
   if (path.startsWith("/edit-trackable/")) return "/(app)/(tabs)/goals";
   if (
-    path === "/tags" ||
     path === "/pages" ||
     path === "/shared" ||
     path === "/agent"

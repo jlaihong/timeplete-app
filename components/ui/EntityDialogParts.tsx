@@ -1,6 +1,6 @@
 /**
- * Pieces shared by the list and tag dialogs, so the two look and behave
- * alike: the name is the dialog's title (edited in place), the colour is
+ * Pieces of the list dialog (and any entity dialog that should look
+ * alike): the name is the dialog's title (edited in place), the colour is
  * the dot beside it, and each setting is one row with its label on the
  * left and its control on the right.
  */

@@ -96,7 +96,6 @@ export const create = mutation({
     listId: v.optional(v.id("lists")),
     sectionId: v.optional(v.id("listSections")),
     trackableId: v.optional(v.id("trackables")),
-    tagIds: v.optional(v.array(v.id("tags"))),
     timeEstimatedInSeconds: v.optional(v.number()),
     /**
      * Optional task to convert into the first instance of this series.
@@ -130,7 +129,6 @@ export const create = mutation({
       sectionId: args.sectionId,
       sectionOrderIndex: 0,
       trackableId: args.trackableId,
-      tagIds: args.tagIds,
       timeEstimatedInSeconds: args.timeEstimatedInSeconds ?? 0,
       userId: user._id,
     });
@@ -172,7 +170,6 @@ export const updateRule = mutation({
     useTimeZone: v.optional(v.boolean()),
     listId: v.optional(v.union(v.id("lists"), v.null())),
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
-    tagIds: v.optional(v.array(v.id("tags"))),
     timeEstimatedInSeconds: v.optional(v.number()),
     /**
      * Floor (inclusive YYYYMMDD) at which to discard already-materialized
@@ -215,7 +212,6 @@ export const updateRule = mutation({
     if (args.listId !== undefined) patch.listId = args.listId ?? undefined;
     if (args.trackableId !== undefined)
       patch.trackableId = args.trackableId ?? undefined;
-    if (args.tagIds !== undefined) patch.tagIds = args.tagIds;
     if (args.timeEstimatedInSeconds !== undefined)
       patch.timeEstimatedInSeconds = args.timeEstimatedInSeconds;
 
@@ -246,13 +242,8 @@ export const updateRule = mutation({
           t.taskDay &&
           t.taskDay >= floor
         ) {
-          // Cascade-clean the per-instance tags table; comments and
-          // time windows are also deleted so no orphan rows remain.
-          const tags = await ctx.db
-            .query("taskTags")
-            .withIndex("by_task", (q) => q.eq("taskId", t._id))
-            .collect();
-          for (const tt of tags) await ctx.db.delete(tt._id);
+          // Comments and time windows are also deleted so no orphan
+          // rows remain.
           const windows = await ctx.db
             .query("timeWindows")
             .withIndex("by_task", (q) => q.eq("taskId", t._id))
@@ -300,11 +291,6 @@ export const stop = mutation({
         t.taskDay &&
         t.taskDay >= args.effectiveFromYYYYMMDD
       ) {
-        const tags = await ctx.db
-          .query("taskTags")
-          .withIndex("by_task", (q) => q.eq("taskId", t._id))
-          .collect();
-        for (const tt of tags) await ctx.db.delete(tt._id);
         const windows = await ctx.db
           .query("timeWindows")
           .withIndex("by_task", (q) => q.eq("taskId", t._id))
@@ -366,11 +352,6 @@ export const deleteInstance = mutation({
 
     // Cascade-clean per-task children — same shape as `tasks.remove` so
     // we don't leave orphans behind.
-    const tags = await ctx.db
-      .query("taskTags")
-      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
-      .collect();
-    for (const tt of tags) await ctx.db.delete(tt._id);
     const comments = await ctx.db
       .query("taskComments")
       .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
@@ -425,11 +406,6 @@ export const remove = mutation({
       .collect();
     for (const t of tasks) {
       if (t.isRecurringInstance) {
-        const tags = await ctx.db
-          .query("taskTags")
-          .withIndex("by_task", (q) => q.eq("taskId", t._id))
-          .collect();
-        for (const tt of tags) await ctx.db.delete(tt._id);
         const comments = await ctx.db
           .query("taskComments")
           .withIndex("by_task", (q) => q.eq("taskId", t._id))
@@ -605,25 +581,12 @@ export const generateInstances = mutation({
           taskDayOrderIndex: await nextOrderOnDay(date),
           userId: user._id,
           createdBy: user._id,
-          // Denormalized tag list mirrored from the rule so the home + list
-          // readers can skip the full `taskTags` scan. The matching
-          // `taskTags` rows below are still inserted as a secondary index.
-          tagIds:
-            rule.tagIds && rule.tagIds.length > 0 ? rule.tagIds : undefined,
         });
         await syncSourceMentions(ctx, "task", taskId, { isNew: true });
         // `rootTaskId` matches the task's own id for top-level tasks
         // (mirrors `tasks.upsert` initialization).
         await ctx.db.patch(taskId, { rootTaskId: taskId });
         createdCount++;
-
-        // Materialize the rule's tag set onto the new instance so tag
-        // filters work on the instance the moment it appears.
-        if (rule.tagIds && rule.tagIds.length > 0) {
-          for (const tagId of rule.tagIds) {
-            await ctx.db.insert("taskTags", { taskId, tagId });
-          }
-        }
 
         // If the rule carries a default time window (start/end times),
         // create a planned `timeWindows` row for the calendar to pick

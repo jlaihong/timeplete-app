@@ -404,22 +404,6 @@ async function main() {
   const userRows = readJsonl<UserRow>("users.jsonl");
   const usersMap = await loadUsers(client, userRows);
 
-  // ---- Tags ----
-  type TagRow = {
-    legacyId: string;
-    userId: string;
-    name: string;
-    colour: string;
-    orderIndex: number;
-    archived: boolean;
-  };
-  const tagsRaw = readJsonl<TagRow>("tags.jsonl");
-  const tagsResolved = resolveFks(tagsRaw, [
-    { field: "userId", map: usersMap, required: true },
-  ]);
-  if (tagsResolved.dropped) console.log(`    tags: dropped ${tagsResolved.dropped}`);
-  const tagsMap = await loadTable(client, "tags", tagsResolved.rows);
-
   // ---- Lists ----
   type ListRow = {
     legacyId: string;
@@ -482,14 +466,13 @@ async function main() {
     trackablesResolved.rows,
   );
 
-  // ---- Recurring tasks (FK: list, section, trackable, tagIds) ----
+  // ---- Recurring tasks (FK: list, section, trackable) ----
   type RecurringTaskRow = {
     legacyId: string;
     userId: string;
     listId?: string;
     sectionId?: string;
     trackableId?: string;
-    tagIds?: string[];
     [k: string]: unknown;
   };
   const recTasksRaw = readJsonl<RecurringTaskRow>("recurringTasks.jsonl");
@@ -501,7 +484,6 @@ async function main() {
       { field: "sectionId", map: sectionsMap, required: false },
       { field: "trackableId", map: trackablesMap, required: false },
     ],
-    [{ field: "tagIds", map: tagsMap }],
   );
   if (recTasksResolved.dropped)
     console.log(`    recurringTasks: dropped ${recTasksResolved.dropped}`);
@@ -511,12 +493,11 @@ async function main() {
     recTasksResolved.rows,
   );
 
-  // ---- Recurring events (FK: trackable, tagIds) ----
+  // ---- Recurring events (FK: trackable) ----
   type RecurringEventRow = {
     legacyId: string;
     userId: string;
     trackableId?: string;
-    tagIds?: string[];
     [k: string]: unknown;
   };
   const recEventsRaw = readJsonl<RecurringEventRow>("recurringEvents.jsonl");
@@ -526,7 +507,6 @@ async function main() {
       { field: "userId", map: usersMap, required: true },
       { field: "trackableId", map: trackablesMap, required: false },
     ],
-    [{ field: "tagIds", map: tagsMap }],
   );
   if (recEventsResolved.dropped)
     console.log(`    recurringEvents: dropped ${recEventsResolved.dropped}`);
@@ -602,17 +582,6 @@ async function main() {
   console.log(
     `  tasks (pass 2): ${tasksPass2.length} candidates, ${patched} patched, ${missing} missing`,
   );
-
-  // ---- Task tags ----
-  type TaskTagRow = { legacyId: string; taskId: string; tagId: string };
-  const taskTagsRaw = readJsonl<TaskTagRow>("taskTags.jsonl");
-  const taskTagsResolved = resolveFks(taskTagsRaw, [
-    { field: "taskId", map: tasksMap, required: true },
-    { field: "tagId", map: tagsMap, required: true },
-  ]);
-  if (taskTagsResolved.dropped)
-    console.log(`    taskTags: dropped ${taskTagsResolved.dropped}`);
-  await loadTable(client, "taskTags", taskTagsResolved.rows);
 
   // ---- Task days ----
   type TaskDayRow = {
@@ -723,13 +692,12 @@ async function main() {
   }));
   await loadTable(client, "taskTimers", ttRewritten);
 
-  // ---- Time windows (FK: task, trackable, tagIds, recurringEvent) ----
+  // ---- Time windows (FK: task, trackable, recurringEvent) ----
   type TimeWindowRow = {
     legacyId: string;
     userId: string;
     taskId?: string;
     trackableId?: string;
-    tagIds?: string[];
     recurringEventId?: string;
     [k: string]: unknown;
   };
@@ -742,7 +710,6 @@ async function main() {
       { field: "trackableId", map: trackablesMap, required: false },
       { field: "recurringEventId", map: recEventsMap, required: false },
     ],
-    [{ field: "tagIds", map: tagsMap }],
   );
   if (twResolved.dropped)
     console.log(`    timeWindows: dropped ${twResolved.dropped}`);

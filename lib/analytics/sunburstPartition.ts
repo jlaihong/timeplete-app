@@ -83,7 +83,7 @@ function radiusBand(
  * down the parent wedge by the next level (Productivity-One style).
  *
  * Segment colours: explicit colours from buckets (when present and non-blank) win;
- * otherwise the wedge inherits from its parent — lists/tasks/tags/dates without a colour
+ * otherwise the wedge inherits from its parent — lists/tasks/dates without a colour
  * all chain upward until the chart fallback palette applies at paint time.
  *
  * `seedInheritedColour` seeds the outermost ring when the chart is zoomed into a wedge

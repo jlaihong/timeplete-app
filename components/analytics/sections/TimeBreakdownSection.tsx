@@ -150,7 +150,6 @@ export function TimeBreakdownSection() {
     () =>
       ({
         tasks: dataset.tasks,
-        tags: dataset.tags,
         lists: dataset.lists,
         trackables: dataset.trackables as GroupingLookups["trackables"],
         listIdToTrackableId: dataset.listIdToTrackableId,
@@ -159,7 +158,6 @@ export function TimeBreakdownSection() {
       }) as GroupingLookups,
     [
       dataset.tasks,
-      dataset.tags,
       dataset.lists,
       dataset.trackables,
       dataset.listIdToTrackableId,

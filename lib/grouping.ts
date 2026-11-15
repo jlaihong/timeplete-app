@@ -15,12 +15,10 @@ export type TimeWindowLike = {
   taskId?: string | null;
   trackableId?: string | null;
   listId?: string | null;
-  tagIds?: string[];
 };
 
 export type GroupByMode =
   | "task"
-  | "tag"
   | "list"
   | "trackable"
   | "date"
@@ -59,7 +57,6 @@ export interface GroupingLookups {
       trackableId?: string;
     }
   >;
-  tags?: Record<string, { name: string; colour: string }>;
   lists?: Record<string, { name: string; colour: string }>;
   trackables?: Record<
     string,
@@ -105,19 +102,6 @@ function getGroupKeys(
         return [{ key: w.taskId, label: plainMentions(t.name) ?? "Task" }];
       }
       return [{ key: "no_task", label: "No Task" }];
-
-    case "tag":
-      if (w.tagIds && w.tagIds.length > 0) {
-        return w.tagIds.map((tagId: string) => {
-          const tag = lookups.tags?.[tagId];
-          return {
-            key: tagId,
-            label: tag?.name ?? "Unknown",
-            colour: tag?.colour,
-          };
-        });
-      }
-      return [{ key: "untagged", label: "Untagged" }];
 
     case "list":
       if (w.taskId && lookups.tasks?.[w.taskId]?.listId) {
@@ -299,7 +283,6 @@ export const GROUP_BY_LABEL: Record<GroupByMode, string> = {
   trackable: "Trackable",
   list: "List",
   task: "Task",
-  tag: "Tag",
   date: "Date",
   day_of_week: "Day of Week",
   month: "Month",
@@ -308,8 +291,7 @@ export const GROUP_BY_LABEL: Record<GroupByMode, string> = {
 };
 
 /**
- * Default grouping chain per analytics frequency (Daily/Weekly align with
- * productivity-one; Monthly/Yearly omit Tag at the end — users can add it).
+ * Default grouping chain per analytics frequency.
  */
 export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
   switch (tab) {
@@ -328,7 +310,7 @@ export function defaultGroupingLevelsForTab(tab: string): GroupByMode[] {
 export function modesForTab(tab: string): GroupByMode[] {
   switch (tab) {
     case "DAILY":
-      return ["trackable", "list", "task", "tag", "time_window"];
+      return ["trackable", "list", "task", "time_window"];
     case "WEEKLY":
       return [
         "trackable",
@@ -336,7 +318,6 @@ export function modesForTab(tab: string): GroupByMode[] {
         "task",
         "time_window",
         "date",
-        "tag",
         "day_of_week",
       ];
     case "MONTHLY":
@@ -346,7 +327,6 @@ export function modesForTab(tab: string): GroupByMode[] {
         "task",
         "time_window",
         "date",
-        "tag",
         "day_of_week",
         "month",
       ];
@@ -357,13 +337,12 @@ export function modesForTab(tab: string): GroupByMode[] {
         "task",
         "time_window",
         "month",
-        "tag",
         "day_of_week",
         "year",
         "date",
       ];
     default:
-      return ["trackable", "list", "task", "tag", "time_window"];
+      return ["trackable", "list", "task", "time_window"];
   }
 }
 

@@ -33,7 +33,6 @@ export type UpsertTimeWindowOptimisticArgs = {
   listId?: Id<"lists">;
   title?: string;
   comments?: string;
-  tagIds?: Id<"tags">[];
   timeZone: string;
   useTimeZone?: boolean;
   source?: "timer" | "manual" | "calendar" | "tracker_entry";
@@ -91,7 +90,6 @@ function patchTimeWindowRow(
     listId: args.listId,
     title: normalizeOptimisticTitle(args.title),
     comments: args.comments,
-    tagIds: args.tagIds,
     timeZone: args.timeZone,
     useTimeZone:
       args.useTimeZone !== undefined

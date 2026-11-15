@@ -46,7 +46,6 @@ export type UpsertTaskOptimisticArgs = {
   sectionId?: Id<"listSections">;
   sectionOrderIndex?: number;
   trackableId?: Id<"trackables"> | null;
-  tagIds?: Id<"tags">[];
   assignedToUserId?: Id<"users">;
   /** Echo of the signed-in user — optimistic stubs only (`tasks.upsert` ignores it server-side). */
   clientViewerUserId?: Id<"users">;
@@ -206,7 +205,6 @@ function stableOptimisticCreateId(args: UpsertTaskOptimisticArgs): Id<"tasks"> {
     sectionId: args.sectionId,
     parentId: args.parentId,
     trackableId: args.trackableId,
-    tagIds: args.tagIds,
     tdOrder: args.taskDayOrderIndex,
     secOrder: args.sectionOrderIndex,
     dateCompleted: args.dateCompleted,
@@ -254,9 +252,6 @@ function patchTaskRow(
   }
   if (args.trackableId !== undefined) {
     patched.trackableId = args.trackableId ?? undefined;
-  }
-  if (args.tagIds !== undefined) {
-    (patched as { tagIds?: Id<"tags">[] }).tagIds = args.tagIds;
   }
   if (args.assignedToUserId !== undefined) {
     patched.assignedToUserId = args.assignedToUserId;
@@ -306,7 +301,6 @@ function syntheticInsertRow(args: UpsertTaskOptimisticArgs, id: Id<"tasks">) {
     assignedToUserId: args.assignedToUserId,
     legacyId: undefined,
     rootTaskId: args.parentId ? undefined : id,
-    tagIds: args.tagIds ?? [],
   } as unknown as HomeTaskRow;
   return row;
 }

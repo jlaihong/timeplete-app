@@ -18,18 +18,6 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_legacy", ["legacyId"]),
 
-  tags: defineTable({
-    name: v.string(),
-    colour: v.string(),
-    orderIndex: v.number(),
-    userId: v.id("users"),
-    archived: v.boolean(),
-    legacyId: v.optional(v.string()),
-  })
-    .index("by_user", ["userId"])
-    .index("by_user_order", ["userId", "orderIndex"])
-    .index("by_legacy", ["legacyId"]),
-
   lists: defineTable({
     name: v.string(),
     colour: v.string(),
@@ -83,17 +71,11 @@ export default defineSchema({
     createdBy: v.id("users"),
     assignedToUserId: v.optional(v.id("users")),
     /**
-     * Denormalized copy of `taskTags.tagId` rows for this task. Maintained
-     * by `tasks.upsert` and the recurring writers. Lets readers like
-     * `tasks.search` and `lists.getPaginated` enrich rows without scanning
-     * the entire `taskTags` table (previously the single largest source of
-     * read bandwidth for list views).
-     *
-     * `taskTags` rows are still maintained for tag-lookup queries; treat
-     * them as a secondary index, not the source of truth. When the field
-     * is `undefined` on legacy rows the readers fall back to `taskTags`.
+     * @deprecated Tags were removed. Old rows may still carry this field
+     * until `_admin/removeTags:run` has been run on the deployment; once
+     * it has, delete this line.
      */
-    tagIds: v.optional(v.array(v.id("tags"))),
+    tagIds: v.optional(v.any()),
     legacyId: v.optional(v.string()),
   })
     .index("by_user_day", ["userId", "taskDay"])
@@ -126,15 +108,6 @@ export default defineSchema({
       "dateCompleted",
       "taskDay",
     ])
-    .index("by_legacy", ["legacyId"]),
-
-  taskTags: defineTable({
-    taskId: v.id("tasks"),
-    tagId: v.id("tags"),
-    legacyId: v.optional(v.string()),
-  })
-    .index("by_task", ["taskId"])
-    .index("by_tag", ["tagId"])
     .index("by_legacy", ["legacyId"]),
 
   taskDays: defineTable({
@@ -219,7 +192,12 @@ export default defineSchema({
      */
     title: v.optional(v.string()),
     comments: v.optional(v.string()),
-    tagIds: v.optional(v.array(v.id("tags"))),
+    /**
+     * @deprecated Tags were removed. Old rows may still carry this field
+     * until `_admin/removeTags:run` has been run on the deployment; once
+     * it has, delete this line.
+     */
+    tagIds: v.optional(v.any()),
     timeZone: v.string(),
     /**
      * When false/undefined (default), `startTimeHHMM` is floating wall
@@ -695,7 +673,12 @@ export default defineSchema({
     sectionId: v.optional(v.id("listSections")),
     sectionOrderIndex: v.number(),
     trackableId: v.optional(v.id("trackables")),
-    tagIds: v.optional(v.array(v.id("tags"))),
+    /**
+     * @deprecated Tags were removed. Old rows may still carry this field
+     * until `_admin/removeTags:run` has been run on the deployment; once
+     * it has, delete this line.
+     */
+    tagIds: v.optional(v.any()),
     timeEstimatedInSeconds: v.number(),
     /**
      * Inclusive YYYYMMDD bounds of the window `generateInstances` has
@@ -750,7 +733,12 @@ export default defineSchema({
     durationSeconds: v.number(),
     comments: v.optional(v.string()),
     trackableId: v.optional(v.id("trackables")),
-    tagIds: v.optional(v.array(v.id("tags"))),
+    /**
+     * @deprecated Tags were removed. Old rows may still carry this field
+     * until `_admin/removeTags:run` has been run on the deployment; once
+     * it has, delete this line.
+     */
+    tagIds: v.optional(v.any()),
     timeZone: v.string(),
     /** See `timeWindows.useTimeZone`. Missing/false = wall-clock. */
     useTimeZone: v.optional(v.boolean()),

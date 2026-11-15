@@ -249,11 +249,9 @@ export const importBatch = internalMutation({
     mapping: Array<{ legacyId: string; id: string }>;
   }> => {
     const allowed = new Set([
-      "tags",
       "lists",
       "listSections",
       "tasks",
-      "taskTags",
       "taskDays",
       "userTaskDayOrder",
       "taskListOrdering",

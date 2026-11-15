@@ -161,7 +161,6 @@ export function TaskDetailSheet({
     api.taskComments.search,
     profileReady ? { taskId, limit: 50 } : "skip",
   );
-  const tags = useQuery(api.tags.search, profileReady ? {} : "skip");
   const lists = useQuery(api.lists.search, profileReady ? {} : "skip");
   // The full recurringTasks list is small (one row per series) and is
   // already subscribed by DesktopTaskList — Convex de-dupes the
@@ -356,10 +355,6 @@ export function TaskDetailSheet({
 
   if (!task || !form) return null;
 
-  const taskTags = (task.tagIds ?? [])
-    .map((id: string) => tags?.find((t) => t._id === id))
-    .filter(Boolean);
-
   const isTimerActive = timer.isRunning && timer.taskId === taskId;
 
   /** Sparse upsert — only fields that actually changed are sent, so we
@@ -504,7 +499,6 @@ export function TaskDetailSheet({
           listId: nextListId ?? undefined,
           sectionId: existingRule.sectionId,
           trackableId: nextTrackableId ?? undefined,
-          tagIds: existingRule.tagIds,
           timeEstimatedInSeconds:
             task.timeEstimatedInSecondsUnallocated ??
             existingRule.timeEstimatedInSeconds ??
@@ -798,23 +792,6 @@ export function TaskDetailSheet({
             <Ionicons name="repeat-outline" size={16} color={Colors.error} />
             <Text style={styles.stopRecurringButtonText}>Stop recurring</Text>
           </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Tags */}
-      {taskTags.length > 0 && (
-        <View style={styles.tagsRow}>
-          {taskTags.map((tag: any) => (
-            <View
-              key={tag._id}
-              style={[styles.tagChip, { borderColor: tag.colour ?? Colors.outline }]}
-            >
-              <View
-                style={[styles.tagDot, { backgroundColor: tag.colour ?? Colors.outline }]}
-              />
-              <Text style={styles.tagText}>{tag.name}</Text>
-            </View>
-          ))}
         </View>
       )}
 
@@ -1519,12 +1496,6 @@ const styles = StyleSheet.create({
   },
   metaChipText: { fontSize: FontSize.caption, color: Colors.textSecondary },
 
-  tagsRow: {
-    flexDirection: "row",
-    gap: 6,
-    flexWrap: "wrap",
-    marginBottom: 16,
-  },
   instanceBadge: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1540,17 +1511,6 @@ const styles = StyleSheet.create({
     color: Colors.text,
     lineHeight: 18,
   },
-  tagChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-  },
-  tagDot: { width: 8, height: 8, borderRadius: Radius.sm },
-  tagText: { fontSize: FontSize.caption, color: Colors.text },
 
   timeTabOuter: {
     flex: 1,

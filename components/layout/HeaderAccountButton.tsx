@@ -6,7 +6,7 @@ import { Colors } from "../../constants/colors";
 
 /**
  * Header-right button on the phone's tab roots. Opens Settings, which is
- * also where Tags, Pages and "Shared with me" live on a phone.
+ * also where Pages and "Shared with me" live on a phone.
  */
 export function HeaderAccountButton() {
   return (

@@ -26,11 +26,9 @@ import { components } from "../_generated/api";
  * since there are no FK constraints at the storage layer.
  */
 const APP_TABLES = [
-  "tags",
   "lists",
   "listSections",
   "tasks",
-  "taskTags",
   "taskDays",
   "userTaskDayOrder",
   "taskListOrdering",

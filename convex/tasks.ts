@@ -172,37 +172,7 @@ export const search = query({
       tasks = tasks.filter((t) => !t.dateCompleted);
     }
 
-    // Tag enrichment reads from the denormalized `tasks.tagIds` field
-    // (see schema). The previous implementation scanned the entire
-    // `taskTags` table on every list-view subscription, which was the
-    // single largest contributor to read bandwidth for the lists screen.
-    //
-    // Legacy rows where the field has not been backfilled yet fall back
-    // to a per-row `by_task` lookup so the view stays correct during the
-    // migration window. After `_admin/backfillTaskTagIds:runAll` completes
-    // the fallback path is dead code.
-    const legacyRows = tasks.filter((t) => t.tagIds === undefined);
-    const legacyMap = new Map<string, Id<"tags">[]>();
-    if (legacyRows.length > 0) {
-      await Promise.all(
-        legacyRows.map(async (t) => {
-          const tts = await ctx.db
-            .query("taskTags")
-            .withIndex("by_task", (q) => q.eq("taskId", t._id))
-            .collect();
-          if (tts.length > 0) {
-            legacyMap.set(t._id, tts.map((tt) => tt.tagId));
-          }
-        }),
-      );
-    }
-
-    return tasks
-      .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex)
-      .map((t) => ({
-        ...t,
-        tagIds: t.tagIds ?? legacyMap.get(t._id) ?? [],
-      }));
+    return tasks.sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex);
   },
 });
 
@@ -212,9 +182,9 @@ export const search = query({
  * Replaces `api.tasks.search({ includeCompleted: true }).find(t._id === id)`
  * inside the detail sheet — that subscription was pulling every task the
  * user has ever created (incl. completed history) and re-firing on every
- * mutation. This query reads exactly two rows (the task + its tag rows)
- * and ignores changes to unrelated tasks, dramatically reducing both
- * payload size and reactive churn.
+ * mutation. This query reads exactly one row (the task) and ignores
+ * changes to unrelated tasks, dramatically reducing both payload size
+ * and reactive churn.
  *
  * Ownership is enforced server-side: returns `null` if the row belongs
  * to another user, mirroring the visibility rule in `tasks.search`.
@@ -228,59 +198,28 @@ export const getById = query({
     const task = await ctx.db.get(args.id);
     if (!task || task.userId !== user._id) return null;
 
-    const tts = await ctx.db
-      .query("taskTags")
-      .withIndex("by_task", (q) => q.eq("taskId", task._id))
-      .collect();
-
-    return {
-      ...task,
-      tagIds: tts.map((tt) => tt.tagId),
-    };
+    return task;
   },
 });
 
 /**
- * Shared enrichment for home-task rows (`taskTags` + TASK ACTUAL windows).
+ * Shared shaping for home-task rows.
  */
 async function enrichHomeTasksPayload(
   ctx: QueryCtx,
   tasks: Doc<"tasks">[],
 ) {
-  // Tags come from the denormalized `tasks.tagIds` field; legacy rows
-  // missing the field fall back to a per-row `by_task` scan.
-  //
   // The per-task `timeWindows` re-aggregation that previously lived
   // here has been removed (fix #4): `task.timeSpentInSecondsUnallocated`
   // is now authoritative, maintained on every TASK ACTUAL window write
   // by `_helpers/taskTimeSpent`. The previous implementation issued one
   // `by_task` scan per home task on every query invocation, which was
   // the second-largest source of home-page read bandwidth.
-  const legacyTagRows = tasks.filter((t) => t.tagIds === undefined);
-  const legacyTagMap = new Map<string, Id<"tags">[]>();
-  if (legacyTagRows.length > 0) {
-    await Promise.all(
-      legacyTagRows.map(async (t) => {
-        const tts = await ctx.db
-          .query("taskTags")
-          .withIndex("by_task", (q) => q.eq("taskId", t._id))
-          .collect();
-        if (tts.length > 0) {
-          legacyTagMap.set(
-            t._id,
-            tts.map((tt) => tt.tagId),
-          );
-        }
-      }),
-    );
-  }
-
   return tasks
     .sort((a, b) => a.taskDayOrderIndex - b.taskDayOrderIndex)
     .map((t) => ({
       ...t,
       timeSpentInSecondsUnallocated: t.timeSpentInSecondsUnallocated ?? 0,
-      tagIds: t.tagIds ?? legacyTagMap.get(t._id) ?? [],
     }));
 }
 
@@ -467,7 +406,6 @@ export const upsert = mutation({
     sectionOrderIndex: v.optional(v.number()),
     // `undefined` (omitted) → leave unchanged; `null` → clear; id → set.
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
-    tagIds: v.optional(v.array(v.id("tags"))),
     assignedToUserId: v.optional(v.id("users")),
     /**
      * Optional echo of `user._id` from the client — not persisted.
@@ -530,27 +468,10 @@ export const upsert = mutation({
         patch.trackableId = args.trackableId ?? undefined;
       }
       if (args.assignedToUserId !== undefined) patch.assignedToUserId = args.assignedToUserId;
-      // Keep denormalized `tagIds` on the task row in sync with the patch.
-      // Readers like `tasks.search` / `lists.getPaginated` use this field
-      // to avoid scanning the entire `taskTags` table.
-      if (args.tagIds !== undefined) patch.tagIds = args.tagIds;
 
       await ctx.db.patch(args.id, patch as any);
       if (args.name !== undefined) {
         await syncSourceMentions(ctx, "task", args.id);
-      }
-
-      if (args.tagIds !== undefined) {
-        const existing_tags = await ctx.db
-          .query("taskTags")
-          .withIndex("by_task", (q) => q.eq("taskId", args.id!))
-          .collect();
-        for (const tt of existing_tags) {
-          await ctx.db.delete(tt._id);
-        }
-        for (const tagId of args.tagIds) {
-          await ctx.db.insert("taskTags", { taskId: args.id!, tagId });
-        }
       }
 
       // Keep `trackable.lifetimeAttributedTaskDayCount` in sync if the
@@ -613,20 +534,10 @@ export const upsert = mutation({
       userId: user._id,
       createdBy: user._id,
       assignedToUserId: args.assignedToUserId,
-      // Denormalized tag list — keeps list/home readers off the full
-      // `taskTags` table scan. `taskTags` rows below are the secondary
-      // index used by tag-centric queries (e.g. tag detail screens).
-      tagIds: args.tagIds ?? undefined,
     });
 
     await ctx.db.patch(taskId, { rootTaskId: args.parentId ? undefined : taskId });
     await syncSourceMentions(ctx, "task", taskId, { isNew: true });
-
-    if (args.tagIds) {
-      for (const tagId of args.tagIds) {
-        await ctx.db.insert("taskTags", { taskId, tagId });
-      }
-    }
 
     if (args.dateCompleted) {
       await onTaskCompletionAttribution(ctx, null, {
@@ -654,11 +565,6 @@ export const remove = mutation({
       .collect();
     for (const child of children) {
       if (child._id !== args.id) {
-        const tags = await ctx.db
-          .query("taskTags")
-          .withIndex("by_task", (q) => q.eq("taskId", child._id))
-          .collect();
-        for (const tt of tags) await ctx.db.delete(tt._id);
         const childWindows = await ctx.db
           .query("timeWindows")
           .withIndex("by_task", (q) => q.eq("taskId", child._id))
@@ -682,12 +588,6 @@ export const remove = mutation({
         await ctx.db.delete(child._id);
       }
     }
-
-    const tags = await ctx.db
-      .query("taskTags")
-      .withIndex("by_task", (q) => q.eq("taskId", args.id))
-      .collect();
-    for (const tt of tags) await ctx.db.delete(tt._id);
 
     const comments = await ctx.db
       .query("taskComments")
