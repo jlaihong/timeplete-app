@@ -263,6 +263,11 @@ export const upsert = mutation({
     ),
     taskId: v.optional(v.id("tasks")),
     trackableId: v.optional(v.id("trackables")),
+    /**
+     * Compatibility only: tags were removed, but app builds released
+     * before that still send this. Accepted and ignored.
+     */
+    tagIds: v.optional(v.any()),
     /** "Tracks to": every trackable the event is allocated to. */
     trackableIds: v.optional(v.array(v.id("trackables"))),
     listId: v.optional(v.id("lists")),

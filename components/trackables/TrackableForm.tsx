@@ -115,7 +115,7 @@ export function TrackableForm({
     setHasGoal(shape.goal !== null);
     if (shape.goal) {
       setDirection(shape.goal.direction);
-      setAmount(String(shape.goal.amount));
+      setAmount(String(Math.round(shape.goal.amount * 100) / 100));
       setPeriod(shape.goal.period);
     }
     setEndDay(existing.endDayYYYYMMDD);

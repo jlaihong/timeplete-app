@@ -74,6 +74,11 @@ export const create = mutation({
     startTimeHHMM: v.string(),
     durationSeconds: v.number(),
     comments: v.optional(v.string()),
+    /**
+     * Compatibility only: tags were removed, but app builds released
+     * before that still send this. Accepted and ignored.
+     */
+    tagIds: v.optional(v.any()),
     trackableId: v.optional(v.id("trackables")),
     trackableIds: v.optional(v.array(v.id("trackables"))),
     timeZone: v.string(),
@@ -88,7 +93,9 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
-    const { sourceTimeWindowId, useTimeZone, ...ruleFields } = args;
+    // `tagIds` (old app builds) is dropped rather than stored.
+    const { sourceTimeWindowId, useTimeZone, tagIds: _tagIds, ...ruleFields } =
+      args;
     const resolvedUseTimeZone = useTimeZone === true;
     const ruleId = await ctx.db.insert("recurringEvents", {
       ...ruleFields,
@@ -129,6 +136,11 @@ export const updateRule = mutation({
     startTimeHHMM: v.optional(v.union(v.string(), v.null())),
     durationSeconds: v.optional(v.number()),
     comments: v.optional(v.string()),
+    /**
+     * Compatibility only: tags were removed, but app builds released
+     * before that still send this. Accepted and ignored.
+     */
+    tagIds: v.optional(v.any()),
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
     trackableIds: v.optional(v.array(v.id("trackables"))),
     timeZone: v.optional(v.string()),

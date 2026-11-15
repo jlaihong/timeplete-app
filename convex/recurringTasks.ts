@@ -96,6 +96,11 @@ export const create = mutation({
     name: v.string(),
     listId: v.optional(v.id("lists")),
     sectionId: v.optional(v.id("listSections")),
+    /**
+     * Compatibility only: tags were removed, but app builds released
+     * before that still send this. Accepted and ignored.
+     */
+    tagIds: v.optional(v.any()),
     trackableId: v.optional(v.id("trackables")),
     trackableIds: v.optional(v.array(v.id("trackables"))),
     timeEstimatedInSeconds: v.optional(v.number()),
@@ -171,6 +176,11 @@ export const updateRule = mutation({
     timeZone: v.optional(v.union(v.string(), v.null())),
     useTimeZone: v.optional(v.boolean()),
     listId: v.optional(v.union(v.id("lists"), v.null())),
+    /**
+     * Compatibility only: tags were removed, but app builds released
+     * before that still send this. Accepted and ignored.
+     */
+    tagIds: v.optional(v.any()),
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
     trackableIds: v.optional(v.array(v.id("trackables"))),
     timeEstimatedInSeconds: v.optional(v.number()),

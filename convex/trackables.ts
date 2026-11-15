@@ -654,6 +654,87 @@ export const getCompletedTaskNamesForDay = query({
   },
 });
 
+/**
+ * Compatibility only: the trackable "Tasks" tab was removed, but app
+ * builds released before that still ask for it when a trackable is
+ * opened. Answers as it used to (tasks allocated to the trackable or on a
+ * list linked to it). Delete once no installed build has that tab.
+ */
+export const getOpenTasks = query({
+  args: {
+    trackableId: v.id("trackables"),
+    /** Caller's local day, YYYYMMDD — the cutoff for stale recurring rows. */
+    today: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return [];
+    const trackable = await ctx.db.get(args.trackableId);
+    if (!trackable || trackable.userId !== user._id) return [];
+
+    const READ_CAP = 500;
+    const direct = await ctx.db
+      .query("tasks")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", args.trackableId))
+      .order("desc")
+      .take(READ_CAP);
+
+    const links = await ctx.db
+      .query("listTrackableLinks")
+      .withIndex("by_trackable", (q) => q.eq("trackableId", args.trackableId))
+      .take(20);
+    const viaList = [];
+    for (const link of links) {
+      const rows = await ctx.db
+        .query("tasks")
+        .withIndex("by_list", (q) => q.eq("listId", link.listId))
+        .order("desc")
+        .take(READ_CAP);
+      // A task in a linked list that is explicitly assigned to another
+      // trackable counts toward that one instead.
+      viaList.push(...rows.filter((t) => t.trackableId === undefined));
+    }
+
+    const today = toCompactYYYYMMDD(args.today);
+    const seen = new Set<string>();
+    const nextBySeries = new Map<string, (typeof direct)[number]>();
+    const open = [];
+    for (const t of [...direct, ...viaList]) {
+      if (seen.has(t._id)) continue;
+      seen.add(t._id);
+      if (t.userId !== user._id || t.dateCompleted !== undefined) continue;
+      if (t.isRecurringInstance) {
+        const day = t.taskDay ? toCompactYYYYMMDD(t.taskDay) : undefined;
+        if (!day || day < today) continue;
+        const series = t.recurringTaskId ?? t._id;
+        const kept = nextBySeries.get(series);
+        if (!kept || day < toCompactYYYYMMDD(kept.taskDay!)) {
+          nextBySeries.set(series, t);
+        }
+        continue;
+      }
+      open.push(t);
+    }
+    open.push(...nextBySeries.values());
+
+    return open
+      .sort((a, b) => {
+        // Scheduled first (soonest on top), then unscheduled, newest first.
+        if (a.taskDay && b.taskDay) return a.taskDay.localeCompare(b.taskDay);
+        if (a.taskDay) return -1;
+        if (b.taskDay) return 1;
+        return b._creationTime - a._creationTime;
+      })
+      .map((t) => ({
+        _id: t._id,
+        name: t.name,
+        taskDay: t.taskDay ?? null,
+        listId: t.listId ?? null,
+        isRecurringInstance: t.isRecurringInstance,
+      }));
+  },
+});
+
 export const getGoalDetails = query({
   args: {
     activeOffset: v.optional(v.number()),

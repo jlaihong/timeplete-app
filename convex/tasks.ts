@@ -407,6 +407,11 @@ export const upsert = mutation({
     sectionOrderIndex: v.optional(v.number()),
     // `undefined` (omitted) → leave unchanged; `null` → clear; id → set.
     trackableId: v.optional(v.union(v.id("trackables"), v.null())),
+    /**
+     * Compatibility only: tags were removed, but app builds released
+     * before that still send this. Accepted and ignored.
+     */
+    tagIds: v.optional(v.any()),
     /** "Tracks to": the full list of trackables the task is allocated to. */
     trackableIds: v.optional(v.array(v.id("trackables"))),
     assignedToUserId: v.optional(v.id("users")),

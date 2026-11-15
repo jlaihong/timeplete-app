@@ -54,6 +54,7 @@ import type * as recurringEvents from "../recurringEvents.js";
 import type * as recurringTasks from "../recurringTasks.js";
 import type * as reviews from "../reviews.js";
 import type * as sharing from "../sharing.js";
+import type * as tags from "../tags.js";
 import type * as taskComments from "../taskComments.js";
 import type * as tasks from "../tasks.js";
 import type * as timeWindows from "../timeWindows.js";
@@ -119,6 +120,7 @@ declare const fullApi: ApiFromModules<{
   recurringTasks: typeof recurringTasks;
   reviews: typeof reviews;
   sharing: typeof sharing;
+  tags: typeof tags;
   taskComments: typeof taskComments;
   tasks: typeof tasks;
   timeWindows: typeof timeWindows;

@@ -341,5 +341,7 @@ export function formatMeasure(measure: TrackableMeasure, value: number): string 
 export function describeGoal(measure: TrackableMeasure, goal: TrackableGoal): string {
   const period = PERIODS.find((p) => p.key === goal.period)!.label;
   const unit = unitLabel(measure, goal.amount);
-  return `${goal.direction === "atLeast" ? "At least" : "At most"} ${goal.amount}${unit ? ` ${unit}` : ""} ${period}`;
+  // 100 minutes a week is stored as 1.666… hours.
+  const amount = Math.round(goal.amount * 100) / 100;
+  return `${goal.direction === "atLeast" ? "At least" : "At most"} ${amount}${unit ? ` ${unit}` : ""} ${period}`;
 }
