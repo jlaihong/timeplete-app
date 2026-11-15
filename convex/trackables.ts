@@ -80,6 +80,9 @@ export const upsert = mutation({
         }),
       ),
     ),
+    /** "Of those, count": events and/or completed tasks. */
+    countEvents: v.optional(v.boolean()),
+    countTasks: v.optional(v.boolean()),
     trackableType: v.optional(
       v.union(
         v.literal("NUMBER"),
@@ -214,6 +217,8 @@ export const upsert = mutation({
       colour: args.colour,
       measure: args.measure,
       goal: rawArgs.measure ? (goalArg ?? undefined) : undefined,
+      countEvents: args.countEvents,
+      countTasks: args.countTasks,
       trackableType: args.trackableType,
       frequency: args.frequency,
       targetNumberOfHours: isTracker ? undefined : args.targetNumberOfHours,

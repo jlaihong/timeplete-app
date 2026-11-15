@@ -339,6 +339,8 @@ async function bumpTrackableDaySeconds(
   userId: Id<"users">,
   dayYYYYMMDD: string,
   deltaSeconds: number,
+  /** +1 / -1 when a whole window is added or taken back. */
+  deltaEvents: number,
 ): Promise<void> {
   if (deltaSeconds === 0) return;
   const existing = await ctx.db
@@ -355,6 +357,7 @@ async function bumpTrackableDaySeconds(
         userId,
         dayYYYYMMDD,
         attributedSeconds: deltaSeconds,
+        eventCount: Math.max(0, deltaEvents),
       });
       await bumpTrackableWeekSeconds(
         ctx,
@@ -388,7 +391,11 @@ async function bumpTrackableDaySeconds(
     }
     return;
   }
-  await ctx.db.patch(existing._id, { attributedSeconds: next });
+  await ctx.db.patch(existing._id, {
+    attributedSeconds: next,
+    // A row from before the count existed stood for at least one event.
+    eventCount: Math.max(0, (existing.eventCount ?? 1) + deltaEvents),
+  });
 }
 
 /* ── Attribution: who gets credit for a window or a completed task ────── */
@@ -501,6 +508,7 @@ async function applyWindowCredit(
         tw.userId,
         activityDay,
         sign * dur,
+        sign,
       );
     }
   }

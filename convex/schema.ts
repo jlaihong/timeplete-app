@@ -341,6 +341,13 @@ export default defineSchema({
      * closest old type, for screens that have not moved over. Absent on
      * rows saved before this existed; readers use `shapeOf`.
      */
+    /**
+     * "Of those, count": which kinds of thing a "times done" or "days
+     * active" trackable counts. Absent means the behaviour from before
+     * the setting existed (see `countsOf` in `lib/trackableShape.ts`).
+     */
+    countEvents: v.optional(v.boolean()),
+    countTasks: v.optional(v.boolean()),
     measure: v.optional(
       v.union(
         v.literal("time"),
@@ -560,6 +567,13 @@ export default defineSchema({
     /** Compact YYYYMMDD (no dashes) — normalized at write time. */
     dayYYYYMMDD: v.string(),
     attributedSeconds: v.number(),
+    /**
+     * How many windows make up `attributedSeconds` (events and logged
+     * time that counted that day). Lets a "times done" trackable count
+     * events. Absent on rows written before it existed; readers treat such
+     * a row as one event. Backfill: `trackableResync:backfillEventCounts`.
+     */
+    eventCount: v.optional(v.number()),
   })
     .index("by_trackable_day", ["trackableId", "dayYYYYMMDD"])
     .index("by_user", ["userId"]),

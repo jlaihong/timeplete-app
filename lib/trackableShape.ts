@@ -143,6 +143,24 @@ export function legacyFieldsFor(shape: TrackableShape): LegacyTrackableFields {
   return tracker(false, true, false);
 }
 
+/**
+ * Which kinds of thing a "times done" or "days active" trackable counts
+ * ("Of those, count" on its form). Before the setting existed, times done
+ * counted completed tasks only, and a day was active with either.
+ */
+export function countsOf(t: {
+  measure?: TrackableMeasure;
+  trackableType: LegacyType;
+  trackCount?: boolean;
+  countEvents?: boolean;
+  countTasks?: boolean;
+}): { events: boolean; tasks: boolean } {
+  return {
+    events: t.countEvents ?? shapeOf(t).measure === "days",
+    tasks: t.countTasks ?? true,
+  };
+}
+
 type StoredTrackable = {
   measure?: TrackableMeasure;
   goal?: TrackableGoal;
@@ -249,7 +267,10 @@ export function periodRange(
 export interface DayFacts {
   /** Seconds of time that counted (events, timers, logged time). */
   seconds: number;
-  /** Completed tasks plus manual check-ins and logged counts. */
+  /**
+   * Things done that day: manual check-ins and logged counts, plus the
+   * completed tasks and events the trackable is set to count.
+   */
   count: number;
   /** Values logged by hand that day (for the "number" measure). */
   values: number[];
@@ -273,7 +294,7 @@ export function measureValue(
     case "count":
       return days.reduce((s, d) => s + d.count, 0);
     case "days":
-      return days.filter((d) => d.seconds > 0 || d.count > 0).length;
+      return days.filter((d) => d.count > 0).length;
     case "number": {
       const values = days.flatMap((d) => d.values);
       if (values.length === 0) return 0;

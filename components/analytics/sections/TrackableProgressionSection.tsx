@@ -9,7 +9,7 @@ import { api } from "../../../convex/_generated/api";
 import { Colors } from "../../../constants/colors";
 import { SectionCard } from "../SectionCard";
 import { useAnalyticsState } from "../AnalyticsState";
-import { AnalyticsTrackableWidgetFactory } from "../widgets/AnalyticsTrackableWidgetFactory";
+import { ProgressionCard } from "../widgets/ProgressionCard";
 import { useAuth } from "../../../hooks/useAuth";
 import { todayYYYYMMDD } from "../../../lib/dates";
 
@@ -89,9 +89,11 @@ export function TrackableProgressionSection() {
   const activeGoals = foldInactive ? all.filter(hasActivity) : all;
   const inactiveGoals = foldInactive ? all.filter((g) => !hasActivity(g)) : [];
   const renderGoal = (goal: (typeof all)[number]) => (
-    <AnalyticsTrackableWidgetFactory
+    <ProgressionCard
       key={goal._id}
-      goal={goal}
+      trackableId={goal._id}
+      name={goal.name}
+      colour={goal.colour}
       tab={selectedTab}
       windowStart={windowStart}
       windowEnd={windowEnd}

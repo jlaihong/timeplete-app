@@ -25,6 +25,7 @@ import { toCompactYYYYMMDD } from "./_helpers/compactYYYYMMDD";
 import { loadDescendants } from "./_helpers/trackableMembership";
 import {
   EMPTY_DAY,
+  countsOf,
   goalStatus,
   goalTarget,
   measureValue,
@@ -76,7 +77,14 @@ async function loadDays(
       q.eq("trackableId", trackable._id).gte("dayYYYYMMDD", from).lte("dayYYYYMMDD", to),
     )
     .take(MAX_DAYS);
-  for (const row of seconds) at(row.dayYYYYMMDD).seconds += row.attributedSeconds;
+  const counts = countsOf(trackable);
+  for (const row of seconds) {
+    const day = at(row.dayYYYYMMDD);
+    day.seconds += row.attributedSeconds;
+    // Events that counted (already rolled up from below). A row from
+    // before events were counted stands for one.
+    if (counts.events) day.count += row.eventCount ?? 1;
+  }
 
   // Hand-logged check-ins and entries: this trackable's and its descendants'.
   const family: Id<"trackables">[] = [
@@ -96,8 +104,10 @@ async function loadDays(
       day.count += row.numCompleted;
       if (own) {
         // Completed tasks are already rolled up onto this trackable.
-        day.count += row.attributedTaskCount ?? 0;
-        day.taskCount += row.attributedTaskCount ?? 0;
+        if (counts.tasks) {
+          day.count += row.attributedTaskCount ?? 0;
+          day.taskCount += row.attributedTaskCount ?? 0;
+        }
         day.checkIns += row.numCompleted;
         day.comments = row.comments;
       }
@@ -194,7 +204,13 @@ export const get = query({
  * parent. `overlap` says by how much.
  */
 export const breakdown = query({
-  args: { id: v.id("trackables"), today: v.string() },
+  args: {
+    id: v.id("trackables"),
+    today: v.string(),
+    /** Break down these days instead of the trackable's current period. */
+    start: v.optional(v.string()),
+    end: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const user = await requireApprovedUserOrEmpty(ctx);
     if (!user) return null;
@@ -205,11 +221,17 @@ export const breakdown = query({
     const { measure, goal } = shapeOf(trackable);
     const cumulative = trackable.isCumulative !== false;
     const kind = goal?.period ?? ("week" as const);
-    const period = periodRange(
-      kind,
-      today,
-      toCompactYYYYMMDD(trackable.startDayYYYYMMDD) || today,
-    );
+    const custom = args.start !== undefined && args.end !== undefined;
+    const period = custom
+      ? {
+          start: toCompactYYYYMMDD(args.start!),
+          end: toCompactYYYYMMDD(args.end!),
+        }
+      : periodRange(
+          kind,
+          today,
+          toCompactYYYYMMDD(trackable.startDayYYYYMMDD) || today,
+        );
     const valueOf = async (t: Doc<"trackables">) =>
       measureValue(
         measure,
@@ -239,7 +261,7 @@ export const breakdown = query({
     // Shares only add up for sums. A bounded period keeps the scan small.
     const additive = measure === "time" || measure === "count";
     let direct: number | null = null;
-    if (additive && children.length > 0 && kind !== "total") {
+    if (additive && children.length > 0 && (custom || kind !== "total")) {
       const childIds = new Set<string>(children.map((c) => c._id));
       const countsDirectly = (stamp: Id<"trackables">[] | undefined) =>
         !!stamp &&
@@ -285,17 +307,37 @@ export const breakdown = query({
           )
           .take(MAX_DAYS);
         for (const d of ownDays) direct += d.numCompleted;
-        const tasks = await ctx.db
-          .query("tasks")
-          .withIndex("by_user_completed_day", (q) =>
-            q
-              .eq("userId", user._id)
-              .gte("dateCompleted", period.start)
-              .lte("dateCompleted", period.end),
-          )
-          .take(5000);
-        for (const t of tasks) {
-          if (countsDirectly(t.attributedTrackableIds)) direct += 1;
+        const counts = countsOf(trackable);
+        if (counts.tasks) {
+          const tasks = await ctx.db
+            .query("tasks")
+            .withIndex("by_user_completed_day", (q) =>
+              q
+                .eq("userId", user._id)
+                .gte("dateCompleted", period.start)
+                .lte("dateCompleted", period.end),
+            )
+            .take(5000);
+          for (const t of tasks) {
+            if (countsDirectly(t.attributedTrackableIds)) direct += 1;
+          }
+        }
+        if (counts.events) {
+          const windows = await ctx.db
+            .query("timeWindows")
+            .withIndex("by_user_budget_day", (q) =>
+              q
+                .eq("userId", user._id)
+                .eq("budgetType", "ACTUAL")
+                .gte("startDayYYYYMMDD", period.start)
+                .lte("startDayYYYYMMDD", period.end),
+            )
+            .take(5000);
+          for (const w of windows) {
+            if (w.durationSeconds > 0 && countsDirectly(w.attributedTrackableIds)) {
+              direct += 1;
+            }
+          }
         }
       }
     }
@@ -513,5 +555,64 @@ export const counted = query({
           (b.startTimeHHMM ?? "").localeCompare(a.startTimeHHMM ?? ""),
       )
       .slice(0, limit);
+  },
+});
+
+/**
+ * A trackable over any stretch of days, for Analytics: each day's value
+ * in its own measure, the total, and the total for the same number of
+ * days just before, to compare with.
+ */
+export const range = query({
+  args: {
+    id: v.id("trackables"),
+    start: v.string(),
+    end: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUserOrEmpty(ctx);
+    if (!user) return null;
+    const trackable = await ctx.db.get(args.id);
+    if (!trackable || trackable.userId !== user._id) return null;
+    const { measure, goal } = shapeOf(trackable);
+    const cumulative = trackable.isCumulative !== false;
+    const start = toCompactYYYYMMDD(args.start);
+    const end = toCompactYYYYMMDD(args.end);
+
+    // The same number of days, ending the day before `start`.
+    let length = 1;
+    for (let d = start; d < end && length < MAX_DAYS; d = shiftDay(d, 1)) {
+      length += 1;
+    }
+    const previousStart = shiftDay(start, -length);
+    const days = await loadDays(ctx, trackable, previousStart, end);
+
+    const within = (from: string, to: string) => {
+      const out: DayFacts[] = [];
+      for (const [day, facts] of days) {
+        if (day >= from && day <= to) out.push(facts);
+      }
+      return out;
+    };
+    return {
+      measure,
+      goal,
+      cumulative,
+      start,
+      end,
+      total: measureValue(measure, within(start, end), cumulative),
+      previousTotal: measureValue(
+        measure,
+        within(previousStart, shiftDay(start, -1)),
+        cumulative,
+      ),
+      days: [...days.entries()]
+        .filter(([day]) => day >= start && day <= end)
+        .map(([day, facts]) => ({
+          dayYYYYMMDD: day,
+          value: measureValue(measure, [facts], cumulative),
+        }))
+        .filter((d) => d.value > 0),
+    };
   },
 });

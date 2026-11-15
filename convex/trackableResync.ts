@@ -218,3 +218,78 @@ export const runForAllUsers = internalMutation({
     return null;
   },
 });
+
+/**
+ * One-off: fill in `trackableDaySeconds.eventCount` (how many windows make
+ * up each day's seconds) for rows written before it existed, so "times
+ * done" trackables can count events from before the setting too.
+ * `npx convex run trackableResync:backfillEventCounts '{"userId": "..."}'`
+ *
+ * Two passes over one user: set every row's count to zero, then walk
+ * their ACTUAL windows and add one per trackable each counts toward.
+ * Run it when the user is not logging; a window saved between the passes
+ * could be counted twice.
+ */
+export const backfillEventCounts = internalMutation({
+  args: {
+    userId: v.id("users"),
+    phase: v.optional(v.union(v.literal("reset"), v.literal("count"))),
+    cursor: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const phase = args.phase ?? "reset";
+    const paginationOpts = { numItems: 200, cursor: args.cursor ?? null };
+    let isDone: boolean;
+    let continueCursor: string;
+    if (phase === "reset") {
+      const result = await ctx.db
+        .query("trackableDaySeconds")
+        .withIndex("by_user", (q) => q.eq("userId", args.userId))
+        .paginate(paginationOpts);
+      for (const row of result.page) {
+        await ctx.db.patch(row._id, { eventCount: 0 });
+      }
+      ({ isDone, continueCursor } = result);
+    } else {
+      const result = await ctx.db
+        .query("timeWindows")
+        .withIndex("by_user_budget_day", (q) =>
+          q.eq("userId", args.userId).eq("budgetType", "ACTUAL"),
+        )
+        .paginate(paginationOpts);
+      for (const tw of result.page) {
+        if ((tw.durationSeconds ?? 0) <= 0) continue;
+        for (const trackableId of tw.attributedTrackableIds ?? []) {
+          const row = await ctx.db
+            .query("trackableDaySeconds")
+            .withIndex("by_trackable_day", (q) =>
+              q
+                .eq("trackableId", trackableId)
+                .eq("dayYYYYMMDD", tw.startDayYYYYMMDD),
+            )
+            .unique();
+          if (row) {
+            await ctx.db.patch(row._id, {
+              eventCount: (row.eventCount ?? 0) + 1,
+            });
+          }
+        }
+      }
+      ({ isDone, continueCursor } = result);
+    }
+    if (!isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.trackableResync.backfillEventCounts,
+        { userId: args.userId, phase, cursor: continueCursor },
+      );
+    } else if (phase === "reset") {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.trackableResync.backfillEventCounts,
+        { userId: args.userId, phase: "count", cursor: null },
+      );
+    }
+    return null;
+  },
+});

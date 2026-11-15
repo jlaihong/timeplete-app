@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -25,6 +26,7 @@ import { addDays, todayYYYYMMDD } from "../../lib/dates";
 import {
   MEASURES,
   PERIODS,
+  countsOf,
   shapeOf,
   unitLabel,
   type GoalDirection,
@@ -85,6 +87,9 @@ export function TrackableForm({
   const [amount, setAmount] = useState("");
   const [period, setPeriod] = useState<GoalPeriod>("week");
   const [endDay, setEndDay] = useState("");
+  /** "Of those, count": for times done and days active. */
+  const [countEvents, setCountEvents] = useState(true);
+  const [countTasks, setCountTasks] = useState(true);
   /** For a number: add the values up, or average them (a rating). */
   const [cumulative, setCumulative] = useState(true);
   /** Rules for a trackable that does not exist yet. */
@@ -115,6 +120,9 @@ export function TrackableForm({
     }
     setEndDay(existing.endDayYYYYMMDD);
     setCumulative(existing.isCumulative !== false);
+    const counts = countsOf(existing);
+    setCountEvents(counts.events);
+    setCountTasks(counts.tasks);
   }, [existing]);
 
   const snapshot = JSON.stringify([
@@ -128,6 +136,8 @@ export function TrackableForm({
     period,
     endDay,
     cumulative,
+    countEvents,
+    countTasks,
     rules,
   ]);
   if (baseline.current === null && (!trackableId || loadedFor.current)) {
@@ -157,6 +167,8 @@ export function TrackableForm({
         colour,
         measure,
         goal: hasGoal ? { direction, amount: parsed, period } : null,
+        countEvents,
+        countTasks,
         isCumulative: measure === "number" ? cumulative : true,
         isRatingTracker: measure === "number" ? !cumulative : false,
         parentId:
@@ -216,6 +228,27 @@ export function TrackableForm({
       ) : (
         <TrackableRulesFields value={rules} onChange={setRulesDraft} />
       )}
+
+      {measure === "count" || measure === "days" ? (
+        <View>
+          <Text style={styles.subheading}>Of those, count</Text>
+          <View style={styles.checks}>
+            <Check
+              label="Events"
+              checked={countEvents}
+              onToggle={() => setCountEvents((v) => !v)}
+            />
+            <Check
+              label="Completed tasks"
+              checked={countTasks}
+              onToggle={() => setCountTasks((v) => !v)}
+            />
+          </View>
+          <Text style={styles.help}>
+            Check-ins you add by hand always count.
+          </Text>
+        </View>
+      ) : null}
 
       <View>
         <Text style={styles.heading}>Measure</Text>
@@ -329,6 +362,32 @@ export function TrackableForm({
   );
 }
 
+function Check({
+  label,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onToggle}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      style={styles.check}
+    >
+      <Ionicons
+        name={checked ? "checkbox" : "square-outline"}
+        size={20}
+        color={checked ? Colors.primary : Colors.textSecondary}
+      />
+      <Text style={styles.checkLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function Segmented<T extends string>({
   options,
   value,
@@ -413,6 +472,14 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.textSecondary,
   },
+  subheading: {
+    fontSize: FontSize.caption,
+    color: Colors.textSecondary,
+    marginBottom: 6,
+  },
+  checks: { flexDirection: "row", flexWrap: "wrap", gap: 18 },
+  check: { flexDirection: "row", alignItems: "center", gap: 8 },
+  checkLabel: { fontSize: FontSize.body, color: Colors.text },
   help: {
     marginTop: 4,
     fontSize: FontSize.caption,

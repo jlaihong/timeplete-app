@@ -12,6 +12,8 @@ import { stopTrackableDrag } from "./dragSafe";
 interface SubTrackablePillsProps {
   trackableId: Id<"trackables">;
   today: string;
+  /** Show these days instead of the trackable's current period. */
+  range?: { start: string; end: string };
   /** A sub-trackable's pill was pressed. */
   onPick: (trackableId: Id<"trackables">) => void;
 }
@@ -29,12 +31,13 @@ interface SubTrackablePillsProps {
 export function SubTrackablePills({
   trackableId,
   today,
+  range,
   onPick,
 }: SubTrackablePillsProps) {
   const { profileReady } = useAuth();
   const data = useQuery(
     api.trackableProgress.breakdown,
-    profileReady ? { id: trackableId, today } : "skip",
+    profileReady ? { id: trackableId, today, ...range } : "skip",
   );
   if (!data || data.parts.length === 0) return null;
 

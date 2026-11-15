@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  countsOf,
   describeGoal,
   formatMeasure,
   goalStatus,
@@ -86,7 +87,9 @@ test("the same days give each measure its own value", () => {
   ];
   assert.equal(measureValue("time", days), 3600);
   assert.equal(measureValue("count", days), 2);
-  assert.equal(measureValue("days", days), 2);
+  // A day is active when something countable happened; time alone is
+  // only counted when the trackable counts events (then it is in `count`).
+  assert.equal(measureValue("days", days), 1);
   assert.equal(measureValue("number", days), 16);
   assert.equal(measureValue("number", days, false), 8);
 });
@@ -103,4 +106,19 @@ test("goal status and wording", () => {
   assert.equal(formatMeasure("time", 16200), "4.5h");
   assert.equal(formatMeasure("time", 2700), "45m");
   assert.equal(formatMeasure("count", 3), "3");
+});
+
+test("what a trackable counts, before and after the setting existed", () => {
+  assert.deepEqual(countsOf({ trackableType: "NUMBER" }), {
+    events: false,
+    tasks: true,
+  });
+  assert.deepEqual(countsOf({ trackableType: "DAYS_A_WEEK" }), {
+    events: true,
+    tasks: true,
+  });
+  assert.deepEqual(
+    countsOf({ trackableType: "NUMBER", countEvents: true, countTasks: false }),
+    { events: true, tasks: false },
+  );
 });
