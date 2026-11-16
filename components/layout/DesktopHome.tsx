@@ -53,6 +53,7 @@ function HomeColumnsGate({
   setAddTaskDay,
   selectedTaskId,
   setSelectedTaskId,
+  closeTask,
   onTaskDirtyChange,
   setEventDialog,
   setShowAddTrackable,
@@ -71,6 +72,8 @@ function HomeColumnsGate({
   setAddTaskDay: (day: string | undefined) => void;
   selectedTaskId: Id<"tasks"> | null;
   setSelectedTaskId: (id: Id<"tasks"> | null) => void;
+  /** Closes the open task without asking; the panel guards its own exits. */
+  closeTask: () => void;
   onTaskDirtyChange: (dirty: boolean) => void;
   setEventDialog: (s: DialogState) => void;
   setShowAddTrackable: (b: boolean) => void;
@@ -180,7 +183,7 @@ function HomeColumnsGate({
             key={selectedTaskId}
             presentation="panel"
             taskId={selectedTaskId}
-            onClose={() => setSelectedTaskId(null)}
+            onClose={closeTask}
             onDirtyChange={onTaskDirtyChange}
           />
         )}
@@ -230,6 +233,12 @@ export function DesktopHome() {
       return;
     }
     setSelectedTaskId(id);
+  };
+  // The panel's own close (after Save, Cancel, or its confirmed ✕/Escape)
+  // must not ask again: right after a save the dirty flag is still stale.
+  const closeTask = () => {
+    taskDirtyRef.current = false;
+    setSelectedTaskId(null);
   };
 
   // Trackable dialogs are owned here (rather than inside `TrackableList`) so
@@ -284,6 +293,7 @@ export function DesktopHome() {
           setAddTaskDay={setAddTaskDay}
           selectedTaskId={selectedTaskId}
           setSelectedTaskId={selectTask}
+          closeTask={closeTask}
           onTaskDirtyChange={(dirty) => {
             taskDirtyRef.current = dirty;
           }}
