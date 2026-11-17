@@ -412,6 +412,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
 
   const onHome = useCallback(() => go("/(app)/(tabs)"), [go]);
   const onTrackables = useCallback(() => go("/(app)/(tabs)/goals"), [go]);
+  const onCalendar = useCallback(() => go("/(app)/(tabs)/calendar"), [go]);
   const onAnalytics = useCallback(() => go("/(app)/(tabs)/analytics"), [go]);
   const onReviews = useCallback(() => go("/(app)/(tabs)/reviews"), [go]);
   const onPages = useCallback(() => go("/(app)/pages"), [go]);
@@ -508,6 +509,14 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
             touch={touch}
           />
         ) : null}
+        <NavRow
+          label="Calendar"
+          focused={sel.calendar}
+          iconName="calendar-outline"
+          onPress={onCalendar}
+          rail={rail}
+          touch={touch}
+        />
         <NavRow
           label="Trackables"
           focused={sel.goals}

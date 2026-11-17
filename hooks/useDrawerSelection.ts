@@ -8,6 +8,7 @@ export type DrawerSelection = {
   home: boolean;
   inbox: boolean;
   goals: boolean;
+  calendar: boolean;
   analytics: boolean;
   reviews: boolean;
   pages: boolean;
@@ -23,6 +24,7 @@ const empty: DrawerSelection = {
   home: false,
   inbox: false,
   goals: false,
+  calendar: false,
   analytics: false,
   reviews: false,
   pages: false,
@@ -68,6 +70,7 @@ export function useDrawerSelection(): DrawerSelection {
     if (path === "/goals" || path.startsWith("/edit-trackable/")) {
       return { ...empty, goals: true };
     }
+    if (path === "/calendar") return { ...empty, calendar: true };
     if (path === "/analytics") return { ...empty, analytics: true };
     if (path === "/reviews") return { ...empty, reviews: true };
 
