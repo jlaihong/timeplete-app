@@ -129,9 +129,33 @@ function installNonMacUniversalScrollbarStyles(): () => void {
   };
 }
 
+const COLOR_SCHEME_STYLE_ID = "timeplete-color-scheme";
+
+/**
+ * Tells the browser the page is dark. Without it the browser assumes a
+ * light page and draws its own scrollbars to suit one: on macOS, hovering
+ * or dragging an overlay scrollbar widened it into a pale track with a dark
+ * thumb, which glared against the app's dark panels. With it, the system
+ * scrollbar (and other browser-drawn controls) use their dark look.
+ */
+function installDarkColorScheme(): () => void {
+  if (!document.getElementById(COLOR_SCHEME_STYLE_ID)) {
+    const style = document.createElement("style");
+    style.id = COLOR_SCHEME_STYLE_ID;
+    style.textContent = ":root { color-scheme: dark; }";
+    document.head.appendChild(style);
+  }
+  return () => {
+    document.getElementById(COLOR_SCHEME_STYLE_ID)?.remove();
+  };
+}
+
 /**
  * Installs global scrollbar appearance for react-native-web `ScrollView` and
  * other overflow regions (Chrome/Safari: webkit; Firefox: scrollbar-color).
+ *
+ * Every platform: the page is declared dark so browser-drawn scrollbars
+ * match the app (see `installDarkColorScheme`).
  *
  * Non-mac: scrollbars stay hidden until hover / focus-within / active scroll,
  * except **Edit Trackable → Tracking history**, which is excluded via
@@ -143,5 +167,10 @@ export function installWebScrollbarStyles(): () => void {
   if (Platform.OS !== "web") return () => {};
   if (typeof document === "undefined") return () => {};
 
-  return installNonMacUniversalScrollbarStyles();
+  const removeColorScheme = installDarkColorScheme();
+  const removeNonMac = installNonMacUniversalScrollbarStyles();
+  return () => {
+    removeNonMac();
+    removeColorScheme();
+  };
 }
