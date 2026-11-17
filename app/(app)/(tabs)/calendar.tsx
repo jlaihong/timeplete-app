@@ -9,6 +9,13 @@ import {
 import { EventDialog } from "../../../components/calendar/EventDialog";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
 import { HomeDndProvider } from "../../../components/dnd/HomeDndProvider";
+import {
+  CalendarModeSwitch,
+  CalendarMonthView,
+  CalendarWeekView,
+  type CalendarMode,
+} from "../../../components/calendar/CalendarRangeViews";
+import { todayYYYYMMDD } from "../../../lib/dates";
 
 /**
  * Single dialog state — there is one EventDialog instance reused for
@@ -27,23 +34,42 @@ type DialogState =
 export default function CalendarScreen() {
   const isDesktop = useIsDesktop();
   const [dialog, setDialog] = useState<DialogState>(null);
+  // One day is shared by all three views: it is the day shown, or the
+  // day whose week or month is shown, so switching views stays in place.
+  const [mode, setMode] = useState<CalendarMode>("day");
+  const [day, setDay] = useState(todayYYYYMMDD());
+  const addEvent = (onDay: string, prefill?: AddEventPrefill) =>
+    setDialog({ mode: "create", day: onDay, prefill: prefill ?? null });
+  const editEvent = (event: EditEventPayload) =>
+    setDialog({ mode: "edit", day: event.startDayYYYYMMDD, event });
+  const rangeProps = {
+    anchorDay: day,
+    onAnchorDayChange: setDay,
+    onOpenDay: (d: string) => {
+      setDay(d);
+      setMode("day");
+    },
+    onAddEvent: addEvent,
+    onEditEvent: editEvent,
+  };
 
   return (
     <HomeDndProvider>
       <View style={styles.container}>
-        <CalendarView
-          title={isDesktop ? "Calendar" : undefined}
-          onAddEvent={(day, prefill) => {
-            setDialog({ mode: "create", day, prefill: prefill ?? null });
-          }}
-          onEditEvent={(event) => {
-            setDialog({
-              mode: "edit",
-              day: event.startDayYYYYMMDD,
-              event,
-            });
-          }}
-        />
+        <CalendarModeSwitch mode={mode} onChange={setMode} />
+        {mode === "day" ? (
+          <CalendarView
+            title={isDesktop ? "Calendar" : undefined}
+            day={day}
+            onSelectedDayChange={setDay}
+            onAddEvent={addEvent}
+            onEditEvent={editEvent}
+          />
+        ) : mode === "week" ? (
+          <CalendarWeekView {...rangeProps} />
+        ) : (
+          <CalendarMonthView {...rangeProps} />
+        )}
 
         {dialog && (
           <EventDialog

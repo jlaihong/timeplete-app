@@ -27,7 +27,8 @@ import { Input } from "../ui/Input";
 import { Card } from "../ui/Card";
 import { TracksToField } from "../trackables/TracksToField";
 import { ListPicker } from "./ListPicker";
-import { addDays, formatDisplayDate, todayYYYYMMDD } from "../../lib/dates";
+import { addDays, todayYYYYMMDD } from "../../lib/dates";
+import { DateField } from "../ui/DateField";
 import { Id } from "../../convex/_generated/dataModel";
 import { useAuth } from "../../hooks/useAuth";
 import { useTaskUpsertMutation } from "../../hooks/useTaskUpsertMutation";
@@ -149,10 +150,6 @@ export function AddTaskSheet({
   const dayChips: ChoiceChip<string | null>[] = [
     { value: today, label: "Today" },
     { value: tomorrow, label: "Tomorrow" },
-    // The day the sheet was opened for, when it is neither of the above.
-    ...(day && day !== today && day !== tomorrow
-      ? [{ value: day, label: formatDisplayDate(day) }]
-      : []),
     { value: null, label: "No date" },
   ];
 
@@ -266,8 +263,15 @@ export function AddTaskSheet({
               onSubmitEditing={handleCreate}
             />
 
+            {/* Any date through the picker; the chips are the common
+                answers in one tap. Same pair as the task detail sheet. */}
+            <DateField
+              label="Scheduled date"
+              value={taskDay ?? ""}
+              clearable
+              onChange={(yyyymmdd) => setTaskDay(yyyymmdd || null)}
+            />
             <ChoiceChips
-              label="When"
               chips={dayChips}
               value={taskDay}
               onChange={setTaskDay}

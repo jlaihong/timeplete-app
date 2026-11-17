@@ -125,6 +125,12 @@ export interface EditEventPayload {
 
 interface CalendarViewProps {
   title?: string;
+  /**
+   * Day to show. The view still moves on its own (arrows, Today, week
+   * strip) and reports that through `onSelectedDayChange`; a host that
+   * also shows other views of the calendar passes the day back in here.
+   */
+  day?: string;
   onAddEvent?: (day: string, prefill?: AddEventPrefill) => void;
   /**
    * Notify the host that the user clicked an event and wants to edit
@@ -145,6 +151,7 @@ interface CalendarViewProps {
  * ──────────────────────────────────────────────────────────────────────── */
 export function CalendarView({
   title,
+  day,
   onAddEvent,
   onEditEvent,
   onSelectedDayChange,
@@ -158,7 +165,10 @@ export function CalendarView({
     }
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
   }, [timerHook.isRunning, timerHook.canonicalTimeZone]);
-  const [selectedDay, setSelectedDay] = useState(todayYYYYMMDD());
+  const [selectedDay, setSelectedDay] = useState(day ?? todayYYYYMMDD());
+  useEffect(() => {
+    if (day) setSelectedDay(day);
+  }, [day]);
 
   /**
    * Native-only "edit mode": on iOS/Android, long-pressing an event
