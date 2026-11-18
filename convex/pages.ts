@@ -1,7 +1,8 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation, mutation, query } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import {
   loadMentionSource,
@@ -16,6 +17,7 @@ import {
   refreshMentionNames,
   sanitizePageName,
 } from "../lib/mentions";
+import { MAX_PAGE_DEPTH, pageFitsUnder, placePage } from "../lib/pageTree";
 
 const kindValidator = v.union(
   v.literal("person"),
@@ -25,6 +27,57 @@ const kindValidator = v.union(
 
 /** Texts rewritten per run of a background job. */
 const BATCH = 50;
+
+/**
+ * The page another one is about to be put under, checked: it is the
+ * user's, it is neither the moved page nor anything below it, and the
+ * tree stays within `MAX_PAGE_DEPTH` levels.
+ * `movedId` is absent when the page does not exist yet.
+ */
+async function loadParent(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  parentId: Id<"pages">,
+  movedId?: Id<"pages">,
+): Promise<Doc<"pages">> {
+  const parent = await ctx.db.get(parentId);
+  if (!parent || parent.userId !== userId) {
+    throw new Error("The page to put it under was not found");
+  }
+  // 1 for a top-level parent.
+  let parentLevel = 0;
+  let at: Doc<"pages"> | null = parent;
+  while (at && parentLevel < 50) {
+    if (at._id === movedId) {
+      throw new Error("A page cannot sit under itself");
+    }
+    parentLevel++;
+    at = at.parentId ? await ctx.db.get(at.parentId) : null;
+  }
+
+  // Levels hanging below the moved page: they move with it.
+  let levelsBelow = 0;
+  let frontier: Id<"pages">[] = movedId ? [movedId] : [];
+  while (frontier.length > 0 && levelsBelow <= MAX_PAGE_DEPTH) {
+    const next: Id<"pages">[] = [];
+    for (const id of frontier) {
+      const children = await ctx.db
+        .query("pages")
+        .withIndex("by_parent", (q) => q.eq("parentId", id))
+        .take(2000);
+      for (const child of children) next.push(child._id);
+    }
+    if (next.length === 0) break;
+    levelsBelow++;
+    frontier = next;
+  }
+  if (!pageFitsUnder(parentLevel, levelsBelow)) {
+    throw new Error(
+      `Pages nest ${MAX_PAGE_DEPTH} levels deep at most. Move it higher up.`,
+    );
+  }
+  return parent;
+}
 
 /** Every page the user has. Small rows; the app keeps this list loaded. */
 export const list = query({
@@ -160,9 +213,15 @@ export const backlinks = query({
 /**
  * Create a page, or return the one that already has this name (so typing
  * "@Wesley" and choosing "Create" twice does not make two Wesleys).
+ * `parentId` places a new page under another; a page that already exists
+ * stays where it is.
  */
 export const create = mutation({
-  args: { name: v.string(), kind: v.optional(kindValidator) },
+  args: {
+    name: v.string(),
+    kind: v.optional(kindValidator),
+    parentId: v.optional(v.id("pages")),
+  },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
     const name = sanitizePageName(args.name);
@@ -177,10 +236,14 @@ export const create = mutation({
     );
     if (same) return same._id;
 
+    const parent = args.parentId
+      ? await loadParent(ctx, user._id, args.parentId)
+      : null;
     return await ctx.db.insert("pages", {
       userId: user._id,
       name,
       kind: args.kind,
+      parentId: parent?._id,
     });
   },
 });
@@ -191,6 +254,8 @@ export const update = mutation({
     name: v.optional(v.string()),
     kind: v.optional(kindValidator),
     notes: v.optional(v.string()),
+    /** The page to put it under; `null` takes it back to the top level. */
+    parentId: v.optional(v.union(v.id("pages"), v.null())),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
@@ -198,6 +263,20 @@ export const update = mutation({
     if (!page || page.userId !== user._id) throw new Error("Page not found");
 
     const patch: Partial<Doc<"pages">> = {};
+    if (args.parentId === null) {
+      patch.parentId = undefined;
+    } else if (args.parentId !== undefined && args.parentId !== page.parentId) {
+      patch.parentId = (
+        await loadParent(ctx, user._id, args.parentId, page._id)
+      )._id;
+    }
+    // In a new place it has no hand-set position yet (`move` gives one).
+    if (
+      args.parentId !== undefined &&
+      (args.parentId ?? undefined) !== page.parentId
+    ) {
+      patch.orderIndex = undefined;
+    }
     if (args.kind !== undefined) patch.kind = args.kind;
     if (args.notes !== undefined) patch.notes = args.notes;
     let renamed = false;
@@ -227,8 +306,63 @@ export const update = mutation({
 });
 
 /**
+ * Put a page under `parentId` (`null`: the top level) at a chosen place
+ * among the pages there: before `beforeId`, after `afterId`, or last.
+ * With the parent it already has, this just rearranges.
+ */
+export const move = mutation({
+  args: {
+    id: v.id("pages"),
+    parentId: v.union(v.id("pages"), v.null()),
+    beforeId: v.optional(v.id("pages")),
+    afterId: v.optional(v.id("pages")),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireApprovedUser(ctx);
+    const page = await ctx.db.get(args.id);
+    if (!page || page.userId !== user._id) throw new Error("Page not found");
+
+    const parent =
+      args.parentId === null
+        ? null
+        : args.parentId === page.parentId
+          ? await ctx.db.get(args.parentId)
+          : await loadParent(ctx, user._id, args.parentId, page._id);
+    if (args.parentId !== null && !parent) throw new Error("Page not found");
+
+    const siblings = parent
+      ? await ctx.db
+          .query("pages")
+          .withIndex("by_parent", (q) => q.eq("parentId", parent._id))
+          .take(2000)
+      : (
+          await ctx.db
+            .query("pages")
+            .withIndex("by_user", (q) => q.eq("userId", user._id))
+            .take(2000)
+        ).filter((p) => p.parentId === undefined);
+    const current = new Map(siblings.map((p) => [p._id as string, p]));
+
+    for (const placed of placePage(siblings, page._id, args)) {
+      if (placed._id === page._id) {
+        await ctx.db.patch(page._id, {
+          parentId: parent?._id,
+          orderIndex: placed.orderIndex,
+        });
+      } else if (current.get(placed._id)?.orderIndex !== placed.orderIndex) {
+        await ctx.db.patch(placed._id as Id<"pages">, {
+          orderIndex: placed.orderIndex,
+        });
+      }
+    }
+    return null;
+  },
+});
+
+/**
  * Delete a page. Texts that mention it keep the words but lose the link,
- * which a background job works through.
+ * which a background job works through. Pages under it move up to where
+ * it sat.
  */
 export const remove = mutation({
   args: { id: v.id("pages") },
@@ -249,6 +383,13 @@ export const remove = mutation({
         phase: "tasks",
         cursor: null,
       });
+    }
+    const children = await ctx.db
+      .query("pages")
+      .withIndex("by_parent", (q) => q.eq("parentId", args.id))
+      .take(2000);
+    for (const child of children) {
+      await ctx.db.patch(child._id, { parentId: page.parentId });
     }
     await ctx.db.delete(args.id);
     await ctx.scheduler.runAfter(0, internal.pages.flattenBatch, {

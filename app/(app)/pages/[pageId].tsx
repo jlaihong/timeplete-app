@@ -28,6 +28,18 @@ import { reviewPeriodLabel } from "../../../lib/reviewPeriod";
 import { formatDisplayDate } from "../../../lib/dates";
 import { useAuth } from "../../../hooks/useAuth";
 import { useIsDesktop } from "../../../hooks/useIsDesktop";
+import { usePages, rememberCreatedPage } from "../../../hooks/usePages";
+import { MovePageDialog } from "../../../components/pages/MovePageDialog";
+import { PAGE_KIND_ICON } from "../../../components/mentions/pageKinds";
+import { sanitizePageName } from "../../../lib/mentions";
+import { openPage } from "../../../lib/openPage";
+import {
+  MAX_PAGE_DEPTH,
+  pageParentOptions,
+  pageAncestors,
+  pageChildren,
+  pageDescendantIds,
+} from "../../../lib/pageTree";
 
 const FREQUENCY_NAME = {
   DAILY: "Daily review",
@@ -58,8 +70,9 @@ function backlinkTarget(b: {
 }
 
 /**
- * One page: its name, what you know about it, and every text that
- * mentions it. Name, kind and notes save as you go.
+ * One page: where it sits, its name, what you know about it, the pages
+ * under it, and every text that mentions it. Name, kind and notes save
+ * as you go.
  */
 export default function PageScreen() {
   const { pageId } = useLocalSearchParams<{ pageId: string }>();
@@ -73,6 +86,10 @@ export default function PageScreen() {
   );
   const updatePage = useMutation(api.pages.update);
   const removePage = useMutation(api.pages.remove);
+  const createPage = useMutation(api.pages.create);
+  const { pages, byId } = usePages();
+  const [moving, setMoving] = useState(false);
+  const [subName, setSubName] = useState("");
 
   /* Name and notes: what is typed is kept here until the server has it. */
   const [name, setName] = useState<string | null>(null);
@@ -86,9 +103,16 @@ export default function PageScreen() {
     setName(null);
     setNotes(null);
     setError(null);
+    setMoving(false);
+    setSubName("");
   }, [id]);
 
-  const save = (patch: { name?: string; kind?: PageKind; notes?: string }) => {
+  const save = (patch: {
+    name?: string;
+    kind?: PageKind;
+    notes?: string;
+    parentId?: Id<"pages"> | null;
+  }) => {
     setError(null);
     return updatePage({ id, ...patch }).catch((e) => {
       setError(e instanceof Error ? e.message : "Couldn't save. Try again.");
@@ -128,7 +152,10 @@ export default function PageScreen() {
       await removePage({ id });
       back();
     };
-    const message = `Delete the page "${page.name}"? Texts that mention it keep the name as plain words. This cannot be undone.`;
+    const under = pages.some((p) => p.parentId === id)
+      ? " The pages under it move up a level."
+      : "";
+    const message = `Delete the page "${page.name}"? Texts that mention it keep the name as plain words.${under} This cannot be undone.`;
     if (Platform.OS === "web") {
       // eslint-disable-next-line no-alert
       if (window.confirm(message)) void run();
@@ -163,6 +190,37 @@ export default function PageScreen() {
     );
   }
 
+  const ancestors = pageAncestors(byId, id);
+  const children = pageChildren(pages, id);
+
+  /* "Add a page under this": a new name makes a page here; the name of a
+   * page that already exists moves that page here. */
+  const subTyped = sanitizePageName(subName);
+  const subExisting = subTyped
+    ? pages.find((p) => p.name.toLowerCase() === subTyped.toLowerCase())
+    : undefined;
+  const subBlocked =
+    subExisting !== undefined &&
+    (subExisting.parentId === id ||
+      !pageParentOptions(pages, subExisting._id).has(id));
+  /** At the deepest level nothing can go under this page. */
+  const canHoldPages = ancestors.length + 1 < MAX_PAGE_DEPTH;
+  const addSubPage = async () => {
+    if (!subTyped || subBlocked) return;
+    setError(null);
+    try {
+      if (subExisting) {
+        await updatePage({ id: subExisting._id, parentId: id });
+      } else {
+        const created = await createPage({ name: subTyped, parentId: id });
+        rememberCreatedPage(created, subTyped);
+      }
+      setSubName("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save. Try again.");
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ title: page.name }} />
@@ -170,6 +228,34 @@ export default function PageScreen() {
         contentContainerStyle={[styles.content, pageColumnStyle]}
         keyboardShouldPersistTaps="handled"
       >
+        {ancestors.length > 0 ? (
+          <View
+            style={styles.crumbs}
+            accessibilityRole={Platform.OS === "web" ? ("navigation" as never) : undefined}
+            accessibilityLabel="Where this page sits"
+          >
+            {ancestors.map((a, i) => (
+              <React.Fragment key={a._id}>
+                {i > 0 ? <Text style={styles.crumbSep}>›</Text> : null}
+                <Pressable
+                  onPress={(e) =>
+                    openPage(
+                      a._id,
+                      (e as unknown as { nativeEvent?: MouseEvent }).nativeEvent,
+                    )
+                  }
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open ${a.name}`}
+                  hitSlop={6}
+                >
+                  <Text style={styles.crumb} numberOfLines={1}>
+                    {a.name}
+                  </Text>
+                </Pressable>
+              </React.Fragment>
+            ))}
+          </View>
+        ) : null}
         <View style={styles.header}>
           {isDesktop ? (
             <Pressable
@@ -200,6 +286,23 @@ export default function PageScreen() {
               Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : null,
             ]}
           />
+          <Pressable
+            onPress={() => setMoving(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Move page"
+            hitSlop={6}
+            style={(state) => [
+              styles.iconBtn,
+              ((state as { hovered?: boolean }).hovered || state.pressed) &&
+                styles.iconBtnHover,
+            ]}
+          >
+            <Ionicons
+              name="return-down-forward-outline"
+              size={18}
+              color={Colors.textSecondary}
+            />
+          </Pressable>
           <Pressable
             onPress={confirmDelete}
             accessibilityRole="button"
@@ -252,6 +355,79 @@ export default function PageScreen() {
         />
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
+        {canHoldPages || children.length > 0 ? (
+          <Text style={styles.section}>Pages under this</Text>
+        ) : null}
+        {children.map((child) => (
+          <Pressable
+            key={child._id}
+            onPress={(e) =>
+              openPage(
+                child._id,
+                (e as unknown as { nativeEvent?: MouseEvent }).nativeEvent,
+              )
+            }
+            accessibilityRole="link"
+            accessibilityLabel={`Open ${child.name}`}
+            style={(state) => [
+              styles.subRow,
+              ((state as { hovered?: boolean }).hovered || state.pressed) &&
+                styles.subRowHover,
+            ]}
+          >
+            <Ionicons
+              name={PAGE_KIND_ICON[child.kind ?? "other"]}
+              size={16}
+              color={Colors.textSecondary}
+            />
+            <Text style={styles.subName} numberOfLines={1}>
+              {child.name}
+            </Text>
+            {pageDescendantIds(pages, child._id).size > 0 ? (
+              <Text style={styles.subNote}>
+                +{pageDescendantIds(pages, child._id).size}
+              </Text>
+            ) : null}
+          </Pressable>
+        ))}
+        {canHoldPages ? (
+        <View style={styles.subRow}>
+          <Ionicons name="add" size={16} color={Colors.textTertiary} />
+          <TextInput
+            value={subName}
+            onChangeText={setSubName}
+            onSubmitEditing={() => void addSubPage()}
+            placeholder="Add a page under this"
+            placeholderTextColor={Colors.textTertiary}
+            accessibilityLabel="Add a page under this"
+            returnKeyType="done"
+            blurOnSubmit={false}
+            style={[
+              styles.subInput,
+              Platform.OS === "web" ? ({ outlineStyle: "none" } as object) : null,
+            ]}
+          />
+          {subTyped && !subBlocked ? (
+            <Pressable
+              onPress={() => void addSubPage()}
+              accessibilityRole="button"
+              hitSlop={6}
+            >
+              <Text style={styles.subAction}>
+                {subExisting ? "Move here" : "Create"}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+        ) : null}
+        {subBlocked ? (
+          <Text style={styles.subHint}>
+            {subExisting?.parentId === id
+              ? "That page is already here."
+              : "That page can't go under this one."}
+          </Text>
+        ) : null}
+
         <Text style={styles.section}>Mentioned in</Text>
         {backlinks === undefined ? (
           <Text style={styles.quietInline}>Loading…</Text>
@@ -287,6 +463,17 @@ export default function PageScreen() {
           })
         )}
       </ScrollView>
+      {moving ? (
+        <MovePageDialog
+          page={page}
+          pages={pages}
+          onClose={() => setMoving(false)}
+          onMove={(parentId) => {
+            setMoving(false);
+            if (parentId !== (page.parentId ?? null)) void save({ parentId });
+          }}
+        />
+      ) : null}
     </View>
   );
 }
@@ -313,6 +500,48 @@ const styles = StyleSheet.create({
     fontSize: FontSize.body,
     fontWeight: "600",
     color: Colors.primary,
+  },
+
+  crumbs: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 6,
+    paddingTop: 12,
+    marginBottom: -8,
+  },
+  crumb: { fontSize: FontSize.caption, color: Colors.textSecondary },
+  crumbSep: { fontSize: FontSize.caption, color: Colors.textTertiary },
+  subRow: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 8,
+    borderRadius: Radius.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.borderLight,
+  },
+  subRowHover: { backgroundColor: Colors.surfaceContainerLow },
+  subName: { flex: 1, minWidth: 0, fontSize: FontSize.body, color: Colors.text },
+  subNote: { fontSize: FontSize.caption, color: Colors.textTertiary },
+  subInput: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: FontSize.body,
+    color: Colors.text,
+    paddingVertical: 8,
+  },
+  subAction: {
+    fontSize: FontSize.caption,
+    fontWeight: "600",
+    color: Colors.primary,
+  },
+  subHint: {
+    fontSize: FontSize.caption,
+    color: Colors.textTertiary,
+    marginTop: 6,
+    paddingHorizontal: 8,
   },
 
   header: {

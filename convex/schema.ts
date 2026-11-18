@@ -735,7 +735,22 @@ export default defineSchema({
     ),
     /** What the owner knows about it. Free text. */
     notes: v.optional(v.string()),
-  }).index("by_user", ["userId"]),
+    /**
+     * Pages nest: "Wesley" under "Family". Absent for a top-level page,
+     * which is what every page was before nesting existed. Only the
+     * parent is stored; the app holds every page and builds the tree
+     * (see `lib/pageTree.ts`).
+     */
+    parentId: v.optional(v.id("pages")),
+    /**
+     * Place among the pages with the same parent, set when the owner
+     * arranges them by hand. Pages without one follow those with one,
+     * by name (see `comparePages`).
+     */
+    orderIndex: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_parent", ["parentId"]),
 
   /**
    * Index of which texts mention which page, rebuilt whenever a text is
