@@ -25,7 +25,7 @@ import {
   syncTaskAttribution,
 } from "./_helpers/trackableLifetime";
 import { claimClientMutationId } from "./_helpers/clientMutationId";
-import { applyTillEndShift } from "./_helpers/orderShift";
+import { planTaskSectionMove } from "./_helpers/taskSectionMove";
 import { moveTaskBetweenDays } from "./_helpers/taskDayMove";
 import {
   removeMentionsForSource,
@@ -660,8 +660,10 @@ export const moveBetweenSections = mutation({
   args: {
     taskId: v.id("tasks"),
     toSectionId: v.id("listSections"),
+    /** Row to land above; `null` appends. Preferred over `toIndex`. */
+    insertAboveTaskId: v.optional(v.union(v.id("tasks"), v.null())),
     toIndex: v.optional(v.number()),
-    /** @deprecated Use `toIndex`. Kept so a stale client or function can still talk. */
+    /** @deprecated Use `insertAboveTaskId`. Kept for clients on an older build. */
     newOrderIndex: v.optional(v.number()),
     clientMutationId: v.optional(v.string()),
   },
@@ -701,37 +703,29 @@ export const moveBetweenSections = mutation({
       return canonicalDefault._id;
     };
 
-    const fromSectionId = logicalSectionId(task);
-    const fromIndex = task.sectionOrderIndex ?? 0;
-    const toIndex = resolveMoveToIndex(args);
-    if (fromSectionId === args.toSectionId && fromIndex === toIndex) {
-      return;
-    }
+    const plan = planTaskSectionMove({
+      tasks: allOnList,
+      taskId: args.taskId,
+      sectionOf: logicalSectionId,
+      toSectionId: args.toSectionId,
+      ...(args.insertAboveTaskId !== undefined
+        ? { insertAboveId: args.insertAboveTaskId }
+        : { toIndex: resolveMoveToIndex(args) }),
+    });
+    if (!plan.moved) return;
 
-    const shifted = applyTillEndShift(
-      allOnList,
-      (t) => t.sectionOrderIndex ?? 0,
-      (t, order) => ({ ...t, sectionOrderIndex: order }),
-      fromIndex,
-      toIndex,
-      (t) => t._id === args.taskId,
-      (t) => logicalSectionId(t) === fromSectionId,
-      (t) => logicalSectionId(t) === args.toSectionId,
-    );
-
-    for (const next of shifted) {
-      if (next._id === args.taskId) continue;
-      const prev = allOnList.find((t) => t._id === next._id);
-      if (prev && next.sectionOrderIndex !== prev.sectionOrderIndex) {
-        await ctx.db.patch(next._id, {
-          sectionOrderIndex: next.sectionOrderIndex,
-          sectionId: logicalSectionId(prev),
-        });
-      }
+    const byId = new Map(allOnList.map((t) => [t._id as string, t]));
+    for (const shift of plan.shifts) {
+      const prev = byId.get(shift._id);
+      if (!prev) continue;
+      await ctx.db.patch(prev._id, {
+        sectionOrderIndex: shift.sectionOrderIndex,
+        sectionId: logicalSectionId(prev),
+      });
     }
 
     await ctx.db.patch(args.taskId, {
-      sectionOrderIndex: toIndex,
+      sectionOrderIndex: plan.moved.sectionOrderIndex,
       sectionId: args.toSectionId,
     });
   },

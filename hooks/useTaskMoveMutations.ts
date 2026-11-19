@@ -57,6 +57,7 @@ export function useTaskMoveMutations() {
     (args: {
       taskId: Id<"tasks">;
       toSectionId: Id<"listSections">;
+      insertAboveTaskId: Id<"tasks"> | null;
       toIndex: number;
       clientMutationId?: string;
     }) =>

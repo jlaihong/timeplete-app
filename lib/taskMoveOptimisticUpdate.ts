@@ -9,8 +9,11 @@ import type { OptimisticLocalStore } from "convex/browser";
 import type { FunctionReturnType } from "convex/server";
 import type { Id } from "../convex/_generated/dataModel";
 import { api } from "../convex/_generated/api";
-import { applyTillEndShift } from "../convex/_helpers/orderShift";
 import { planTaskDayMove } from "../convex/_helpers/taskDayMove";
+import {
+  compareTasksForListView,
+  planTaskSectionMove,
+} from "../convex/_helpers/taskSectionMove";
 
 type HomeRow = FunctionReturnType<typeof api.tasks.getHomeTasks>[number];
 
@@ -123,83 +126,67 @@ export function applyMoveBetweenDaysOptimisticUpdate(
 }
 
 /**
- * Sections still address the slot by `sectionOrderIndex`, which has the same
- * duplicate exposure days had before `insertAboveTaskId`. Left as-is for now;
- * list reorder has not been reported wrong.
+ * Runs the mutation's own `planTaskSectionMove`, for the same reason day
+ * moves run `planTaskDayMove`.
  */
 export function applyMoveBetweenSectionsOptimisticUpdate(
   localStore: OptimisticLocalStore,
   args: {
     taskId: Id<"tasks">;
     toSectionId: Id<"listSections">;
+    insertAboveTaskId?: Id<"tasks"> | null;
     toIndex?: number;
     newOrderIndex?: number;
   },
 ): void {
   const toIndex = args.toIndex ?? args.newOrderIndex;
-  if (toIndex === undefined) return;
+  if (args.insertAboveTaskId === undefined && toIndex === undefined) return;
 
   for (const q of localStore.getAllQueries(api.lists.getPaginated)) {
     const page = q.value;
     if (!page) continue;
 
-    let moving: (typeof page.sections)[number]["tasks"][number] | null = null;
-    let fromSectionId: Id<"listSections"> | null = null;
+    const shownIn = new Map<string, Id<"listSections">>();
     for (const sec of page.sections) {
-      const found = sec.tasks.find((t) => t._id === args.taskId);
-      if (found) {
-        moving = found;
-        fromSectionId = sec.section._id;
-        break;
-      }
+      for (const t of sec.tasks) shownIn.set(t._id, sec.section._id);
     }
-    if (!moving || !fromSectionId) continue;
+    if (!shownIn.has(args.taskId)) continue;
+    if (!page.sections.some((sec) => sec.section._id === args.toSectionId)) {
+      continue;
+    }
 
-    const fromIndex = moving.sectionOrderIndex ?? 0;
-    const flat = page.sections.flatMap((sec) =>
-      sec.tasks.map((t) => ({
-        ...t,
-        _sectionId: sec.section._id as Id<"listSections">,
-      })),
+    const flat = page.sections.flatMap((sec) => sec.tasks);
+    const plan = planTaskSectionMove({
+      tasks: flat,
+      taskId: args.taskId,
+      sectionOf: (t) => shownIn.get(t._id) ?? "",
+      toSectionId: args.toSectionId,
+      ...(args.insertAboveTaskId !== undefined
+        ? { insertAboveId: args.insertAboveTaskId }
+        : { toIndex }),
+    });
+    if (!plan.moved) continue;
+
+    const moving = flat.find((t) => t._id === args.taskId)!;
+    const shifts = new Map(
+      plan.shifts.map((s) => [s._id, s.sectionOrderIndex]),
     );
-    const shifted = applyTillEndShift(
-      flat,
-      (t) => t.sectionOrderIndex ?? 0,
-      (t, order) => ({ ...t, sectionOrderIndex: order }),
-      fromIndex,
-      toIndex,
-      (t) => t._id === args.taskId,
-      (t) => t._sectionId === fromSectionId,
-      (t) => t._sectionId === args.toSectionId,
-    );
-    const byId = new Map(shifted.map((t) => [t._id, t]));
 
     const sections = page.sections.map((sec) => {
-      const isFrom = sec.section._id === fromSectionId;
-      const isTo = sec.section._id === args.toSectionId;
       const tasks = sec.tasks
         .filter((t) => t._id !== args.taskId)
         .map((t) => {
-          const next = byId.get(t._id);
-          return next
-            ? { ...t, sectionOrderIndex: next.sectionOrderIndex }
-            : t;
+          const next = shifts.get(t._id);
+          return next === undefined ? t : { ...t, sectionOrderIndex: next };
         });
-      if (isTo) {
+      if (sec.section._id === args.toSectionId) {
         tasks.push({
-          ...moving!,
+          ...moving,
           sectionId: args.toSectionId,
-          sectionOrderIndex: toIndex,
+          sectionOrderIndex: plan.moved!.sectionOrderIndex,
         });
-      } else if (isFrom) {
-        // moved row already removed
       }
-      tasks.sort((a, b) => {
-        const aDone = a.dateCompleted ? 1 : 0;
-        const bDone = b.dateCompleted ? 1 : 0;
-        if (aDone !== bDone) return aDone - bDone;
-        return (a.sectionOrderIndex ?? 0) - (b.sectionOrderIndex ?? 0);
-      });
+      tasks.sort(compareTasksForListView);
       return { ...sec, tasks };
     });
 

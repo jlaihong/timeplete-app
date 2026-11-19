@@ -3,6 +3,10 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { persistBoundedOrderMove } from "./_helpers/orderShift";
+import {
+  compareTasksForListView,
+  isTaskCompletedForListView,
+} from "./_helpers/taskSectionMove";
 import { scheduleTrackableResync } from "./trackableResync";
 
 /**
@@ -269,19 +273,6 @@ export const remove = mutation({
     await ctx.db.delete(args.id);
   },
 });
-
-function isTaskCompletedForListView(t: Doc<"tasks">): boolean {
-  const d = t.dateCompleted;
-  return typeof d === "string" && d.trim().length > 0;
-}
-
-/** Matches productivity-one list section ordering (`list-page.store` / `task-group`). */
-function compareTasksForListView(a: Doc<"tasks">, b: Doc<"tasks">): number {
-  const aDone = isTaskCompletedForListView(a);
-  const bDone = isTaskCompletedForListView(b);
-  if (aDone !== bDone) return Number(aDone) - Number(bDone);
-  return a.sectionOrderIndex - b.sectionOrderIndex;
-}
 
 export const getPaginated = query({
   args: {

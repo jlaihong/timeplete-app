@@ -241,6 +241,7 @@ export interface ListDetailWebDndProps {
   moveBetweenSections: (args: {
     taskId: Id<"tasks">;
     toSectionId: Id<"listSections">;
+    insertAboveTaskId: Id<"tasks"> | null;
     toIndex: number;
   }) => Promise<void>;
   /** Opens add-task UI for a specific section (productivity-one per-section +). */
@@ -589,9 +590,11 @@ export function ListDetailWebDnd({
 
         const fromGroupId = startInfo.fromGroupId;
 
+        /** Compared by position: rows can share a `sectionOrderIndex`, so
+         * equal indices do not mean the row stayed put. */
         if (
           fromGroupId === toSectionKey &&
-          (startInfo.task.sectionOrderIndex ?? 0) === toIndex
+          startInfo.fromIndex === visualToIndex
         ) {
           return;
         }
@@ -629,11 +632,18 @@ export function ListDetailWebDnd({
         isDraggingRef.current = false;
 
         const toSectionId = toSectionKey as Id<"listSections">;
+        /** The row now directly below the dropped one; `null` at the end. */
+        const destTasks =
+          modeledGroups.find((g) => g.id === toSectionKey)?.tasks ?? [];
+        const droppedAt = destTasks.findIndex((t) => t._id === taskId);
+        const insertAboveTaskId =
+          droppedAt >= 0 ? (destTasks[droppedAt + 1]?._id ?? null) : null;
 
         try {
           await moveBetweenSections({
             taskId,
             toSectionId,
+            insertAboveTaskId,
             toIndex,
           });
         } catch (err) {

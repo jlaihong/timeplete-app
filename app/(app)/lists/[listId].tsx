@@ -819,9 +819,18 @@ export default function ListDetailScreen() {
           .map((row) => row.task.sectionOrderIndex),
       });
 
+      /** The row now directly below the dropped one, if it is a task in
+       * the same section. Names the slot even when rows share an index. */
+      const below = data[to + 1];
+      const insertAboveTaskId =
+        below?.kind === "task" && below.sectionId === targetSectionId
+          ? (below.task._id as Id<"tasks">)
+          : null;
+
       void moveBetweenSections({
         taskId: moved.task._id as Id<"tasks">,
         toSectionId: targetSectionId,
+        insertAboveTaskId,
         toIndex,
       });
     },
