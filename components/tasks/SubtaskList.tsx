@@ -135,6 +135,12 @@ export function SubtaskChip({
       <Text style={[styles.chipText, expanded && styles.chipTextActive]}>
         {completedCount}/{count}
       </Text>
+      {/* The arrow is what says the chip opens and closes the list. */}
+      <MaterialIcons
+        name={expanded ? "expand-less" : "expand-more"}
+        size={14}
+        color={expanded ? Colors.primary : Colors.textTertiary}
+      />
     </Pressable>
   );
   if (!isWeb) return chip;
@@ -634,12 +640,32 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    paddingHorizontal: 6,
+    paddingLeft: 6,
+    paddingRight: 2,
     height: 20,
     borderRadius: Radius.pill,
     backgroundColor: Colors.surfaceContainerHigh,
     flexShrink: 0,
     ...Platform.select({ web: { cursor: "pointer" } as any, default: {} }),
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 4,
+    marginLeft: -4,
+    marginBottom: 4,
+    ...Platform.select({ web: { cursor: "pointer" } as any, default: {} }),
+  },
+  sectionTitle: {
+    fontSize: FontSize.body,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+  },
+  sectionCount: {
+    fontSize: FontSize.caption,
+    color: Colors.textTertiary,
+    fontVariant: ["tabular-nums"],
   },
   chipHover: { backgroundColor: Colors.surfaceContainerHighest },
   chipText: {
@@ -692,5 +718,46 @@ export function TaskSubtasksPanel({
       inset={inset}
       autoFocusAdd={consumeSubtaskAddFocus(taskId)}
     />
+  );
+}
+
+/**
+ * The task detail sheet's Subtasks block: a heading that folds the list
+ * away, with the done count beside it. Open by default; the fold is only
+ * for this visit to the sheet.
+ */
+export function SubtasksSection({
+  taskId,
+  count,
+  completedCount,
+}: {
+  taskId: Id<"tasks">;
+  count: number;
+  completedCount: number;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  return (
+    <View>
+      <Pressable
+        onPress={() => setCollapsed((c) => !c)}
+        hitSlop={6}
+        accessibilityState={{ expanded: !collapsed }}
+        accessibilityLabel={`Subtasks. ${collapsed ? "Show" : "Hide"} subtasks`}
+        style={styles.sectionHeader}
+      >
+        <MaterialIcons
+          name={collapsed ? "chevron-right" : "expand-more"}
+          size={18}
+          color={Colors.textSecondary}
+        />
+        <Text style={styles.sectionTitle}>Subtasks</Text>
+        {count > 0 && (
+          <Text style={styles.sectionCount}>
+            {completedCount}/{count}
+          </Text>
+        )}
+      </Pressable>
+      {!collapsed && <SubtaskList parentId={taskId} />}
+    </View>
   );
 }
