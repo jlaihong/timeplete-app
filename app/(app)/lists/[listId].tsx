@@ -62,6 +62,11 @@ import { useTaskDeleteMutation } from "../../../hooks/useTaskDeleteMutation";
 import { useRegisterEscapeClose } from "../../../hooks/useRegisterEscapeClose";
 import { useVisualViewportHeight } from "../../../hooks/useVisualViewportHeight";
 import { MentionText } from "../../../components/mentions/MentionText";
+import {
+  TaskSubtaskChip,
+  TaskSubtasksPanel,
+} from "../../../components/tasks/SubtaskList";
+import { openSubtasksToAdd } from "../../../lib/subtaskExpansion";
 import { plainMentions } from "../../../lib/mentions";
 
 type ListPageTask = Doc<"tasks">;
@@ -112,10 +117,12 @@ function ContextMenuPopover({
   x,
   y,
   onDelete,
+  onAddSubtask,
 }: {
   x: number;
   y: number;
   onDelete: () => void;
+  onAddSubtask: () => void;
 }) {
   return (
     <div
@@ -135,6 +142,27 @@ function ContextMenuPopover({
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
+      <button
+        type="button"
+        onClick={onAddSubtask}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          width: "100%",
+          padding: "10px 14px",
+          background: "transparent",
+          border: "none",
+          color: Colors.text,
+          fontSize: FontSize.body,
+          textAlign: "left",
+          cursor: "pointer",
+          borderRadius: Radius.md,
+        }}
+      >
+        <MaterialIcons name="account-tree" size={18} color={Colors.text} />
+        <span>Add subtask</span>
+      </button>
       <button
         type="button"
         onClick={onDelete}
@@ -684,6 +712,7 @@ export default function ListDetailScreen() {
               style={[styles.taskName, isCompleted && styles.completedTask]}
               numberOfLines={1}
             />
+            <TaskSubtaskChip task={task} />
             <View style={styles.timeCol}>
               {!isCompleted && (
                 <TouchableOpacity
@@ -718,6 +747,7 @@ export default function ListDetailScreen() {
             </View>
             </TouchableOpacity>
           </View>
+          <TaskSubtasksPanel taskId={task._id} inset />
           {(trackable ||
             (!task.trackableId &&
               list &&
@@ -1229,6 +1259,11 @@ export default function ListDetailScreen() {
             const id = contextMenu.taskId;
             setContextMenu(null);
             handleDelete(id);
+          }}
+          onAddSubtask={() => {
+            const id = contextMenu.taskId;
+            setContextMenu(null);
+            openSubtasksToAdd(id);
           }}
         />
       )}

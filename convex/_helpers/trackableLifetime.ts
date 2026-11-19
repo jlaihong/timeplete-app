@@ -645,6 +645,7 @@ export async function deleteTimeWindowWithSideEffects(
   );
   await onTimeWindowDeleted(ctx, {
     taskId: tw.taskId,
+    subtaskId: tw.subtaskId,
     activityType: tw.activityType,
     budgetType: tw.budgetType,
     durationSeconds: tw.durationSeconds,

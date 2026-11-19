@@ -65,7 +65,10 @@ export function enrichTimeWindowsWithDisplayFields(
       const taskListDoc = task?.listId
         ? listsById.get(task.listId)
         : undefined;
-      if (task?.name) {
+      const subtask = w.subtaskId ? tasksById.get(w.subtaskId) : undefined;
+      if (subtask?.name) {
+        derivedTitle = subtask.name;
+      } else if (task?.name) {
         derivedTitle = task.name;
       } else if (directListDoc?.name) {
         derivedTitle = directListDoc.name;

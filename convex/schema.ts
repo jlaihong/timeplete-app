@@ -93,6 +93,17 @@ export default defineSchema({
      * single-trackable resolution).
      */
     attributedTrackableIds: v.optional(v.array(v.id("trackables"))),
+    /**
+     * Subtasks: a row with `parentId` set is a subtask of that task (one
+     * level only; `rootTaskId` equals `parentId`). A subtask has a name,
+     * a completion date and tracked time, and nothing else: no day, list
+     * or trackable of its own. See `convex/subtasks.ts`.
+     */
+    /** Subtask only: position within its parent. */
+    subtaskOrderIndex: v.optional(v.number()),
+    /** Parent only: how many subtasks it has, and how many are done. */
+    subtaskCount: v.optional(v.number()),
+    subtaskCompletedCount: v.optional(v.number()),
     legacyId: v.optional(v.string()),
   })
     .index("by_user_day", ["userId", "taskDay"])
@@ -189,6 +200,13 @@ export default defineSchema({
       v.literal("TRACKABLE")
     ),
     taskId: v.optional(v.id("tasks")),
+    /**
+     * Set when the time was tracked on a subtask. `taskId` is then the
+     * subtask's PARENT, so the window counts toward the parent's total,
+     * trackables and calendar colour like any other window of that task,
+     * and additionally toward the subtask's own total.
+     */
+    subtaskId: v.optional(v.id("tasks")),
     trackableId: v.optional(v.id("trackables")),
     /**
      * "Tracks to": the trackables this row is allocated to directly, in
@@ -273,6 +291,7 @@ export default defineSchema({
      */
     .index("by_user_budget_day", ["userId", "budgetType", "startDayYYYYMMDD"])
     .index("by_task", ["taskId"])
+    .index("by_subtask", ["subtaskId"])
     .index("by_trackable", ["trackableId"])
     .index("by_list", ["listId"])
     .index("by_user", ["userId"])
@@ -282,6 +301,8 @@ export default defineSchema({
   taskTimers: defineTable({
     userId: v.id("users"),
     taskId: v.optional(v.id("tasks")),
+    /** Timing a subtask: `taskId` is its parent. See `timeWindows.subtaskId`. */
+    subtaskId: v.optional(v.id("tasks")),
     trackableId: v.optional(v.id("trackables")),
     timeZone: v.string(),
     startTime: v.number(),
@@ -321,6 +342,7 @@ export default defineSchema({
   pendingTimerReviews: defineTable({
     userId: v.id("users"),
     taskId: v.optional(v.id("tasks")),
+    subtaskId: v.optional(v.id("tasks")),
     trackableId: v.optional(v.id("trackables")),
     timeZone: v.string(),
     /** Original timer start (epoch ms). */

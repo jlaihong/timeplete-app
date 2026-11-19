@@ -1,4 +1,5 @@
 import { FontSize, Radius } from "../../theme/tokens";
+import { openSubtasksToAdd } from "../../lib/subtaskExpansion";
 import React, {
   useState,
   useMemo,
@@ -1338,6 +1339,11 @@ export function DesktopTaskList({
             setContextMenu(null);
             handleDelete(id);
           }}
+          onAddSubtask={() => {
+            const id = contextMenu.taskId;
+            setContextMenu(null);
+            openSubtasksToAdd(id);
+          }}
         />
       )}
     </View>
@@ -1348,9 +1354,15 @@ interface ContextMenuPopoverProps {
   x: number;
   y: number;
   onDelete: () => void;
+  onAddSubtask: () => void;
 }
 
-function ContextMenuPopover({ x, y, onDelete }: ContextMenuPopoverProps) {
+function ContextMenuPopover({
+  x,
+  y,
+  onDelete,
+  onAddSubtask,
+}: ContextMenuPopoverProps) {
   return (
     <div
       style={{
@@ -1369,6 +1381,35 @@ function ContextMenuPopover({ x, y, onDelete }: ContextMenuPopoverProps) {
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
+      <button
+        type="button"
+        onClick={onAddSubtask}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          width: "100%",
+          padding: "10px 14px",
+          background: "transparent",
+          border: "none",
+          color: Colors.text,
+          fontSize: FontSize.body,
+          textAlign: "left",
+          cursor: "pointer",
+          borderRadius: Radius.md,
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.background =
+            "rgba(255,255,255,0.06)";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.background =
+            "transparent";
+        }}
+      >
+        <MaterialIcons name="account-tree" size={18} color={Colors.text} />
+        <span>Add subtask</span>
+      </button>
       <button
         type="button"
         onClick={onDelete}

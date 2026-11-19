@@ -48,6 +48,15 @@ export function useTaskDaySeconds(groupIds: readonly string[]) {
       if (!w.taskId) continue;
       const key = `${w.taskId}|${w.startDayYYYYMMDD}`;
       byTaskDay.set(key, (byTaskDay.get(key) ?? 0) + (w.durationSeconds ?? 0));
+      // Time tracked on a subtask counts for the task (above) and is also
+      // looked up under the subtask's own id.
+      if (w.subtaskId) {
+        const subKey = `${w.subtaskId}|${w.startDayYYYYMMDD}`;
+        byTaskDay.set(
+          subKey,
+          (byTaskDay.get(subKey) ?? 0) + (w.durationSeconds ?? 0),
+        );
+      }
     }
     return (taskId: string, day: string): number | undefined =>
       DAY_KEY.test(day) ? (byTaskDay.get(`${taskId}|${day}`) ?? 0) : undefined;

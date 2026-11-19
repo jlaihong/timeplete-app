@@ -11,6 +11,7 @@ import type { FunctionReturnType } from "convex/server";
 import { applyTimeSpentDeltaOptimisticUpdate } from "./setTimeSpentOptimisticUpdate";
 import { wallClockInTimeZone } from "./wallClockTimeZone";
 import { DEFAULT_EVENT_COLOR } from "./eventColors";
+import { applySubtaskTimeDelta } from "./subtaskOptimisticUpdates";
 
 type TimerSnapshot = NonNullable<FunctionReturnType<typeof api.timers.get>>;
 
@@ -85,6 +86,9 @@ export function applyStopTimerOptimisticUpdate(
         snapshot.taskId as Id<"tasks">,
         elapsed,
       );
+      if (snapshot.subtaskId) {
+        applySubtaskTimeDelta(localStore, snapshot.subtaskId, elapsed);
+      }
     }
 
     const tz =
@@ -113,6 +117,7 @@ export function applyStopTimerOptimisticUpdate(
         budgetType: "ACTUAL" as const,
         activityType,
         taskId: snapshot.taskId,
+        subtaskId: snapshot.subtaskId,
         trackableId: snapshot.trackableId,
         timeZone: tz,
         isRecurringInstance: false,

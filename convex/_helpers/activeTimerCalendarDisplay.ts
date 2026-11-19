@@ -73,7 +73,11 @@ export async function resolveActiveTimerCalendarDisplay(
     if (!task) {
       return { displayTitle: "Task", displayColor: DEFAULT_EVENT_COLOR };
     }
-    return resolveTaskTimerCalendarDisplay(ctx, userId, task);
+    const display = await resolveTaskTimerCalendarDisplay(ctx, userId, task);
+    // Timing a subtask: its name, in the parent task's colours.
+    const subtask = timer.subtaskId ? await ctx.db.get(timer.subtaskId) : null;
+    const subtaskTitle = subtask ? plainMentions(subtask.name) : undefined;
+    return subtaskTitle ? { ...display, displayTitle: subtaskTitle } : display;
   }
 
   if (timer.trackableId) {

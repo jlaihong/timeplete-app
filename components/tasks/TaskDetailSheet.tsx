@@ -35,6 +35,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import { SubtaskList } from "./SubtaskList";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -734,6 +735,13 @@ export function TaskDetailSheet({
         )}
       </View>
 
+      {/* Subtasks save as they are changed, like comments; they are not
+          part of the Save / Cancel form below. */}
+      <View style={styles.fieldBlock}>
+        <Text style={styles.subtasksLabel}>Subtasks</Text>
+        <SubtaskList parentId={taskId} />
+      </View>
+
       {/* Scheduled day — controlled form input. Nothing is sent to the
           server until the user clicks Save. */}
       <View style={styles.fieldBlock}>
@@ -1383,6 +1391,12 @@ const styles = StyleSheet.create({
   contentScroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 24 },
   fieldBlock: { marginBottom: 16 },
+  subtasksLabel: {
+    fontSize: FontSize.caption,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
 
   footer: {
     flexDirection: "row",

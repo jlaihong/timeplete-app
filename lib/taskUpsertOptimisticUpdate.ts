@@ -8,6 +8,7 @@
  * (same stacking as `lists.getPaginated` / productivity-one) so check-off feels
  * instant even on slow mobile networks.
  */
+import { applyParentCompletedToSubtasks } from "./subtaskOptimisticUpdates";
 import type { OptimisticLocalStore } from "convex/browser";
 import type { FunctionReturnType } from "convex/server";
 import type { Id } from "../convex/_generated/dataModel";
@@ -346,6 +347,9 @@ export function applyTaskUpsertOptimisticUpdate(
 ): void {
   if (args.id) {
     applyUpsertPatches(localStore, args, args.id);
+    if (typeof args.dateCompleted === "string") {
+      applyParentCompletedToSubtasks(localStore, args.id, args.dateCompleted);
+    }
     return;
   }
 

@@ -150,6 +150,8 @@ export const search = query({
     const directListIds = new Set<string>();
     for (const w of filtered) {
       if (w.activityType === "TASK" && w.taskId) taskIds.add(w.taskId);
+      // Time tracked on a subtask is titled with the subtask's name.
+      if (w.activityType === "TASK" && w.subtaskId) taskIds.add(w.subtaskId);
       // Calendar color logic should honor direct trackable links regardless
       // of activityType (EVENT/TRACKABLE/TASK snapshot).
       if (w.trackableId)
@@ -357,6 +359,10 @@ export const upsert = mutation({
         args.useTimeZone !== undefined
           ? args.useTimeZone
           : existing.useTimeZone === true;
+      const keptSubtaskId =
+        args.taskId !== undefined && args.taskId === existing.taskId
+          ? existing.subtaskId
+          : undefined;
       await ctx.db.patch(args.id, {
         startTimeHHMM: args.startTimeHHMM,
         startDayYYYYMMDD: args.startDayYYYYMMDD,
@@ -365,6 +371,9 @@ export const upsert = mutation({
         budgetType: args.budgetType,
         activityType: args.activityType,
         taskId: args.taskId,
+        // Time tracked on a subtask stays with it unless the window is
+        // pointed at a different task.
+        subtaskId: keptSubtaskId,
         trackableId: resolvedTrackableId,
         trackableIds,
         listId: args.listId,
@@ -382,12 +391,14 @@ export const upsert = mutation({
         ctx,
         {
           taskId: existing.taskId,
+          subtaskId: existing.subtaskId,
           activityType: existing.activityType,
           budgetType: existing.budgetType,
           durationSeconds: existing.durationSeconds,
         },
         {
           taskId: args.taskId,
+          subtaskId: keptSubtaskId,
           activityType: args.activityType,
           budgetType: args.budgetType,
           durationSeconds: args.durationSeconds,

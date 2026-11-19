@@ -23,6 +23,11 @@ import { useTimerElapsed } from "../../hooks/useTimer";
 import { DurationPickerDesktop } from "./DurationPickerDesktop";
 import { MentionText } from "../mentions/MentionText";
 import { plainMentions } from "../../lib/mentions";
+import { SubtaskChip, SubtaskList } from "./SubtaskList";
+import {
+  consumeSubtaskAddFocus,
+  useSubtasksExpanded,
+} from "../../lib/subtaskExpansion";
 
 const isWeb = Platform.OS === "web";
 
@@ -83,6 +88,9 @@ export interface TaskRowTask {
    * on any row where `isRecurringInstance === true`.
    */
   recurringTaskId?: Id<"recurringTasks">;
+  /** How many subtasks the task has, and how many are done. */
+  subtaskCount?: number;
+  subtaskCompletedCount?: number;
 }
 
 export interface TaskRowMeta {
@@ -168,6 +176,8 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
     } = props;
 
     const isCompleted = !!task.dateCompleted || !!completing;
+    const subtaskCount = task.subtaskCount ?? 0;
+    const subtasksExpanded = useSubtasksExpanded(task._id) && !isOverlay;
     const taskTotalSeconds = task.timeSpentInSecondsUnallocated ?? 0;
     const showsDay = daySeconds !== undefined;
     const baseSeconds = showsDay ? daySeconds : taskTotalSeconds;
@@ -335,6 +345,14 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
                 isCompleted && styles.titleCompleted,
               ]}
             />
+            {(subtaskCount > 0 || subtasksExpanded) && (
+              <SubtaskChip
+                taskId={task._id}
+                count={subtaskCount}
+                completedCount={task.subtaskCompletedCount ?? 0}
+                expanded={subtasksExpanded}
+              />
+            )}
           </View>
               {hasMeta && (
             <View style={[styles.meta, narrow && styles.metaNarrow]}>
@@ -376,6 +394,14 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
                 isCompleted && styles.titleCompleted,
               ]}
             />
+            {(subtaskCount > 0 || subtasksExpanded) && (
+              <SubtaskChip
+                taskId={task._id}
+                count={subtaskCount}
+                completedCount={task.subtaskCompletedCount ?? 0}
+                expanded={subtasksExpanded}
+              />
+            )}
           </View>
               {hasMeta && (
             <View style={[styles.meta, narrow && styles.metaNarrow]}>
@@ -453,6 +479,13 @@ export const TaskRowDesktop = forwardRef<View, TaskRowDesktopProps>(
             </View>
           </View>
         </Pressable>
+        {subtasksExpanded && (
+          <SubtaskList
+            parentId={task._id}
+            inset
+            autoFocusAdd={consumeSubtaskAddFocus(task._id)}
+          />
+        )}
       </View>
     );
   }
