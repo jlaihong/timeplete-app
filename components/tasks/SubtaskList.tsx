@@ -8,7 +8,13 @@
  * Reordering is a drag on the row's grip and stays inside this list;
  * there is no drop target outside it, so a subtask cannot leave its task.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Platform,
   Pressable,
@@ -171,7 +177,11 @@ interface SubtaskListProps {
   inset?: boolean;
 }
 
-export function SubtaskList({ parentId, autoFocusAdd, inset }: SubtaskListProps) {
+export function SubtaskList({
+  parentId,
+  autoFocusAdd,
+  inset,
+}: SubtaskListProps) {
   const {
     subtasks,
     timerSubtaskId,
@@ -215,7 +225,9 @@ export function SubtaskList({ parentId, autoFocusAdd, inset }: SubtaskListProps)
   }, [draft, add]);
 
   if (subtasks === undefined) {
-    return <View style={[styles.wrap, inset && styles.inset, styles.loading]} />;
+    return (
+      <View style={[styles.wrap, inset && styles.inset, styles.loading]} />
+    );
   }
 
   return (
@@ -387,9 +399,7 @@ const SubtaskRow = React.memo(function SubtaskRow({
       const min = -index * ROW_HEIGHT;
       const max = (count - 1 - index) * ROW_HEIGHT;
       return {
-        transform: [
-          { translateY: Math.max(min, Math.min(max, dragY.value)) },
-        ],
+        transform: [{ translateY: Math.max(min, Math.min(max, dragY.value)) }],
         zIndex: 2,
         opacity: 0.9,
       };
@@ -410,6 +420,45 @@ const SubtaskRow = React.memo(function SubtaskRow({
   };
 
   const showControls = !canHover || hovered || isTicking || editing;
+
+  const playButton = !isCompleted && (
+    <Pressable
+      onPress={() => onToggleTimer(id)}
+      hitSlop={6}
+      accessibilityLabel={isTicking ? "Pause timer" : "Start timer"}
+      style={[styles.iconBtn, !showControls && styles.hidden]}
+    >
+      <MaterialIcons
+        name={isTicking ? "pause" : "play-arrow"}
+        size={16}
+        color={isTicking ? Colors.primary : Colors.textSecondary}
+      />
+    </Pressable>
+  );
+
+  const timeSpent =
+    (seconds > 0 || isTicking || (canHover && showControls)) &&
+    (isTicking ? (
+      <LiveElapsedText
+        startTime={timerStartTime}
+        baseSeconds={seconds}
+        format={formatTicking}
+        style={[styles.duration, styles.durationActive]}
+      />
+    ) : isWeb ? (
+      <DurationPickerDesktop
+        durationSeconds={seconds}
+        onDurationChanged={(secs) => void onSetTimeSpent(id, secs)}
+      />
+    ) : (
+      <Pressable
+        onPress={() => onEditTime(subtask)}
+        hitSlop={6}
+        accessibilityLabel={`Edit time spent on ${plainMentions(subtask.name)}`}
+      >
+        <Text style={styles.duration}>{formatSecondsAsHM(seconds)}</Text>
+      </Pressable>
+    ));
 
   return (
     <Animated.View
@@ -485,44 +534,12 @@ const SubtaskRow = React.memo(function SubtaskRow({
         </KeepFocus>
       ) : (
         <>
-          {!isCompleted && (
-            <Pressable
-              onPress={() => onToggleTimer(id)}
-              hitSlop={6}
-              accessibilityLabel={isTicking ? "Pause timer" : "Start timer"}
-              style={[styles.iconBtn, !showControls && styles.hidden]}
-            >
-              <MaterialIcons
-                name={isTicking ? "pause" : "play-arrow"}
-                size={16}
-                color={isTicking ? Colors.primary : Colors.textSecondary}
-              />
-            </Pressable>
-          )}
-          {(seconds > 0 || isTicking || (canHover && showControls)) &&
-            (isTicking ? (
-              <LiveElapsedText
-                startTime={timerStartTime}
-                baseSeconds={seconds}
-                format={formatTicking}
-                style={[styles.duration, styles.durationActive]}
-              />
-            ) : isWeb ? (
-              <DurationPickerDesktop
-                durationSeconds={seconds}
-                onDurationChanged={(secs) => void onSetTimeSpent(id, secs)}
-              />
-            ) : (
-              <Pressable
-                onPress={() => onEditTime(subtask)}
-                hitSlop={6}
-                accessibilityLabel={`Edit time spent on ${plainMentions(
-                  subtask.name,
-                )}`}
-              >
-                <Text style={styles.duration}>{formatSecondsAsHM(seconds)}</Text>
-              </Pressable>
-            ))}
+          {/* With a mouse: play, then time, as on the task row above.
+              On a touch screen the time comes first so that the play
+              buttons line up whether or not a row has time logged. */}
+          {canHover && playButton}
+          {timeSpent}
+          {!canHover && (playButton || <View style={styles.iconBtn} />)}
         </>
       )}
     </Animated.View>
