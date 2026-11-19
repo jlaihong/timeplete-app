@@ -51,7 +51,7 @@ export function TrackableProgressCalendar({ trackableId, colour }: Props) {
   );
   const month = useQuery(
     api.trackableProgress.month,
-    profileReady ? { id: trackableId, day: anchor } : "skip",
+    profileReady ? { id: trackableId, day: anchor, today } : "skip",
   );
 
   const range = periodRange("month", anchor, "");

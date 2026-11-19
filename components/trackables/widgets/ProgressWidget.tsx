@@ -47,6 +47,27 @@ export function ProgressWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
   const todayEntry = progress.week.find((d) => d.dayYYYYMMDD === today);
   const periodNoun = PERIODS.find((p) => p.key === progress.period.kind)!.noun;
 
+  // A weekly goal kept for a number of weeks ("6 days a week, for 45
+  // weeks") also shows how many weeks have met it so far.
+  // `getGoalDetails` reports that as weeks met × the weekly target.
+  const weeklyTarget =
+    goal.trackableType === "DAYS_A_WEEK"
+      ? (goal.targetNumberOfDaysAWeek ?? 0)
+      : goal.trackableType === "MINUTES_A_WEEK"
+        ? (goal.targetNumberOfMinutesAWeek ?? 0)
+        : 0;
+  const weeksTarget = goal.targetNumberOfWeeks ?? 0;
+  const overallWeeks =
+    progress.goal?.period === "week" &&
+    progress.goal.direction === "atLeast" &&
+    weeklyTarget > 0 &&
+    weeksTarget > 0
+      ? {
+          met: Math.round((goal.periodicOverallProgress ?? 0) / weeklyTarget),
+          target: weeksTarget,
+        }
+      : null;
+
   return (
     <View style={styles.body}>
       <View style={styles.actionsRow}>
@@ -121,6 +142,14 @@ export function ProgressWidget({ goal, today, onRequestLog }: WidgetBodyProps) {
             <Text style={styles.over}>
               Over by {fmt(progress.value - progress.target)}
             </Text>
+          ) : null}
+          {overallWeeks ? (
+            <ProgressBarWithText
+              caption="Overall · weeks met"
+              numerator={overallWeeks.met}
+              denominator={overallWeeks.target}
+              colour={goal.colour}
+            />
           ) : null}
         </>
       ) : (

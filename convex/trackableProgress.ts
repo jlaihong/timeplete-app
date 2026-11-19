@@ -16,6 +16,10 @@
  *
  * Reads are bounded by the period: at most a month of rows, or, for a goal
  * "in total", the days since the trackable started.
+ *
+ * An event on the calendar for a day that has not come yet is a plan, not
+ * something done, so events after the viewer's today never count (a week
+ * of scheduled workouts used to show "Goal met" on Monday morning).
  */
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
@@ -53,6 +57,11 @@ async function loadDays(
   trackable: Doc<"trackables">,
   from: string,
   to: string,
+  /**
+   * The viewer's today (compact YYYYMMDD). Events after it are still
+   * plans and are left out. Things logged by hand always count.
+   */
+  today?: string,
 ): Promise<Map<string, DayRow>> {
   const days = new Map<string, DayRow>();
   const at = (day: string): DayRow => {
@@ -80,6 +89,7 @@ async function loadDays(
     .take(MAX_DAYS);
   const counts = countsOf(trackable);
   for (const row of seconds) {
+    if (today && toCompactYYYYMMDD(row.dayYYYYMMDD) > today) continue;
     const day = at(row.dayYYYYMMDD);
     day.seconds += row.attributedSeconds;
     // Events that counted (already rolled up from below). A row from
@@ -155,7 +165,7 @@ export const get = query({
     );
     const from = period.start < week.start ? period.start : week.start;
     const to = period.end > week.end ? period.end : week.end;
-    const days = await loadDays(ctx, trackable, from, to);
+    const days = await loadDays(ctx, trackable, from, to, today);
 
     const inRange = (start: string, end: string): DayFacts[] => {
       const out: DayFacts[] = [];
@@ -236,7 +246,7 @@ export const breakdown = query({
     const valueOf = async (t: Doc<"trackables">) =>
       measureValue(
         measure,
-        [...(await loadDays(ctx, t, period.start, period.end)).values()],
+        [...(await loadDays(ctx, t, period.start, period.end, today)).values()],
         cumulative,
       );
 
@@ -262,6 +272,8 @@ export const breakdown = query({
     // Shares only add up for sums. A bounded period keeps the scan small.
     const additive = measure === "time" || measure === "count";
     let direct: number | null = null;
+    // Events count up to today only (see `loadDays`).
+    const eventsEnd = period.end < today ? period.end : today;
     if (additive && children.length > 0 && (custom || kind !== "total")) {
       const childIds = new Set<string>(children.map((c) => c._id));
       const countsDirectly = (stamp: Id<"trackables">[] | undefined) =>
@@ -288,7 +300,7 @@ export const breakdown = query({
               .eq("userId", user._id)
               .eq("budgetType", "ACTUAL")
               .gte("startDayYYYYMMDD", period.start)
-              .lte("startDayYYYYMMDD", period.end),
+              .lte("startDayYYYYMMDD", eventsEnd),
           )
           .take(5000);
         for (const w of windows) {
@@ -331,7 +343,7 @@ export const breakdown = query({
                 .eq("userId", user._id)
                 .eq("budgetType", "ACTUAL")
                 .gte("startDayYYYYMMDD", period.start)
-                .lte("startDayYYYYMMDD", period.end),
+                .lte("startDayYYYYMMDD", eventsEnd),
             )
             .take(5000);
           for (const w of windows) {
@@ -368,6 +380,8 @@ export const month = query({
     id: v.id("trackables"),
     /** Any day in the month, YYYYMMDD. */
     day: v.string(),
+    /** The viewer's local day; events after it do not count yet. */
+    today: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUserOrEmpty(ctx);
@@ -377,7 +391,13 @@ export const month = query({
     const { measure, goal } = shapeOf(trackable);
     const cumulative = trackable.isCumulative !== false;
     const range = periodRange("month", toCompactYYYYMMDD(args.day), "");
-    const days = await loadDays(ctx, trackable, range.start, range.end);
+    const days = await loadDays(
+      ctx,
+      trackable,
+      range.start,
+      range.end,
+      args.today ? toCompactYYYYMMDD(args.today) : undefined,
+    );
     const all = [...days.values()];
     return {
       measure,
@@ -536,6 +556,8 @@ export const range = query({
     id: v.id("trackables"),
     start: v.string(),
     end: v.string(),
+    /** The viewer's local day; events after it do not count yet. */
+    today: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUserOrEmpty(ctx);
@@ -553,7 +575,13 @@ export const range = query({
       length += 1;
     }
     const previousStart = shiftDay(start, -length);
-    const days = await loadDays(ctx, trackable, previousStart, end);
+    const days = await loadDays(
+      ctx,
+      trackable,
+      previousStart,
+      end,
+      args.today ? toCompactYYYYMMDD(args.today) : undefined,
+    );
 
     const within = (from: string, to: string) => {
       const out: DayFacts[] = [];

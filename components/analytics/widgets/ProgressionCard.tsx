@@ -57,7 +57,7 @@ export function ProgressionCard({
   const today = todayYYYYMMDD();
   const data = useQuery(
     api.trackableProgress.range,
-    profileReady ? { id: trackableId, start: windowStart, end: windowEnd } : "skip",
+    profileReady ? { id: trackableId, start: windowStart, end: windowEnd, today } : "skip",
   );
   const open = (id: Id<"trackables">) =>
     router.push(`/(app)/edit-trackable/${id}`);
