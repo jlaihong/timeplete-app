@@ -10,6 +10,9 @@ import {
   parseCreateEventInput,
   parseCreateTaskInput,
   parseListEventsInput,
+  encodeEventCursor,
+  takeEventPage,
+  type EventCursor,
   parseReadReviewsInput,
   parseRescheduleInput,
   parseAddToCalendarInput,
@@ -234,17 +237,30 @@ async function displayTitle(
     taskNames.set(tw.taskId, name);
     return name;
   }
+  // Time tracked straight against a trackable has no title or task.
+  const trackableId = tw.trackableId ?? tw.trackableIds?.[0];
+  if (trackableId) {
+    const cached = taskNames.get(trackableId);
+    if (cached) return cached;
+    const trackable = await ctx.db.get(trackableId);
+    const name = trackable?.name?.trim() || "Untitled";
+    taskNames.set(trackableId, name);
+    return name;
+  }
   return "Untitled";
 }
 
-/** Blocks the calendar shows. Timer logs and manual time entries stay out. */
+/**
+ * Events an agent may change. Timer logs and manual time entries stay out,
+ * so an agent cannot move or delete tracked time.
+ */
 function isCalendarWindow(tw: Doc<"timeWindows">): boolean {
-  return (
-    tw.budgetType === "ACTUAL" &&
-    tw.source !== "timer" &&
-    tw.source !== "manual" &&
-    tw.source !== "tracker_entry"
-  );
+  return isListedWindow(tw) && tw.source !== "timer" && tw.source !== "manual";
+}
+
+/** Everything list_events returns: calendar events plus tracked time. */
+function isListedWindow(tw: Doc<"timeWindows">): boolean {
+  return tw.budgetType === "ACTUAL" && tw.source !== "tracker_entry";
 }
 
 function eventJson(
@@ -258,6 +274,7 @@ function eventJson(
   durationMinutes: number;
   activityType: Doc<"timeWindows">["activityType"];
   recurring: boolean;
+  source: "calendar" | "timer" | "manual";
 } {
   return {
     id: tw._id,
@@ -267,6 +284,8 @@ function eventJson(
     durationMinutes: Math.round(tw.durationSeconds / 60),
     activityType: tw.activityType,
     recurring: tw.isRecurringInstance === true && !!tw.recurringEventId,
+    // Rows with no source are treated as calendar events, as isCalendarWindow does.
+    source: tw.source === "timer" || tw.source === "manual" ? tw.source : "calendar",
   };
 }
 
@@ -420,22 +439,61 @@ async function windowsInRange(
   userId: Id<"users">,
   startDay: string,
   endDay: string,
-): Promise<{ windows: Doc<"timeWindows">[]; truncated: boolean }> {
-  const rows = await ctx.db
-    .query("timeWindows")
-    .withIndex("by_user_day", (q) =>
-      q
-        .eq("userId", userId)
-        .gte("startDayYYYYMMDD", startDay)
-        .lte("startDayYYYYMMDD", endDay),
-    )
-    .take(MAX_WINDOWS_SCANNED + 1);
-  const scannedAll = rows.length <= MAX_WINDOWS_SCANNED;
-  const calendar = (scannedAll ? rows : rows.slice(0, MAX_WINDOWS_SCANNED)).filter(
-    isCalendarWindow,
+  include: (tw: Doc<"timeWindows">) => boolean,
+  after?: EventCursor,
+): Promise<{ windows: Doc<"timeWindows">[]; nextCursor: EventCursor | null }> {
+  const limit = MAX_WINDOWS_SCANNED + 1;
+  let rows: Doc<"timeWindows">[];
+  if (after) {
+    // The index orders by day, then creation time: finish the cursor's day,
+    // then read the days after it.
+    rows = await ctx.db
+      .query("timeWindows")
+      .withIndex("by_user_day", (q) =>
+        q
+          .eq("userId", userId)
+          .eq("startDayYYYYMMDD", after.day)
+          .gt("_creationTime", after.creationTime),
+      )
+      .take(limit);
+    if (rows.length < limit && after.day < endDay) {
+      const later = await ctx.db
+        .query("timeWindows")
+        .withIndex("by_user_day", (q) =>
+          q
+            .eq("userId", userId)
+            .gt("startDayYYYYMMDD", after.day)
+            .lte("startDayYYYYMMDD", endDay),
+        )
+        .take(limit - rows.length);
+      rows = rows.concat(later);
+    }
+  } else {
+    rows = await ctx.db
+      .query("timeWindows")
+      .withIndex("by_user_day", (q) =>
+        q
+          .eq("userId", userId)
+          .gte("startDayYYYYMMDD", startDay)
+          .lte("startDayYYYYMMDD", endDay),
+      )
+      .take(limit);
+  }
+  const { page, resumeAfter } = takeEventPage(
+    rows,
+    include,
+    MAX_WINDOWS_SCANNED,
+    MAX_EVENTS,
   );
-  const truncated = !scannedAll || calendar.length > MAX_EVENTS;
-  return { windows: calendar.slice(0, MAX_EVENTS), truncated };
+  return {
+    windows: page,
+    nextCursor: resumeAfter
+      ? {
+          day: resumeAfter.startDayYYYYMMDD,
+          creationTime: resumeAfter._creationTime,
+        }
+      : null,
+  };
 }
 
 async function runListEvents(
@@ -445,11 +503,13 @@ async function runListEvents(
 ): Promise<ApiOutcome> {
   const parsed = parseListEventsInput(input);
   if (!parsed.ok) return fail(400, "bad_input", parsed.message);
-  const { windows, truncated } = await windowsInRange(
+  const { windows, nextCursor } = await windowsInRange(
     ctx,
     user._id,
     parsed.value.startDay,
     parsed.value.endDay,
+    isListedWindow,
+    parsed.value.after,
   );
   const taskNames = new Map<string, string>();
   const events = [];
@@ -457,7 +517,11 @@ async function runListEvents(
     if (window.userId !== user._id) continue;
     events.push(eventJson(window, await displayTitle(ctx, window, taskNames)));
   }
-  return ok({ events, truncated });
+  return ok({
+    events,
+    truncated: nextCursor !== null,
+    nextCursor: nextCursor ? encodeEventCursor(nextCursor) : null,
+  });
 }
 
 async function runCreateEvent(
@@ -512,16 +576,32 @@ async function findEvent(
   if (args.eventId) {
     const id = ctx.db.normalizeId("timeWindows", args.eventId);
     const window = id ? await ctx.db.get(id) : null;
-    if (!window || window.userId !== user._id || !isCalendarWindow(window)) {
+    if (!window || window.userId !== user._id || !isListedWindow(window)) {
       return {
         ok: false,
         outcome: fail(404, "not_found", "Event not found."),
       };
     }
+    if (!isCalendarWindow(window)) {
+      return {
+        ok: false,
+        outcome: fail(
+          400,
+          "bad_input",
+          "Timer and manual time entries cannot be changed.",
+        ),
+      };
+    }
     return { ok: true, window };
   }
 
-  const { windows } = await windowsInRange(ctx, user._id, args.day!, args.day!);
+  const { windows } = await windowsInRange(
+    ctx,
+    user._id,
+    args.day!,
+    args.day!,
+    isCalendarWindow,
+  );
   const taskNames = new Map<string, string>();
   const matches: Doc<"timeWindows">[] = [];
   const wanted = args.title!.trim().toLowerCase();

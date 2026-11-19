@@ -12,6 +12,9 @@ import {
   parseCreateEventInput,
   parseHHMM,
   parseListEventsInput,
+  decodeEventCursor,
+  encodeEventCursor,
+  takeEventPage,
   parseReadReviewsInput,
   parseRescheduleInput,
   parseAddToCalendarInput,
@@ -107,6 +110,64 @@ describe("agent action parsing", () => {
       endDay: "2026-12-15",
     });
     assert.equal(tooLong.ok, false);
+  });
+
+  it("round-trips an event cursor and rejects one outside the range", () => {
+    const cursor = { day: "20261031", creationTime: 1793910951180.6582 };
+    const encoded = encodeEventCursor(cursor);
+    assert.deepEqual(decodeEventCursor(encoded), cursor);
+    assert.equal(decodeEventCursor("nonsense"), null);
+
+    const range = { startDay: "2026-10-20", endDay: "2026-11-16" };
+    const ok = parseListEventsInput({ ...range, cursor: encoded });
+    assert.equal(ok.ok, true);
+    if (ok.ok) assert.deepEqual(ok.value.after, cursor);
+    const none = parseListEventsInput(range);
+    if (none.ok) assert.equal(none.value.after, undefined);
+
+    assert.equal(
+      parseListEventsInput({ ...range, cursor: "20261117_5" }).ok,
+      false,
+    );
+    assert.equal(parseListEventsInput({ ...range, cursor: "abc" }).ok, false);
+    assert.equal(parseListEventsInput({ ...range, cursor: 5 }).ok, false);
+  });
+
+  it("cuts event pages that together return every row once", () => {
+    const even = (n: number) => n % 2 === 0;
+    const all = Array.from({ length: 23 }, (_, i) => i);
+
+    // Fits in one page: nothing to resume.
+    assert.deepEqual(takeEventPage([0, 1, 2], even, 5, 5), {
+      page: [0, 2],
+      resumeAfter: null,
+    });
+    // Event cap hit with rows left: resume after the last row read.
+    assert.deepEqual(takeEventPage([0, 1, 2, 3, 4], even, 5, 2), {
+      page: [0, 2],
+      resumeAfter: 2,
+    });
+    // Scan cap hit: the extra row proves more exist, and is not read.
+    assert.deepEqual(takeEventPage([1, 3, 5, 6], even, 3, 5), {
+      page: [],
+      resumeAfter: 5,
+    });
+    // Event cap hit on the very last row: nothing is left.
+    assert.deepEqual(takeEventPage([0, 2], even, 5, 2), {
+      page: [0, 2],
+      resumeAfter: null,
+    });
+
+    const seen: number[] = [];
+    let from = 0;
+    for (let guard = 0; guard < 50; guard += 1) {
+      const rows = all.slice(from, from + 4 + 1);
+      const { page, resumeAfter } = takeEventPage(rows, even, 4, 3);
+      seen.push(...page);
+      if (resumeAfter === null) break;
+      from = resumeAfter + 1;
+    }
+    assert.deepEqual(seen, all.filter(even));
   });
 
   it("defaults a new event to 60 minutes in UTC", () => {

@@ -63,10 +63,13 @@ export const AGENT_ACTIONS: readonly AgentActionSpec[] = [
   {
     name: "list_events",
     label: "List calendar events",
-    description: "Read events between two dates, at most 31 days apart.",
+    description:
+      'Read events and tracked time between two dates, at most 31 days apart. Each has a source: "calendar", "timer", or "manual". Only calendar events can be changed. Returns up to 200 per call; when nextCursor is not null, call again with it to get the rest.',
     input: {
       startDay: "Required date, YYYY-MM-DD.",
       endDay: "Required date, YYYY-MM-DD.",
+      cursor:
+        "Optional. nextCursor from the previous response, with the same startDay and endDay.",
     },
   },
   {
@@ -516,10 +519,51 @@ export function parseSearchTasksInput(
   };
 }
 
+/** Where a list_events page stopped: the last row read, in index order. */
+export type EventCursor = { day: string; creationTime: number };
+
 export type ListEventsInput = {
   startDay: string;
   endDay: string;
+  after?: EventCursor;
 };
+
+export function encodeEventCursor(cursor: EventCursor): string {
+  return `${cursor.day}_${cursor.creationTime}`;
+}
+
+export function decodeEventCursor(raw: string): EventCursor | null {
+  const match = /^(\d{8})_(\d+(?:\.\d+)?)$/.exec(raw);
+  if (!match) return null;
+  const creationTime = Number(match[2]);
+  if (!Number.isFinite(creationTime)) return null;
+  return { day: match[1], creationTime };
+}
+
+/**
+ * Cuts one page out of rows read in index order. `rows` holds up to
+ * `maxScanned + 1` rows: the extra one only proves more exist. Returns the
+ * rows to show and, when anything is left unread, the row to resume after.
+ * That row may be one the filter dropped, so a page can come back short or
+ * empty and still have a next page.
+ */
+export function takeEventPage<T>(
+  rows: T[],
+  include: (row: T) => boolean,
+  maxScanned: number,
+  maxEvents: number,
+): { page: T[]; resumeAfter: T | null } {
+  const scanned = rows.slice(0, maxScanned);
+  const page: T[] = [];
+  let read = 0;
+  while (read < scanned.length && page.length < maxEvents) {
+    const row = scanned[read];
+    read += 1;
+    if (include(row)) page.push(row);
+  }
+  const moreLeft = read < rows.length;
+  return { page, resumeAfter: moreLeft && read > 0 ? scanned[read - 1] : null };
+}
 
 export function parseListEventsInput(
   input: Record<string, unknown>,
@@ -533,7 +577,28 @@ export function parseListEventsInput(
   if (span > 30) {
     return { ok: false, message: "Date range can be at most 31 days." };
   }
-  return { ok: true, value: { startDay: startDay.value, endDay: endDay.value } };
+  const cursor = optionalString(input, "cursor");
+  if (!cursor.ok) return cursor;
+  let after: EventCursor | undefined;
+  if (cursor.value) {
+    const decoded = decodeEventCursor(cursor.value);
+    if (
+      !decoded ||
+      decoded.day < startDay.value ||
+      decoded.day > endDay.value
+    ) {
+      return {
+        ok: false,
+        message:
+          "cursor is not valid for this date range. Pass nextCursor from the previous response, with the same startDay and endDay.",
+      };
+    }
+    after = decoded;
+  }
+  return {
+    ok: true,
+    value: { startDay: startDay.value, endDay: endDay.value, after },
+  };
 }
 
 export type CreateEventInput = {
