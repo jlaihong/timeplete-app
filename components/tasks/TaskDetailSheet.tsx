@@ -35,6 +35,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import { SubtasksSection } from "./SubtaskList";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Colors } from "../../constants/colors";
@@ -732,6 +733,16 @@ export function TaskDetailSheet({
             </Text>
           </View>
         )}
+      </View>
+
+      {/* Subtasks save as they are changed, like comments; they are not
+          part of the Save / Cancel form below. */}
+      <View style={styles.fieldBlock}>
+        <SubtasksSection
+          taskId={taskId}
+          count={task.subtaskCount ?? 0}
+          completedCount={task.subtaskCompletedCount ?? 0}
+        />
       </View>
 
       {/* Scheduled day — controlled form input. Nothing is sent to the

@@ -24,6 +24,7 @@ import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth
 import { generateOccurrences } from "./_helpers/recurrence";
 import { wallClockGridToEpochMs } from "./_helpers/wallClockTimeZone";
 import { onTimeWindowInserted } from "./_helpers/taskTimeSpent";
+import { deleteSubtasksOf } from "./_helpers/subtasks";
 import { tracksToPatch } from "./_helpers/trackableMembership";
 import {
   onAttributedWindowInserted,
@@ -264,7 +265,8 @@ export const updateRule = mutation({
           for (const w of windows) {
             await deleteTimeWindowWithSideEffects(ctx, w);
           }
-          await ctx.db.delete(t._id);
+          await deleteSubtasksOf(ctx, t._id);
+        await ctx.db.delete(t._id);
         }
       }
     }
@@ -311,6 +313,7 @@ export const stop = mutation({
         for (const w of windows) {
           await deleteTimeWindowWithSideEffects(ctx, w);
         }
+        await deleteSubtasksOf(ctx, t._id);
         await ctx.db.delete(t._id);
       }
     }
@@ -383,6 +386,7 @@ export const deleteInstance = mutation({
       await removeTaskCompletionCredit(ctx, task);
     }
 
+    await deleteSubtasksOf(ctx, args.taskId);
     await ctx.db.delete(args.taskId);
   },
 });
@@ -425,6 +429,7 @@ export const remove = mutation({
         if (t.dateCompleted) {
           await removeTaskCompletionCredit(ctx, t);
         }
+        await deleteSubtasksOf(ctx, t._id);
         await ctx.db.delete(t._id);
       } else {
         await ctx.db.patch(t._id, { recurringTaskId: undefined });

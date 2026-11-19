@@ -9,6 +9,7 @@ import { applyStopTimerOptimisticUpdate } from "./stopTimerOptimisticUpdate";
 import { applyMoveBetweenDaysOptimisticUpdate } from "./taskMoveOptimisticUpdate";
 import { wallClockInTimeZone } from "./wallClockTimeZone";
 import { plainMentions } from "./mentions";
+import { cachedSubtaskName } from "./subtaskOptimisticUpdates";
 
 type TimerRow = NonNullable<FunctionReturnType<typeof api.timers.get>>;
 
@@ -25,6 +26,7 @@ function baseOptimisticTimer(args: {
   userId: Id<"users">;
   timeZone: string;
   taskId?: Id<"tasks">;
+  subtaskId?: Id<"tasks">;
   trackableId?: Id<"trackables">;
   displayTitle?: string;
   displayColor?: string;
@@ -35,6 +37,7 @@ function baseOptimisticTimer(args: {
     _creationTime: now,
     userId: args.userId,
     taskId: args.taskId,
+    subtaskId: args.subtaskId,
     trackableId: args.trackableId,
     timeZone: args.timeZone,
     startTime: now,
@@ -176,7 +179,7 @@ function moveOverdueTaskToTodayOptimistic(
 
 export function applyStartTaskTimerOptimisticUpdate(
   localStore: OptimisticLocalStore,
-  args: { taskId: Id<"tasks">; timeZone: string },
+  args: { taskId: Id<"tasks">; subtaskId?: Id<"tasks">; timeZone: string },
 ): void {
   moveOverdueTaskToTodayOptimistic(localStore, args.taskId, args.timeZone);
 
@@ -218,6 +221,11 @@ export function applyStartTaskTimerOptimisticUpdate(
     }
   }
 
+  if (args.subtaskId) {
+    const subtaskName = cachedSubtaskName(localStore, args.subtaskId);
+    if (subtaskName) displayTitle = plainMentions(subtaskName);
+  }
+
   if (!userId) return;
 
   patchTimersGet(
@@ -226,6 +234,7 @@ export function applyStartTaskTimerOptimisticUpdate(
       userId,
       timeZone: args.timeZone,
       taskId: args.taskId,
+      subtaskId: args.subtaskId,
       displayTitle: displayTitle ?? "Task",
       displayColor,
     }),

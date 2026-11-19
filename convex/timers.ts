@@ -44,6 +44,11 @@ export const get = query({
 export const startTaskTimer = mutation({
   args: {
     taskId: v.id("tasks"),
+    /**
+     * Time one of the task's subtasks: the time counts toward both the
+     * subtask and the task. `taskId` stays the parent task.
+     */
+    subtaskId: v.optional(v.id("tasks")),
     timeZone: v.string(),
     clientMutationId: v.optional(v.string()),
   },
@@ -69,9 +74,21 @@ export const startTaskTimer = mutation({
     const today = wallClockInTimeZone(Date.now(), tz).startDayYYYYMMDD;
     await moveOverdueTaskToTodayIfNeeded(ctx, user._id, args.taskId, today);
 
+    if (args.subtaskId) {
+      const subtask = await ctx.db.get(args.subtaskId);
+      if (
+        !subtask ||
+        subtask.userId !== user._id ||
+        subtask.parentId !== args.taskId
+      ) {
+        throw new Error("Subtask not found");
+      }
+    }
+
     await ctx.db.insert("taskTimers", {
       userId: user._id,
       taskId: args.taskId,
+      subtaskId: args.subtaskId,
       timeZone: args.timeZone,
       startTime: Date.now(),
     });
@@ -191,6 +208,7 @@ async function insertTimerWindow(
   source: {
     userId: any;
     taskId?: any;
+    subtaskId?: any;
     trackableId?: any;
     timeZone?: string;
     startTime: number;
@@ -222,6 +240,14 @@ async function insertTimerWindow(
     });
   }
 
+  // Only tag the window when the subtask still exists under this task.
+  const subtask =
+    source.taskId && source.subtaskId
+      ? await ctx.db.get(source.subtaskId)
+      : null;
+  const subtaskId =
+    subtask && subtask.parentId === source.taskId ? subtask._id : undefined;
+
   const twId = await ctx.db.insert("timeWindows", {
     startTimeHHMM,
     startDayYYYYMMDD: day,
@@ -231,6 +257,7 @@ async function insertTimerWindow(
     budgetType: "ACTUAL" as const,
     activityType: source.taskId ? ("TASK" as const) : ("TRACKABLE" as const),
     taskId: source.taskId,
+    subtaskId,
     trackableId: snapshotTrackableId,
     timeZone: tz,
     isRecurringInstance: false,
@@ -242,6 +269,7 @@ async function insertTimerWindow(
   // straight off the task document (no per-task `timeWindows` scan).
   await onTimeWindowInserted(ctx, {
     taskId: source.taskId ?? undefined,
+    subtaskId,
     activityType: source.taskId ? ("TASK" as const) : ("TRACKABLE" as const),
     budgetType: "ACTUAL" as const,
     durationSeconds,
@@ -433,6 +461,7 @@ export const resolvePendingReview = mutation({
       {
         userId: pending.userId,
         taskId: pending.taskId,
+        subtaskId: pending.subtaskId,
         trackableId: pending.trackableId,
         timeZone: pending.timeZone,
         startTime: start,
@@ -468,6 +497,7 @@ export const autoStopLongTimers = internalMutation({
       await ctx.db.insert("pendingTimerReviews", {
         userId: timer.userId,
         taskId: timer.taskId,
+        subtaskId: timer.subtaskId,
         trackableId: timer.trackableId,
         timeZone: timer.timeZone,
         startTime: timer.startTime,

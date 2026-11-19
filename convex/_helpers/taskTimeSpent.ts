@@ -25,12 +25,24 @@
  *
  * After backfill (`_admin/backfillTaskTimeSpent`) and the writer updates
  * below, readers can serve the field directly.
+ *
+ * Subtasks
+ * ────────
+ * Time tracked on a subtask is a window whose `taskId` is the PARENT and
+ * whose `subtaskId` is the subtask. The contract above therefore already
+ * gives the parent "its own time plus its subtasks' time". The subtask's
+ * own field is the same sum taken over `subtaskId`:
+ *
+ *   subtask.timeSpentInSecondsUnallocated
+ *     === Σ timeWindows.durationSeconds WHERE subtaskId === subtask._id
+ *         (TASK ACTUAL only)
  */
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
 
 interface TaskWindowFingerprint {
   taskId?: Id<"tasks">;
+  subtaskId?: Id<"tasks">;
   activityType: "TASK" | "EVENT" | "TRACKABLE";
   budgetType: "ACTUAL" | "BUDGETED";
   durationSeconds: number;
@@ -77,6 +89,9 @@ export async function onTimeWindowInserted(
     inserted.taskId as Id<"tasks">,
     inserted.durationSeconds,
   );
+  if (inserted.subtaskId) {
+    await adjustTaskTimeSpent(ctx, inserted.subtaskId, inserted.durationSeconds);
+  }
 }
 
 /**
@@ -101,10 +116,14 @@ export async function onTimeWindowPatched(
   if (
     beforeCounts &&
     afterCounts &&
-    before.taskId === after.taskId
+    before.taskId === after.taskId &&
+    before.subtaskId === after.subtaskId
   ) {
     const delta = after.durationSeconds - before.durationSeconds;
     await adjustTaskTimeSpent(ctx, after.taskId as Id<"tasks">, delta);
+    if (after.subtaskId) {
+      await adjustTaskTimeSpent(ctx, after.subtaskId, delta);
+    }
     return;
   }
 
@@ -114,6 +133,9 @@ export async function onTimeWindowPatched(
       before.taskId as Id<"tasks">,
       -before.durationSeconds,
     );
+    if (before.subtaskId) {
+      await adjustTaskTimeSpent(ctx, before.subtaskId, -before.durationSeconds);
+    }
   }
   if (afterCounts) {
     await adjustTaskTimeSpent(
@@ -121,6 +143,9 @@ export async function onTimeWindowPatched(
       after.taskId as Id<"tasks">,
       after.durationSeconds,
     );
+    if (after.subtaskId) {
+      await adjustTaskTimeSpent(ctx, after.subtaskId, after.durationSeconds);
+    }
   }
 }
 
@@ -135,4 +160,7 @@ export async function onTimeWindowDeleted(
     removed.taskId as Id<"tasks">,
     -removed.durationSeconds,
   );
+  if (removed.subtaskId) {
+    await adjustTaskTimeSpent(ctx, removed.subtaskId, -removed.durationSeconds);
+  }
 }

@@ -57,6 +57,7 @@ import {
   splitOverdueByCutoff,
 } from "../../lib/overdueWindow";
 import { MentionText } from "../mentions/MentionText";
+import { TaskSubtaskChip, TaskSubtasksPanel } from "../tasks/SubtaskList";
 import { plainMentions } from "../../lib/mentions";
 
 const LOAD_MORE_DAYS = 7;
@@ -810,6 +811,8 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
               )}
             </View>
 
+            <TaskSubtaskChip task={task} />
+
             {/* Timer + duration. The duration only appears once there is one. */}
             <View style={styles.timeCol}>
               {hasTime && (
@@ -895,6 +898,8 @@ export function TaskList({ title, onAddTask, onSelectTask }: TaskListProps) {
           >
             {cardContent}
           </SwipeableTaskRow>
+          {/* Outside the swipe panel and the row's long-press drag. */}
+          <TaskSubtasksPanel taskId={task._id} inset />
         </View>
       );
     },

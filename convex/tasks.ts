@@ -31,6 +31,12 @@ import {
   removeMentionsForSource,
   syncSourceMentions,
 } from "./_helpers/mentions";
+import {
+  completeOpenSubtasks,
+  deleteSubtask,
+  deleteSubtasksOf,
+  isSubtask,
+} from "./_helpers/subtasks";
 
 /**
  * productivity-backend `upsert_task` sets `section_id` from `list_id` when the
@@ -159,6 +165,9 @@ export const search = query({
         .withIndex("by_user", (q) => q.eq("userId", user._id))
         .collect();
     }
+
+    // Subtasks are shown under their parent, never as rows of their own.
+    tasks = tasks.filter((t) => !isSubtask(t));
 
     if (args.startDay || args.endDay) {
       tasks = tasks.filter((t) => {
@@ -379,7 +388,9 @@ export const searchWithCriteria = query({
               .lte("dateCompleted", args.completedEndDay ?? "99999999"),
           )
           .collect();
-        for (const t of completed) byId.set(t._id, t);
+        for (const t of completed) {
+          if (!isSubtask(t)) byId.set(t._id, t);
+        }
       }
     }
 
@@ -439,6 +450,12 @@ export const upsert = mutation({
       const existing = await ctx.db.get(args.id);
       if (!existing) throw new Error("Task not found");
 
+      if (isSubtask(existing)) {
+        // A subtask is edited through `subtasks.*`; it has no day, list
+        // or trackable for this mutation to set.
+        throw new Error("Use the subtasks functions to change a subtask");
+      }
+
       const patch: Record<string, unknown> = {};
       if (args.name !== undefined) patch.name = args.name;
       if (args.dateCompleted !== undefined) {
@@ -484,7 +501,15 @@ export const upsert = mutation({
         await syncTaskAttribution(ctx, args.id, existing);
       }
 
+      if (typeof args.dateCompleted === "string" && !existing.dateCompleted) {
+        await completeOpenSubtasks(ctx, args.id, args.dateCompleted);
+      }
+
       return args.id;
+    }
+
+    if (args.parentId !== undefined) {
+      throw new Error("Use subtasks.add to create a subtask");
     }
 
     let resolvedSectionId = args.sectionId;
@@ -494,7 +519,6 @@ export const upsert = mutation({
 
     const taskId = await ctx.db.insert("tasks", {
       name: args.name,
-      parentId: args.parentId,
       dateCompleted: args.dateCompleted ?? undefined,
       timeSpentInSecondsUnallocated: args.timeSpentInSecondsUnallocated ?? 0,
       timeEstimatedInSecondsUnallocated: args.timeEstimatedInSecondsUnallocated ?? 0,
@@ -511,7 +535,7 @@ export const upsert = mutation({
       assignedToUserId: args.assignedToUserId,
     });
 
-    await ctx.db.patch(taskId, { rootTaskId: args.parentId ? undefined : taskId });
+    await ctx.db.patch(taskId, { rootTaskId: taskId });
     await syncSourceMentions(ctx, "task", taskId, { isNew: true });
 
     await syncTaskAttribution(ctx, taskId, null);
@@ -527,26 +551,15 @@ export const remove = mutation({
     const task = await ctx.db.get(args.id);
     if (!task) throw new Error("Task not found");
 
-    const children = await ctx.db
-      .query("tasks")
-      .withIndex("by_root", (q) => q.eq("rootTaskId", args.id))
-      .collect();
-    for (const child of children) {
-      if (child._id !== args.id) {
-        const childWindows = await ctx.db
-          .query("timeWindows")
-          .withIndex("by_task", (q) => q.eq("taskId", child._id))
-          .collect();
-        for (const w of childWindows) {
-          await deleteTimeWindowWithSideEffects(ctx, w);
-        }
-        if (child.dateCompleted) {
-          await removeTaskCompletionCredit(ctx, child);
-        }
-        await removeMentionsForSource(ctx, "task", child._id);
-        await ctx.db.delete(child._id);
-      }
+    if (isSubtask(task)) {
+      if (task.userId !== user._id) throw new Error("Not authorized");
+      await deleteSubtask(ctx, task);
+      return;
     }
+
+    // Subtasks go with their task. Their tracked time lives in the task's
+    // own windows, which are deleted below.
+    await deleteSubtasksOf(ctx, args.id);
 
     const comments = await ctx.db
       .query("taskComments")
@@ -619,6 +632,7 @@ export const moveOnDay = mutation({
     }
     const task = await ctx.db.get(args.taskId);
     if (!task) throw new Error("Task not found");
+    if (isSubtask(task)) throw new Error("A subtask stays inside its task");
 
     await moveTaskBetweenDays(ctx, user._id, {
       taskId: args.taskId,
@@ -645,6 +659,11 @@ export const moveBetweenDays = mutation({
     const user = await requireApprovedUser(ctx);
     if (!(await claimClientMutationId(ctx, user._id, args.clientMutationId))) {
       return;
+    }
+
+    const moving = await ctx.db.get(args.taskId);
+    if (moving && isSubtask(moving)) {
+      throw new Error("A subtask stays inside its task");
     }
 
     await moveTaskBetweenDays(ctx, user._id, {
@@ -735,6 +754,10 @@ export const addToDay = mutation({
   args: { taskId: v.id("tasks"), day: v.string() },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
+    const adding = await ctx.db.get(args.taskId);
+    if (adding && isSubtask(adding)) {
+      throw new Error("A subtask stays inside its task");
+    }
     const dayTasks = await ctx.db
       .query("tasks")
       .withIndex("by_user_day", (q) =>
@@ -789,8 +812,16 @@ export const setTimeSpent = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireApprovedUser(ctx);
-    const task = await ctx.db.get(args.taskId);
+    const target = await ctx.db.get(args.taskId);
+    if (!target) throw new Error("Task not found");
+    // A subtask's time lives in its parent's windows, tagged with the
+    // subtask. Setting a subtask's time therefore works on the parent's
+    // windows that carry the tag, and new time is logged there too, so
+    // the parent's total moves by the same amount.
+    const subtaskId = isSubtask(target) ? target._id : undefined;
+    const task = subtaskId ? await ctx.db.get(target.parentId!) : target;
     if (!task) throw new Error("Task not found");
+    const ownerTaskId = task._id;
 
     /**
      * Reconcile task windows to match the newly requested total.
@@ -809,11 +840,14 @@ export const setTimeSpent = mutation({
      */
     const allWindows = await ctx.db
       .query("timeWindows")
-      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+      .withIndex("by_task", (q) => q.eq("taskId", ownerTaskId))
       .collect();
 
     const taskActualWindows = allWindows.filter(
-      (w) => w.activityType === "TASK" && w.budgetType === "ACTUAL"
+      (w) =>
+        w.activityType === "TASK" &&
+        w.budgetType === "ACTUAL" &&
+        (subtaskId === undefined || w.subtaskId === subtaskId)
     );
     const currentTotal = taskActualWindows.reduce(
       (s, w) => s + (w.durationSeconds ?? 0),
@@ -825,7 +859,7 @@ export const setTimeSpent = mutation({
       // No window churn, but the task cache may still be stale (legacy
       // rows pre-bookkeeping). Snap it to the canonical value so the
       // home + list readers can trust the field on the next fetch.
-      if ((task.timeSpentInSecondsUnallocated ?? 0) !== desiredTotal) {
+      if ((target.timeSpentInSecondsUnallocated ?? 0) !== desiredTotal) {
         await ctx.db.patch(args.taskId, {
           timeSpentInSecondsUnallocated: desiredTotal,
         });
@@ -854,12 +888,14 @@ export const setTimeSpent = mutation({
             ctx,
             {
               taskId: w.taskId,
+              subtaskId: w.subtaskId,
               activityType: w.activityType,
               budgetType: w.budgetType,
               durationSeconds: dur,
             },
             {
               taskId: w.taskId,
+              subtaskId: w.subtaskId,
               activityType: w.activityType,
               budgetType: w.budgetType,
               durationSeconds: nextDur,
@@ -885,7 +921,7 @@ export const setTimeSpent = mutation({
     // a fallback for callers that haven't been updated yet.
     const tz =
       pickValidIANAZone(args.timeZone) ??
-      (await inferIANAZoneForManualTaskSlice(ctx, user._id, args.taskId));
+      (await inferIANAZoneForManualTaskSlice(ctx, user._id, ownerTaskId));
 
     const now = Date.now();
     const startEpochMs = now - deltaSec * 1000;
@@ -912,7 +948,8 @@ export const setTimeSpent = mutation({
       userId: user._id,
       budgetType: "ACTUAL" as const,
       activityType: "TASK" as const,
-      taskId: args.taskId,
+      taskId: ownerTaskId,
+      subtaskId,
       trackableId: snapshotTrackableId,
       timeZone: tz,
       useTimeZone: false,
@@ -920,7 +957,8 @@ export const setTimeSpent = mutation({
       source: "manual" as const,
     });
     await onTimeWindowInserted(ctx, {
-      taskId: args.taskId,
+      taskId: ownerTaskId,
+      subtaskId,
       activityType: "TASK" as const,
       budgetType: "ACTUAL" as const,
       durationSeconds: deltaSec,

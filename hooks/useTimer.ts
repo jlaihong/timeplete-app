@@ -73,7 +73,7 @@ export function useTimer() {
   const adjustTimer = useMutation(api.timers.adjust);
 
   const startTaskTimer = useCallback(
-    (args: { taskId: Id<"tasks">; timeZone: string }) =>
+    (args: { taskId: Id<"tasks">; subtaskId?: Id<"tasks">; timeZone: string }) =>
       runWithOutbox("timers.startTaskTimer", args, (a) => startTaskTimerRaw(a)),
     [startTaskTimerRaw],
   );
@@ -162,9 +162,17 @@ export function useTimer() {
     displayColor,
     secondaryColor,
     taskId: timerData?.taskId ?? null,
+    /** Set while timing a subtask; `taskId` is then its parent task. */
+    subtaskId: timerData?.subtaskId ?? null,
     trackableId: timerData?.trackableId ?? null,
-    startForTask: (taskId: Id<"tasks">, timeZone: string) =>
-      startTaskTimer({ taskId, timeZone }),
+    startForTask: (
+      taskId: Id<"tasks">,
+      timeZone: string,
+      subtaskId?: Id<"tasks">,
+    ) =>
+      startTaskTimer(
+        subtaskId ? { taskId, subtaskId, timeZone } : { taskId, timeZone },
+      ),
     startForTrackable: (trackableId: Id<"trackables">, timeZone: string) =>
       startTrackableTimer({ trackableId, timeZone }),
     stop: () => stopTimer(),

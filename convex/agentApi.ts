@@ -37,6 +37,11 @@ import {
 import { displayReviewQuestions } from "../lib/reviewParity";
 import { wallClockGridToEpochMs } from "./_helpers/wallClockTimeZone";
 import {
+  completeOpenSubtasks,
+  deleteSubtasksOf,
+  isSubtask,
+} from "./_helpers/subtasks";
+import {
   onTimeWindowInserted,
   onTimeWindowPatched,
 } from "./_helpers/taskTimeSpent";
@@ -348,12 +353,14 @@ async function applyWindowTime(
     ctx,
     {
       taskId: tw.taskId,
+      subtaskId: tw.subtaskId,
       activityType: tw.activityType,
       budgetType: tw.budgetType,
       durationSeconds: tw.durationSeconds,
     },
     {
       taskId: tw.taskId,
+      subtaskId: tw.subtaskId,
       activityType: tw.activityType,
       budgetType: tw.budgetType,
       durationSeconds: next.durationSeconds,
@@ -1246,7 +1253,8 @@ async function findTask(
   if (args.taskId) {
     const id = ctx.db.normalizeId("tasks", args.taskId);
     const task = id ? await ctx.db.get(id) : null;
-    if (!task || task.userId !== user._id) {
+    // Subtasks are not addressable through the agent API.
+    if (!task || task.userId !== user._id || isSubtask(task)) {
       return {
         ok: false,
         outcome: fail(404, "not_found", "Task not found."),
@@ -1282,7 +1290,9 @@ async function findTask(
 
   const pool = rows.filter(
     (task) =>
-      task.userId === user._id && (listId === undefined || task.listId === listId),
+      task.userId === user._id &&
+      !isSubtask(task) &&
+      (listId === undefined || task.listId === listId),
   );
   const choice = resolveNamedTask(pool, args.name ?? "");
   if (choice.status === "none") {
@@ -1408,6 +1418,9 @@ async function runCompleteTask(
   if ((task.dateCompleted ?? undefined) !== next) {
     await ctx.db.patch(task._id, { dateCompleted: next });
     await syncTaskAttribution(ctx, task._id, task);
+    if (next && !task.dateCompleted) {
+      await completeOpenSubtasks(ctx, task._id, next);
+    }
   }
   const updated = await ctx.db.get(task._id);
   return ok(await taskResult(ctx, user._id, updated ?? task));
@@ -1435,6 +1448,7 @@ async function deleteTaskRow(
     await removeTaskCompletionCredit(ctx, task);
   }
 
+  await deleteSubtasksOf(ctx, task._id);
   await ctx.db.delete(task._id);
 }
 
@@ -1551,15 +1565,7 @@ async function runDeleteTask(
     return ok({ ...snapshot, deleted: true });
   }
 
-  const children = await ctx.db
-    .query("tasks")
-    .withIndex("by_root", (q) => q.eq("rootTaskId", task._id))
-    .collect();
-  for (const child of children) {
-    if (child._id !== task._id && child.userId === user._id) {
-      await deleteTaskRow(ctx, child);
-    }
-  }
+  // `deleteTaskRow` takes the task's subtasks with it.
   await deleteTaskRow(ctx, task);
   return ok({ ...snapshot, deleted: true });
 }
