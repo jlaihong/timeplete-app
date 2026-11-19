@@ -239,6 +239,7 @@ export default defineSchema({
      *                            persist a manually-entered task duration
      *  - `"calendar"`         → created by drag-onto-calendar in CalendarView
      *  - `"tracker_entry"`    → reserved for future tracker-only entries
+     *  - `"api_key"`          → created through the agent API with an API key
      *
      * Old rows written before this field existed will be `undefined`; treat
      * `undefined` as `"timer"` for backwards compatibility.
@@ -248,7 +249,8 @@ export default defineSchema({
         v.literal("timer"),
         v.literal("manual"),
         v.literal("calendar"),
-        v.literal("tracker_entry")
+        v.literal("tracker_entry"),
+        v.literal("api_key")
       )
     ),
     /**

@@ -35,7 +35,7 @@ export type UpsertTimeWindowOptimisticArgs = {
   comments?: string;
   timeZone: string;
   useTimeZone?: boolean;
-  source?: "timer" | "manual" | "calendar" | "tracker_entry";
+  source?: "timer" | "manual" | "calendar" | "tracker_entry" | "api_key";
 };
 
 /** Mirrors the private `minutesFromHHMM` in `convex/timeWindows.ts`. */

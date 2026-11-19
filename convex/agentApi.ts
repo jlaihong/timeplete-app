@@ -11,6 +11,8 @@ import {
   parseCreateTaskInput,
   parseListEventsInput,
   parseDeleteEventInput,
+  parseUpdateEventInput,
+  parseListTrackablesInput,
   dayBefore,
   encodeEventCursor,
   takeEventPage,
@@ -63,6 +65,7 @@ const MAX_EVENTS = 200;
 const MAX_WINDOWS_SCANNED = 500;
 /** delete_event refuses a series longer than this rather than half-delete it. */
 const MAX_SERIES_DELETED = 1000;
+const MAX_TRACKABLES_LISTED = 500;
 const MAX_TASKS = 50;
 
 type ApiError = {
@@ -302,7 +305,8 @@ function eventJson(
   durationMinutes: number;
   activityType: Doc<"timeWindows">["activityType"];
   recurring: boolean;
-  source: "calendar" | "timer" | "manual";
+  source: "calendar" | "timer" | "manual" | "api_key";
+  comments: string | null;
   trackables: TrackableRef[];
   countsToward: TrackableRef[];
 } {
@@ -315,7 +319,11 @@ function eventJson(
     activityType: tw.activityType,
     recurring: tw.isRecurringInstance === true && !!tw.recurringEventId,
     // Rows from before the field existed have no source.
-    source: tw.source === "timer" || tw.source === "manual" ? tw.source : "calendar",
+    source:
+      tw.source === "timer" || tw.source === "manual" || tw.source === "api_key"
+        ? tw.source
+        : "calendar",
+    comments: tw.comments?.trim() || null,
     trackables,
     countsToward,
   };
@@ -533,6 +541,254 @@ async function windowsInRange(
   };
 }
 
+/** One event in the shape list_events returns. */
+async function describeEvent(
+  ctx: MutationCtx,
+  window: Doc<"timeWindows">,
+  taskNames: Map<string, string> = new Map(),
+  trackableNames: Map<string, string> = new Map(),
+) {
+  const allocated =
+    window.trackableIds ?? (window.trackableId ? [window.trackableId] : []);
+  return eventJson(
+    window,
+    await displayTitle(ctx, window, taskNames),
+    await trackableRefs(ctx, allocated, trackableNames),
+    await trackableRefs(
+      ctx,
+      window.attributedTrackableIds ?? allocated,
+      trackableNames,
+    ),
+  );
+}
+
+/** Checks trackable ids an agent sent: each must exist and be the user's. */
+async function resolveTrackableIds(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  rawIds: readonly string[],
+): Promise<
+  | { ok: true; ids: Id<"trackables">[] }
+  | { ok: false; outcome: ApiOutcome }
+> {
+  const ids: Id<"trackables">[] = [];
+  for (const raw of rawIds) {
+    const id = ctx.db.normalizeId("trackables", raw);
+    const trackable = id ? await ctx.db.get(id) : null;
+    if (!id || !trackable || trackable.userId !== user._id) {
+      return {
+        ok: false,
+        outcome: fail(
+          400,
+          "bad_input",
+          `Unknown trackable id "${raw}". Get ids from list_trackables.`,
+        ),
+      };
+    }
+    ids.push(id);
+  }
+  return { ok: true, ids };
+}
+
+/** The trackable a task's time falls to when none is picked on the event. */
+async function snapshotTrackableForTask(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  taskId: Id<"tasks">,
+): Promise<Id<"trackables"> | undefined> {
+  const task = await ctx.db.get(taskId);
+  if (!task) return undefined;
+  const links = await ctx.db
+    .query("listTrackableLinks")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .take(200);
+  return resolveSnapshotTrackableIdForTask({
+    task: { trackableId: task.trackableId, listId: task.listId },
+    listIdToTrackableId: buildListIdToTrackableId(links),
+  });
+}
+
+type DetailChanges = {
+  title?: string;
+  comments?: string;
+  trackableIds?: Id<"trackables">[];
+};
+
+/** Title, comments and trackables as a series rule stores them. */
+function ruleDetailPatch(changes: DetailChanges) {
+  return {
+    ...(changes.title !== undefined
+      ? { title: changes.title || undefined }
+      : {}),
+    ...(changes.comments !== undefined
+      ? { comments: changes.comments || undefined }
+      : {}),
+    ...(changes.trackableIds !== undefined
+      ? {
+          trackableId: changes.trackableIds[0],
+          trackableIds:
+            changes.trackableIds.length > 0 ? changes.trackableIds : undefined,
+        }
+      : {}),
+  };
+}
+
+/** Writes the details onto one window, the way saving it in the app does. */
+async function applyWindowDetails(
+  ctx: MutationCtx,
+  window: Doc<"timeWindows">,
+  changes: DetailChanges,
+  extra: { recurringEventId?: Id<"recurringEvents"> } = {},
+): Promise<void> {
+  const patch = { ...ruleDetailPatch(changes), ...extra };
+  if (changes.trackableIds !== undefined && !changes.trackableIds[0] && window.taskId) {
+    patch.trackableId = await snapshotTrackableForTask(
+      ctx,
+      window.userId,
+      window.taskId,
+    );
+  }
+  await ctx.db.patch(window._id, patch);
+  await syncSourceMentions(ctx, "timeWindow", window._id);
+  await syncWindowAttribution(ctx, window._id, window);
+}
+
+async function runUpdateEvent(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  input: Record<string, unknown>,
+): Promise<ApiOutcome> {
+  const parsed = parseUpdateEventInput(input);
+  if (!parsed.ok) return fail(400, "bad_input", parsed.message);
+  const args = parsed.value;
+  const found = await findEvent(ctx, user, args.eventId);
+  if (!found.ok) return found.outcome;
+  const window = found.window;
+
+  const changes: DetailChanges = { title: args.title, comments: args.comments };
+  if (args.trackableIds !== undefined) {
+    const resolved = await resolveTrackableIds(ctx, user, args.trackableIds);
+    if (!resolved.ok) return resolved.outcome;
+    changes.trackableIds = resolved.ids;
+  }
+
+  if (args.occurrence === "this") {
+    await applyWindowDetails(ctx, window, changes);
+    return await updatedEventResult(ctx, window._id, "this", 1);
+  }
+
+  if (!window.recurringEventId) {
+    return fail(
+      400,
+      "bad_input",
+      'This event is not part of a series. Omit occurrence or pass "this".',
+    );
+  }
+  const rule = await ctx.db.get(window.recurringEventId);
+  if (!rule || rule.userId !== user._id) {
+    return fail(404, "not_found", "Event series not found.");
+  }
+  const instances = await ctx.db
+    .query("timeWindows")
+    .withIndex("by_recurring_event", (q) => q.eq("recurringEventId", rule._id))
+    .take(MAX_SERIES_DELETED + 1);
+  if (instances.length > MAX_SERIES_DELETED) {
+    return fail(
+      400,
+      "bad_input",
+      "This series is too long to change here. Change it in the app.",
+    );
+  }
+  const mine = instances.filter(
+    (instance) => instance.userId === user._id && instance.isRecurringInstance,
+  );
+
+  // From the first occurrence on, "this and future" is the whole series.
+  const splitDay = window.startDayYYYYMMDD;
+  const wholeSeries =
+    args.occurrence === "entire_series_including_past" ||
+    splitDay <= rule.startDateYYYYMMDD;
+
+  let updatedCount = 0;
+  if (wholeSeries) {
+    await ctx.db.patch(rule._id, ruleDetailPatch(changes));
+    for (const instance of mine) {
+      await applyWindowDetails(ctx, instance, changes);
+      updatedCount++;
+    }
+    return await updatedEventResult(ctx, window._id, args.occurrence, updatedCount);
+  }
+
+  // Split the series: the old rule ends the day before, and a copy with the
+  // new details carries on from this occurrence. Days not written out yet
+  // are generated from whichever rule covers them.
+  const { _id, _creationTime, legacyId: _legacyId, ...ruleFields } = rule;
+  const laterRuleId = await ctx.db.insert("recurringEvents", {
+    ...ruleFields,
+    ...ruleDetailPatch(changes),
+    startDateYYYYMMDD: splitDay,
+  });
+  await ctx.db.patch(rule._id, { endDateYYYYMMDD: dayBefore(splitDay) });
+  // Occurrences already deleted from the later part must stay deleted.
+  const skips = await ctx.db
+    .query("deletedRecurringEventOccurrences")
+    .withIndex("by_recurring_date", (q) =>
+      q.eq("recurringEventId", rule._id).gte("deletedDateYYYYMMDD", splitDay),
+    )
+    .take(MAX_SERIES_DELETED);
+  for (const skip of skips) {
+    await ctx.db.patch(skip._id, { recurringEventId: laterRuleId });
+  }
+  for (const instance of mine) {
+    if (instance.startDayYYYYMMDD < splitDay) continue;
+    await applyWindowDetails(ctx, instance, changes, {
+      recurringEventId: laterRuleId,
+    });
+    updatedCount++;
+  }
+  return await updatedEventResult(ctx, window._id, args.occurrence, updatedCount);
+}
+
+async function updatedEventResult(
+  ctx: MutationCtx,
+  eventId: Id<"timeWindows">,
+  occurrence: string,
+  updatedCount: number,
+): Promise<ApiOutcome> {
+  const updated = await ctx.db.get(eventId);
+  if (!updated) return fail(404, "not_found", "Event not found.");
+  return ok({
+    event: await describeEvent(ctx, updated),
+    occurrence,
+    updatedCount,
+  });
+}
+
+async function runListTrackables(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  input: Record<string, unknown>,
+): Promise<ApiOutcome> {
+  const parsed = parseListTrackablesInput(input);
+  if (!parsed.ok) return fail(400, "bad_input", parsed.message);
+  const rows = await ctx.db
+    .query("trackables")
+    .withIndex("by_user", (q) => q.eq("userId", user._id))
+    .take(MAX_TRACKABLES_LISTED + 1);
+  const truncated = rows.length > MAX_TRACKABLES_LISTED;
+  const trackables = rows
+    .slice(0, MAX_TRACKABLES_LISTED)
+    .filter((row) => parsed.value.includeArchived || !row.archived)
+    .sort((a, b) => a.orderIndex - b.orderIndex)
+    .map((row) => ({
+      id: row._id,
+      name: row.name,
+      parentId: row.parentId ?? null,
+      archived: row.archived,
+    }));
+  return ok({ trackables, truncated });
+}
+
 async function runListEvents(
   ctx: MutationCtx,
   user: Doc<"users">,
@@ -553,20 +809,7 @@ async function runListEvents(
   const events = [];
   for (const window of windows) {
     if (window.userId !== user._id) continue;
-    const allocated =
-      window.trackableIds ?? (window.trackableId ? [window.trackableId] : []);
-    events.push(
-      eventJson(
-        window,
-        await displayTitle(ctx, window, taskNames),
-        await trackableRefs(ctx, allocated, trackableNames),
-        await trackableRefs(
-          ctx,
-          window.attributedTrackableIds ?? allocated,
-          trackableNames,
-        ),
-      ),
-    );
+    events.push(await describeEvent(ctx, window, taskNames, trackableNames));
   }
   return ok({
     events,
@@ -584,6 +827,9 @@ async function runCreateEvent(
   if (!parsed.ok) return fail(400, "bad_input", parsed.message);
   const args = parsed.value;
   const durationSeconds = args.durationMinutes * 60;
+  const resolved = await resolveTrackableIds(ctx, user, args.trackableIds);
+  if (!resolved.ok) return resolved.outcome;
+  const trackableIds = resolved.ids;
   const eventId = await ctx.db.insert("timeWindows", {
     startTimeHHMM: args.startTime,
     startDayYYYYMMDD: args.day,
@@ -593,10 +839,13 @@ async function runCreateEvent(
     budgetType: "ACTUAL",
     activityType: "EVENT",
     title: args.title,
+    comments: args.comments,
+    trackableId: trackableIds[0],
+    trackableIds: trackableIds.length > 0 ? trackableIds : undefined,
     timeZone: args.timeZone,
     useTimeZone: args.useTimeZone,
     isRecurringInstance: false,
-    source: "calendar",
+    source: "api_key",
   });
   await syncSourceMentions(ctx, "timeWindow", eventId, { isNew: true });
   const inserted = {
@@ -613,6 +862,9 @@ async function runCreateEvent(
     day: formatDay(args.day),
     startTime: args.startTime,
     durationMinutes: args.durationMinutes,
+    source: "api_key",
+    comments: args.comments ?? null,
+    trackables: await trackableRefs(ctx, trackableIds, new Map()),
   });
 }
 
@@ -1117,7 +1369,7 @@ async function runAddToCalendar(
     timeZone: args.timeZone,
     useTimeZone: false,
     isRecurringInstance: false,
-    source: "calendar",
+    source: "api_key",
   });
   const inserted = {
     taskId: task._id,
@@ -1329,6 +1581,10 @@ async function dispatch(
       return await runListEvents(ctx, user, input);
     case "create_event":
       return await runCreateEvent(ctx, user, input);
+    case "update_event":
+      return await runUpdateEvent(ctx, user, input);
+    case "list_trackables":
+      return await runListTrackables(ctx, user, input);
     case "delete_event":
       return await runDeleteEvent(ctx, user, input);
     case "reschedule_event":

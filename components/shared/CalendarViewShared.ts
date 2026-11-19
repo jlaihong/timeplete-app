@@ -145,7 +145,7 @@ export interface TimeWindowDoc {
   startTimeEpochMs?: number;
   recurringEventId?: string;
   isRecurringInstance?: boolean;
-  source?: "timer" | "manual" | "calendar" | "tracker_entry";
+  source?: "timer" | "manual" | "calendar" | "tracker_entry" | "api_key";
   isLive?: boolean;
   /**
    * Server-computed by `convex/timeWindows.ts:search`:

@@ -13,6 +13,8 @@ import {
   parseHHMM,
   parseListEventsInput,
   parseDeleteEventInput,
+  parseUpdateEventInput,
+  parseListTrackablesInput,
   dayBefore,
   decodeEventCursor,
   encodeEventCursor,
@@ -235,6 +237,77 @@ describe("agent action parsing", () => {
     });
     assert.equal(series.ok, true);
     if (series.ok) assert.equal(series.value.occurrence, "series");
+  });
+
+  it("takes comments and trackables on a new event", () => {
+    const base = { title: "Gym", day: "2026-11-04", startTime: "07:00" };
+    const plain = parseCreateEventInput(base);
+    assert.equal(plain.ok, true);
+    if (plain.ok) {
+      assert.equal(plain.value.comments, undefined);
+      assert.deepEqual(plain.value.trackableIds, []);
+    }
+    const full = parseCreateEventInput({
+      ...base,
+      comments: "  legs  ",
+      trackableIds: ["a", "b", "a"],
+    });
+    assert.equal(full.ok, true);
+    if (full.ok) {
+      assert.equal(full.value.comments, "legs");
+      assert.deepEqual(full.value.trackableIds, ["a", "b"]);
+    }
+    assert.equal(parseCreateEventInput({ ...base, trackableIds: "a" }).ok, false);
+    assert.equal(parseCreateEventInput({ ...base, trackableIds: [1] }).ok, false);
+  });
+
+  it("edits only the event details that were passed", () => {
+    assert.equal(parseUpdateEventInput({ title: "x" }).ok, false);
+    assert.equal(parseUpdateEventInput({ eventId: "abc" }).ok, false);
+    assert.equal(
+      parseUpdateEventInput({ eventId: "abc", title: "x", occurrence: "series" })
+        .ok,
+      false,
+    );
+
+    const title = parseUpdateEventInput({ eventId: "abc", title: " Dentist " });
+    assert.equal(title.ok, true);
+    if (title.ok) {
+      assert.equal(title.value.title, "Dentist");
+      assert.equal(title.value.comments, undefined);
+      assert.equal(title.value.trackableIds, undefined);
+      assert.equal(title.value.occurrence, "this");
+    }
+
+    // Empty values mean "remove", which is different from leaving them out.
+    const cleared = parseUpdateEventInput({
+      eventId: "abc",
+      title: "",
+      comments: "",
+      trackableIds: [],
+      occurrence: "THIS_AND_FUTURE",
+    });
+    assert.equal(cleared.ok, true);
+    if (cleared.ok) {
+      assert.equal(cleared.value.title, "");
+      assert.equal(cleared.value.comments, "");
+      assert.deepEqual(cleared.value.trackableIds, []);
+      assert.equal(cleared.value.occurrence, "this_and_future");
+    }
+    const all = parseUpdateEventInput({
+      eventId: "abc",
+      comments: "x",
+      occurrence: "entire_series_including_past",
+    });
+    assert.equal(all.ok && all.value.occurrence, "entire_series_including_past");
+  });
+
+  it("hides archived trackables unless asked", () => {
+    const none = parseListTrackablesInput({});
+    assert.equal(none.ok && none.value.includeArchived, false);
+    const all = parseListTrackablesInput({ includeArchived: true });
+    assert.equal(all.ok && all.value.includeArchived, true);
+    assert.equal(parseListTrackablesInput({ includeArchived: "yes" }).ok, false);
   });
 
   it("steps back a day across month and year ends", () => {

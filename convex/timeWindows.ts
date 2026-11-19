@@ -285,7 +285,8 @@ export const upsert = mutation({
         v.literal("timer"),
         v.literal("manual"),
         v.literal("calendar"),
-        v.literal("tracker_entry")
+        v.literal("tracker_entry"),
+        v.literal("api_key")
       )
     ),
     /** Restore after delete (`insert` branch only — see handler). */

@@ -14,6 +14,8 @@ export const AGENT_ACTION_NAMES = [
   "create_event",
   "reschedule_event",
   "delete_event",
+  "update_event",
+  "list_trackables",
   "read_reviews",
   "write_reviews",
   "add_to_calendar",
@@ -65,7 +67,7 @@ export const AGENT_ACTIONS: readonly AgentActionSpec[] = [
     name: "list_events",
     label: "List calendar events",
     description:
-      'Read events and tracked time between two dates, at most 31 days apart. Each has a source saying how it was made: "calendar", "timer", or "manual". Each lists trackables (what it is allocated to) and countsToward (every trackable its time counts toward, including through its task, list, rules and parent trackables). Returns up to 200 per call; when nextCursor is not null, call again with it to get the rest.',
+      'Read events and tracked time between two dates, at most 31 days apart. Each has a source saying how it was made: "calendar", "timer", "manual", or "api_key" (made through this API). Each lists trackables (what it is allocated to) and countsToward (every trackable its time counts toward, including through its task, list, rules and parent trackables). Returns up to 200 per call; when nextCursor is not null, call again with it to get the rest.',
     input: {
       startDay: "Required date, YYYY-MM-DD.",
       endDay: "Required date, YYYY-MM-DD.",
@@ -79,6 +81,9 @@ export const AGENT_ACTIONS: readonly AgentActionSpec[] = [
     description: "Put a new event on the calendar.",
     input: {
       title: "Required event title.",
+      comments: "Optional notes for the event.",
+      trackableIds:
+        "Optional list of trackable ids, from list_trackables, that the event's time is allocated to.",
       day: "Required date, YYYY-MM-DD.",
       startTime: "Required start time, 24-hour HH:MM or 3:00pm.",
       durationMinutes: "Optional length in minutes. Defaults to 60. Minimum 5.",
@@ -110,6 +115,31 @@ export const AGENT_ACTIONS: readonly AgentActionSpec[] = [
       eventId: "Required id from list_events.",
       occurrence:
         'Optional "this" (default) or "series". Series deletes this and every later occurrence and ends the series; earlier occurrences stay.',
+    },
+  },
+  {
+    name: "update_event",
+    label: "Edit event details",
+    description:
+      "Change the title, comments or trackables of an event or time entry, by its id. Pass only the fields to change. To change its day or time use reschedule_event.",
+    input: {
+      eventId: "Required id from list_events.",
+      title: 'Optional new title. Pass "" to remove the title.',
+      comments: 'Optional new notes. Pass "" to remove them.',
+      trackableIds:
+        "Optional list of trackable ids from list_trackables. Replaces the trackables the event is allocated to. Pass [] to remove them all.",
+      occurrence:
+        'Optional, for a recurring event. "this" (default) changes one occurrence. "this_and_future" changes this and every later occurrence. "entire_series_including_past" changes every occurrence.',
+    },
+  },
+  {
+    name: "list_trackables",
+    label: "List trackables",
+    description:
+      "Read the trackables and their ids. Trackables form a tree: parentId is the trackable one level up, or null.",
+    input: {
+      includeArchived:
+        "Optional boolean. When true, archived trackables are listed too.",
     },
   },
   {
@@ -612,6 +642,8 @@ export function parseListEventsInput(
 }
 
 export type CreateEventInput = {
+  comments?: string;
+  trackableIds: string[];
   title: string;
   day: string;
   startTime: string;
@@ -640,9 +672,15 @@ export function parseCreateEventInput(
   }
   const useTimeZone = optionalBoolean(input, "useTimeZone");
   if (!useTimeZone.ok) return useTimeZone;
+  const comments = optionalText(input, "comments", MAX_COMMENT_LENGTH);
+  if (!comments.ok) return comments;
+  const trackableIds = optionalIdList(input, "trackableIds");
+  if (!trackableIds.ok) return trackableIds;
   return {
     ok: true,
     value: {
+      comments: comments.value || undefined,
+      trackableIds: trackableIds.value ?? [],
       title: title.value,
       day: day.value,
       startTime: startTime.value,
@@ -714,6 +752,133 @@ export function parseRescheduleInput(
       occurrence,
     },
   };
+}
+
+const MAX_COMMENT_LENGTH = 5000;
+const MAX_TRACKABLES_PER_EVENT = 20;
+
+/**
+ * A text field that may be cleared: absent means "leave alone", and an
+ * empty string means "remove".
+ */
+function optionalText(
+  input: Record<string, unknown>,
+  key: string,
+  maxLength: number,
+): ParseResult<string | undefined> {
+  if (!(key in input) || input[key] === undefined || input[key] === null) {
+    return { ok: true, value: undefined };
+  }
+  if (typeof input[key] !== "string") {
+    return { ok: false, message: `${key} must be a string.` };
+  }
+  const trimmed = input[key].trim();
+  if (trimmed.length > maxLength) {
+    return {
+      ok: false,
+      message: `${key} must be ${maxLength} characters or fewer.`,
+    };
+  }
+  return { ok: true, value: trimmed };
+}
+
+/** A list of ids, duplicates dropped. Absent means "leave alone". */
+function optionalIdList(
+  input: Record<string, unknown>,
+  key: string,
+): ParseResult<string[] | undefined> {
+  if (!(key in input) || input[key] === undefined || input[key] === null) {
+    return { ok: true, value: undefined };
+  }
+  const raw = input[key];
+  if (
+    !Array.isArray(raw) ||
+    raw.some((item) => typeof item !== "string" || item.trim() === "")
+  ) {
+    return { ok: false, message: `${key} must be a list of ids.` };
+  }
+  const ids = [...new Set(raw.map((item: string) => item.trim()))];
+  if (ids.length > MAX_TRACKABLES_PER_EVENT) {
+    return {
+      ok: false,
+      message: `${key} can hold at most ${MAX_TRACKABLES_PER_EVENT} ids.`,
+    };
+  }
+  return { ok: true, value: ids };
+}
+
+export type EventOccurrenceScope =
+  | "this"
+  | "this_and_future"
+  | "entire_series_including_past";
+
+export type UpdateEventInput = {
+  eventId: string;
+  /** "" removes the title. */
+  title?: string;
+  /** "" removes the comments. */
+  comments?: string;
+  /** [] removes every trackable. */
+  trackableIds?: string[];
+  occurrence: EventOccurrenceScope;
+};
+
+export function parseUpdateEventInput(
+  input: Record<string, unknown>,
+): ParseResult<UpdateEventInput> {
+  const eventId = optionalString(input, "eventId");
+  if (!eventId.ok) return eventId;
+  if (!eventId.value) {
+    return {
+      ok: false,
+      message: "eventId is required. Get it from list_events.",
+    };
+  }
+  const title = optionalText(input, "title", 200);
+  if (!title.ok) return title;
+  const comments = optionalText(input, "comments", MAX_COMMENT_LENGTH);
+  if (!comments.ok) return comments;
+  const trackableIds = optionalIdList(input, "trackableIds");
+  if (!trackableIds.ok) return trackableIds;
+  if (
+    title.value === undefined &&
+    comments.value === undefined &&
+    trackableIds.value === undefined
+  ) {
+    return { ok: false, message: "Pass title, comments, or trackableIds." };
+  }
+  const occurrenceRaw = optionalString(input, "occurrence");
+  if (!occurrenceRaw.ok) return occurrenceRaw;
+  const occurrence = (occurrenceRaw.value ?? "this").toLowerCase();
+  if (
+    occurrence !== "this" &&
+    occurrence !== "this_and_future" &&
+    occurrence !== "entire_series_including_past"
+  ) {
+    return {
+      ok: false,
+      message:
+        'occurrence must be "this", "this_and_future", or "entire_series_including_past".',
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      eventId: eventId.value,
+      title: title.value,
+      comments: comments.value,
+      trackableIds: trackableIds.value,
+      occurrence,
+    },
+  };
+}
+
+export function parseListTrackablesInput(
+  input: Record<string, unknown>,
+): ParseResult<{ includeArchived: boolean }> {
+  const includeArchived = optionalBoolean(input, "includeArchived");
+  if (!includeArchived.ok) return includeArchived;
+  return { ok: true, value: { includeArchived: includeArchived.value === true } };
 }
 
 export type DeleteEventInput = {
