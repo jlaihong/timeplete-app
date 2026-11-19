@@ -2,7 +2,10 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { persistBoundedOrderMove } from "./_helpers/orderShift";
-import { verifyListWriteAccess } from "./_helpers/permissions";
+import {
+  canReadList,
+  verifyListWriteAccess,
+} from "./_helpers/permissions";
 
 export const search = query({
   args: { listId: v.optional(v.id("lists")) },
@@ -11,6 +14,7 @@ export const search = query({
     if (!user) return [];
 
     if (args.listId) {
+      if (!(await canReadList(ctx, args.listId, user._id))) return [];
       return await ctx.db
         .query("listSections")
         .withIndex("by_list", (q) => q.eq("listId", args.listId!))

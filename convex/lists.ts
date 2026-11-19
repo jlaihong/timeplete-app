@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireApprovedUser, requireApprovedUserOrEmpty } from "./_helpers/auth";
 import { persistBoundedOrderMove } from "./_helpers/orderShift";
+import { canReadList } from "./_helpers/permissions";
 import {
   compareTasksForListView,
   isTaskCompletedForListView,
@@ -286,6 +287,7 @@ export const getPaginated = query({
 
     const list = await ctx.db.get(args.listId);
     if (!list) throw new Error("List not found");
+    if (!(await canReadList(ctx, args.listId, user._id))) return null;
 
     const sections = await ctx.db
       .query("listSections")

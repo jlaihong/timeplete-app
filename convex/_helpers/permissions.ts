@@ -1,6 +1,29 @@
 import { QueryCtx, MutationCtx } from "../_generated/server";
 import { Id } from "../_generated/dataModel";
 
+/**
+ * Whether `userId` may read `listId`: its owner, or someone with an accepted
+ * share at either permission. Returns false rather than throwing so a query
+ * can answer "nothing here" without telling a stranger the list exists.
+ */
+export async function canReadList(
+  ctx: QueryCtx | MutationCtx,
+  listId: Id<"lists">,
+  userId: Id<"users">
+): Promise<boolean> {
+  const list = await ctx.db.get(listId);
+  if (!list) return false;
+  if (list.userId === userId) return true;
+
+  const shares = await ctx.db
+    .query("listShares")
+    .withIndex("by_list", (q) => q.eq("listId", listId))
+    .collect();
+  return shares.some(
+    (s) => s.sharedWithUserId === userId && s.status === "ACCEPTED"
+  );
+}
+
 export async function resolveListOwnerId(
   ctx: QueryCtx | MutationCtx,
   listId: Id<"lists">,
