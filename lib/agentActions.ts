@@ -13,6 +13,7 @@ export const AGENT_ACTION_NAMES = [
   "list_events",
   "create_event",
   "reschedule_event",
+  "delete_event",
   "read_reviews",
   "write_reviews",
   "add_to_calendar",
@@ -64,7 +65,7 @@ export const AGENT_ACTIONS: readonly AgentActionSpec[] = [
     name: "list_events",
     label: "List calendar events",
     description:
-      'Read events and tracked time between two dates, at most 31 days apart. Each has a source: "calendar", "timer", or "manual". Only calendar events can be changed. Returns up to 200 per call; when nextCursor is not null, call again with it to get the rest.',
+      'Read events and tracked time between two dates, at most 31 days apart. Each has a source saying how it was made: "calendar", "timer", or "manual". Each lists trackables (what it is allocated to) and countsToward (every trackable its time counts toward, including through its task, list, rules and parent trackables). Returns up to 200 per call; when nextCursor is not null, call again with it to get the rest.',
     input: {
       startDay: "Required date, YYYY-MM-DD.",
       endDay: "Required date, YYYY-MM-DD.",
@@ -90,16 +91,25 @@ export const AGENT_ACTIONS: readonly AgentActionSpec[] = [
     name: "reschedule_event",
     label: "Change event times",
     description:
-      "Move an event to a new day or time. Pass eventId, or title plus day.",
+      "Move an event or time entry to a new day or time, by its id.",
     input: {
-      eventId: "Optional id from list_events. Required when title is omitted.",
-      title: "Optional exact event title. Required when eventId is omitted.",
-      day: "Current event date, YYYY-MM-DD. Required when matching by title.",
+      eventId: "Required id from list_events.",
       newDay: "Optional new date, YYYY-MM-DD.",
       newStartTime: "Optional new start time.",
       durationMinutes: "Optional new length in minutes. Minimum 5.",
       occurrence:
         'Optional "this" (default) or "series". Series changes the time of this and later occurrences that still follow the series. Series cannot move to a different day.',
+    },
+  },
+  {
+    name: "delete_event",
+    label: "Delete calendar events",
+    description:
+      "Delete an event or time entry by its id.",
+    input: {
+      eventId: "Required id from list_events.",
+      occurrence:
+        'Optional "this" (default) or "series". Series deletes this and every later occurrence and ends the series; earlier occurrences stay.',
     },
   },
   {
@@ -644,9 +654,7 @@ export function parseCreateEventInput(
 }
 
 export type RescheduleInput = {
-  eventId?: string;
-  title?: string;
-  day?: string;
+  eventId: string;
   newDay?: string;
   newStartTime?: string;
   durationMinutes?: number;
@@ -656,19 +664,13 @@ export type RescheduleInput = {
 export function parseRescheduleInput(
   input: Record<string, unknown>,
 ): ParseResult<RescheduleInput> {
+  // By id only: a title can match the wrong event.
   const eventId = optionalString(input, "eventId");
   if (!eventId.ok) return eventId;
-  const title = optionalString(input, "title");
-  if (!title.ok) return title;
-  if (title.value && title.value.length > 200) {
-    return { ok: false, message: "title must be 200 characters or fewer." };
-  }
-  const day = optionalDay(input, "day");
-  if (!day.ok) return day;
-  if (!eventId.value && !(title.value && day.value)) {
+  if (!eventId.value) {
     return {
       ok: false,
-      message: "Pass eventId, or both title and day, so the event can be found.",
+      message: "eventId is required. Get it from list_events.",
     };
   }
   const newDay = optionalDay(input, "newDay");
@@ -706,14 +708,53 @@ export function parseRescheduleInput(
     ok: true,
     value: {
       eventId: eventId.value,
-      title: title.value,
-      day: day.value,
       newDay: newDay.value,
       newStartTime: newStartTime.value,
       durationMinutes: durationMinutes.value,
       occurrence,
     },
   };
+}
+
+export type DeleteEventInput = {
+  eventId: string;
+  occurrence: "this" | "series";
+};
+
+export function parseDeleteEventInput(
+  input: Record<string, unknown>,
+): ParseResult<DeleteEventInput> {
+  // By id only: a title can match the wrong event, and a delete cannot be undone.
+  const eventId = optionalString(input, "eventId");
+  if (!eventId.ok) return eventId;
+  if (!eventId.value) {
+    return {
+      ok: false,
+      message: "eventId is required. Get it from list_events.",
+    };
+  }
+  const occurrenceRaw = optionalString(input, "occurrence");
+  if (!occurrenceRaw.ok) return occurrenceRaw;
+  const occurrence = (occurrenceRaw.value ?? "this").toLowerCase();
+  if (occurrence !== "this" && occurrence !== "series") {
+    return { ok: false, message: 'occurrence must be "this" or "series".' };
+  }
+  return {
+    ok: true,
+    value: { eventId: eventId.value, occurrence },
+  };
+}
+
+/** The day before a compact YYYYMMDD day. */
+export function dayBefore(compact: string): string {
+  const date = new Date(
+    Date.UTC(
+      Number(compact.slice(0, 4)),
+      Number(compact.slice(4, 6)) - 1,
+      Number(compact.slice(6, 8)) - 1,
+    ),
+  );
+  return date.toISOString().slice(0, 10).replace(/-/g, "");
 }
 
 export const REVIEW_FREQUENCIES = [

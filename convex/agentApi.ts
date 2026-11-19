@@ -10,6 +10,8 @@ import {
   parseCreateEventInput,
   parseCreateTaskInput,
   parseListEventsInput,
+  parseDeleteEventInput,
+  dayBefore,
   encodeEventCursor,
   takeEventPage,
   type EventCursor,
@@ -27,7 +29,6 @@ import {
   todayInTimeZone,
   type AgentActionName,
   type CompleteTaskInput,
-  type RescheduleInput,
   type ReviewFrequency,
   type TaskLocator,
 } from "../lib/agentActions";
@@ -44,16 +45,24 @@ import {
   syncTaskAttribution,
   syncWindowAttribution,
 } from "./_helpers/trackableLifetime";
-import { recordDeletedRecurringEventOccurrence } from "./_helpers/deletedRecurringEventOccurrence";
+import {
+  deletedOccurrenceForRecurringInstance,
+  recordDeletedRecurringEventOccurrence,
+} from "./_helpers/deletedRecurringEventOccurrence";
 import {
   buildListIdToTrackableId,
   resolveSnapshotTrackableIdForTask,
 } from "./_helpers/trackableAttribution";
-import { syncSourceMentions } from "./_helpers/mentions";
+import {
+  removeMentionsForSource,
+  syncSourceMentions,
+} from "./_helpers/mentions";
 
 const LAST_USED_MIN_GAP_MS = 5 * 60 * 1000;
 const MAX_EVENTS = 200;
 const MAX_WINDOWS_SCANNED = 500;
+/** delete_event refuses a series longer than this rather than half-delete it. */
+const MAX_SERIES_DELETED = 1000;
 const MAX_TASKS = 50;
 
 type ApiError = {
@@ -251,21 +260,40 @@ async function displayTitle(
 }
 
 /**
- * Events an agent may change. Timer logs and manual time entries stay out,
- * so an agent cannot move or delete tracked time.
+ * Everything the agent can list, move and delete: calendar events plus
+ * timer logs and manual time entries. The app treats them all alike.
  */
-function isCalendarWindow(tw: Doc<"timeWindows">): boolean {
-  return isListedWindow(tw) && tw.source !== "timer" && tw.source !== "manual";
-}
-
-/** Everything list_events returns: calendar events plus tracked time. */
 function isListedWindow(tw: Doc<"timeWindows">): boolean {
   return tw.budgetType === "ACTUAL" && tw.source !== "tracker_entry";
+}
+
+type TrackableRef = { id: Id<"trackables">; name: string };
+
+/** Names for trackable ids, skipping any that no longer exist. */
+async function trackableRefs(
+  ctx: MutationCtx,
+  ids: readonly Id<"trackables">[],
+  names: Map<string, string>,
+): Promise<TrackableRef[]> {
+  const refs: TrackableRef[] = [];
+  for (const id of new Set(ids)) {
+    let name = names.get(id);
+    if (name === undefined) {
+      const trackable = await ctx.db.get(id);
+      if (!trackable) continue;
+      name = trackable.name?.trim() || "Untitled";
+      names.set(id, name);
+    }
+    refs.push({ id, name });
+  }
+  return refs;
 }
 
 function eventJson(
   tw: Doc<"timeWindows">,
   title: string,
+  trackables: TrackableRef[],
+  countsToward: TrackableRef[],
 ): {
   id: Id<"timeWindows">;
   title: string;
@@ -275,6 +303,8 @@ function eventJson(
   activityType: Doc<"timeWindows">["activityType"];
   recurring: boolean;
   source: "calendar" | "timer" | "manual";
+  trackables: TrackableRef[];
+  countsToward: TrackableRef[];
 } {
   return {
     id: tw._id,
@@ -284,8 +314,10 @@ function eventJson(
     durationMinutes: Math.round(tw.durationSeconds / 60),
     activityType: tw.activityType,
     recurring: tw.isRecurringInstance === true && !!tw.recurringEventId,
-    // Rows with no source are treated as calendar events, as isCalendarWindow does.
+    // Rows from before the field existed have no source.
     source: tw.source === "timer" || tw.source === "manual" ? tw.source : "calendar",
+    trackables,
+    countsToward,
   };
 }
 
@@ -442,6 +474,8 @@ async function windowsInRange(
   include: (tw: Doc<"timeWindows">) => boolean,
   after?: EventCursor,
 ): Promise<{ windows: Doc<"timeWindows">[]; nextCursor: EventCursor | null }> {
+  // Planned (BUDGETED) rows are never returned, so the index skips them
+  // instead of letting them use up the scan.
   const limit = MAX_WINDOWS_SCANNED + 1;
   let rows: Doc<"timeWindows">[];
   if (after) {
@@ -449,9 +483,10 @@ async function windowsInRange(
     // then read the days after it.
     rows = await ctx.db
       .query("timeWindows")
-      .withIndex("by_user_day", (q) =>
+      .withIndex("by_user_budget_day", (q) =>
         q
           .eq("userId", userId)
+          .eq("budgetType", "ACTUAL")
           .eq("startDayYYYYMMDD", after.day)
           .gt("_creationTime", after.creationTime),
       )
@@ -459,9 +494,10 @@ async function windowsInRange(
     if (rows.length < limit && after.day < endDay) {
       const later = await ctx.db
         .query("timeWindows")
-        .withIndex("by_user_day", (q) =>
+        .withIndex("by_user_budget_day", (q) =>
           q
             .eq("userId", userId)
+            .eq("budgetType", "ACTUAL")
             .gt("startDayYYYYMMDD", after.day)
             .lte("startDayYYYYMMDD", endDay),
         )
@@ -471,9 +507,10 @@ async function windowsInRange(
   } else {
     rows = await ctx.db
       .query("timeWindows")
-      .withIndex("by_user_day", (q) =>
+      .withIndex("by_user_budget_day", (q) =>
         q
           .eq("userId", userId)
+          .eq("budgetType", "ACTUAL")
           .gte("startDayYYYYMMDD", startDay)
           .lte("startDayYYYYMMDD", endDay),
       )
@@ -512,10 +549,24 @@ async function runListEvents(
     parsed.value.after,
   );
   const taskNames = new Map<string, string>();
+  const trackableNames = new Map<string, string>();
   const events = [];
   for (const window of windows) {
     if (window.userId !== user._id) continue;
-    events.push(eventJson(window, await displayTitle(ctx, window, taskNames)));
+    const allocated =
+      window.trackableIds ?? (window.trackableId ? [window.trackableId] : []);
+    events.push(
+      eventJson(
+        window,
+        await displayTitle(ctx, window, taskNames),
+        await trackableRefs(ctx, allocated, trackableNames),
+        await trackableRefs(
+          ctx,
+          window.attributedTrackableIds ?? allocated,
+          trackableNames,
+        ),
+      ),
+    );
   }
   return ok({
     events,
@@ -568,75 +619,92 @@ async function runCreateEvent(
 async function findEvent(
   ctx: MutationCtx,
   user: Doc<"users">,
-  args: RescheduleInput,
+  eventId: string,
 ): Promise<
   | { ok: true; window: Doc<"timeWindows"> }
   | { ok: false; outcome: ApiOutcome }
 > {
-  if (args.eventId) {
-    const id = ctx.db.normalizeId("timeWindows", args.eventId);
-    const window = id ? await ctx.db.get(id) : null;
-    if (!window || window.userId !== user._id || !isListedWindow(window)) {
-      return {
-        ok: false,
-        outcome: fail(404, "not_found", "Event not found."),
-      };
+  const id = ctx.db.normalizeId("timeWindows", eventId);
+  const window = id ? await ctx.db.get(id) : null;
+  if (!window || window.userId !== user._id || !isListedWindow(window)) {
+    return {
+      ok: false,
+      outcome: fail(404, "not_found", "Event not found."),
+    };
+  }
+  return { ok: true, window };
+}
+
+async function runDeleteEvent(
+  ctx: MutationCtx,
+  user: Doc<"users">,
+  input: Record<string, unknown>,
+): Promise<ApiOutcome> {
+  const parsed = parseDeleteEventInput(input);
+  if (!parsed.ok) return fail(400, "bad_input", parsed.message);
+  const args = parsed.value;
+  const found = await findEvent(ctx, user, args.eventId);
+  if (!found.ok) return found.outcome;
+  const window = found.window;
+  const deleted = {
+    eventId: window._id,
+    title: await displayTitle(ctx, window, new Map()),
+    day: formatDay(window.startDayYYYYMMDD),
+    startTime: window.startTimeHHMM,
+  };
+
+  if (args.occurrence === "series") {
+    if (!window.recurringEventId) {
+      return fail(
+        400,
+        "bad_input",
+        'This event is not part of a series. Omit occurrence or pass "this".',
+      );
     }
-    if (!isCalendarWindow(window)) {
-      return {
-        ok: false,
-        outcome: fail(
-          400,
-          "bad_input",
-          "Timer and manual time entries cannot be changed.",
-        ),
-      };
+    const rule = await ctx.db.get(window.recurringEventId);
+    if (!rule || rule.userId !== user._id) {
+      return fail(404, "not_found", "Event series not found.");
     }
-    return { ok: true, window };
+    const instances = await ctx.db
+      .query("timeWindows")
+      .withIndex("by_recurring_event", (q) =>
+        q.eq("recurringEventId", rule._id),
+      )
+      .take(MAX_SERIES_DELETED + 1);
+    if (instances.length > MAX_SERIES_DELETED) {
+      return fail(
+        400,
+        "bad_input",
+        "This series is too long to delete here. Delete it in the app.",
+      );
+    }
+    // Same as "this and following" in the app: later occurrences go and the
+    // series ends the day before, so nothing new is generated.
+    let deletedCount = 0;
+    for (const instance of instances) {
+      if (instance.userId !== user._id || !instance.isRecurringInstance) continue;
+      if (instance.startDayYYYYMMDD < window.startDayYYYYMMDD) continue;
+      await removeMentionsForSource(ctx, "timeWindow", instance._id);
+      await deleteTimeWindowWithSideEffects(ctx, instance);
+      deletedCount++;
+    }
+    await ctx.db.patch(rule._id, {
+      endDateYYYYMMDD: dayBefore(window.startDayYYYYMMDD),
+    });
+    return ok({ ...deleted, occurrence: "series", deletedCount });
   }
 
-  const { windows } = await windowsInRange(
-    ctx,
-    user._id,
-    args.day!,
-    args.day!,
-    isCalendarWindow,
-  );
-  const taskNames = new Map<string, string>();
-  const matches: Doc<"timeWindows">[] = [];
-  const wanted = args.title!.trim().toLowerCase();
-  for (const window of windows) {
-    if (window.userId !== user._id) continue;
-    const title = (await displayTitle(ctx, window, taskNames)).toLowerCase();
-    if (title === wanted) matches.push(window);
+  await removeMentionsForSource(ctx, "timeWindow", window._id);
+  // Record the skip in the same transaction, or the series recreates the day.
+  const skip = deletedOccurrenceForRecurringInstance(window);
+  if (skip) {
+    await recordDeletedRecurringEventOccurrence(ctx, {
+      ...skip,
+      userId: user._id,
+    });
   }
-  if (matches.length === 0) {
-    return {
-      ok: false,
-      outcome: fail(404, "not_found", `No event titled "${args.title}" on that day.`),
-    };
-  }
-  if (matches.length > 1) {
-    const candidates = [];
-    for (const window of matches) {
-      candidates.push({
-        id: window._id,
-        title: await displayTitle(ctx, window, taskNames),
-        day: formatDay(window.startDayYYYYMMDD),
-        startTime: window.startTimeHHMM,
-      });
-    }
-    return {
-      ok: false,
-      outcome: fail(
-        409,
-        "ambiguous",
-        "More than one event matches. Pass eventId.",
-        { candidates },
-      ),
-    };
-  }
-  return { ok: true, window: matches[0] };
+  await deleteTimeWindowWithSideEffects(ctx, window);
+  return ok({ ...deleted, occurrence: "this", deletedCount: 1 });
 }
 
 async function runReschedule(
@@ -647,7 +715,7 @@ async function runReschedule(
   const parsed = parseRescheduleInput(input);
   if (!parsed.ok) return fail(400, "bad_input", parsed.message);
   const args = parsed.value;
-  const found = await findEvent(ctx, user, args);
+  const found = await findEvent(ctx, user, args.eventId);
   if (!found.ok) return found.outcome;
   const window = found.window;
 
@@ -1261,6 +1329,8 @@ async function dispatch(
       return await runListEvents(ctx, user, input);
     case "create_event":
       return await runCreateEvent(ctx, user, input);
+    case "delete_event":
+      return await runDeleteEvent(ctx, user, input);
     case "reschedule_event":
       return await runReschedule(ctx, user, input);
     case "read_reviews":

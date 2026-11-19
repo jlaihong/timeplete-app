@@ -12,6 +12,8 @@ import {
   parseCreateEventInput,
   parseHHMM,
   parseListEventsInput,
+  parseDeleteEventInput,
+  dayBefore,
   decodeEventCursor,
   encodeEventCursor,
   takeEventPage,
@@ -185,12 +187,19 @@ describe("agent action parsing", () => {
     }
   });
 
-  it("requires a way to find an event and a change to make", () => {
-    assert.equal(parseRescheduleInput({ title: "Dentist" }).ok, false);
+  it("reschedules only by id, and needs a change to make", () => {
     assert.equal(
       parseRescheduleInput({
         title: "Dentist",
         day: "2026-11-04",
+        newStartTime: "16:30",
+      }).ok,
+      false,
+    );
+    assert.equal(parseRescheduleInput({ eventId: "abc" }).ok, false);
+    assert.equal(
+      parseRescheduleInput({
+        eventId: "abc",
         occurrence: "series",
         newDay: "2026-11-05",
       }).ok,
@@ -205,6 +214,33 @@ describe("agent action parsing", () => {
       assert.equal(ok.value.occurrence, "this");
       assert.equal(ok.value.newStartTime, "16:30");
     }
+  });
+
+  it("deletes an event only by id", () => {
+    assert.equal(parseDeleteEventInput({}).ok, false);
+    assert.equal(
+      parseDeleteEventInput({ title: "Dentist", day: "2026-11-04" }).ok,
+      false,
+    );
+    assert.equal(
+      parseDeleteEventInput({ eventId: "abc", occurrence: "all" }).ok,
+      false,
+    );
+    const one = parseDeleteEventInput({ eventId: "abc" });
+    assert.equal(one.ok, true);
+    if (one.ok) assert.equal(one.value.occurrence, "this");
+    const series = parseDeleteEventInput({
+      eventId: "abc",
+      occurrence: "Series",
+    });
+    assert.equal(series.ok, true);
+    if (series.ok) assert.equal(series.value.occurrence, "series");
+  });
+
+  it("steps back a day across month and year ends", () => {
+    assert.equal(dayBefore("20261104"), "20261103");
+    assert.equal(dayBefore("20260301"), "20260228");
+    assert.equal(dayBefore("20260101"), "20251231");
   });
 
   it("snaps a review date to the period the app stores", () => {
