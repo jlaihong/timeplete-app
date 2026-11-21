@@ -371,10 +371,10 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
     return inbox[0] ?? null;
   }, [lists]);
 
-  // Only hand-made lists. A trackable's own list would otherwise repeat the
-  // whole Trackables page here and bury lists like "Groceries"; those open
-  // from the trackable, or from Manage. The one being viewed still shows,
-  // so the sidebar always marks where you are.
+  // Each list's own "Show in sidebar" switch decides, including for a
+  // trackable's own list: those have the switch off unless it was turned on
+  // by hand, so they don't repeat the whole Trackables page here. The one
+  // being viewed still shows, so the sidebar always marks where you are.
   const activeListId = sel.activeListId;
   const sidebarLists = useMemo(() => {
     if (!lists) return null;
@@ -382,9 +382,7 @@ function CustomDrawerContent(props: DrawerContentComponentProps) {
       (l) =>
         !l.archived &&
         !l.isInbox &&
-        // The list's own "Show in sidebar" switch.
-        (l.showInSidebar !== false || l._id === activeListId) &&
-        (!l.isGoalList || l._id === activeListId),
+        (l.showInSidebar !== false || l._id === activeListId),
     );
   }, [lists, activeListId]);
 
